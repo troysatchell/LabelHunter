@@ -116,7 +116,13 @@ fi
 # --- G2: lint ---------------------------------------------------------------
 # A lint script with no config exits 0 while checking nothing. Wire it only
 # when a config exists; otherwise say so instead of manufacturing confidence.
-if ls eslint.config.* .eslintrc* >/dev/null 2>&1; then
+#
+# `ls a.* b.*` exits nonzero if EITHER glob has no match, even when the other
+# matched a real file — so a repo with only eslint.config.mjs (no .eslintrc*)
+# always read as "no config found" and lint silently stayed skip forever.
+# Found by the TRO-456 scaffold agent. compgen -G tests each pattern on its
+# own and never touches argv, so one glob's absence can't hide the other's match.
+if compgen -G "eslint.config.*" >/dev/null || compgen -G ".eslintrc*" >/dev/null; then
   if pnpm lint > "$OUT_DIR/lint.log" 2>&1; then
     record lint pass "clean"
   else

@@ -4,6 +4,20 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## FACTORY — gate.sh lint-detection fix (2026-08-10)
+
+**What changed.** `scripts/factory/gate.sh`'s lint-config check used
+`ls eslint.config.* .eslintrc*`, which fails if *either* glob has no match — so a repo with
+only `eslint.config.mjs` (no `.eslintrc*`) always read as "no config found" and G2 stayed
+`skip` forever, even with a real, working lint config in place. Found by the TRO-456 scaffold
+agent while gating its own branch. Fixed with `compgen -G`, which tests each pattern on its
+own.
+
+**How to run it.** No action needed; the next `scripts/factory/gate.sh` run picks it up.
+
+**Rollback.** `git revert` this commit; the check reverts to always-skip, which is safe
+(under-detection, not over-detection) but wrong.
+
 ## FACTORY — CLAUDE.md and writing-style rules (2026-08-10)
 
 **What changed.** Added `CLAUDE.md` at the repo root. It orients any agent to the PRD, the

@@ -99,3 +99,14 @@ production run (they are paid-for, not speculative); rules 10+ will be LabelHunt
   "this is how JSON.stringify works" is exactly the kind of confident-sounding claim the
   claim-provenance rule (CLAUDE.md) exists to catch, and it applies to the orchestrator's own
   writing, not just agents'.
+- 2026-08-10 (Wave 0 retro) — **The orchestrator's own scorecard discipline slipped once
+  dispatched agents started running their own gate loops.** TRO-456 and TRO-459 have a
+  scorecard row for every attempt, as the loop requires. TRO-457 and TRO-458 do not — both had
+  their own agent iterating through several gate re-runs and CodeRabbit rounds semi-autonomously
+  (see the "background-wait" and "still-alive-after-final-report" lessons above), and rows only
+  got appended for the attempts the orchestrator happened to run itself. `status.mjs`'s
+  first-attempt-pass number for this wave is real but under-representative — it counts 2
+  tickets, not 4. Going forward: when a dispatched agent's own worktree shows more commits or
+  gate runs than the orchestrator initiated, backfill scorecard rows from `.factory/gate-result.json`
+  history (or at minimum one row summarizing the total attempts) before treating the ticket as
+  closed — don't let the record be thinner than the work.

@@ -61,14 +61,19 @@ Q&A (TH-R1, TH-R8, TH-R10, TH-R19, TH-R21, TH-R22):
 Related API constraints captured for LH-011/LH-014: `claude-haiku-4-5` rejects
 `output_config.effort`; `claude-sonnet-5` returns a 400 for `temperature`; use
 `output_config.format`, never the deprecated `output_format`; structured outputs cannot bound
-`confidence` to 0–1, so the router clamps and treats out-of-range as a broken extraction.
+`confidence` to 0–1, so the router rejects (never clamps) an out-of-range value as a broken
+extraction — clamping would move malformed output onto the trusted path.
+
+**Also updated** — pointers only, no logic: `src/server/{extractor,resolver,router}/.gitkeep`
+now name this design document as the source for the ticket that fills each directory.
 
 **How to run it.** Nothing to run. Read
 `docs/checkpoints/cp1-cascade-router-prompts.md` top to bottom — about 40 minutes. The
 appendix is a four-item checklist for the live session.
 
-**Rollback.** Delete `docs/checkpoints/cp1-cascade-router-prompts.md` and revert this entry.
-Nothing depends on it; no code, schema, or configuration changed.
+**Rollback.** Delete `docs/checkpoints/cp1-cascade-router-prompts.md`, revert the three
+`.gitkeep` pointer updates, and revert this entry. Nothing depends on any of it; no code,
+schema, or configuration changed.
 
 **Known limits.** Nothing here is measured. Costs are derived arithmetic with the token
 assumptions written down; latency is "not measured"; thresholds are proposed. Regulatory

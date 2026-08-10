@@ -87,3 +87,15 @@ production run (they are paid-for, not speculative); rules 10+ will be LabelHunt
   boundary disagreed right at the edge. The fix pattern is the same each time — round first,
   branch on the rounded value. Apply this on sight to any new format/threshold function; don't
   wait for a reviewer to find each boundary one at a time.
+- 2026-08-10 (TRO-459) — **A security fix stated as fact needs the same verification as any
+  other claim — even from the orchestrator.** "JSON.stringify neutralizes the injection" was
+  written into a design doc, sounded right, and was wrong: `JSON.stringify` escapes quotes,
+  backslashes, and control characters, but not `<`, `>`, or `/` — a value containing
+  `</UNTRUSTED_DATA>` survives, literally, in the serialized output. CodeRabbit caught it by
+  actually running `JSON.stringify` against the attack string; the fix (Unicode-escape
+  `<`/`>`/`/` after stringifying) was then verified the same way before being written down
+  again. Any claim about what a stdlib function escapes, sanitizes, or neutralizes gets an
+  actual `node -e` run before it goes in a document someone will build a security boundary on —
+  "this is how JSON.stringify works" is exactly the kind of confident-sounding claim the
+  claim-provenance rule (CLAUDE.md) exists to catch, and it applies to the orchestrator's own
+  writing, not just agents'.

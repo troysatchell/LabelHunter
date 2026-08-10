@@ -1,0 +1,136 @@
+# CI — the merge gate the ticket factory depends on.
+#
+# STATUS: generated at factory build time (2026-08-10), NEVER YET EXECUTED — a
+# workflow file is a hypothesis until a real PR runs it. The scaffold ticket's
+# DoD includes opening a PR and watching this pass for real, then recording
+# `ciActuallyRan: true` in factory/config.yaml.
+#
+# Design notes carried from the reference factory:
+# - Test steps run with continue-on-error so the REAL check — testdiff.mjs
+#   comparing failure IDENTITIES against factory/quarantine.json — always runs
+#   and names which test broke. A plain red test step would skip the diff and
+#   report failure without saying what regressed.
+# - The quarantine baseline is read from the checked-out ref of the BASE, via
+#   the gate's own git-show pattern where applicable; here the job checks out
+#   the PR merge ref, and testdiff reads factory/quarantine.json from the base
+#   branch checkout step below.
+# - Pre-scaffold, the repo has no package.json; jobs no-op cleanly so docs-only
+#   PRs are not blocked on machinery that has nothing to check.
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: labelhunter
+          POSTGRES_PASSWORD: labelhunter_ci_password
+          POSTGRES_DB: labelhunter_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U labelhunter"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://labelhunter:labelhunter_ci_password@localhost:5432/labelhunter_ci
+      FACTORY_TICKET: ci
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect scaffold
+        id: scaffold
+        run: |
+          if [ -f package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::pre-scaffold repo — nothing to verify yet"
+          fi
+
+      - name: Setup pnpm
+        if: steps.scaffold.outputs.present == 'true'
+        uses: pnpm/action-setup@v4
+
+      - name: Setup node
+        if: steps.scaffold.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        if: steps.scaffold.outputs.present == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        if: steps.scaffold.outputs.present == 'true'
+        run: pnpm typecheck
+
+      - name: Lint
+        if: steps.scaffold.outputs.present == 'true'
+        run: pnpm lint
+
+      - name: Build
+        if: steps.scaffold.outputs.present == 'true'
+        run: pnpm build
+
+      - name: Migrate
+        if: steps.scaffold.outputs.present == 'true'
+        run: pnpm db:migrate
+
+      - name: Unit tests (JSON report)
+        if: steps.scaffold.outputs.present == 'true'
+        # continue-on-error so the identity diff below ALWAYS runs and names
+        # the break; the diff step is what fails the job.
+        continue-on-error: true
+        run: pnpm test -- --reporter=json --outputFile="$RUNNER_TEMP/unit-tests.json"
+
+      - name: Materialize base quarantine
+        if: steps.scaffold.outputs.present == 'true' && github.event_name == 'pull_request'
+        # Read the baseline from the BASE ref, never the PR branch — otherwise
+        # a branch can widen its own quarantine and pass.
+        run: |
+          git fetch origin "${{ github.base_ref }}" --depth 1
+          git show "origin/${{ github.base_ref }}:factory/quarantine.json" > "$RUNNER_TEMP/quarantine-base.json"
+
+      - name: Use working-tree quarantine (push builds)
+        if: steps.scaffold.outputs.present == 'true' && github.event_name != 'pull_request'
+        run: cp factory/quarantine.json "$RUNNER_TEMP/quarantine-base.json"
+
+      - name: Regression check (failure identities vs baseline)
+        if: steps.scaffold.outputs.present == 'true'
+        run: |
+          node scripts/factory/testdiff.mjs \
+            --suite unit \
+            --current "$RUNNER_TEMP/unit-tests.json" \
+            --baseline "$RUNNER_TEMP/quarantine-base.json" \
+            --repo-root "$GITHUB_WORKSPACE"
+
+      - name: Eval harness not regressed
+        if: steps.scaffold.outputs.present == 'true'
+        run: |
+          if node -e 'const p=require("./package.json"); process.exit(p.scripts && p.scripts["eval:check"] ? 0 : 1)'; then
+            pnpm eval:check
+          else
+            echo "::notice::no eval:check script yet (lands with the eval-harness ticket)"
+          fi
+
+      - name: Upload artifacts
+        if: always() && steps.scaffold.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-artifacts
+          path: |
+            ${{ runner.temp }}/unit-tests.json
+          if-no-files-found: ignore

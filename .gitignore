@@ -2,3 +2,11 @@
 
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
+
+# Factory worktree-local state (never committed)
+.factory/
+.factory-env
+.env.local
+
+# Node (scaffold will extend)
+node_modules/

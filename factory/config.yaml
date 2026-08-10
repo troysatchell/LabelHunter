@@ -1,0 +1,145 @@
+# factory/config.yaml — what the factory knows about this repo.
+#
+# THREE KINDS OF LINE, and they age differently:
+#   `planned:`  blocks are INTENT from docs/PRD.md — this repo is greenfield, so the toolchain
+#               is decided, not detected. Each planned block converts to `detected:` when the
+#               scaffold ticket (LH-SCAFFOLD) lands and the commands have actually been RUN.
+#   `detected:` blocks are FACTS, established by running something.
+#   `policy:`   blocks are DECISIONS a human made (here: via the PRD review rounds R1–R4).
+#               They go stale when the person changes their mind, which re-detection never finds.
+
+meta:
+  repo: labelhunter
+  generatedAt: 2026-08-10
+  generatedBy: build-factory
+  baseRef: main
+  bootstrapState: pre-scaffold        # no application code exists yet. The gate REFUSES to run
+                                      # until package.json exists; the scaffold ticket's DoD
+                                      # includes converting planned->detected below AND
+                                      # negative-testing the gate (references/verification.md).
+
+# ---------------------------------------------------------------------------
+planned:                              # from docs/PRD.md §3.6/§9 — decided, NOT yet run
+  toolchain:
+    packageManager: pnpm
+    framework: next.js (typescript, single app + background worker process)
+    unitTests: vitest (JSON reporter required — the gate's testdiff depends on it)
+    e2e: playwright
+    db: postgres (render in prod; docker container labelhunter-pg locally) + drizzle
+    deploy: render via render.yaml (web + worker + postgres)
+  commands:                           # the scaffold ticket must make each of these real,
+    typecheck: pnpm typecheck         # then record rc + duration here as detected
+    lint: pnpm lint                   # must have a real eslint config — a configless lint
+                                      # that exits 0 does NOT get wired into the gate
+    build: pnpm build
+    test: pnpm test                   # vitest run --reporter=json, ABSOLUTE --outputFile
+    e2e: pnpm test:e2e
+    evalCheck: pnpm eval:check        # eval harness vs committed baseline (ticket LH-EVAL);
+                                      # gate skips-with-reason until it exists
+    latencyCheck: pnpm latency:check  # p50/p95 vs budget (ticket LH-LAT); Tier 2 by default
+  sideEffects:
+    expectation: unit tests will truncate/reset their target database (drizzle + pg);
+      worktree.sh therefore provisions A DATABASE PER TICKET from day one rather than
+      discovering the corruption later. Verify what the scaffold's test setup actually
+      mutates and record it here as detected.
+    isolationRequired: worktree + database-per-ticket + probed ports
+
+detected:
+  git:
+    remotes: none yet                 # verified: `git remote -v` empty, 2026-08-10.
+                                      # Deliverable TH-R13 requires a GitHub repo — creating
+                                      # and first-pushing it is a hard stop (outward-facing).
+    ciHost: github (planned; .github/workflows/ci.yml generated, UNVERIFIED until first PR)
+    reviewBot: none yet               # CodeRabbit install is a hard stop (browser login).
+                                      # Until installed, triage runs on the CLI reviewer if
+                                      # authenticated, else review checks record skip.
+  services:
+    docker: available                 # verified: ship factory ran ship-audit-pg on this machine
+    postgresContainer: labelhunter-pg on :5434 (worktree.sh prints the exact docker run
+      command when absent; :5433 is ship-audit-pg — do not reuse it)
+
+# ---------------------------------------------------------------------------
+source:
+  kind: prd-decomposition             # docs/PRD.md, quote-verified against
+  requirements: audit/requirements/inventory.md   # TH-R1..R23 — the join key for evidence
+  tickets: linear
+  team: Troysatchell                  # team key TRO
+  project: LabelHunter                # project id eebd6ed2-1c19-4d51-b2af-8d2ddda6e4da
+  scopeGuard: NEVER dispatch outside project LabelHunter — this workspace also holds ship's
+    ShipShape Audit Remediation (TRO-164..249), a security audit (TRO-250..275), and other
+    projects. Filter by project, not by team.
+  itemIdPattern: "TRO-\\d+"           # the join key across tracker, branch, CHANGES.md, PR
+  ticketRange: TRO-456..TRO-487       # created 2026-08-10; review-born tickets will extend this
+  decomposition: factory/tickets.md   # committed ticket source with TH-R mapping + LH->TRO table
+
+# ---------------------------------------------------------------------------
+policy:                               # set via PRD rounds R1–R4 (2026-08-10). §11 autonomy
+                                      # defaults were applied because Troy skipped the
+                                      # question — CONFIRM AT FIRST REVIEW; until confirmed
+                                      # they are provisional, not settled.
+  merge: auto-on-gate-and-review-green   # PRD §11; four-leg green, see skill
+  deploy: auto-after-merge            # PRD §11 (deploy was NOT chosen as a checkpoint)
+  parallelism: dependency-driven      # worktree per ticket; stagger GATE runs, not agents
+  retryCap: 3                         # converts "burns tokens forever" into "surfaces a problem"
+  scopeLimitFiles: 40
+  spendCap:
+    projectedBuildEvalUsd: 25         # PRD §4: pause the factory and notify Troy at $25
+                                      # projected build+eval spend (default — confirm)
+  humanCheckpoints:                   # PRD §10 — blocking, unskippable. Overnight runs are
+                                      # allowed but NEVER across an unacknowledged checkpoint.
+    CP-1: cascade router + prompts (Haiku schema, thresholds, ReviewReason rules, resolver prompt)
+    CP-2: warning subsystem (canonical text sourcing, OCR, normalization, exact-compare, bold/caps)
+    CP-3: batch queue + workers (queue design, concurrency, rate limits, partial failure)
+    submission: README/approach final wording + the submit decision are ALWAYS Troy's
+  hardStops: see .claude/skills/labelhunter-factory/references/escalation.md
+  model:
+    ticketAgents: sonnet              # the brief carries the knowledge, not the model
+    orchestrator: sonnet              # ship's measured lesson: orchestration was ~75% of
+                                      # spend at the top tier; this loop is tables+checklists
+    # Raise per-DECISION with a stated reason: contested triage, recurrence judgments,
+    # checkpoint-material design work (CP-1/2/3 prep docs), inventing a metric.
+  checkpointSessions: between-waves
+
+# ---------------------------------------------------------------------------
+operation:                            # the compounding loop — see build-factory operation.md
+  scorecard: factory/scorecard.jsonl        # one row per gate ATTEMPT, incl. retries
+  ledger: factory/review-findings.jsonl     # every review finding, whatever its disposition
+  reviewTicketLabel: review                 # review-born tickets never count toward TH-R23's
+                                            # "working core first" scope decisions silently
+  recurrenceLadder:
+    briefRule: 2                      # distinct tickets -> add a rule to lessons.md
+    gateCheck: 3                      # -> the prompt is not holding; add a mechanical check
+  lessons: .claude/skills/labelhunter-factory/references/lessons.md
+
+# ---------------------------------------------------------------------------
+gate:
+  # Cheap tier, per ticket, every attempt. Order: cheap and fail-fast first.
+  checks:
+    - typecheck
+    - lint                            # only once a real config exists (scaffold DoD)
+    - build
+    - tests-vs-baseline               # failure IDENTITIES vs factory/quarantine.json
+    - tests-not-weakened              # net comparison; .skip/.todo unconditional fail
+    - regression-test-added           # added test CASE in a file vitest actually executes
+    - changes-entry                   # anchored TRO-id match in CHANGES.md
+    - eval-not-regressed              # pnpm eval:check once LH-EVAL lands; skip-with-reason before
+    - scope-bounded
+    - review-captured                 # advisory: pass/warn/skip only, never fail
+  baselineFrom: base-ref              # NEVER the ticket branch
+  quarantine: factory/quarantine.json
+  # Tier 2 (expensive, batched): eval-harness accuracy deltas, latency p50/p95 vs the 5s
+  # budget (TH-R2), cascade-vs-Sonnet benchmark. Conditions must match the recorded
+  # environment or the delta is meaningless.
+
+verification:                         # Phase 5 state. Blank/false = NOT trusted yet.
+  noOpBranchFails: not-run            # BLOCKED until scaffold — no suite exists
+  catchesBreakOneFixOne: not-run      # BLOCKED until scaffold
+  quarantineNotWidenable: not-run     # BLOCKED until scaffold
+  isolationSurvivesRetry: partial     # ticket-id validation + reject tested 2026-08-10;
+                                      # db+migrate cycle untestable pre-scaffold
+  ciActuallyRan: false                # workflow generated, never executed
+  knownLimits: >
+    The gate is UNVERIFIED end-to-end because there is nothing to run it against yet.
+    The scaffold ticket's definition of done includes: run every verification.md check,
+    record results here, and only then does the factory trust its own gate. Until that
+    ticket lands, nothing merges on gate evidence.

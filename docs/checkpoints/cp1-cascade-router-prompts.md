@@ -1082,8 +1082,9 @@ say so and lean entirely on the deterministic signals. That is a finding, not a 
 
 **Q7. What if the escalation rate comes in at 40% rather than 15%?**
 
-Then the cost story breaks and the batch story breaks with it: 300 labels would be about $6.60
-rather than $4, and 120 sequential resolver calls would dominate batch wall-clock time.
+Then the cost story breaks and the batch story breaks with it: 300 labels would be about $7.80
+rather than $4 — that is 300 × $0.006 plus 120 × $0.05 — and 120 resolver calls would dominate
+batch wall-clock time. Against the $25 cap that is about three batches, not six.
 
 Two responses.
 

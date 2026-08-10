@@ -1,0 +1,3 @@
+Background worker process (PRD §3.5/§3.6) lands here — LH-041 / TRO-474 (job queue +
+worker pool), deployed as its own Render process by LH-060 / TRO-481. Deliberately
+empty in the scaffold ticket (TRO-456).

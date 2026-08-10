@@ -67,9 +67,10 @@ TH-R12. Blocked by LH-003.
 `scripts/golden/imagen.ts` (Gemini API image generation): ~6 bottle/scene backdrops that
 sharp composites rendered labels onto, and ~5 fully generated wild labels. Transcribe each
 wild label's actually-rendered text into its spec; `verified: true` only after human check
-(fold into CP-2 review). `GOOGLE_API_KEY` in `.env.local` only — key provisioning is a hard
-stop (Troy provides). Dev-time dependency only; runtime has no Google surface (TH-R7 note
-goes in approach.md via LH-064).
+(fold into CP-2 review). `GOOGLE_API_KEY` in `.env.local` only — provisioned by Troy
+2026-08-10; `worktree.sh` passes it through to ticket worktrees, so no key hard stop remains.
+Dev-time dependency only; runtime has no Google surface (TH-R7 note goes in approach.md via
+LH-064).
 
 ### LH-006 · Golden set: verify gate + manifest + CI smoke  [High]
 TH-R12, TH-R17. Blocked by LH-004, LH-005.

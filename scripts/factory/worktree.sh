@@ -140,6 +140,21 @@ export FACTORY_DB_NAME=${DB_NAME}
 export DATABASE_URL=${DATABASE_URL}
 export APP_PORT=${APP_PORT}
 EOF
+# API keys live only in the primary checkout's .env.local (never in the repo).
+# Copy each key line through so a ticket that calls Anthropic (cascade) or
+# Gemini (golden-set image gen, LH-005) works without a human stop. Both files
+# get it: .env.local for Next.js/dotenv loaders, .factory-env (exported) for
+# bare scripts run from an agent shell. The value is never echoed — only the
+# key's name.
+for KEY_NAME in ANTHROPIC_API_KEY GOOGLE_API_KEY; do
+  if KEY_LINE="$(grep -h "^${KEY_NAME}=" "${REPO_ROOT}/.env.local" 2>/dev/null | head -n1)" \
+     && [ -n "$KEY_LINE" ]; then
+    printf '%s\n' "$KEY_LINE" >> .env.local
+    printf 'export %s\n' "$KEY_LINE" >> .factory-env
+    echo "  key:       ${KEY_NAME} passed through from primary .env.local"
+  fi
+done
+
 # .factory-env and .factory/ are ignored via the tracked .gitignore.
 # Do NOT write to .git/info/exclude here: in a linked worktree `.git` is a FILE
 # holding a gitdir pointer, so that path fails with "Not a directory" and,

@@ -4,6 +4,47 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-458 — LH-003: Golden set v1 — ground-truth schema, manifest, loader (2026-08-10)
+
+**What changed.** Ground-truth data and tooling for the golden set (TH-R12), scoped to the
+parts that do not need an image-generation tool:
+
+- **Ground-truth schema** (`src/lib/golden-set/types.ts`): a `GoldenSetCase` type covering
+  the five example fields on both the application and the label (PRD §2, TH-R11), the
+  Validation Router's expected per-field and label-level verdicts, and the `ReviewReason`
+  enum (PRD §3.3).
+- **Manifest** (`golden-set/manifest.json`): 29 complete ground-truth cases across all 12
+  required test categories (PRD §6) — clean match (4), ABV mismatch (3), title-case warning
+  (2), reworded warning (2), missing warning (2), case-variant brand (3), glare (2), rotation
+  (2), low light (2), tiny warning text (2), odd typography (2), conflicting
+  application-vs-label data (3). Includes the two named brief examples: `STONE'S THROW` vs
+  `Stone's Throw` (TH-R8, `case-14-case-variant-brand-stones-throw`) and Jenny Park's
+  title-case catch (TH-R9, `case-08-title-case-warning-prefix-only`).
+- **Loader + validator** (`src/lib/golden-set/loader.ts`, TDD'd in
+  `loader.test.ts`): `loadGoldenSetManifest()` reads and validates
+  `golden-set/manifest.json`; `validateManifest()` checks the shape and collects every
+  problem in one pass — missing fields, wrong types, an unknown category, a `reviewReason`
+  that doesn't match the label verdict, an `imagePath` whose filename doesn't match its
+  `caseId`, and duplicate case IDs. 12 test cases; confirmed red (missing module) before
+  `loader.ts` existed, green after.
+- **`golden-set/README.md`**: the manifest format, the image naming convention
+  (`golden-set/images/<caseId>.jpg`), and the known gap below.
+
+**Known gap, stated plainly: no label images.** `golden-set/images/` is empty. Every
+`imagePath` in the manifest names a file that does not exist. Generating 29 label images
+needs an AI image-generation tool or a camera; this ticket's agent had neither, and a
+placeholder file with a `.jpg` extension would silently pass a file-existence check while
+being useless for testing — worse than an honest gap. A follow-up ticket (LH-021 depends on
+this landing) must generate or source each image at the path its case already names; the
+case's `label` field is the spec for what the image must show.
+
+**How to run it.** `pnpm test -- src/lib/golden-set` runs the loader tests directly. Load the
+manifest from application code with `loadGoldenSetManifest()` (no arguments needed — it
+resolves `golden-set/manifest.json` relative to the repo root).
+
+**Rollback.** `git revert` this ticket's commits. Nothing outside `golden-set/` and
+`src/lib/golden-set/` depends on this yet.
+
 ## TRO-456 — LH-001: Scaffold Next.js + TS + Vitest + Playwright + Drizzle + CI (2026-08-10)
 
 **What changed.** Stood up the working application scaffold (TH-R13, TH-R18, TH-R19) that

@@ -123,6 +123,22 @@ The `relations()` graph was verified to type-check and to match the FK structure
 inspection, not by exercising `db.query.*` relational reads end-to-end — no code in this
 repo uses that API yet.
 
+## FACTORY — merge-changes.mjs (2026-08-10)
+
+**What changed.** Three tickets in a row (TRO-456 twice, TRO-457) hit the same `CHANGES.md`
+merge conflict — every branch adds an entry at the top, so every concurrent merge collides on
+the same lines. Per the recurrence-ladder rule in `references/lessons.md` ("3 = build the
+mechanical fix"), added `scripts/factory/merge-changes.mjs --check`: parses the file into
+whole entries (never line-by-line), checks per-entry fence balance, duplicate headings, and
+(with `--expect TICKET`) that a specific ticket's entry survived intact. Wired into `gate.sh`
+G7 alongside the existing ticket-ID grep. Negative-tested: a synthetic file with a spliced
+fence and one with a duplicated heading both correctly fail; a well-formed file passes.
+
+**How to run it.** `node scripts/factory/merge-changes.mjs --check CHANGES.md` (add
+`--expect TRO-nnn` to also confirm one ticket's entry). Runs automatically as part of the gate.
+
+**Rollback.** `git revert` this commit; G7 falls back to the grep-only check.
+
 ## TRO-456 — PR review round 2: CodeRabbit findings, 4 fixed (2026-08-10)
 
 **What changed.** GitHub-App CodeRabbit reviewed PR #1 and requested changes. All four inline

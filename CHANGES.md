@@ -4,6 +4,33 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-459 — PR review round 3: 4 findings, including a real flaw in round 2's own fix (2026-08-10)
+
+**What changed.** CodeRabbit reviewed round 2's fixes and found that one of them — the
+JSON-serialization defense against delimiter injection — was itself incomplete. Verified with a
+real `node -e` run before believing it: `JSON.stringify` escapes quotes, backslashes, and
+control characters, but leaves `<`, `>`, and `/` untouched, so a value containing the literal
+string `</UNTRUSTED_DATA>` still contains it after `JSON.stringify` — the exact attack round 2
+claimed to have closed. Fixed for real this time: Unicode-escape `<`/`>`/`/` **after**
+`JSON.stringify`, verified empirically that the escaped output no longer contains the attack
+string.
+
+3 more findings, all fixed:
+- §4.4's rejection-payload fix (round 2) described the right payload shape for
+  `government_warning` but never updated the downstream predicate that reads it —
+  `MISSING_REQUIRED_FIELD` (§5.3) still said `value === null` uniformly, which is `false` for a
+  field that structurally has no `value`. Now field-shape-aware: `value === null` for the five
+  fields, `present === null || present === false` for the warning.
+- The prompt-injection test requirement asked for the resolver's "disposition" on
+  `government_warning` — but that field never gets a disposition at all (rule 5: re-transcribed,
+  never judged). Rewritten to assert what the field actually produces: the transcription output
+  is byte-identical whether or not a sibling field carries the injection payload.
+
+**How to run it.** Nothing to run; re-read the corrected sections. The escaping claim is
+verifiable directly: `node -e 'console.log(JSON.stringify({v:"</UNTRUSTED_DATA>"}).replace(/[<>\/]/g,c=>"\\u00"+c.charCodeAt(0).toString(16)))'`.
+
+**Rollback.** `git revert` this commit.
+
 ## TRO-459 — PR review round 2: 3 more CodeRabbit findings, all fixed (2026-08-10)
 
 **What changed.** A second CodeRabbit pass on the doc found 3 more real issues:

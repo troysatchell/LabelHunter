@@ -4,6 +4,79 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-459 — LH-CP1: ⛔ CHECKPOINT 1 walkthrough material (2026-08-10)
+
+**This entry does not clear a checkpoint.** It adds the material Troy reads *at* the
+checkpoint. CP-1 stays blocking until Troy runs the walkthrough and gives explicit
+acknowledgment. Until then, LH-010 … LH-015 (TRO-460 … TRO-465) do not start.
+
+**What changed.** One new document: `docs/checkpoints/cp1-cascade-router-prompts.md`. No
+product code. It covers the four things PRD §10 requires CP-1 to cover, plus the "defend it"
+Q&A (TH-R1, TH-R8, TH-R10, TH-R19, TH-R21, TH-R22):
+
+- **The Haiku extraction prompt** — full system and user drafts, plus the strict JSON schema.
+  Every field carries `value`, `evidence`, and `confidence`. One load-bearing decision: the
+  extractor sees the image only, never the application record. That removes anchoring, makes
+  the extraction independent evidence rather than a confirmation, and turns the extractor's
+  inferred beverage type into a free cross-check against the declared one.
+- **Confidence thresholds** — three bands (trusted ≥ 0.85, uncertain 0.60–0.85, unusable
+  < 0.60), a higher bar of 0.90 for the warning transcription, and an asymmetry rule: escalate
+  a MISMATCH below 0.90 but a MATCH only below 0.60, because agreement with the application
+  corroborates a weak read and a mismatch does not. Plus three deterministic overrides that
+  ignore confidence entirely — the strongest is that `normalize(value)` must be a substring of
+  `normalize(evidence)`, which catches a confident invention without consulting confidence.
+  Every number is marked **proposed**, with the golden-set sweep (LH-003 → LH-030) that
+  replaces it: reliability diagram, then threshold sweep, then pick the knee of verdict
+  accuracy against auto-verified rate.
+- **The `ReviewReason` routing rules** — a precise deterministic trigger for each of the eight
+  enum members, a precedence order, and the naming principle that keeps two of them apart:
+  `CONFLICTING_EXTRACTION` means we do not trust our own reading; `AMBIGUOUS_*` means we read
+  it fine and it still is not decidable. `LOW_MODEL_CONFIDENCE` is deliberately last — its rate
+  is a monitoring signal that the taxonomy has a gap.
+- **The Sonnet resolver prompt** — full drafts, its output schema, and the rule that keeps the
+  design defensible: the resolver *judges* only brand and class equivalence (where TH-R8
+  literally asks for judgment); everywhere else it returns a corrected reading and
+  deterministic code re-decides. It never judges the government warning — it re-transcribes,
+  and code compares against the statute.
+- **"Defend it" Q&A** — 15 questions with drafted answers, including the five the ticket
+  named, plus prompt injection, extractor blindness, resolver anchoring, escalation-rate
+  blowout, and "how do I know this is not just escalating everything to look safe".
+- **Open questions for Troy** — seven real forks, each with a recommendation and the cost of
+  choosing wrong.
+
+**Two findings worth reading before the walkthrough.**
+
+1. **The resolver cost estimate in PRD §4 looks low.** Derived arithmetic from published
+   prices puts an escalation at about $0.05, not ~$0.02. Two named causes: adaptive thinking is
+   on by default on `claude-sonnet-5` and bills as output tokens, and full-resolution vision
+   costs roughly three times the tokens of a smaller image. Both are deliberate accuracy
+   choices; neither was in the original estimate. A 300-label batch is therefore about $4
+   (cascade) against about $15 (Sonnet on every label) — still ~3.7× cheaper, but only about
+   six full batches against the $25 cap. Open question 4.
+2. **Prompt caching on the extractor will silently do nothing.** The documented minimum
+   cacheable prefix on `claude-haiku-4-5` is 4096 tokens; our extractor prompt is well under
+   that. It fails with no error — just `cache_creation_input_tokens: 0`. Do not add
+   `cache_control` there and do not claim a caching saving.
+
+Related API constraints captured for LH-011/LH-014: `claude-haiku-4-5` rejects
+`output_config.effort`; `claude-sonnet-5` returns a 400 for `temperature`; use
+`output_config.format`, never the deprecated `output_format`; structured outputs cannot bound
+`confidence` to 0–1, so the router clamps and treats out-of-range as a broken extraction.
+
+**How to run it.** Nothing to run. Read
+`docs/checkpoints/cp1-cascade-router-prompts.md` top to bottom — about 40 minutes. The
+appendix is a four-item checklist for the live session.
+
+**Rollback.** Delete `docs/checkpoints/cp1-cascade-router-prompts.md` and revert this entry.
+Nothing depends on it; no code, schema, or configuration changed.
+
+**Known limits.** Nothing here is measured. Costs are derived arithmetic with the token
+assumptions written down; latency is "not measured"; thresholds are proposed. Regulatory
+values — ABV optionality per beverage type, ABV tolerance, standards of fill — are marked
+VERIFY and default to the strictest interpretation, for LH-013 to verify against ttb.gov and
+cite. The document deliberately does not decide anything owned by CP-2 (warning subsystem) or
+CP-3 (batch queue).
+
 ## TRO-456 — LH-001: Scaffold Next.js + TS + Vitest + Playwright + Drizzle + CI (2026-08-10)
 
 **What changed.** Stood up the working application scaffold (TH-R13, TH-R18, TH-R19) that

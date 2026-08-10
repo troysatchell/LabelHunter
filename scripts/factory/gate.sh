@@ -73,6 +73,28 @@ BASE_REF="${FACTORY_BASE_REF:-main}"
 OUT_DIR="${WT_ROOT}/.factory"
 mkdir -p "$OUT_DIR"
 
+# Precondition (full gate only — --fast is the documented dirty-tree-tolerant
+# inner loop, exempt it): a clean worktree. Several checks below
+# (tests:not-weakened, regression-test, changes-entry, scope) diff
+# BASE_REF...HEAD — they are blind to anything not committed. pnpm test/build
+# run against the actual filesystem, so an uncommitted change can make the
+# cheap tests pass while the diff-based checks silently grade a stale,
+# already-committed state: a "pass" that does not describe what HEAD actually
+# contains. TRO-460 finished real, correct work and reported done with it
+# still uncommitted — this refuses loudly instead of certifying a headSha
+# that does not match the tree it was tested on.
+if [ "$FAST" != 1 ]; then
+  DIRTY="$(git status --porcelain 2>/dev/null)"
+  if [ -n "$DIRTY" ]; then
+    echo "ERROR: worktree is not clean — uncommitted changes present:" >&2
+    echo "$DIRTY" >&2
+    echo "       Commit (or discard) before running the full gate. A pass here" >&2
+    echo "       would certify headSha=$(git rev-parse HEAD 2>/dev/null) against a" >&2
+    echo "       tree that does not match it." >&2
+    exit 2
+  fi
+fi
+
 # The quarantine baseline is materialized from BASE_REF, never read from the
 # ticket branch — reading the branch copy would let an agent append its own new
 # failures and pass. Legitimately FIXING a quarantined test still works:

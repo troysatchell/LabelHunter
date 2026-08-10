@@ -99,6 +99,24 @@ production run (they are paid-for, not speculative); rules 10+ will be LabelHunt
   "this is how JSON.stringify works" is exactly the kind of confident-sounding claim the
   claim-provenance rule (CLAUDE.md) exists to catch, and it applies to the orchestrator's own
   writing, not just agents'.
+- 2026-08-10 (Wave 1, TRO-460) — **The TRO-456 "uncommitted work is invisible" lesson
+  recurred on the very next ticket that had the chance to.** The LH-010 agent wrote real,
+  correct fixes for its own CodeRabbit findings (a `RangeError` guard against NaN/fractional
+  pixel regions reaching `sharp().extract()`, and a white-flatten before JPEG encode so a
+  transparent PNG doesn't go dark) — then reported the ticket finished with those five files
+  still uncommitted. Its final message also claimed it would "wait for a gate monitor
+  notification," which does not exist; only the orchestrator's own gate run is authoritative.
+  A same-wave sibling (TRO-461) made the identical false "waiting for a notification" claim
+  despite having actually committed and self-gated cleanly — so the false-notification belief
+  and the uncommitted-work problem are two separate failure modes wearing the same words, not
+  one. Two tickets tripping the uncommitted-work half of this in one wave (TRO-456, TRO-460)
+  crosses the recurrence-ladder's mechanical-check line: `scripts/factory/gate.sh` now refuses
+  with `exit 2` on a non-clean worktree (checked via `git status --porcelain`) before running
+  anything, whenever it is not called with `--fast` (the documented dirty-tree-tolerant inner
+  loop stays exempt) — a "pass" against an uncommitted tree was certifying a `headSha` that did
+  not match what was actually tested. Brief wording alone had already stated this rule twice
+  (agent-contract.md's "confirm git status --short is clean," this file's TRO-456 entry) and
+  it still recurred — the mechanical check is the fix now, not a third restatement.
 - 2026-08-10 (Wave 0 retro) — **The orchestrator's own scorecard discipline slipped once
   dispatched agents started running their own gate loops.** TRO-456 and TRO-459 have a
   scorecard row for every attempt, as the loop requires. TRO-457 and TRO-458 do not — both had

@@ -1,5 +1,5 @@
 {
-  "id": "e313ab6a-0ae4-4cf2-896c-f8aee1e763f9",
+  "id": "21660ee9-c865-42a6-92c7-357a3b18b254",
   "prevId": "1974f70d-f5e8-4083-b9b8-c5f93e31810c",
   "version": "7",
   "dialect": "postgresql",
@@ -251,7 +251,32 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "batch_jobs_total_count_non_negative": {
+          "name": "batch_jobs_total_count_non_negative",
+          "value": "\"batch_jobs\".\"total_count\" >= 0"
+        },
+        "batch_jobs_processed_count_bounded": {
+          "name": "batch_jobs_processed_count_bounded",
+          "value": "\"batch_jobs\".\"processed_count\" >= 0 AND \"batch_jobs\".\"processed_count\" <= \"batch_jobs\".\"total_count\""
+        },
+        "batch_jobs_auto_verified_count_bounded": {
+          "name": "batch_jobs_auto_verified_count_bounded",
+          "value": "\"batch_jobs\".\"auto_verified_count\" >= 0 AND \"batch_jobs\".\"auto_verified_count\" <= \"batch_jobs\".\"total_count\""
+        },
+        "batch_jobs_resolved_by_sonnet_count_bounded": {
+          "name": "batch_jobs_resolved_by_sonnet_count_bounded",
+          "value": "\"batch_jobs\".\"resolved_by_sonnet_count\" >= 0 AND \"batch_jobs\".\"resolved_by_sonnet_count\" <= \"batch_jobs\".\"total_count\""
+        },
+        "batch_jobs_needs_human_count_bounded": {
+          "name": "batch_jobs_needs_human_count_bounded",
+          "value": "\"batch_jobs\".\"needs_human_count\" >= 0 AND \"batch_jobs\".\"needs_human_count\" <= \"batch_jobs\".\"total_count\""
+        },
+        "batch_jobs_failed_count_bounded": {
+          "name": "batch_jobs_failed_count_bounded",
+          "value": "\"batch_jobs\".\"failed_count\" >= 0 AND \"batch_jobs\".\"failed_count\" <= \"batch_jobs\".\"total_count\""
+        }
+      },
       "isRLSEnabled": false
     },
     "public.field_results": {
@@ -713,7 +738,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "review_queue_disposition_disposed_at_consistency": {
+          "name": "review_queue_disposition_disposed_at_consistency",
+          "value": "(\"review_queue\".\"disposition\" IS NULL) = (\"review_queue\".\"disposed_at\" IS NULL)"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.verifications": {

@@ -65,6 +65,33 @@ export scan never saw them, even though the tables used them. Fixed with
 trusting it (this repo's "claims carry provenance" rule) — a `pnpm db:migrate` exit code
 of 0 would have hidden this, since the broken migration was never applied.
 
+**CodeRabbit review triage (6 findings; 5 fixed, 1 explicitly skipped):**
+- `enums.test.ts` claimed a wrong-case test for both guards but only had one. Fixed —
+  added the missing `toBeverageType("Beer")` case; the claim is now true.
+- `review_queue`: added a `CHECK` requiring `disposition` and `disposed_at` to be null or
+  non-null together — one fact, two columns, must move as a pair.
+- `batch_jobs`: added `CHECK` constraints — every counter non-negative, and each of
+  `processedCount`/`autoVerifiedCount`/`resolvedBySonnetCount`/`needsHumanCount`/
+  `failedCount` no greater than `totalCount`. Bounded independently, not summed to equal
+  `totalCount`: the batch worker (LH-041) updates one counter at a time, and a sum
+  constraint would reject a legal state between two separate `UPDATE`s.
+- `batch_jobs`/`verifications`/`review_queue`: `updatedAt` now carries `.$onUpdate(() =>
+  new Date())`. This is a drizzle-orm runtime default, not a database trigger — it fires
+  on every `db.update()` call that does not set the column itself, verified against the
+  real database (an `UPDATE` through Drizzle bumped `updated_at` and left `created_at`
+  unchanged). It does not protect a write that bypasses the ORM; documented as a known
+  limit in the column comment rather than built out further, since every write path in
+  this app goes through Drizzle.
+- `seed.ts`: wrapped every insert in one `db.transaction()`. A failure partway through now
+  rolls back the whole batch instead of leaving a half-seeded database that would silently
+  defeat the "already seeded" guard on the next run.
+- **Skipped:** enforcing that a verification's application, image, and batch job all
+  belong to the same batch. A real DB-level guarantee needs a trigger or composite foreign
+  keys spanning three tables — real design work that belongs with the code that creates
+  verification rows (LH-041's batch worker, behind the CP-3 batch-queue checkpoint), not
+  invented ahead of that design in a schema ticket. Flagged in the final ticket report as a
+  known gap, not silently dropped.
+
 **How to run it.** `source .factory-env` (or point `DATABASE_URL` at your own Postgres),
 then `pnpm db:migrate` to apply `0001_product_schema.sql`, then `pnpm db:seed` for dev
 fixtures. `pnpm db:generate` regenerates a migration after a future `schema.ts` edit.

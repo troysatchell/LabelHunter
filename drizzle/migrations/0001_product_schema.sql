@@ -33,7 +33,13 @@ CREATE TABLE "batch_jobs" (
 	"started_at" timestamp with time zone,
 	"completed_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "batch_jobs_total_count_non_negative" CHECK ("batch_jobs"."total_count" >= 0),
+	CONSTRAINT "batch_jobs_processed_count_bounded" CHECK ("batch_jobs"."processed_count" >= 0 AND "batch_jobs"."processed_count" <= "batch_jobs"."total_count"),
+	CONSTRAINT "batch_jobs_auto_verified_count_bounded" CHECK ("batch_jobs"."auto_verified_count" >= 0 AND "batch_jobs"."auto_verified_count" <= "batch_jobs"."total_count"),
+	CONSTRAINT "batch_jobs_resolved_by_sonnet_count_bounded" CHECK ("batch_jobs"."resolved_by_sonnet_count" >= 0 AND "batch_jobs"."resolved_by_sonnet_count" <= "batch_jobs"."total_count"),
+	CONSTRAINT "batch_jobs_needs_human_count_bounded" CHECK ("batch_jobs"."needs_human_count" >= 0 AND "batch_jobs"."needs_human_count" <= "batch_jobs"."total_count"),
+	CONSTRAINT "batch_jobs_failed_count_bounded" CHECK ("batch_jobs"."failed_count" >= 0 AND "batch_jobs"."failed_count" <= "batch_jobs"."total_count")
 );
 --> statement-breakpoint
 CREATE TABLE "field_results" (
@@ -69,7 +75,8 @@ CREATE TABLE "review_queue" (
 	"disposition" "review_disposition",
 	"disposed_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "review_queue_disposition_disposed_at_consistency" CHECK (("review_queue"."disposition" IS NULL) = ("review_queue"."disposed_at" IS NULL))
 );
 --> statement-breakpoint
 CREATE TABLE "verifications" (

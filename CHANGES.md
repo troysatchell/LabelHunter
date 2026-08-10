@@ -4,6 +4,98 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-457 — LH-002: Database schema + migrations (2026-08-10)
+
+**What changed.** Added the real Drizzle + Postgres schema for LabelHunter (PRD §3.6,
+TH-R6, TH-R22) in `src/lib/db/`, extending the scaffold's `_meta`-only `schema.ts`:
+
+- **`enums.ts`** — the eight closed-set vocabularies as `pgEnum` types, each backed by one
+  `as const` array so the TypeScript union, the Postgres enum, and a runtime guard all stay
+  in sync: `beverage_type` (beer/wine/spirits), `label_verdict` (PASS/FAIL/REVIEW),
+  `field_verdict` (MATCH/MISMATCH/NEEDS_REVIEW), `field_name` (the 5 example fields from
+  PRD §2), `review_reason` (the 8-value `ReviewReason` enum from PRD §3.3, verbatim),
+  `resolution_path` (which model(s) resolved a verification), `batch_job_status`, and
+  `review_disposition`. `toReviewReason` and `toBeverageType` narrow an untyped string to
+  the matching type or throw, naming every legal value in the error — the checkpoint
+  between loosely-typed input (model output, a CSV cell) and an insert. TDD: red-first
+  tests in `enums.test.ts` (8 cases) cover valid values, invalid values, and a near-miss
+  (wrong case) for each guard.
+- **`schema.ts`** — six product tables: `batch_jobs` (status + per-item counters the
+  batch-progress UI polls), `applications` (brand/class/ABV+proof/net contents/beverage
+  type — the claimed values a label gets checked against), `label_images` (storage
+  reference, original filename, post-preprocessing dimensions; linked to an application
+  for single-label verify or to a batch job before per-row pairing, per PRD §3.5), `verifications` (one row per completed label-level result: verdict, which model(s)
+  resolved it, links to application/image/batch job), `field_results` (one row per field
+  per verification: extracted value, verbatim evidence — required, not optional, per
+  PRD §3.2 — confidence 0–1, verdict, one-line reason), and `review_queue` (one row per
+  needs-human item: reason, nullable resolver output, nullable human disposition). Every
+  closed-set column uses a Postgres enum, not free text. Reasonable indexes throughout,
+  including a partial index on `review_queue` for the unresolved-items view the review
+  queue UI needs, and a foreign key on every reference — all `ON DELETE CASCADE` (a
+  prototype has no retention requirement, and a child row is meaningless without its
+  parent). Full `relations()` graph for the query API.
+- **No PII, checked column by column (TH-R6).** No table anywhere stores a real person's
+  name, email, address, or other identifier. `review_queue` in particular records a
+  human's approve/reject disposition and when, but not who — adding a reviewer-identity
+  column was considered and rejected; nothing in the PRD or the rubric asks for it, and
+  it would be the one clear PII risk in this schema.
+- **Migration** `drizzle/migrations/0001_product_schema.sql`, generated with
+  `pnpm db:generate` (not hand-written), applied with `pnpm db:migrate`, and verified with
+  direct `psql` queries against this worktree's own database: `\dt` lists all 7 tables,
+  `\d <table>` for each of the 6 new ones shows the expected columns, indexes, and
+  constraints, and manual negative inserts confirm each constraint fires (the
+  `label_images` ownership `CHECK`, the `field_results` confidence-range `CHECK`, the
+  `field_results` and `review_queue` unique indexes) — not just declared, but load-bearing.
+- **`db:seed`** (`pnpm db:seed`, added to `package.json`, run via the new `tsx` dev
+  dependency) inserts a small, obviously-fake dev dataset spanning all six tables: one
+  batch job, three applications (a clean single-label PASS, a batch-paired wine with a
+  low-confidence ABV read that lands in the review queue, and a single-label FAIL on a
+  title-cased government warning — Jenny's real catch, PRD §3.4), three label images,
+  three verifications, fifteen field results, and one review-queue entry. Refuses to run
+  twice against the same database instead of silently duplicating fixtures.
+
+**A real drizzle-kit bug found and fixed, in scope for this ticket.** The first generated
+migration created all 7 tables but zero `CREATE TYPE` statements, even though every enum
+column referenced a type name that did not yet exist — an unusable migration that would
+fail on apply. Cause: `drizzle-kit generate` only discovers `pgEnum`/`pgTable` objects
+that are visible on the configured schema file's own exports; the enums lived in
+`enums.ts` and were only imported (not re-exported) by `schema.ts`, so drizzle-kit's
+export scan never saw them, even though the tables used them. Fixed with
+`export * from "./enums"` in `schema.ts`. Caught by reading the generated SQL before
+trusting it (this repo's "claims carry provenance" rule) — a `pnpm db:migrate` exit code
+of 0 would have hidden this, since the broken migration was never applied.
+
+**How to run it.** `source .factory-env` (or point `DATABASE_URL` at your own Postgres),
+then `pnpm db:migrate` to apply `0001_product_schema.sql`, then `pnpm db:seed` for dev
+fixtures. `pnpm db:generate` regenerates a migration after a future `schema.ts` edit.
+
+**Rollback.** Drop the six product tables and their enum types (or restore the pre-0001
+database from a snapshot) and delete `drizzle/migrations/0001_product_schema.sql` plus its
+entry in `drizzle/migrations/meta/_journal.json`. `_meta` and the scaffold are untouched.
+
+**Design calls the PRD left open (flagging for visibility, not asking permission):**
+- No per-application government-warning column — the warning subsystem (PRD §3.4) always
+  compares extracted text against one fixed statutory string, so there is no per-application
+  value to store.
+- `label_images` carries both a nullable `application_id` and a nullable `batch_job_id`
+  (at least one required, via `CHECK`) rather than a single polymorphic reference — set
+  directly for single-label upload, left to `batch_job_id` alone for a batch upload before
+  its CSV-row pairing exists.
+- `field_name` and beverage-type-driven optionality rules (e.g. ABV optionality per PRD §2)
+  are two different things: this ticket enumerates the closed set of field names in the
+  schema, but does not implement any optionality *rule* — that logic, and its tests, belong
+  to LH-013 (field comparators), which this ticket does not touch.
+- Integer identity columns (`generatedAlwaysAsIdentity()`), not `serial` — Postgres's own
+  recommended replacement since v10, and pre-empts the identical suggestion CodeRabbit made
+  on the TRO-456 scaffold PR for `_meta.id`.
+
+**Known limits / not verified from this ticket.** `db:seed`'s only tested behavior is the
+scripted insert path itself (run against a real database, output checked); it has no
+Vitest coverage of its own, since it is a sequence of fixture inserts, not a pure function.
+The `relations()` graph was verified to type-check and to match the FK structure by
+inspection, not by exercising `db.query.*` relational reads end-to-end — no code in this
+repo uses that API yet.
+
 ## TRO-456 — LH-001: Scaffold Next.js + TS + Vitest + Playwright + Drizzle + CI (2026-08-10)
 
 **What changed.** Stood up the working application scaffold (TH-R13, TH-R18, TH-R19) that

@@ -51,6 +51,10 @@ describe("toBeverageType", () => {
       /toBeverageType: "cider" is not one of/,
     );
   });
+
+  it("throws on a near-miss (wrong case) instead of silently accepting it", () => {
+    expect(() => toBeverageType("Beer")).toThrow();
+  });
 });
 
 describe("assertEnumMember", () => {

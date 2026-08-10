@@ -96,6 +96,30 @@ The `relations()` graph was verified to type-check and to match the FK structure
 inspection, not by exercising `db.query.*` relational reads end-to-end — no code in this
 repo uses that API yet.
 
+## TRO-456 — PR review round 2: CodeRabbit findings, 4 fixed (2026-08-10)
+
+**What changed.** GitHub-App CodeRabbit reviewed PR #1 and requested changes. All four inline
+findings were real defects in code this PR added; all four are fixed here.
+- `playwright.config.ts` (major): read `PORT`/`APP_PORT` straight from `process.env` with no
+  `.env.local` loader. A factory worktree works by accident (`.factory-env` exports the
+  variable into the shell); a plain checkout following this PR's own "How to run it"
+  instructions would silently fall back to port 3000. Added the same `dotenv` load
+  `drizzle.config.ts` already uses.
+- `src/lib/db/index.ts` (major): the `pg.Pool` had no `error` listener. An idle client that
+  loses its connection emits `error` on the pool; with nothing listening, Node treats it as
+  unhandled and can crash the process. Added a listener that logs and lets the pool recover.
+- `src/lib/db/index.ts` (trivial): `connectionTimeoutMillis` defaulted to 0 (no timeout) on an
+  unreachable database. Set to 10s.
+- `src/lib/utils/format.ts` (minor): the third rounding-boundary bug in this function — `999.5`
+  rounded to `"1000ms"` while `formatDuration(1000)` itself renders `"1.00s"`, because the
+  millisecond branch decided its unit on the unrounded value. Rounds once now, before any
+  branch. A standing lesson on this pattern is in `references/lessons.md`.
+
+**How to run it.** `pnpm test` — one new case (`formatDuration(999.5)`). No other setup change.
+
+**Rollback.** `git revert` this commit; each fix is independent of the others and of the
+original scaffold commits.
+
 ## TRO-456 — LH-001: Scaffold Next.js + TS + Vitest + Playwright + Drizzle + CI (2026-08-10)
 
 **What changed.** Stood up the working application scaffold (TH-R13, TH-R18, TH-R19) that

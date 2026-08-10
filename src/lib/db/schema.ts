@@ -90,11 +90,46 @@ export const batchJobs = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // `.$onUpdate()` is a drizzle-orm runtime default: it fills this column
+    // on every `db.update()` call that does not set it explicitly. It does
+    // NOT add a database trigger (drizzle-kit ignores it — see the drizzle
+    // docs note on this API), so a write that bypasses the ORM would not
+    // bump it. Every write path in this app goes through Drizzle, so this
+    // is enough for the prototype; a real trigger would be the next step
+    // if a second DB client ever appears.
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .defaultNow(),
+      .defaultNow()
+      .$onUpdate(() => new Date()),
   },
-  (table) => [index("batch_jobs_status_idx").on(table.status)],
+  (table) => [
+    index("batch_jobs_status_idx").on(table.status),
+    // Each counter is independently bounded to [0, totalCount] rather than
+    // constrained to sum to totalCount/processedCount — the worker (LH-041)
+    // updates one counter at a time, and a sum constraint would reject a
+    // legal intermediate state between two separate UPDATEs.
+    check("batch_jobs_total_count_non_negative", sql`${table.totalCount} >= 0`),
+    check(
+      "batch_jobs_processed_count_bounded",
+      sql`${table.processedCount} >= 0 AND ${table.processedCount} <= ${table.totalCount}`,
+    ),
+    check(
+      "batch_jobs_auto_verified_count_bounded",
+      sql`${table.autoVerifiedCount} >= 0 AND ${table.autoVerifiedCount} <= ${table.totalCount}`,
+    ),
+    check(
+      "batch_jobs_resolved_by_sonnet_count_bounded",
+      sql`${table.resolvedBySonnetCount} >= 0 AND ${table.resolvedBySonnetCount} <= ${table.totalCount}`,
+    ),
+    check(
+      "batch_jobs_needs_human_count_bounded",
+      sql`${table.needsHumanCount} >= 0 AND ${table.needsHumanCount} <= ${table.totalCount}`,
+    ),
+    check(
+      "batch_jobs_failed_count_bounded",
+      sql`${table.failedCount} >= 0 AND ${table.failedCount} <= ${table.totalCount}`,
+    ),
+  ],
 );
 
 /**
@@ -175,6 +210,12 @@ export const labelImages = pgTable(
       "label_images_belongs_to_something",
       sql`${table.applicationId} IS NOT NULL OR ${table.batchJobId} IS NOT NULL`,
     ),
+    // NOT enforced here: that a verification's application, image, and
+    // batch job all belong to the same batch. A DB-level guarantee needs
+    // either a trigger or composite foreign keys across all three tables —
+    // real complexity that belongs with the code that creates verification
+    // rows (LH-041's batch worker, behind the CP-3 batch-queue checkpoint),
+    // not invented ahead of that design. Flagged in this ticket's report.
   ],
 );
 
@@ -204,7 +245,8 @@ export const verifications = pgTable(
       .defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .defaultNow(),
+      .defaultNow()
+      .$onUpdate(() => new Date()),
   },
   (table) => [
     index("verifications_application_id_idx").on(table.applicationId),
@@ -283,7 +325,8 @@ export const reviewQueue = pgTable(
       .defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .defaultNow(),
+      .defaultNow()
+      .$onUpdate(() => new Date()),
   },
   (table) => [
     // A verification needs human review at most once — one queue entry
@@ -297,6 +340,12 @@ export const reviewQueue = pgTable(
     index("review_queue_unresolved_idx")
       .on(table.createdAt)
       .where(sql`${table.disposition} IS NULL`),
+    // A disposition and its timestamp are one fact recorded in two
+    // columns — either both are set (resolved) or neither is (pending).
+    check(
+      "review_queue_disposition_disposed_at_consistency",
+      sql`(${table.disposition} IS NULL) = (${table.disposedAt} IS NULL)`,
+    ),
   ],
 );
 

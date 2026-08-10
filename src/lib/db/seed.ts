@@ -13,6 +13,11 @@
  * freshly migrated before running this. It refuses to run (loudly, not
  * silently) against a database that already has application rows, so a
  * second accidental run doesn't produce duplicate fixtures.
+ *
+ * Every insert below runs inside one transaction. If any statement fails,
+ * Postgres rolls back the whole batch — a failure partway through never
+ * leaves a half-seeded database that would (wrongly) pass the "already
+ * seeded" guard above on the next run without ever finishing.
  */
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -48,7 +53,8 @@ async function main() {
   const db = drizzle(pool, { schema });
 
   try {
-    const [existing] = await db
+    await db.transaction(async (tx) => {
+    const [existing] = await tx
       .select({ id: schema.applications.id })
       .from(schema.applications)
       .limit(1);
@@ -62,7 +68,7 @@ async function main() {
 
     // A completed batch of two, one auto-verified and one escalated —
     // exercises batch_jobs' progress counters (PRD §3.5).
-    const [batch] = await db
+    const [batch] = await tx
       .insert(schema.batchJobs)
       .values({
         status: "COMPLETED",

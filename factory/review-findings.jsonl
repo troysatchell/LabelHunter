@@ -1,0 +1,1 @@
+{"ticket":"TRO-456","pr":"pending","source":"cli","severity":"minor","category":"rounding-boundary","file":"src/lib/utils/format.ts","disposition":"fixed","summary":"seconds branch rounds 59.999s up to display '60.0s' instead of falling through to minutes format","ts":"2026-08-10"}

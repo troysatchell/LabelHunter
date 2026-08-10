@@ -1,6 +1,0 @@
-Haiku Extractor (PRD §3.2) lands here — LH-011 / TRO-461. Deliberately empty in the
-scaffold ticket (TRO-456).
-
-Design settled at CHECKPOINT 1: docs/checkpoints/cp1-cascade-router-prompts.md §3
-(system prompt, user message, JSON schema, API settings). Read it before writing
-code here.

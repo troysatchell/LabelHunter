@@ -4,6 +4,87 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-461 — LH-011: Haiku extractor (2026-08-10)
+
+**What changed.** The Haiku extractor (PRD §3.2, TH-R1, TH-R11) under
+`src/server/extractor/`. It answers one question — what does this label say? — with
+one Haiku call per label, strict JSON output, and no view of the application record
+(CP-1 §3.1: no anchoring). Comparing the read to an application is the Validation
+Router's job (LH-012/013), not this ticket's.
+
+- **`prompt.ts`** — `SYSTEM_PROMPT` and `USER_MESSAGE_TEXT`, the CP-1-approved bytes
+  (`docs/checkpoints/cp1-cascade-router-prompts.md` §3.2–§3.3) copied verbatim.
+- **`schema.ts`** — `EXTRACTION_JSON_SCHEMA`, the CP-1-approved strict JSON schema
+  (§3.4), also copied verbatim.
+- **`types.ts`** — TypeScript types for the schema: `HaikuExtractionResult` and its
+  parts (`ExtractedField`, `ExtractedGovernmentWarning`, `ExtractedImageQuality`).
+- **`request.ts`** — `buildExtractionRequestParams(image)`, a pure function that
+  assembles the request: `model: "claude-haiku-4-5"`, `temperature: 0`, the image
+  block before the text block, `output_config.format` carrying the schema. No
+  `output_config.effort` (the model rejects it), no `cache_control` (the prompt is
+  under the caching minimum on this model).
+- **`response.ts`** — `parseExtractionResponse(message)` turns a raw Anthropic
+  response into a typed `HaikuExtractionResult`, or throws `HaikuExtractionError`
+  naming every shape problem it finds (refusal, early stop, no text block, invalid
+  JSON, a wrong type or enum value at an exact path) — never a silent partial
+  result. It checks shape only; the confidence-range and evidence-substring
+  overrides (CP-1 §4.4) belong to the Validation Router, not this ticket.
+- **`index.ts`** — `extractLabel(image, options?)`, the public entry point. One
+  Anthropic call, no retry-as-a-second-opinion, and it never references Sonnet
+  (TH-R19: the cascade is the architecture, not an optimization). Takes an
+  injectable `client` for tests; defaults to a new client reading
+  `ANTHROPIC_API_KEY` from the environment.
+
+**Load-bearing decisions.**
+- The image content block comes before the text block in the user message, matching
+  CP-1 §3.3's draft order exactly.
+- `max_tokens: 2048` — CP-1 §7.1 assumes ~600 output tokens for six fields plus
+  evidence strings; this leaves headroom for a long warning transcription without
+  needing to stream.
+- The response parser collects every validation problem in one pass, the same
+  convention `src/lib/golden-set/loader.ts` already uses for the manifest — a
+  malformed response names every field that is wrong, not just the first one found.
+
+**API facts confirmed live against `api.anthropic.com` today (CP-1 §3.5), not just
+taken on documentation:**
+1. `claude-haiku-4-5` is a valid, current model ID — `GET /v1/models/claude-haiku-4-5`
+   resolves to `claude-haiku-4-5-20251001`, `structured_outputs.supported: true`,
+   `image_input.supported: true`.
+2. `claude-haiku-4-5` rejects `output_config.effort` — a real request with `effort: "low"`
+   returned `400 invalid_request_error: "This model does not support the effort
+   parameter."`
+3. `claude-haiku-4-5` accepts `temperature: 0` — the full request (system prompt, schema,
+   a synthetic image, `temperature: 0`) returned `200` with schema-conformant JSON.
+4. `cache_control` on this system prompt does nothing — a request with the marker
+   returned `cache_creation_input_tokens: 0`, `cache_read_input_tokens: 0`, no error.
+   No caching saving is claimed anywhere in this module or its docs.
+5. **Not live-verified, taken on documentation**: that high-resolution vision
+   (2576px) is Sonnet-only and Haiku is capped lower. Confirming this needs a large
+   test image and doesn't change any code in this ticket (image preprocessing to
+   the Haiku cap is TRO-460, a sibling ticket) — flagged, not silently assumed true
+   without a source.
+
+The live smoke test used the exact request shape `request.ts` builds (verified by
+copying `buildExtractionRequestParams`'s fields into a standalone script), plus a
+1x1 pixel synthetic PNG — not a real label photo, since `golden-set/images/` is
+still empty pending LH-004/005/006. It was run once, by hand, from the scratchpad,
+and is not part of the repo — a real-money API call has no place in a script another
+agent or CI could run by accident.
+
+**Known limits.** No end-to-end test against a real label photo — out of scope per
+the ticket (no golden-set images exist yet). The TH-R11 sanity check
+(`golden-case.test.ts`) confirms the extractor's parser round-trips a
+correctly-shaped Haiku response built from `case-01-clean-match-spirits`'s ground
+truth, across brand name, class/type, alcohol content, net contents, and government
+warning — it does not call the API or render pixels.
+
+**How to run it.** `pnpm test -- src/server/extractor` — 4 test files, 32 cases.
+`pnpm typecheck` / `pnpm lint` both clean.
+
+**Rollback.** `git revert` this commit; delete `src/server/extractor/*.ts` and
+restore `src/server/extractor/.gitkeep`; `pnpm remove @anthropic-ai/sdk` (added by
+this ticket, not yet used elsewhere).
+
 ## TRO-459 — PR review round 4: final 4 unresolved threads triaged, 2 doc fixes (2026-08-10)
 
 **What changed.** Triage of the last 4 unresolved CodeRabbit threads before merge:

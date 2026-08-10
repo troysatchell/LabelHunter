@@ -224,6 +224,13 @@ export const labelImages = pgTable(
  * `batchJobId` is null for a single-label verification. The row records a
  * completed result: `verdict` and `resolutionPath` are set at insert time,
  * once the cascade has finished for this label.
+ *
+ * Not enforced at the database level: that `applicationId`, `labelImageId`,
+ * and `batchJobId` here are mutually consistent (e.g. the image actually
+ * belongs to this application, and both belong to this batch, when a batch
+ * is set). See the matching note on `labelImages` above — same reason,
+ * same call: that guarantee belongs with LH-041's batch worker, not this
+ * schema ticket.
  */
 export const verifications = pgTable(
   "verifications",

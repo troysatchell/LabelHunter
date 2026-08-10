@@ -14,35 +14,10 @@
  * extractor's typed result, across all five TH-R11 fields plus
  * `beverage_type`, with no drift between the two.
  */
-import type Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, it } from "vitest";
 import { loadGoldenSetManifest } from "../../lib/golden-set/loader";
 import { parseExtractionResponse } from "./response";
-
-function makeMessage(text: string): Anthropic.Message {
-  return {
-    id: "msg_test",
-    type: "message",
-    role: "assistant",
-    model: "claude-haiku-4-5",
-    container: null,
-    stop_sequence: null,
-    stop_details: null,
-    stop_reason: "end_turn",
-    content: [{ type: "text", text, citations: null }],
-    usage: {
-      input_tokens: 100,
-      output_tokens: 50,
-      cache_creation_input_tokens: 0,
-      cache_read_input_tokens: 0,
-      cache_creation: null,
-      inference_geo: null,
-      output_tokens_details: null,
-      server_tool_use: null,
-      service_tier: "standard",
-    },
-  };
-}
+import { makeMockMessage } from "./test-support";
 
 describe("TH-R11 reference example — case-01-clean-match-spirits", () => {
   const manifest = loadGoldenSetManifest();
@@ -58,6 +33,14 @@ describe("TH-R11 reference example — case-01-clean-match-spirits", () => {
   it("extracts across all five TH-R11 fields plus beverage_type", () => {
     if (!referenceCase) throw new Error("case-01-clean-match-spirits missing from manifest");
     const { label, beverageType } = referenceCase;
+
+    // Precondition on the fixture itself. case-01 is the TH-R11 reference
+    // case specifically because its warning is present and all-caps — if
+    // that ground truth ever drifts, fail here with a clear reason instead
+    // of a confusing mismatch further down that would look like a
+    // parseExtractionResponse bug rather than a fixture change.
+    expect(label.governmentWarningPresent).toBe(true);
+    expect(label.governmentWarningPrefixAllCaps).toBe(true);
 
     // A Haiku response shaped like a correct, confident read of this case's
     // label ground truth — the shape the extractor must be able to parse
@@ -104,7 +87,7 @@ describe("TH-R11 reference example — case-01-clean-match-spirits", () => {
       },
     };
 
-    const result = parseExtractionResponse(makeMessage(JSON.stringify(body)));
+    const result = parseExtractionResponse(makeMockMessage(JSON.stringify(body)));
 
     // Brand Name (TH-R11)
     expect(result.brand_name.value).toBe(label.brandName);
@@ -115,10 +98,15 @@ describe("TH-R11 reference example — case-01-clean-match-spirits", () => {
     expect(result.alcohol_content.value).toBe(label.abvText);
     // Net Contents (TH-R11)
     expect(result.net_contents.value).toBe(label.netContentsText);
-    // Government Warning (TH-R11)
-    expect(result.government_warning.present).toBe(true);
+    // Government Warning (TH-R11) — compared against the manifest-derived
+    // values (not a hardcoded "true"/"ALL_CAPS") so a change to the fixture
+    // is caught by the precondition assertions above, not masked here by an
+    // expectation that happens to still match by coincidence.
+    expect(result.government_warning.present).toBe(label.governmentWarningPresent);
     expect(result.government_warning.transcription).toBe(label.governmentWarningText);
-    expect(result.government_warning.prefix_casing).toBe("ALL_CAPS");
+    expect(result.government_warning.prefix_casing).toBe(
+      label.governmentWarningPrefixAllCaps ? "ALL_CAPS" : "OTHER",
+    );
     // beverage_type — the free cross-check CP-1 §3.1 describes, not a
     // TH-R11 field itself, but part of the same schema.
     expect(result.beverage_type.value).toBe(beverageType);

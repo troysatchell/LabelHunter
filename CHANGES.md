@@ -4,6 +4,46 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-461 — PR review: local CodeRabbit triage, 3 findings fixed (2026-08-10)
+
+**What changed.** The local `scripts/factory/gate.sh` run captured 3 findings; all 3 were
+real and fixed here.
+- `index.ts` (major): `extractLabel` built a fresh `new Anthropic()` on every call when
+  no client was injected. Fixed: `getDefaultExtractorClient()` builds the client once and
+  reuses it — a batch run extracts hundreds of labels (PRD §3.5), and a client per call is
+  needless setup. The shared client also sets an explicit `timeout` (30s — a safety net
+  against a hung request, not the SDK's 10-minute default sized for long completions) and
+  `maxRetries: 0` (not the SDK default of 2 — an SDK-level retry runs underneath, not
+  coordinated with, the batch worker's own rate-limit backoff CP-3 will build, and can add
+  seconds neither TH-R2's 5-second budget nor TH-R4's batch throughput accounts for; the
+  caller decides whether to retry a 429/5xx). `options.client` still overrides it, for
+  tests. Verified the reuse test is load-bearing: removing the caching made
+  "returns the same client instance on every call" fail, as expected, then restored it.
+- `golden-case.test.ts` (minor): the government-warning assertions hardcoded `true`/
+  `"ALL_CAPS"` instead of deriving them from the golden-set fixture. A fixture change
+  would have surfaced as a confusing mismatch that looked like a `parseExtractionResponse`
+  bug. Fixed: added an explicit precondition assertion on
+  `label.governmentWarningPresent`/`governmentWarningPrefixAllCaps`, and the downstream
+  result assertions now compare against those same fields instead of literals.
+- `makeMessage` (trivial): duplicated verbatim across `index.test.ts`, `response.test.ts`,
+  and `golden-case.test.ts` — three real copies, not a premature abstraction. Extracted to
+  `src/server/extractor/test-support.ts` (`makeMockMessage` + `WELL_FORMED_EXTRACTION_BODY`);
+  all three test files import it now.
+
+Also tightened `index.test.ts`'s first assertion, which had asserted the mock client was
+called with `buildExtractionRequestParams(IMAGE)` — the same function `extractLabel` calls
+internally, so the check couldn't catch `extractLabel` wiring the wrong params. It now
+asserts the identity-critical fields (model, one message, the image block's data and media
+type) independently; byte-for-byte request validation stays in `request.test.ts`, which
+already uses an independent oracle for the CP-1 prompt/schema bytes.
+
+**How to run it.** `pnpm test -- src/server/extractor` — 4 files, 34 cases (was 32; +2 for
+`getDefaultExtractorClient`). `pnpm typecheck` / `pnpm lint` both clean.
+
+**Rollback.** `git revert` this commit; `index.ts` returns to constructing `new Anthropic()`
+per call, and the three test files return to their own local `makeMessage`/`WELL_FORMED_BODY`
+copies.
+
 ## TRO-461 — LH-011: Haiku extractor (2026-08-10)
 
 **What changed.** The Haiku extractor (PRD §3.2, TH-R1, TH-R11) under

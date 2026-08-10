@@ -78,3 +78,12 @@ production run (they are paid-for, not speculative); rules 10+ will be LabelHunt
   hand twice in one ticket — keep both entries, newest-relevant on top, drop only the
   conflict-marker lines. If this recurs on a third ticket, generate the real merge tool instead
   of resolving by hand again (recurrence-ladder rule: 3 = build the mechanical fix).
+- 2026-08-10 (TRO-456) — **In a unit-selection function, round the value ONCE before any branch
+  decision, not inside each branch.** Three separate rounding-boundary bugs surfaced in
+  `formatDuration` across two review rounds — the minutes/seconds remainder hitting 60, the
+  seconds display rounding up to "60.0s", and finally 999.5ms rounding to "1000ms" while
+  `formatDuration(1000)` itself renders "1.00s". Same root cause every time: a branch decided
+  which unit to use based on the *unrounded* value, so the displayed rounding and the branch
+  boundary disagreed right at the edge. The fix pattern is the same each time — round first,
+  branch on the rounded value. Apply this on sight to any new format/threshold function; don't
+  wait for a reviewer to find each boundary one at a time.

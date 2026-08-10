@@ -25,6 +25,12 @@ describe("formatDuration", () => {
     expect(formatDuration(119_600)).toBe("2m 0s");
   });
 
+  it("rolls a seconds value that rounds up to 60 into minutes format", () => {
+    // Regression: 59.999s formatted with 1 decimal place rounds to "60.0s",
+    // which is wrong the same way "1m 60s" was wrong — it must read "1m 0s".
+    expect(formatDuration(59_999)).toBe("1m 0s");
+  });
+
   it("rejects negative or non-finite input", () => {
     expect(() => formatDuration(-1)).toThrow(RangeError);
     expect(() => formatDuration(Number.NaN)).toThrow(RangeError);

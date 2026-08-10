@@ -17,7 +17,14 @@ export function formatDuration(ms: number): string {
 
   const seconds = ms / 1000;
   if (seconds < 60) {
-    return `${seconds.toFixed(seconds < 10 ? 2 : 1)}s`;
+    const decimalPlaces = seconds < 10 ? 2 : 1;
+    const rendered = Number(seconds.toFixed(decimalPlaces));
+    // A value like 59.999s rounds UP to "60.0s" here, which is wrong the
+    // same way "1m 60s" was wrong below — fall through to the minutes
+    // format instead of displaying a 60-second reading as seconds.
+    if (rendered < 60) {
+      return `${rendered.toFixed(decimalPlaces)}s`;
+    }
   }
 
   // Round the total once before splitting into minutes/seconds — rounding

@@ -1,0 +1,1125 @@
+{
+  "version": "1.0.0",
+  "cases": [
+    {
+      "caseId": "case-01-clean-match-spirits",
+      "description": "Baseline spirits label; every field matches the application exactly.",
+      "category": "clean-match",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/images/case-01-clean-match-spirits.jpg",
+      "application": {
+        "brandName": "Old Tom Distillery",
+        "classType": "Straight Bourbon Whiskey",
+        "abvPercent": 45,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Old Tom Distillery",
+        "classType": "Straight Bourbon Whiskey",
+        "abvPresent": true,
+        "abvText": "45% Alc./Vol. (90 Proof)",
+        "abvPercent": 45,
+        "proof": 90,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "PASS",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 45% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "MATCH", "reason": "Warning text matches the statute word for word; prefix is all-caps." }
+        }
+      },
+      "notes": "The TH-R11 reference example (OLD TOM DISTILLERY). Every other spirits case reuses this brand/class/net-contents shape unless the case needs to differ."
+    },
+    {
+      "caseId": "case-02-clean-match-beer-no-abv",
+      "description": "Beer label that omits ABV on both the application and the label, which TTB allows.",
+      "category": "clean-match",
+      "beverageType": "beer",
+      "imagePath": "golden-set/images/case-02-clean-match-beer-no-abv.jpg",
+      "application": {
+        "brandName": "Round Barn Brewing",
+        "classType": "American Pale Ale",
+        "netContentsValue": 12,
+        "netContentsUnit": "fl oz"
+      },
+      "label": {
+        "brandName": "Round Barn Brewing",
+        "classType": "American Pale Ale",
+        "abvPresent": false,
+        "abvText": "",
+        "netContentsText": "12 FL OZ",
+        "netContentsValue": 12,
+        "netContentsUnit": "fl oz",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "PASS",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "ABV is optional on beer labels; application and label both omit it." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 12 FL OZ, matching the application." },
+          "governmentWarning": { "verdict": "MATCH", "reason": "Warning text matches the statute word for word; prefix is all-caps." }
+        }
+      },
+      "notes": "Exercises the beverage-type selector's ABV-optionality rule (PRD §2) on the happy path."
+    },
+    {
+      "caseId": "case-03-clean-match-wine",
+      "description": "Wine label; every field matches the application exactly.",
+      "category": "clean-match",
+      "beverageType": "wine",
+      "imagePath": "golden-set/images/case-03-clean-match-wine.jpg",
+      "application": {
+        "brandName": "Silver Creek Vineyards",
+        "classType": "Cabernet Sauvignon",
+        "abvPercent": 13.5,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Silver Creek Vineyards",
+        "classType": "Cabernet Sauvignon",
+        "abvPresent": true,
+        "abvText": "13.5% Alc./Vol.",
+        "abvPercent": 13.5,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "PASS",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 13.5% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "MATCH", "reason": "Warning text matches the statute word for word; prefix is all-caps." }
+        }
+      }
+    },
+    {
+      "caseId": "case-04-clean-match-spirits-alt-format",
+      "description": "Spirits label with proof printed before percent; still a clean match.",
+      "category": "clean-match",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/images/case-04-clean-match-spirits-alt-format.jpg",
+      "application": {
+        "brandName": "Old Tom Distillery",
+        "classType": "Straight Bourbon Whiskey",
+        "abvPercent": 45,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Old Tom Distillery",
+        "classType": "Straight Bourbon Whiskey",
+        "abvPresent": true,
+        "abvText": "90 Proof (45% Alc./Vol.)",
+        "abvPercent": 45,
+        "proof": 90,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "PASS",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "ABV parses correctly whether percent or proof is printed first." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "MATCH", "reason": "Warning text matches the statute word for word; prefix is all-caps." }
+        }
+      },
+      "notes": "Tests the ABV normalizer's field-order robustness, not just its parsing."
+    },
+    {
+      "caseId": "case-05-abv-mismatch-application-higher",
+      "description": "Application states a higher ABV than the label prints.",
+      "category": "abv-mismatch",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/images/case-05-abv-mismatch-application-higher.jpg",
+      "application": {
+        "brandName": "Copper Kettle Spirits",
+        "classType": "Vodka",
+        "abvPercent": 45,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Copper Kettle Spirits",
+        "classType": "Vodka",
+        "abvPresent": true,
+        "abvText": "40% Alc./Vol. (80 Proof)",
+        "abvPercent": 40,
+        "proof": 80,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "FAIL",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MISMATCH", "reason": "Label states 40% ABV; application states 45%." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "MATCH", "reason": "Warning text matches the statute word for word; prefix is all-caps." }
+        }
+      }
+    },
+    {
+      "caseId": "case-06-abv-mismatch-label-higher",
+      "description": "Label states a higher ABV than the application.",
+      "category": "abv-mismatch",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/images/case-06-abv-mismatch-label-higher.jpg",
+      "application": {
+        "brandName": "Harbor Light Distilling",
+        "classType": "Gin",
+        "abvPercent": 40,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Harbor Light Distilling",
+        "classType": "Gin",
+        "abvPresent": true,
+        "abvText": "47% Alc./Vol. (94 Proof)",
+        "abvPercent": 47,
+        "proof": 94,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "FAIL",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MISMATCH", "reason": "Label states 47% ABV; application states 40%." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "MATCH", "reason": "Warning text matches the statute word for word; prefix is all-caps." }
+        }
+      }
+    },
+    {
+      "caseId": "case-07-abv-proof-mismatch-internal",
+      "description": "Label's own percent and proof numbers contradict each other.",
+      "category": "abv-mismatch",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/images/case-07-abv-proof-mismatch-internal.jpg",
+      "application": {
+        "brandName": "Millrace Distillery",
+        "classType": "Straight Rye Whiskey",
+        "abvPercent": 43,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Millrace Distillery",
+        "classType": "Straight Rye Whiskey",
+        "abvPresent": true,
+        "abvText": "43% Alc./Vol. (90 Proof)",
+        "abvPercent": 43,
+        "proof": 90,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "CONFLICTING_EXTRACTION",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "NEEDS_REVIEW", "reason": "Label's percent (43%) and proof (90) don't agree — 90 proof implies 45% ABV." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "MATCH", "reason": "Warning text matches the statute word for word; prefix is all-caps." }
+        }
+      },
+      "notes": "Tests the ABV-to-proof cross-check (PRD §3.3), not an application-vs-label mismatch — the label disagrees with itself."
+    },
+    {
+      "caseId": "case-08-title-case-warning-prefix-only",
+      "description": "Warning body is exact but the GOVERNMENT WARNING prefix is title case, not all caps.",
+      "category": "title-case-warning",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/images/case-08-title-case-warning-prefix-only.jpg",
+      "application": {
+        "brandName": "Blue Ridge Distillery",
+        "classType": "Straight Bourbon Whiskey",
+        "abvPercent": 45,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Blue Ridge Distillery",
+        "classType": "Straight Bourbon Whiskey",
+        "abvPresent": true,
+        "abvText": "45% Alc./Vol. (90 Proof)",
+        "abvPercent": 45,
+        "proof": 90,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "Government Warning: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": false
+      },
+      "expected": {
+        "labelVerdict": "FAIL",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 45% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "MISMATCH", "reason": "The GOVERNMENT WARNING prefix must be all-caps; the label prints it in title case." }
+        }
+      },
+      "notes": "Jenny Park's exact catch (TH-R9, source-TH.md L33): 'Government Warning' in title case instead of all caps. This is the flagship title-case-warning case."
+    },
+    {
+      "caseId": "case-09-title-case-warning-full-statement",
+      "description": "The whole warning statement is printed in title case, not just the prefix.",
+      "category": "title-case-warning",
+      "beverageType": "beer",
+      "imagePath": "golden-set/images/case-09-title-case-warning-full-statement.jpg",
+      "application": {
+        "brandName": "Timber Line Brewing",
+        "classType": "India Pale Ale",
+        "abvPercent": 6.2,
+        "netContentsValue": 12,
+        "netContentsUnit": "fl oz"
+      },
+      "label": {
+        "brandName": "Timber Line Brewing",
+        "classType": "India Pale Ale",
+        "abvPresent": true,
+        "abvText": "6.2% Alc./Vol.",
+        "abvPercent": 6.2,
+        "netContentsText": "12 FL OZ",
+        "netContentsValue": 12,
+        "netContentsUnit": "fl oz",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "Government Warning: (1) According To The Surgeon General, Women Should Not Drink Alcoholic Beverages During Pregnancy Because Of The Risk Of Birth Defects. (2) Consumption Of Alcoholic Beverages Impairs Your Ability To Drive A Car Or Operate Machinery, And May Cause Health Problems.",
+        "governmentWarningPrefixAllCaps": false
+      },
+      "expected": {
+        "labelVerdict": "FAIL",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 6.2% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 12 FL OZ, matching the application." },
+          "governmentWarning": { "verdict": "MISMATCH", "reason": "The whole warning is title case; the GOVERNMENT WARNING prefix must be all-caps and the wording must match the statute exactly." }
+        }
+      },
+      "notes": "A more severe caps defect than case-08: every word is capitalized, not just the prefix. Both must FAIL the same way."
+    },
+    {
+      "caseId": "case-10-reworded-warning-clause-one",
+      "description": "Warning clause (1) is paraphrased instead of matching the statute word for word.",
+      "category": "reworded-warning",
+      "beverageType": "wine",
+      "imagePath": "golden-set/images/case-10-reworded-warning-clause-one.jpg",
+      "application": {
+        "brandName": "Fairview Cellars",
+        "classType": "Chardonnay",
+        "abvPercent": 12.5,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Fairview Cellars",
+        "classType": "Chardonnay",
+        "abvPresent": true,
+        "abvText": "12.5% Alc./Vol.",
+        "abvPercent": 12.5,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, pregnant women should not consume alcoholic beverages due to the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "FAIL",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 12.5% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "MISMATCH", "reason": "Clause (1) is reworded; the statute requires the exact wording, word for word." }
+        }
+      }
+    },
+    {
+      "caseId": "case-11-reworded-warning-clause-two",
+      "description": "Warning clause (2) is paraphrased instead of matching the statute word for word.",
+      "category": "reworded-warning",
+      "beverageType": "wine",
+      "imagePath": "golden-set/images/case-11-reworded-warning-clause-two.jpg",
+      "application": {
+        "brandName": "Stagecoach Meadery",
+        "classType": "Mead",
+        "abvPercent": 8,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Stagecoach Meadery",
+        "classType": "Mead",
+        "abvPresent": true,
+        "abvText": "8% Alc./Vol.",
+        "abvPercent": 8,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages may impair your ability to operate a vehicle or machinery, and can cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "FAIL",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 8% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "MISMATCH", "reason": "Clause (2) is reworded ('may impair'/'operate a vehicle' in place of the statutory wording)." }
+        }
+      }
+    },
+    {
+      "caseId": "case-12-missing-warning-spirits",
+      "description": "No government warning text appears anywhere on the spirits label.",
+      "category": "missing-warning",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/images/case-12-missing-warning-spirits.jpg",
+      "application": {
+        "brandName": "Hollow Creek Distillery",
+        "classType": "Straight Bourbon Whiskey",
+        "abvPercent": 45,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Hollow Creek Distillery",
+        "classType": "Straight Bourbon Whiskey",
+        "abvPresent": true,
+        "abvText": "45% Alc./Vol. (90 Proof)",
+        "abvPercent": 45,
+        "proof": 90,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": false,
+        "governmentWarningText": "",
+        "governmentWarningPrefixAllCaps": false
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "MISSING_REQUIRED_FIELD",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 45% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "NEEDS_REVIEW", "reason": "No government warning text is visible anywhere on the label." }
+        }
+      },
+      "notes": "Routed to REVIEW rather than a hard FAIL: a photo that misses the warning panel looks identical to a label that truly omits it. A human confirms which."
+    },
+    {
+      "caseId": "case-13-missing-warning-wine",
+      "description": "No government warning text appears anywhere on the wine label.",
+      "category": "missing-warning",
+      "beverageType": "wine",
+      "imagePath": "golden-set/images/case-13-missing-warning-wine.jpg",
+      "application": {
+        "brandName": "Whitmore Estate Winery",
+        "classType": "Pinot Noir",
+        "abvPercent": 13,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Whitmore Estate Winery",
+        "classType": "Pinot Noir",
+        "abvPresent": true,
+        "abvText": "13% Alc./Vol.",
+        "abvPercent": 13,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": false,
+        "governmentWarningText": "",
+        "governmentWarningPrefixAllCaps": false
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "MISSING_REQUIRED_FIELD",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 13% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "NEEDS_REVIEW", "reason": "No government warning text is visible anywhere on the label." }
+        }
+      }
+    },
+    {
+      "caseId": "case-14-case-variant-brand-stones-throw",
+      "description": "Label prints the brand and class/type in all caps; application uses normal case.",
+      "category": "case-variant-brand",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/images/case-14-case-variant-brand-stones-throw.jpg",
+      "application": {
+        "brandName": "Stone's Throw",
+        "classType": "Straight Bourbon Whiskey",
+        "abvPercent": 45,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "STONE'S THROW",
+        "classType": "STRAIGHT BOURBON WHISKEY",
+        "abvPresent": true,
+        "abvText": "45% Alc./Vol. (90 Proof)",
+        "abvPercent": 45,
+        "proof": 90,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "PASS",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Brand matches once case is normalized: STONE'S THROW = Stone's Throw." },
+          "classType": { "verdict": "MATCH", "reason": "Class/type matches once case is normalized." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 45% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "MATCH", "reason": "Warning text matches the statute word for word; prefix is all-caps." }
+        }
+      },
+      "notes": "TH-R8 flagship case: Dave Morrison's exact example (source-TH.md L27) — 'STONE'S THROW' on the label vs 'Stone's Throw' on the application must MATCH, not fail on a strict string compare."
+    },
+    {
+      "caseId": "case-15-case-variant-brand-punctuation",
+      "description": "Label drops the apostrophe from the brand name; application keeps it.",
+      "category": "case-variant-brand",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/images/case-15-case-variant-brand-punctuation.jpg",
+      "application": {
+        "brandName": "Stone's Throw",
+        "classType": "Straight Bourbon Whiskey",
+        "abvPercent": 45,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "STONES THROW",
+        "classType": "STRAIGHT BOURBON WHISKEY",
+        "abvPresent": true,
+        "abvText": "45% Alc./Vol. (90 Proof)",
+        "abvPercent": 45,
+        "proof": 90,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "PASS",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Brand matches once case and the dropped apostrophe are normalized." },
+          "classType": { "verdict": "MATCH", "reason": "Class/type matches once case is normalized." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 45% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "MATCH", "reason": "Warning text matches the statute word for word; prefix is all-caps." }
+        }
+      }
+    },
+    {
+      "caseId": "case-16-case-variant-brand-extra-words",
+      "description": "Label brand adds extra words beyond a case or punctuation difference.",
+      "category": "case-variant-brand",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/images/case-16-case-variant-brand-extra-words.jpg",
+      "application": {
+        "brandName": "Stone's Throw",
+        "classType": "Straight Bourbon Whiskey",
+        "abvPercent": 45,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Stones Throw Distillery Co.",
+        "classType": "Straight Bourbon Whiskey",
+        "abvPresent": true,
+        "abvText": "45% Alc./Vol. (90 Proof)",
+        "abvPercent": 45,
+        "proof": 90,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "AMBIGUOUS_BRAND",
+        "fields": {
+          "brandName": { "verdict": "NEEDS_REVIEW", "reason": "Label brand adds words beyond a case or punctuation difference; a person should confirm this is the same brand." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 45% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "MATCH", "reason": "Warning text matches the statute word for word; prefix is all-caps." }
+        }
+      },
+      "notes": "The other side of TH-R8's judgment call: a difference big enough to fall outside the fuzzy-match threshold routes to a human instead of a silent fail."
+    },
+    {
+      "caseId": "case-17-glare-front-label",
+      "description": "Glare on the front label obscures part of the brand name; other fields are readable.",
+      "category": "glare",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/images/case-17-glare-front-label.jpg",
+      "application": {
+        "brandName": "Sable Ridge Distillery",
+        "classType": "Straight Rye Whiskey",
+        "abvPercent": 45,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Sable Ridge Distillery",
+        "classType": "Straight Rye Whiskey",
+        "abvPresent": true,
+        "abvText": "45% Alc./Vol. (90 Proof)",
+        "abvPercent": 45,
+        "proof": 90,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "LOW_IMAGE_QUALITY",
+        "fields": {
+          "brandName": { "verdict": "NEEDS_REVIEW", "reason": "Glare on the front label obscures part of the brand name." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 45% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "MATCH", "reason": "Warning text matches the statute word for word; prefix is all-caps." }
+        }
+      },
+      "notes": "Photo condition for whoever generates or sources the image: a bright reflective streak crossing the brand-name area of the front label, rest of the label evenly lit."
+    },
+    {
+      "caseId": "case-18-glare-warning-block",
+      "description": "Glare specifically crosses the warning block; other fields are readable.",
+      "category": "glare",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/images/case-18-glare-warning-block.jpg",
+      "application": {
+        "brandName": "Copper Kettle Spirits",
+        "classType": "Vodka",
+        "abvPercent": 40,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Copper Kettle Spirits",
+        "classType": "Vodka",
+        "abvPresent": true,
+        "abvText": "40% Alc./Vol. (80 Proof)",
+        "abvPercent": 40,
+        "proof": 80,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "LOW_IMAGE_QUALITY",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 40% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "NEEDS_REVIEW", "reason": "Glare crosses the warning block; the text cannot be read reliably from this photo." }
+        }
+      },
+      "notes": "governmentWarningText above records what is genuinely printed on the label (ground truth) — the photo defect is what makes it unreadable, not the printed content. Photo condition: glare streak positioned over the back-label warning panel."
+    },
+    {
+      "caseId": "case-19-rotation-mild-correctable",
+      "description": "Label photographed at roughly 15 degrees; every field still reads correctly after rotation correction.",
+      "category": "rotation",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/images/case-19-rotation-mild-correctable.jpg",
+      "application": {
+        "brandName": "Ashgrove Distillery",
+        "classType": "Straight Bourbon Whiskey",
+        "abvPercent": 45,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Ashgrove Distillery",
+        "classType": "Straight Bourbon Whiskey",
+        "abvPresent": true,
+        "abvText": "45% Alc./Vol. (90 Proof)",
+        "abvPercent": 45,
+        "proof": 90,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "PASS",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 45% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "MATCH", "reason": "Warning text matches the statute word for word; prefix is all-caps." }
+        }
+      },
+      "notes": "Proves TH-R10's mild case: a moderate camera-angle rotation should still produce a confident, correct PASS, not a reflexive REVIEW. Pairs with case-20 (severe rotation)."
+    },
+    {
+      "caseId": "case-20-rotation-severe-upside-down",
+      "description": "Label photographed upside down; the tool cannot reliably read any field.",
+      "category": "rotation",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/images/case-20-rotation-severe-upside-down.jpg",
+      "application": {
+        "brandName": "Ashgrove Distillery",
+        "classType": "Straight Bourbon Whiskey",
+        "abvPercent": 45,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Ashgrove Distillery",
+        "classType": "Straight Bourbon Whiskey",
+        "abvPresent": true,
+        "abvText": "45% Alc./Vol. (90 Proof)",
+        "abvPercent": 45,
+        "proof": 90,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "LOW_IMAGE_QUALITY",
+        "fields": {
+          "brandName": { "verdict": "NEEDS_REVIEW", "reason": "Label is photographed upside down; text orientation cannot be read reliably." },
+          "classType": { "verdict": "NEEDS_REVIEW", "reason": "Label is photographed upside down; text orientation cannot be read reliably." },
+          "abv": { "verdict": "NEEDS_REVIEW", "reason": "Label is photographed upside down; text orientation cannot be read reliably." },
+          "netContents": { "verdict": "NEEDS_REVIEW", "reason": "Label is photographed upside down; text orientation cannot be read reliably." },
+          "governmentWarning": { "verdict": "NEEDS_REVIEW", "reason": "Label is photographed upside down; text orientation cannot be read reliably." }
+        }
+      },
+      "notes": "Same label content as case-19, shot upside down instead of mildly rotated — proves graceful degradation instead of a confident wrong verdict (TH-R10)."
+    },
+    {
+      "caseId": "case-21-low-light-front-label",
+      "description": "Dim lighting makes the front label hard to read; the back label reads fine.",
+      "category": "low-light",
+      "beverageType": "wine",
+      "imagePath": "golden-set/images/case-21-low-light-front-label.jpg",
+      "application": {
+        "brandName": "Northgate Cellars",
+        "classType": "Merlot",
+        "abvPercent": 13.8,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Northgate Cellars",
+        "classType": "Merlot",
+        "abvPresent": true,
+        "abvText": "13.8% Alc./Vol.",
+        "abvPercent": 13.8,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "LOW_IMAGE_QUALITY",
+        "fields": {
+          "brandName": { "verdict": "NEEDS_REVIEW", "reason": "Dim lighting makes the front-label brand name hard to read." },
+          "classType": { "verdict": "NEEDS_REVIEW", "reason": "Dim lighting makes the front-label class/type text hard to read." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 13.8% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "MATCH", "reason": "Warning text matches the statute word for word; prefix is all-caps." }
+        }
+      },
+      "notes": "Photo condition: front label underexposed; back label (ABV, net contents, warning) evenly lit and legible."
+    },
+    {
+      "caseId": "case-22-low-light-warning-block",
+      "description": "Dim lighting specifically obscures the warning block; other fields read fine.",
+      "category": "low-light",
+      "beverageType": "wine",
+      "imagePath": "golden-set/images/case-22-low-light-warning-block.jpg",
+      "application": {
+        "brandName": "Amber Hollow Meadery",
+        "classType": "Mead",
+        "abvPercent": 8,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Amber Hollow Meadery",
+        "classType": "Mead",
+        "abvPresent": true,
+        "abvText": "8% Alc./Vol.",
+        "abvPercent": 8,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "LOW_IMAGE_QUALITY",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 8% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "NEEDS_REVIEW", "reason": "Dim lighting makes the warning block hard to read reliably." }
+        }
+      },
+      "notes": "governmentWarningText records the true printed content (ground truth); the photo defect, not the print, is why it can't be read confidently."
+    },
+    {
+      "caseId": "case-23-tiny-warning-text-standard-bottle",
+      "description": "Warning is printed correctly but at close to the legal minimum size on a standard bottle.",
+      "category": "tiny-warning-text",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/images/case-23-tiny-warning-text-standard-bottle.jpg",
+      "application": {
+        "brandName": "Windward Distillery",
+        "classType": "Gin",
+        "abvPercent": 47,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Windward Distillery",
+        "classType": "Gin",
+        "abvPresent": true,
+        "abvText": "47% Alc./Vol. (94 Proof)",
+        "abvPercent": 47,
+        "proof": 94,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "LOW_MODEL_CONFIDENCE",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 47% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "NEEDS_REVIEW", "reason": "Warning text is legible but printed near the minimum legal size; extraction confidence is low." }
+        }
+      },
+      "notes": "Photo itself is clean and well-lit — the defect is print size, not capture quality, so this routes on LOW_MODEL_CONFIDENCE rather than LOW_IMAGE_QUALITY."
+    },
+    {
+      "caseId": "case-24-tiny-warning-text-miniature-bottle",
+      "description": "A 50 mL miniature bottle forces the warning into extremely small print.",
+      "category": "tiny-warning-text",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/images/case-24-tiny-warning-text-miniature-bottle.jpg",
+      "application": {
+        "brandName": "Pocketful Spirits",
+        "classType": "Bourbon Whiskey",
+        "abvPercent": 40,
+        "netContentsValue": 50,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Pocketful Spirits",
+        "classType": "Bourbon Whiskey",
+        "abvPresent": true,
+        "abvText": "40% Alc./Vol. (80 Proof)",
+        "abvPercent": 40,
+        "proof": 80,
+        "netContentsText": "50 mL",
+        "netContentsValue": 50,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "LOW_MODEL_CONFIDENCE",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 40% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 50 mL, matching the application." },
+          "governmentWarning": { "verdict": "NEEDS_REVIEW", "reason": "Bottle is a 50 mL miniature; the warning text is legible but very small, and extraction confidence is low." }
+        }
+      }
+    },
+    {
+      "caseId": "case-25-odd-typography-script-brand",
+      "description": "Brand name is set in an ornate script font that is hard for a model to read confidently.",
+      "category": "odd-typography",
+      "beverageType": "wine",
+      "imagePath": "golden-set/images/case-25-odd-typography-script-brand.jpg",
+      "application": {
+        "brandName": "Willowbrook Winery",
+        "classType": "Riesling",
+        "abvPercent": 11,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Willowbrook Winery",
+        "classType": "Riesling",
+        "abvPresent": true,
+        "abvText": "11% Alc./Vol.",
+        "abvPercent": 11,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "LOW_MODEL_CONFIDENCE",
+        "fields": {
+          "brandName": { "verdict": "NEEDS_REVIEW", "reason": "Brand name is set in an ornate script font; extraction confidence is low." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 11% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "MATCH", "reason": "Warning text matches the statute word for word; prefix is all-caps." }
+        }
+      }
+    },
+    {
+      "caseId": "case-26-odd-typography-blackletter-class-type",
+      "description": "Class/type is set in a decorative blackletter font that is hard for a model to read confidently.",
+      "category": "odd-typography",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/images/case-26-odd-typography-blackletter-class-type.jpg",
+      "application": {
+        "brandName": "Ashford Row Distillery",
+        "classType": "Straight Rye Whiskey",
+        "abvPercent": 45,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Ashford Row Distillery",
+        "classType": "Straight Rye Whiskey",
+        "abvPresent": true,
+        "abvText": "45% Alc./Vol. (90 Proof)",
+        "abvPercent": 45,
+        "proof": 90,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "LOW_MODEL_CONFIDENCE",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "NEEDS_REVIEW", "reason": "Class/type is set in a decorative blackletter font; extraction confidence is low." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 45% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "MATCH", "reason": "Warning text matches the statute word for word; prefix is all-caps." }
+        }
+      }
+    },
+    {
+      "caseId": "case-27-conflicting-net-contents",
+      "description": "Label's bottle size does not match the size filed on the application.",
+      "category": "conflicting-application-vs-label",
+      "beverageType": "beer",
+      "imagePath": "golden-set/images/case-27-conflicting-net-contents.jpg",
+      "application": {
+        "brandName": "Cascade Peak Brewing",
+        "classType": "Imperial Stout",
+        "abvPercent": 9.5,
+        "netContentsValue": 12,
+        "netContentsUnit": "fl oz"
+      },
+      "label": {
+        "brandName": "Cascade Peak Brewing",
+        "classType": "Imperial Stout",
+        "abvPresent": true,
+        "abvText": "9.5% Alc./Vol.",
+        "abvPercent": 9.5,
+        "netContentsText": "22 FL OZ",
+        "netContentsValue": 22,
+        "netContentsUnit": "fl oz",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "FAIL",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 9.5% ABV, matching the application." },
+          "netContents": { "verdict": "MISMATCH", "reason": "Label states 22 FL OZ; application states 12 FL OZ." },
+          "governmentWarning": { "verdict": "MATCH", "reason": "Warning text matches the statute word for word; prefix is all-caps." }
+        }
+      }
+    },
+    {
+      "caseId": "case-28-conflicting-class-type",
+      "description": "Label's class/type does not match what was filed on the application.",
+      "category": "conflicting-application-vs-label",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/images/case-28-conflicting-class-type.jpg",
+      "application": {
+        "brandName": "Dry Gulch Distillery",
+        "classType": "Bourbon Whiskey",
+        "abvPercent": 45,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Dry Gulch Distillery",
+        "classType": "Straight Rye Whiskey",
+        "abvPresent": true,
+        "abvText": "45% Alc./Vol. (90 Proof)",
+        "abvPercent": 45,
+        "proof": 90,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "FAIL",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MISMATCH", "reason": "Label states Straight Rye Whiskey; application states Bourbon Whiskey." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 45% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "MATCH", "reason": "Warning text matches the statute word for word; prefix is all-caps." }
+        }
+      }
+    },
+    {
+      "caseId": "case-29-conflicting-brand-name",
+      "description": "Label brand is an entirely different product from the one filed on the application.",
+      "category": "conflicting-application-vs-label",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/images/case-29-conflicting-brand-name.jpg",
+      "application": {
+        "brandName": "Old Tom Distillery",
+        "classType": "Straight Bourbon Whiskey",
+        "abvPercent": 45,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Copper Kettle Spirits",
+        "classType": "Straight Bourbon Whiskey",
+        "abvPresent": true,
+        "abvText": "45% Alc./Vol. (90 Proof)",
+        "abvPercent": 45,
+        "proof": 90,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "FAIL",
+        "fields": {
+          "brandName": { "verdict": "MISMATCH", "reason": "Label brand does not match the application brand beyond case or punctuation — these read as different products." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 45% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "MATCH", "reason": "Warning text matches the statute word for word; prefix is all-caps." }
+        }
+      },
+      "notes": "Represents a misfiled or mismatched application/image pairing, the sharpest possible brand-name conflict — contrast with case-14..16, where the brand is the same product under a case/punctuation/wording variant."
+    }
+  ]
+}

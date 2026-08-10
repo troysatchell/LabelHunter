@@ -31,6 +31,13 @@ describe("formatDuration", () => {
     expect(formatDuration(59_999)).toBe("1m 0s");
   });
 
+  it("rolls a milliseconds value that rounds up to 1000 into seconds format", () => {
+    // Regression: 999.5ms rounds to 1000ms, but the branch check ran on the
+    // unrounded value, so it rendered "1000ms" while formatDuration(1000)
+    // renders "1.00s" for the same instant. Round before picking the unit.
+    expect(formatDuration(999.5)).toBe("1.00s");
+  });
+
   it("rejects negative or non-finite input", () => {
     expect(() => formatDuration(-1)).toThrow(RangeError);
     expect(() => formatDuration(Number.NaN)).toThrow(RangeError);

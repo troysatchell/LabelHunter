@@ -1,2 +1,6 @@
-Validation Router (PRD §3.3) lands here — LH-010..016 / TRO-460..466. Deliberately
-empty in the scaffold ticket (TRO-456).
+Validation Router (PRD §3.3) lands here — LH-012 / TRO-462, with the comparators in
+LH-013 / TRO-463. Deliberately empty in the scaffold ticket (TRO-456).
+
+Design settled at CHECKPOINT 1: docs/checkpoints/cp1-cascade-router-prompts.md §4
+(confidence thresholds) and §5 (the ReviewReason routing rules, their precedence, and
+the label-level rollup). Read it before writing code here.

@@ -1,0 +1,25 @@
+# Requirements-audit config — PRE-REPO STUB
+# Created during extraction-only run (2026-08-10); no application code exists yet.
+# When the repo scaffolds, fill in code_roots / verify / tickets before the first
+# baseline sweep, and re-confirm exclude stays narrow.
+
+docs:
+  - id: TH
+    path: "/Users/troy/Documents/G.Assignments/Take-Home Project_ AI-Powered Alcohol Label Verification App.docx"
+    sha256: "7f50443d68066298042d808ef08611b49393ed14ace13ee810c9807a9f59d2e4"
+    note: "docx, not PDF — source cached to audit/requirements/source-TH.md via textutil; Source: fields cite cache line numbers, not pages"
+
+code_roots: []        # TBD at repo scaffold — remember evidence roots (docs/, README, deploy config), not just src/
+exclude:
+  - audit/requirements   # this skill's own output only — never the whole audit/ tree
+
+verify: {}            # TBD — test/typecheck/latency commands once the stack exists
+verify_urls:
+  app: null           # TBD — deployed URL (TH-R16)
+
+tickets:
+  provider: linear
+  team: null          # TBD — ticket scope check must run before first Phase 2
+  project: null
+
+pm_skill: null

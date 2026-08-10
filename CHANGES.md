@@ -4,6 +4,23 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-459 — PR review round 4: final 4 unresolved threads triaged, 2 doc fixes (2026-08-10)
+
+**What changed.** Triage of the last 4 unresolved CodeRabbit threads before merge:
+- `src/server/router/.gitkeep` credited all comparators to LH-013. Corrected: LH-013 owns
+  the four CP-1 comparators; the government-warning comparator is its own CP-2 subsystem
+  (LH-020, `src/server/warning/`). (Fixed.)
+- §6.3's sample user message said the extractor reading is inserted "verbatim — needs no
+  re-encoding." That contradicts §6.3's own `serializeUntrusted` requirement: extractor
+  evidence strings carry verbatim label text, adversarial input like any other. The sample
+  now routes the extractor block through the same escaping. (Fixed.)
+- The two remaining threads (warning-shape rejection payload; JSON.stringify delimiter
+  escape) were already fixed in rounds 2–3 — resolved with pointers, no code change.
+
+**How to run it.** Nothing to run; re-read the two corrected spots.
+
+**Rollback.** `git revert` this commit.
+
 ## TRO-459 — PR review round 3: 4 findings, including a real flaw in round 2's own fix (2026-08-10)
 
 **What changed.** CodeRabbit reviewed round 2's fixes and found that one of them — the

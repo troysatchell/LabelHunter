@@ -815,7 +815,9 @@ string above) for every value placed inside an `<UNTRUSTED_DATA>` block — neve
 </UNTRUSTED_DATA>
 
 <UNTRUSTED_DATA source="extractor_reading">
-  <the extractor JSON, verbatim — already a real JSON serialization, needs no re-encoding>
+  <the extractor JSON, re-serialized with serializeUntrusted — its evidence strings carry
+   verbatim label text, which is adversarial input like the application form, so it gets
+   the same escaping; "already JSON" is not enough, per §6.3 above>
 </UNTRUSTED_DATA>
 
 WHAT THE CODE DECIDED

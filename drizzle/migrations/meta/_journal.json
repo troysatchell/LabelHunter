@@ -8,6 +8,13 @@
       "when": 1786394605231,
       "tag": "0000_meta_healthcheck",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786400161570,
+      "tag": "0001_product_schema",
+      "breakpoints": true
     }
   ]
 }

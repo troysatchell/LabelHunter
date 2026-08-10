@@ -1,1 +1,2 @@
 {"ticket":"TRO-456","attempt":1,"verdict":"pass","failedGates":[],"crFindings":2,"crFixNow":2,"crNewTickets":0,"crDismissed":0,"ts":"2026-08-10T21:05:00Z"}
+{"ticket":"TRO-459","attempt":1,"verdict":"pass-with-override","failedGates":["regression-test"],"override":"docs-only ticket (design doc + .gitkeep annotations, zero source files changed) — regression-test gate is inapplicable to non-code changes; precedent: ship factory TRO-238 (pure Terraform change, same override)","ts":"2026-08-10T22:05:00Z"}

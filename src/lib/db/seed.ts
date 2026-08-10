@@ -66,15 +66,28 @@ async function main() {
       // wait, then see the first process's committed rows and refuse.
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${SEED_ADVISORY_LOCK_KEY})`);
 
-      const [existing] = await tx
+      // Check every table this script inserts into, not just `applications`.
+      // A partial prior run (e.g. crashed after inserting the batch job but
+      // before applications) would leave `applications` empty while
+      // `batch_jobs`/`label_images` are not — checking one table alone
+      // would miss that and insert on top of it.
+      const [existingApp] = await tx
         .select({ id: schema.applications.id })
         .from(schema.applications)
         .limit(1);
-      if (existing) {
+      const [existingBatch] = await tx
+        .select({ id: schema.batchJobs.id })
+        .from(schema.batchJobs)
+        .limit(1);
+      const [existingImage] = await tx
+        .select({ id: schema.labelImages.id })
+        .from(schema.labelImages)
+        .limit(1);
+      if (existingApp || existingBatch || existingImage) {
         throw new Error(
-          "db:seed: applications table already has rows. This script is not " +
-            "idempotent — run it only against an empty/freshly migrated " +
-            "database, or clear the product tables first.",
+          "db:seed: applications, batch_jobs, or label_images already has rows. " +
+            "This script is not idempotent — run it only against an empty/freshly " +
+            "migrated database, or clear the product tables first.",
         );
       }
 

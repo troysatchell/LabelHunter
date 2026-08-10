@@ -4,6 +4,19 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-457 — PR review round 4: seed idempotency guard fixed (2026-08-10)
+
+**What changed.** `src/lib/db/seed.ts`'s "already seeded" guard checked only the
+`applications` table. A database left with `batch_jobs` or `label_images` rows but no
+`applications` rows (a partial prior run in an unusual failure order) would pass the guard and
+insert on top of it. Guard now checks all three tables the script inserts into.
+
+**How to run it.** `pnpm db:seed` on an empty database inserts as before; verified manually
+(this script has no Vitest coverage by design — see the CodeRabbit-triage section below) by
+running it twice in a row: first run succeeds, second is rejected with the updated message.
+
+**Rollback.** `git revert` this commit; the guard reverts to checking `applications` alone.
+
 ## TRO-457 — PR review round 3: CodeRabbit findings, 1 fixed, 1 deferred (2026-08-10)
 
 **What changed.** A further local-CLI CodeRabbit pass found 2 findings:

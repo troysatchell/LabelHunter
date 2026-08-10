@@ -106,6 +106,262 @@ VERIFY and default to the strictest interpretation, for LH-013 to verify against
 cite. The document deliberately does not decide anything owned by CP-2 (warning subsystem) or
 CP-3 (batch queue).
 
+## TRO-458 — Align spec schema with the approved image-gen design (2026-08-10)
+
+**What changed.** Troy approved a render-first hybrid design for golden-set images
+(`docs/superpowers/specs/2026-08-10-golden-label-image-gen-design.md`) and rescoped this
+ticket to core-only (degradations → LH-004, Imagen → LH-005, verify gate → LH-006). Per the
+ticket's note, aligned the spec schema with design §3 before merging:
+- Added `provenance` (`rendered | rendered+degraded | ai-generated`), `verified` (boolean),
+  and `vectors` (`audit/rubric.md` Appendix A, V1–V10) to `GoldenSetCase` and to every one of
+  the 29 committed cases.
+- Loader now enforces `provenance: "ai-generated"` requires `verified: true` — an AI-generated
+  image can silently fail to render the exact text its spec claims; the eval harness must not
+  trust one until a human confirms it.
+- Mapped every case to the rubric vector(s) it evidences and found a real, previously-invisible
+  gap: **V7** (net-contents format match, `"750 mL"` vs `"750ml"`) has no covering case. Added
+  a test that asserts this gap explicitly (`loader.test.ts`) so it can't silently reappear once
+  closed, and documented it in `golden-set/README.md` rather than quietly patching around it.
+- 8 new regression tests (unknown provenance, unknown vector, unverified ai-generated case
+  rejected, verified one accepted, vector-coverage assertion, ai-generated-implies-verified
+  assertion on the real manifest).
+
+**Still not done — the renderer itself.** This ticket's scope was the schema; producing actual
+pixels is LH-003's remaining work (or a split-off), tracked against the design doc's §2
+component list (`render.ts`/`degrade.ts`/`imagen.ts`/`verify.ts`/`build.ts`). `golden-set/images/`
+is still empty.
+
+**How to run it.** `pnpm test -- src/lib/golden-set` — 26 tests, up from 12.
+
+**Rollback.** `git revert` this commit; the manifest and loader return to the pre-alignment
+shape (still valid, just missing `provenance`/`verified`/`vectors`).
+
+## TRO-458 — LH-003: Golden set v1 — ground-truth schema, manifest, loader (2026-08-10)
+
+**What changed.** Ground-truth data and tooling for the golden set (TH-R12), scoped to the
+parts that do not need an image-generation tool:
+
+- **Ground-truth schema** (`src/lib/golden-set/types.ts`): a `GoldenSetCase` type covering
+  the five example fields on both the application and the label (PRD §2, TH-R11), the
+  Validation Router's expected per-field and label-level verdicts, and the `ReviewReason`
+  enum (PRD §3.3).
+- **Manifest** (`golden-set/manifest.json`): 29 complete ground-truth cases across all 12
+  required test categories (PRD §6) — clean match (4), ABV mismatch (3), title-case warning
+  (2), reworded warning (2), missing warning (2), case-variant brand (3), glare (2), rotation
+  (2), low light (2), tiny warning text (2), odd typography (2), conflicting
+  application-vs-label data (3). Includes the two named brief examples: `STONE'S THROW` vs
+  `Stone's Throw` (TH-R8, `case-14-case-variant-brand-stones-throw`) and Jenny Park's
+  title-case catch (TH-R9, `case-08-title-case-warning-prefix-only`).
+- **Loader + validator** (`src/lib/golden-set/loader.ts`, TDD'd in
+  `loader.test.ts`): `loadGoldenSetManifest()` reads and validates
+  `golden-set/manifest.json`; `validateManifest()` checks the shape and collects every
+  problem in one pass — missing fields, wrong types, an unknown category, a `reviewReason`
+  that doesn't match the label verdict, an `imagePath` whose filename doesn't match its
+  `caseId`, and duplicate case IDs. 12 test cases; confirmed red (missing module) before
+  `loader.ts` existed, green after.
+- **`golden-set/README.md`**: the manifest format, the image naming convention
+  (`golden-set/images/<caseId>.jpg`), and the known gap below.
+
+**Known gap, stated plainly: no label images.** `golden-set/images/` is empty. Every
+`imagePath` in the manifest names a file that does not exist. Generating 29 label images
+needs an AI image-generation tool or a camera; this ticket's agent had neither, and a
+placeholder file with a `.jpg` extension would silently pass a file-existence check while
+being useless for testing — worse than an honest gap. A follow-up ticket (LH-021 depends on
+this landing) must generate or source each image at the path its case already names; the
+case's `label` field is the spec for what the image must show.
+
+**How to run it.** `pnpm test -- src/lib/golden-set` runs the loader tests directly. Load the
+manifest from application code with `loadGoldenSetManifest()` (no arguments needed — it
+resolves `golden-set/manifest.json` relative to the repo root).
+
+**Rollback.** `git revert` this ticket's commits. Nothing outside `golden-set/` and
+`src/lib/golden-set/` depends on this yet.
+
+## TRO-457 — PR review round 4: seed idempotency guard fixed (2026-08-10)
+
+**What changed.** `src/lib/db/seed.ts`'s "already seeded" guard checked only the
+`applications` table. A database left with `batch_jobs` or `label_images` rows but no
+`applications` rows (a partial prior run in an unusual failure order) would pass the guard and
+insert on top of it. Guard now checks all three tables the script inserts into.
+
+**How to run it.** `pnpm db:seed` on an empty database inserts as before; verified manually
+(this script has no Vitest coverage by design — see the CodeRabbit-triage section below) by
+running it twice in a row: first run succeeds, second is rejected with the updated message.
+
+**Rollback.** `git revert` this commit; the guard reverts to checking `applications` alone.
+
+## TRO-457 — PR review round 3: CodeRabbit findings, 1 fixed, 1 deferred (2026-08-10)
+
+**What changed.** A further local-CLI CodeRabbit pass found 2 findings:
+- `label_images` (major, real): the (batch, filename) index used for CSV-to-image pairing
+  (PRD §3.5) was a plain index, not unique. Two images uploaded into the same batch with
+  the same filename would make that pairing lookup return two candidates instead of one —
+  exactly the ambiguous case PRD §3.5 says must be reported before the job starts, not
+  silently accepted. Fixed: `label_images_batch_filename_idx` is now
+  `label_images_batch_filename_unique`, a `UNIQUE` index on `(batch_job_id,
+  original_filename)`. Postgres treats each `NULL` as distinct, so single-label images
+  (`batchJobId` null) are never deduplicated against each other — only images inside the
+  same real batch are constrained. Regenerated the migration (folded into
+  `0001_product_schema.sql`, same reasoning as the earlier rounds — this table has never
+  been applied outside this worktree). Verified directly: reset the database, reapplied,
+  reseeded, then confirmed with a negative insert (`ERROR: duplicate key value violates
+  unique constraint "label_images_batch_filename_unique"`) and a positive one (two
+  single-label images sharing a filename, both `NULL` batch, insert succeeds).
+- **Deferred, not fixed:** enforcing that a `verifications` row's application, image, and
+  batch job all belong together at the database level. This is the same finding raised in
+  the prior two review rounds, and the answer is unchanged: it needs a trigger or composite
+  foreign keys spanning three tables, and that design belongs with the code that creates
+  verification rows (LH-041's batch worker, behind the CP-3 checkpoint), not invented ahead
+  of it in a schema ticket. Documented at both places in `schema.ts` that CodeRabbit has now
+  flagged it (`labelImages` and `verifications`), so a future reader finds the decision
+  instead of re-discovering the gap. Named again in the final ticket report as a known,
+  deliberate gap for LH-041 to close.
+
+**How to run it.** `pnpm db:migrate` picks up the corrected `0001_product_schema.sql`;
+`pnpm db:seed` is unchanged.
+
+**Rollback.** `git revert` this commit.
+
+## TRO-457 — PR review round 2: CodeRabbit findings, 1 fixed, 1 stale (2026-08-10)
+
+**What changed.** GitHub-App CodeRabbit reviewed PR #2 (a separate pass from the local CLI
+triage already recorded below). Of 5 findings, 3 were already fixed by earlier commits in this
+PR and auto-marked resolved. Of the remaining 2:
+- `src/lib/db/seed.ts` (minor, real): the batch fixture's counters claimed `totalCount: 2` with
+  one auto-verified item, but only one application row is actually batch-linked. Fixed by
+  setting the counters to match the single real fixture (`totalCount: 1, autoVerifiedCount: 0,
+  needsHumanCount: 1`) rather than inventing a second row. Verified by truncating and re-running
+  `pnpm db:seed`, then querying `batch_jobs` and counting batch-linked `applications` directly.
+- `src/lib/db/seed.ts` (flagged critical — "transaction callback not closed, file won't parse"):
+  verified against the current file and it is **stale**. The finding describes an intermediate
+  commit; the fix (wrapping every insert in one `db.transaction()`) already landed and is
+  described in the CodeRabbit-triage section below. `pnpm typecheck`, `pnpm build`, and this
+  gate's own `typecheck` check all confirm the file parses and type-checks cleanly. Dismissed
+  with this reason, not fixed (there was nothing to fix).
+
+**How to run it.** `pnpm db:seed` — same command, corrected counters.
+
+**Rollback.** `git revert` this commit.
+
+## TRO-457 — LH-002: Database schema + migrations (2026-08-10)
+
+**What changed.** Added the real Drizzle + Postgres schema for LabelHunter (PRD §3.6,
+TH-R6, TH-R22) in `src/lib/db/`, extending the scaffold's `_meta`-only `schema.ts`:
+
+- **`enums.ts`** — the eight closed-set vocabularies as `pgEnum` types, each backed by one
+  `as const` array so the TypeScript union, the Postgres enum, and a runtime guard all stay
+  in sync: `beverage_type` (beer/wine/spirits), `label_verdict` (PASS/FAIL/REVIEW),
+  `field_verdict` (MATCH/MISMATCH/NEEDS_REVIEW), `field_name` (the 5 example fields from
+  PRD §2), `review_reason` (the 8-value `ReviewReason` enum from PRD §3.3, verbatim),
+  `resolution_path` (which model(s) resolved a verification), `batch_job_status`, and
+  `review_disposition`. `toReviewReason` and `toBeverageType` narrow an untyped string to
+  the matching type or throw, naming every legal value in the error — the checkpoint
+  between loosely-typed input (model output, a CSV cell) and an insert. TDD: red-first
+  tests in `enums.test.ts` (9 cases) cover valid values, invalid values, and a near-miss
+  (wrong case) for each guard.
+- **`schema.ts`** — six product tables: `batch_jobs` (status + per-item counters the
+  batch-progress UI polls), `applications` (brand/class/ABV+proof/net contents/beverage
+  type — the claimed values a label gets checked against), `label_images` (storage
+  reference, original filename, post-preprocessing dimensions; linked to an application
+  for single-label verify or to a batch job before per-row pairing, per PRD §3.5), `verifications` (one row per completed label-level result: verdict, which model(s)
+  resolved it, links to application/image/batch job), `field_results` (one row per field
+  per verification: extracted value, verbatim evidence — required, not optional, per
+  PRD §3.2 — confidence 0–1, verdict, one-line reason), and `review_queue` (one row per
+  needs-human item: reason, nullable resolver output, nullable human disposition). Every
+  closed-set column uses a Postgres enum, not free text. Reasonable indexes throughout,
+  including a partial index on `review_queue` for the unresolved-items view the review
+  queue UI needs, and a foreign key on every reference — all `ON DELETE CASCADE` (a
+  prototype has no retention requirement, and a child row is meaningless without its
+  parent). Full `relations()` graph for the query API.
+- **No PII, checked column by column (TH-R6).** No table anywhere stores a real person's
+  name, email, address, or other identifier. `review_queue` in particular records a
+  human's approve/reject disposition and when, but not who — adding a reviewer-identity
+  column was considered and rejected; nothing in the PRD or the rubric asks for it, and
+  it would be the one clear PII risk in this schema.
+- **Migration** `drizzle/migrations/0001_product_schema.sql`, generated with
+  `pnpm db:generate` (not hand-written), applied with `pnpm db:migrate`, and verified with
+  direct `psql` queries against this worktree's own database: `\dt` lists all 7 tables,
+  `\d <table>` for each of the 6 new ones shows the expected columns, indexes, and
+  constraints, and manual negative inserts confirm each constraint fires (the
+  `label_images` ownership `CHECK`, the `field_results` confidence-range `CHECK`, the
+  `field_results` and `review_queue` unique indexes) — not just declared, but load-bearing.
+- **`db:seed`** (`pnpm db:seed`, added to `package.json`, run via the new `tsx` dev
+  dependency) inserts a small, obviously-fake dev dataset spanning all six tables: one
+  batch job, three applications (a clean single-label PASS, a batch-paired wine with a
+  low-confidence ABV read that lands in the review queue, and a single-label FAIL on a
+  title-cased government warning — Jenny's real catch, PRD §3.4), three label images,
+  three verifications, fifteen field results, and one review-queue entry. Refuses to run
+  twice against the same database instead of silently duplicating fixtures.
+
+**A real drizzle-kit bug found and fixed, in scope for this ticket.** The first generated
+migration created all 7 tables but zero `CREATE TYPE` statements, even though every enum
+column referenced a type name that did not yet exist — an unusable migration that would
+fail on apply. Cause: `drizzle-kit generate` only discovers `pgEnum`/`pgTable` objects
+that are visible on the configured schema file's own exports; the enums lived in
+`enums.ts` and were only imported (not re-exported) by `schema.ts`, so drizzle-kit's
+export scan never saw them, even though the tables used them. Fixed with
+`export * from "./enums"` in `schema.ts`. Caught by reading the generated SQL before
+trusting it (this repo's "claims carry provenance" rule) — a `pnpm db:migrate` exit code
+of 0 would have hidden this, since the broken migration was never applied.
+
+**CodeRabbit review triage (6 findings; 5 fixed, 1 explicitly skipped):**
+- `enums.test.ts` claimed a wrong-case test for both guards but only had one. Fixed —
+  added the missing `toBeverageType("Beer")` case; the claim is now true.
+- `review_queue`: added a `CHECK` requiring `disposition` and `disposed_at` to be null or
+  non-null together — one fact, two columns, must move as a pair.
+- `batch_jobs`: added `CHECK` constraints — every counter non-negative, and each of
+  `processedCount`/`autoVerifiedCount`/`resolvedBySonnetCount`/`needsHumanCount`/
+  `failedCount` no greater than `totalCount`. Bounded independently, not summed to equal
+  `totalCount`: the batch worker (LH-041) updates one counter at a time, and a sum
+  constraint would reject a legal state between two separate `UPDATE`s.
+- `batch_jobs`/`verifications`/`review_queue`: `updatedAt` now carries `.$onUpdate(() =>
+  new Date())`. This is a drizzle-orm runtime default, not a database trigger — it fires
+  on every `db.update()` call that does not set the column itself, verified against the
+  real database (an `UPDATE` through Drizzle bumped `updated_at` and left `created_at`
+  unchanged). It does not protect a write that bypasses the ORM; documented as a known
+  limit in the column comment rather than built out further, since every write path in
+  this app goes through Drizzle.
+- `seed.ts`: wrapped every insert in one `db.transaction()`. A failure partway through now
+  rolls back the whole batch instead of leaving a half-seeded database that would silently
+  defeat the "already seeded" guard on the next run.
+- **Skipped:** enforcing that a verification's application, image, and batch job all
+  belong to the same batch. A real DB-level guarantee needs a trigger or composite foreign
+  keys spanning three tables — real design work that belongs with the code that creates
+  verification rows (LH-041's batch worker, behind the CP-3 batch-queue checkpoint), not
+  invented ahead of that design in a schema ticket. Flagged in the final ticket report as a
+  known gap, not silently dropped.
+
+**How to run it.** `source .factory-env` (or point `DATABASE_URL` at your own Postgres),
+then `pnpm db:migrate` to apply `0001_product_schema.sql`, then `pnpm db:seed` for dev
+fixtures. `pnpm db:generate` regenerates a migration after a future `schema.ts` edit.
+
+**Rollback.** Drop the six product tables and their enum types (or restore the pre-0001
+database from a snapshot) and delete `drizzle/migrations/0001_product_schema.sql` plus its
+entry in `drizzle/migrations/meta/_journal.json`. `_meta` and the scaffold are untouched.
+
+**Design calls the PRD left open (flagging for visibility, not asking permission):**
+- No per-application government-warning column — the warning subsystem (PRD §3.4) always
+  compares extracted text against one fixed statutory string, so there is no per-application
+  value to store.
+- `label_images` carries both a nullable `application_id` and a nullable `batch_job_id`
+  (at least one required, via `CHECK`) rather than a single polymorphic reference — set
+  directly for single-label upload, left to `batch_job_id` alone for a batch upload before
+  its CSV-row pairing exists.
+- `field_name` and beverage-type-driven optionality rules (e.g. ABV optionality per PRD §2)
+  are two different things: this ticket enumerates the closed set of field names in the
+  schema, but does not implement any optionality *rule* — that logic, and its tests, belong
+  to LH-013 (field comparators), which this ticket does not touch.
+- Integer identity columns (`generatedAlwaysAsIdentity()`), not `serial` — Postgres's own
+  recommended replacement since v10, and pre-empts the identical suggestion CodeRabbit made
+  on the TRO-456 scaffold PR for `_meta.id`.
+
+**Known limits / not verified from this ticket.** `db:seed`'s only tested behavior is the
+scripted insert path itself (run against a real database, output checked); it has no
+Vitest coverage of its own, since it is a sequence of fixture inserts, not a pure function.
+The `relations()` graph was verified to type-check and to match the FK structure by
+inspection, not by exercising `db.query.*` relational reads end-to-end — no code in this
+repo uses that API yet.
+
 ## FACTORY — merge-changes.mjs (2026-08-10)
 
 **What changed.** Three tickets in a row (TRO-456 twice, TRO-457) hit the same `CHANGES.md`

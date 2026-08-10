@@ -8,7 +8,8 @@ creation. Checkpoint tickets **block** their gated wave via Linear relations.
 Priorities follow TH-R23: working core (Urgent/High) before ambition (Medium/Low).
 Every ticket's DoD includes the factory gate; entries below list only ticket-specific DoD.
 
-## Linear mapping (created 2026-08-10, all blocking relations set)
+## Linear mapping (created 2026-08-10, all blocking relations set; LH-004..006 added
+2026-08-10 — golden-set decomposition per the approved image-gen spec)
 
 | LH | TRO | | LH | TRO | | LH | TRO | | LH | TRO |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -18,9 +19,9 @@ Every ticket's DoD includes the factory gate; entries below list only ticket-spe
 | LH-CP1 | TRO-459 | | LH-015 | TRO-465 | | LH-040 | TRO-473 | | LH-060 | TRO-481 |
 | LH-010 | TRO-460 | | LH-016 | TRO-466 | | LH-041 | TRO-474 | | LH-061 | TRO-482 |
 | LH-011 | TRO-461 | | LH-CP2 | TRO-467 | | LH-042 | TRO-475 | | LH-062 | TRO-483 |
-| | | | LH-020 | TRO-468 | | LH-050 | TRO-476 | | LH-063 | TRO-484 |
-| | | | LH-021 | TRO-469 | | LH-051 | TRO-477 | | LH-064 | TRO-485 |
-| | | | | | | | | | LH-065 | TRO-486 |
+| LH-004 | TRO-497 | | LH-020 | TRO-468 | | LH-050 | TRO-476 | | LH-063 | TRO-484 |
+| LH-005 | TRO-498 | | LH-021 | TRO-469 | | LH-051 | TRO-477 | | LH-064 | TRO-485 |
+| LH-006 | TRO-499 | | | | | | | | LH-065 | TRO-486 |
 | | | | | | | | | | LH-070 | TRO-487 |
 
 ---
@@ -44,13 +45,39 @@ TH-R6, TH-R22 groundwork. Blocked by LH-001.
 Tables per PRD §3.6: `applications`, `label_images`, `batch_jobs`, `verifications`,
 `field_results`, `review_queue`. No PII anywhere. Numbered migrations; seed script for dev.
 
-### LH-003 · Golden set v1: test labels + ground truth  [High]
-TH-R12. Blocked by LH-001.
-20–30 labels (AI-generated per the brief, mixed with a few real bottle photos) with
-ground-truth JSON: clean match, ABV mismatch, title-case warning, reworded warning, missing
-warning, case-variant brand, glare, rotation, low light, tiny warning text, odd typography,
-conflicting application-vs-label data. Committed to the repo; doubles as the demo set.
-Reviewed at CP-2.
+### LH-003 · Golden set core: spec schema + renderer + clean base labels  [High]
+TH-R12. Blocked by LH-001. Design: `docs/superpowers/specs/2026-08-10-golden-label-image-gen-design.md`.
+Render-first: hand-authored ground-truth specs (`assets/golden/specs/*.json`, schema per
+design §3) drive an HTML/CSS→PNG renderer (`scripts/golden/render.ts`, Playwright, committed
+fonts, fixed viewport). Base labels cover: 3 clean matches (OLD TOM bourbon + beer + wine),
+5 warning variants (exact/title-case/reworded/missing/tiny), judgment cases (STONE'S THROW,
+ABV format, net-contents format, different brand), conflicting application-vs-label data.
+Exact warning text is guaranteed by the renderer, never by an image model. `build.ts`
+orchestrates. Images committed. Reviewed at CP-2.
+
+### LH-004 · Golden set: degradation pass  [High]
+TH-R12, TH-R10. Blocked by LH-003.
+`scripts/golden/degrade.ts` (sharp): rotate, perspective, glare overlay, low-light, blur.
+Derives imperfect-image variants from clean bases so ground truth carries over unchanged.
+Covers rubric V9 (blur-to-unreadable) + bonus X1 set. Parameters recorded in each spec's
+`degradations` list.
+
+### LH-005 · Golden set: Imagen backdrops + wild labels  [Medium]
+TH-R12. Blocked by LH-003.
+`scripts/golden/imagen.ts` (Gemini API image generation): ~6 bottle/scene backdrops that
+sharp composites rendered labels onto, and ~5 fully generated wild labels. Transcribe each
+wild label's actually-rendered text into its spec; `verified: true` only after human check
+(fold into CP-2 review). `GOOGLE_API_KEY` in `.env.local` only — provisioned by Troy
+2026-08-10; `worktree.sh` passes it through to ticket worktrees, so no key hard stop remains.
+Dev-time dependency only; runtime has no Google surface (TH-R7 note goes in approach.md via
+LH-064).
+
+### LH-006 · Golden set: verify gate + manifest + CI smoke  [High]
+TH-R12, TH-R17. Blocked by LH-004, LH-005.
+`scripts/golden/verify.ts`: every image has a spec, every spec's images exist, manifest
+current, rubric vectors V1–V10 each covered by ≥1 asset, `ai-generated` specs `verified` or
+excluded from eval. `manifest.json` is the consumer interface for eval/latency harnesses.
+CI: verify.ts + one headless render smoke; no network, no image-API calls.
 
 ### LH-CP1 · ⛔ CHECKPOINT 1: cascade router + prompts walkthrough  [Urgent]
 Blocks LH-010..LH-015. Prepare and present to Troy: Haiku extraction prompt + JSON schema
@@ -123,7 +150,7 @@ the eval harness; the Jenny title-case catch is a named case.
 ## Wave E — evidence harnesses
 
 ### LH-030 · Eval harness  [Urgent]
-TH-R17, TH-R19. Blocked by LH-003, LH-013.
+TH-R17, TH-R19. Blocked by LH-006, LH-013.
 Extraction accuracy + verdict accuracy vs ground truth; `pnpm eval:check` compares against a
 committed baseline (gate G8 goes live); runs in CI; produces the cascade-vs-Sonnet-only
 benchmark (keep the cascade regardless — the benchmark is the evidence, PRD §4).
@@ -192,7 +219,7 @@ spend budget with friendly exhausted state. Security-semantics escalation gate a
 human read before merge.
 
 ### LH-062 · Seeded demo deployment  [High]
-TH-R16. Blocked by LH-060, LH-003. Golden set preloaded so evaluators demo in one click;
+TH-R16. Blocked by LH-060, LH-006. Golden set preloaded so evaluators demo in one click;
 deployed single-label verify succeeds for an outside evaluator.
 
 ### LH-063 · README  [High]

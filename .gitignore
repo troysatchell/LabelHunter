@@ -8,5 +8,23 @@
 .factory-env
 .env.local
 
-# Node (scaffold will extend)
+# Node
 node_modules/
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+
+# Build / test output
+build/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# Misc
+.DS_Store
+*.pem
+npm-debug.log*
+pnpm-debug.log*

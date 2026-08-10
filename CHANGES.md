@@ -4,6 +4,30 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-459 — PR review round 2: 3 more CodeRabbit findings, all fixed (2026-08-10)
+
+**What changed.** A second CodeRabbit pass on the doc found 3 more real issues:
+- §4.4's malformed-confidence rejection described one payload shape (`value: null`) for all
+  fields, but `government_warning` has no `value` — its rejection now sets
+  `present: null, transcription: null` explicitly, so a downstream `value === null` check
+  (which `MISSING_REQUIRED_FIELD` literally uses) doesn't silently miss it.
+- The resolver's untrusted-data delimiting (previous round) wrapped values in
+  `<UNTRUSTED_DATA>` tags but inserted them as freeform text — a value containing the literal
+  string `</UNTRUSTED_DATA>` could still close the tag early. Switched the application-form
+  block to real JSON serialization (`JSON.stringify`, not string concatenation, called out as
+  an implementation requirement) — JSON string-escaping neutralizes the attack structurally,
+  which a text template cannot. Also clarified the image needs no text delimiter: it's a
+  separate image content block, not text, so it cannot contain closing-tag characters.
+- The prompt-injection test requirement said the resolver's decision "does not change based
+  on" an injected value — too broad, since a legitimately different field value should change
+  the verdict. Replaced with a precise oracle: the *targeted* field's disposition must be
+  unaffected by a sibling field's injection payload, while the *injected* field's own
+  disposition still reflects its real (garbled) content.
+
+**How to run it.** Nothing to run; re-read the three corrected sections.
+
+**Rollback.** `git revert` this commit.
+
 ## TRO-459 — LH-CP1: ⛔ CHECKPOINT 1 walkthrough material (2026-08-10)
 
 **This entry does not clear a checkpoint.** It adds the material Troy reads *at* the

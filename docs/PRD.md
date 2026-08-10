@@ -55,7 +55,9 @@ exact warning enforcement (TH-R9), and a UI Sarah's mother could use (TH-R3).
 ```
 Upload (single or batch)
    ↓
-Image preprocessing (resize ≤2576px, EXIF rotation)
+Image preprocessing (EXIF rotation; keep original full-res for OCR;
+  ≤1568px variant for Haiku — its vision cap; warning-region crop at
+  near-native DPI; ≤2576px variant reserved for Sonnet escalation)
    ↓
 Haiku Extractor            — claude-haiku-4-5, vision, structured output
    ↓
@@ -134,6 +136,58 @@ The UI always shows the reason ("Government Warning differs from expected text")
 - Tables: `applications`, `label_images`, `batch_jobs`, `verifications` (label-level),
   `field_results` (per-field verdict/evidence/confidence/reason), `review_queue` (reason,
   resolver output, human disposition). No PII anywhere (TH-R6).
+
+### 3.7 Resolution strategy & warning upgrade ladder
+
+Haiku 4.5 is standard-resolution vision (1568px long edge); Sonnet 5 is high-res (2576px).
+The warning block is small print, so it is the field most exposed to the Haiku cap. The
+telemetry below decides — with evidence, not vibes — whether and how far to upgrade.
+
+**The metric:** per eval run and per batch, segment warning-check outcomes into:
+
+- **True mismatch (FAIL)** — label text genuinely differs from canonical. Working as
+  intended. NOT an upgrade signal, no matter how frequent.
+- **Resolution-suspect (REVIEW)** — `LOW_IMAGE_QUALITY`, or VLM and OCR candidates disagree
+  (`CONFLICTING_EXTRACTION`). This rate drives the ladder.
+
+**The ladder (apply in order; re-measure on the golden set after each step):**
+
+| Suspect rate | Action |
+|---|---|
+| ≤ 10% | Healthy — keep Haiku + warning crop. |
+| 10–25% | Fix the crop pipeline first (detection, DPI, framing); re-measure before any model change. |
+| > 25% persistent after crop fix | Field-level upgrade: warning crop always goes to Sonnet; Haiku keeps the other four fields. |
+| Still failing, or other fields degrade too | Full extractor upgrade to Sonnet 5 single-tier; re-run the latency (5s) and cost benchmarks before accepting. |
+
+The eval harness (§6) reports this segmentation on every run, so the upgrade decision is a
+number in CI output, not a judgment call mid-week.
+
+### 3.8 Latency budget (TH-R2)
+
+The 5-second promise applies to what the agent is waiting on: **a verdict or an explicit
+flag.** Stage budgets below are targets to be validated by the latency harness (§6) —
+never quoted as achieved numbers until measured.
+
+| Stage (single-label flow) | Budget (p50) |
+|---|---|
+| Preprocess — sharp variants + warning crop, EXIF | ~0.3s |
+| tesseract.js OCR on the warning crop (runs in parallel with Haiku) | ~0.5s |
+| Haiku extraction (structured output, ≤1568px) | ~2.5s |
+| Validation Router (deterministic) | <10ms |
+| **Fast path total (~85–90% of labels)** | **~3s p50 · ≤5s p95** |
+
+- OCR runs on the **warning crop only**, concurrently with the Haiku call — never serially,
+  never on the full image (full-image tesseract.js is a 1–3s tax we don't pay).
+- **Escalation is asynchronous.** On a REVIEW route the agent still gets their answer inside
+  the budget: per-field verdicts plus an explicit "needs review — {reason}" flag. The Sonnet
+  resolution lands in the review queue seconds later, usually before the item is opened.
+  Time-to-verdict-or-flag is the 5s clock — items needing deeper judgment were never
+  5-second items by eye either.
+- Batch mode is throughput-bound, not latency-bound: the 5s requirement is the interactive
+  single-label promise; batch reports items/minute and per-item averages.
+- Ladder interaction (§3.7): the bottom rung (full-Sonnet extraction, ~3–5s) consumes most
+  of the headroom — which is exactly why that rung requires re-running the latency benchmark
+  before acceptance.
 
 ## 4. Model usage & cost
 

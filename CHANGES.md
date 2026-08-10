@@ -4,6 +4,27 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-457 — PR review round 2: CodeRabbit findings, 1 fixed, 1 stale (2026-08-10)
+
+**What changed.** GitHub-App CodeRabbit reviewed PR #2 (a separate pass from the local CLI
+triage already recorded below). Of 5 findings, 3 were already fixed by earlier commits in this
+PR and auto-marked resolved. Of the remaining 2:
+- `src/lib/db/seed.ts` (minor, real): the batch fixture's counters claimed `totalCount: 2` with
+  one auto-verified item, but only one application row is actually batch-linked. Fixed by
+  setting the counters to match the single real fixture (`totalCount: 1, autoVerifiedCount: 0,
+  needsHumanCount: 1`) rather than inventing a second row. Verified by truncating and re-running
+  `pnpm db:seed`, then querying `batch_jobs` and counting batch-linked `applications` directly.
+- `src/lib/db/seed.ts` (flagged critical — "transaction callback not closed, file won't parse"):
+  verified against the current file and it is **stale**. The finding describes an intermediate
+  commit; the fix (wrapping every insert in one `db.transaction()`) already landed and is
+  described in the CodeRabbit-triage section below. `pnpm typecheck`, `pnpm build`, and this
+  gate's own `typecheck` check all confirm the file parses and type-checks cleanly. Dismissed
+  with this reason, not fixed (there was nothing to fix).
+
+**How to run it.** `pnpm db:seed` — same command, corrected counters.
+
+**Rollback.** `git revert` this commit.
+
 ## TRO-457 — LH-002: Database schema + migrations (2026-08-10)
 
 **What changed.** Added the real Drizzle + Postgres schema for LabelHunter (PRD §3.6,
@@ -18,7 +39,7 @@ TH-R6, TH-R22) in `src/lib/db/`, extending the scaffold's `_meta`-only `schema.t
   `review_disposition`. `toReviewReason` and `toBeverageType` narrow an untyped string to
   the matching type or throw, naming every legal value in the error — the checkpoint
   between loosely-typed input (model output, a CSV cell) and an insert. TDD: red-first
-  tests in `enums.test.ts` (8 cases) cover valid values, invalid values, and a near-miss
+  tests in `enums.test.ts` (9 cases) cover valid values, invalid values, and a near-miss
   (wrong case) for each guard.
 - **`schema.ts`** — six product tables: `batch_jobs` (status + per-item counters the
   batch-progress UI polls), `applications` (brand/class/ABV+proof/net contents/beverage

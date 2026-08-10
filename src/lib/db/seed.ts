@@ -21,7 +21,13 @@
  */
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { sql } from "drizzle-orm";
 import * as schema from "./schema";
+
+// Arbitrary, stable lock key for this script only — no other code in this
+// repo takes an advisory lock, so collision is not a concern. Scoped to the
+// transaction: Postgres releases it automatically on commit or rollback.
+const SEED_ADVISORY_LOCK_KEY = 727_001;
 
 const CANONICAL_WARNING =
   "GOVERNMENT WARNING: (1) According to the Surgeon General, women should " +
@@ -54,6 +60,12 @@ async function main() {
 
   try {
     await db.transaction(async (tx) => {
+      // Serialize concurrent `db:seed` runs: without this, two processes
+      // could both pass the "already seeded" check below before either
+      // commits, and both would insert — the lock makes the second process
+      // wait, then see the first process's committed rows and refuse.
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${SEED_ADVISORY_LOCK_KEY})`);
+
       const [existing] = await tx
         .select({ id: schema.applications.id })
         .from(schema.applications)
@@ -66,15 +78,17 @@ async function main() {
         );
       }
 
-      // A completed batch of two, one auto-verified and one escalated —
-      // exercises batch_jobs' progress counters (PRD §3.5).
+      // A completed batch of one, escalated to review — exercises
+      // batch_jobs' progress counters (PRD §3.5). Counters match the single
+      // batch-linked fixture below (appMillerVineyards); CodeRabbit caught
+      // an earlier version claiming a second, non-existent auto-verified item.
       const [batch] = await tx
         .insert(schema.batchJobs)
         .values({
           status: "COMPLETED",
-          totalCount: 2,
-          processedCount: 2,
-          autoVerifiedCount: 1,
+          totalCount: 1,
+          processedCount: 1,
+          autoVerifiedCount: 0,
           resolvedBySonnetCount: 0,
           needsHumanCount: 1,
           failedCount: 0,

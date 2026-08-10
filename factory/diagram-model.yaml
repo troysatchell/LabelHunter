@@ -213,8 +213,9 @@ nodes:
       - .github/workflows/ci.yml
     detail: |
       Test steps run continue-on-error so the identity diff ALWAYS runs and names the
-      break. Quarantine read from the BASE ref of the PR. Generated 2026-08-10, NEVER
-      EXECUTED — a workflow file is a hypothesis until a real PR runs it.
+      break. Quarantine read from the BASE ref of the PR. First executed 2026-08-10
+      (run 31428616460, push to main): SUCCESS via the pre-scaffold no-op path. The
+      real verify path — typecheck/tests/testdiff — first runs at the scaffold PR.
 
   - id: coderabbit
     label: CodeRabbit
@@ -269,11 +270,11 @@ nodes:
     label: GitHub remote
     kind: external
     zone: delivery
-    subtitle: repo not created — hard stop
+    subtitle: live · troysatchell/LabelHunter
     detail: |
-      TH-R13 requires an evaluator-visible repo. Creating and first-pushing it is
-      outward-facing and needs Troy. Until then the whole PR → CI → review → merge
-      chain is generated but cannot execute.
+      Created by Troy 2026-08-10; main pushed and verified (80a191b). TH-R13's
+      evaluator-visible repo exists. Still pending on GitHub: the CodeRabbit app
+      install (browser login — Troy).
 
   - id: deploy
     label: Render deploy
@@ -362,15 +363,15 @@ edges:
   - {id: f10, from: ci,         to: agent,        kind: feedback, polarity: '-', loop: B9,
      label: CI red → rework, confidence: heuristic, note: "CI is the orchestrator's gate to watch, never the agent's — exact failure fed back, same retry cap."}
 
-  - id: g01
+  - id: e27
     from: merge
     to: github
-    kind: gap
-    label: first push — Troy hard stop
+    kind: flow
+    label: push main (verified)
     note: >-
-      TH-R13 needs an evaluator-visible GitHub repo. Until Troy creates it and
-      first-pushes, everything right of the evidence gate is machinery that has never
-      run. This is the single blocking dependency for the whole delivery half.
+      Resolved 2026-08-10: Troy created troysatchell/LabelHunter; main pushed and
+      verified with git ls-remote (80a191b). CI executed for the first time on that
+      push — success via the pre-scaffold no-op path.
   - id: g02
     from: audit
     to: prd
@@ -411,14 +412,15 @@ findings:
       a forged swap. The scaffold ticket (TRO-456) completes the rest; nothing
       auto-merges before it does.
   - id: manual-2
-    severity: high
+    severity: medium
     kind: single-blocking-dependency
-    title: Every path right of the gate waits on one human action
-    nodes: [github, merge, ci, coderabbit, deploy]
+    title: Three Troy-only hard stops remain on the delivery path
+    nodes: [coderabbit, deploy]
     detail: >-
-      GitHub repo creation (and then CodeRabbit install, Render setup, API key) are
-      hard stops only Troy can clear. Correct by design — but it means Wave 0 cannot
-      finish unattended, so schedule these before starting an overnight run.
+      GitHub repo creation is CLEARED (2026-08-10). Still Troy-only: the CodeRabbit
+      app install, Render account setup, and the Anthropic API key at the deploy
+      ticket. Schedule these before an overnight run so Wave 1+ is not blocked on
+      them mid-flight.
   - id: manual-3
     severity: medium
     kind: provisional-policy

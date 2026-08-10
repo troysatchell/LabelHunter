@@ -46,10 +46,14 @@ planned:                              # from docs/PRD.md §3.6/§9 — decided, 
 
 detected:
   git:
-    remotes: none yet                 # verified: `git remote -v` empty, 2026-08-10.
-                                      # Deliverable TH-R13 requires a GitHub repo — creating
-                                      # and first-pushing it is a hard stop (outward-facing).
-    ciHost: github (planned; .github/workflows/ci.yml generated, UNVERIFIED until first PR)
+    remotes: origin https://github.com/troysatchell/LabelHunter.git
+                                      # verified 2026-08-10: first push of main (80a191b),
+                                      # `git ls-remote` matches local. Repo created by Troy
+                                      # (hard stop cleared).
+    ciHost: github                    # verified 2026-08-10: run 31428616460 on push to main
+                                      # completed SUCCESS via the pre-scaffold no-op path.
+                                      # The FULL verify path (typecheck/tests/testdiff) is
+                                      # still unexercised until the scaffold ticket.
     reviewBot: none yet               # CodeRabbit install is a hard stop (browser login).
                                       # Until installed, triage runs on the CLI reviewer if
                                       # authenticated, else review checks record skip.
@@ -137,7 +141,9 @@ verification:                         # Phase 5 state. Blank/false = NOT trusted
   quarantineNotWidenable: not-run     # BLOCKED until scaffold
   isolationSurvivesRetry: partial     # ticket-id validation + reject tested 2026-08-10;
                                       # db+migrate cycle untestable pre-scaffold
-  ciActuallyRan: false                # workflow generated, never executed
+  ciActuallyRan: partial              # run 31428616460 (2026-08-10, push to main) SUCCESS —
+                                      # but only the pre-scaffold no-op path executed; the
+                                      # real verify path runs first at the scaffold PR
   knownLimits: >
     The gate is UNVERIFIED end-to-end because there is nothing to run it against yet.
     The scaffold ticket's definition of done includes: run every verification.md check,

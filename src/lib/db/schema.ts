@@ -202,7 +202,14 @@ export const labelImages = pgTable(
     index("label_images_application_id_idx").on(table.applicationId),
     index("label_images_batch_job_id_idx").on(table.batchJobId),
     // Batch pairing looks up an image by (batch, filename) — PRD §3.5.
-    index("label_images_batch_filename_idx").on(
+    // UNIQUE, not just indexed: two images in the same batch sharing a
+    // filename would make that lookup return more than one candidate,
+    // which is exactly the "unmatched/ambiguous" case PRD §3.5 requires
+    // reporting before the job starts, not silently accepting. NULL
+    // `batchJobId` (single-label images) is exempt — Postgres treats each
+    // NULL as distinct, so single-label filenames are never deduplicated
+    // against each other here.
+    uniqueIndex("label_images_batch_filename_unique").on(
       table.batchJobId,
       table.originalFilename,
     ),

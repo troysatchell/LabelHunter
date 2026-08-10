@@ -1,5 +1,5 @@
 {
-  "id": "21660ee9-c865-42a6-92c7-357a3b18b254",
+  "id": "e3844bf8-b68b-46c1-b02e-bf6fe8ccc119",
   "prevId": "1974f70d-f5e8-4083-b9b8-c5f93e31810c",
   "version": "7",
   "dialect": "postgresql",
@@ -497,8 +497,8 @@
           "method": "btree",
           "with": {}
         },
-        "label_images_batch_filename_idx": {
-          "name": "label_images_batch_filename_idx",
+        "label_images_batch_filename_unique": {
+          "name": "label_images_batch_filename_unique",
           "columns": [
             {
               "expression": "batch_job_id",
@@ -513,7 +513,7 @@
               "nulls": "last"
             }
           ],
-          "isUnique": false,
+          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}

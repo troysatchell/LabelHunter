@@ -4,6 +4,38 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-457 — PR review round 3: CodeRabbit findings, 1 fixed, 1 deferred (2026-08-10)
+
+**What changed.** A further local-CLI CodeRabbit pass found 2 findings:
+- `label_images` (major, real): the (batch, filename) index used for CSV-to-image pairing
+  (PRD §3.5) was a plain index, not unique. Two images uploaded into the same batch with
+  the same filename would make that pairing lookup return two candidates instead of one —
+  exactly the ambiguous case PRD §3.5 says must be reported before the job starts, not
+  silently accepted. Fixed: `label_images_batch_filename_idx` is now
+  `label_images_batch_filename_unique`, a `UNIQUE` index on `(batch_job_id,
+  original_filename)`. Postgres treats each `NULL` as distinct, so single-label images
+  (`batchJobId` null) are never deduplicated against each other — only images inside the
+  same real batch are constrained. Regenerated the migration (folded into
+  `0001_product_schema.sql`, same reasoning as the earlier rounds — this table has never
+  been applied outside this worktree). Verified directly: reset the database, reapplied,
+  reseeded, then confirmed with a negative insert (`ERROR: duplicate key value violates
+  unique constraint "label_images_batch_filename_unique"`) and a positive one (two
+  single-label images sharing a filename, both `NULL` batch, insert succeeds).
+- **Deferred, not fixed:** enforcing that a `verifications` row's application, image, and
+  batch job all belong together at the database level. This is the same finding raised in
+  the prior two review rounds, and the answer is unchanged: it needs a trigger or composite
+  foreign keys spanning three tables, and that design belongs with the code that creates
+  verification rows (LH-041's batch worker, behind the CP-3 checkpoint), not invented ahead
+  of it in a schema ticket. Documented at both places in `schema.ts` that CodeRabbit has now
+  flagged it (`labelImages` and `verifications`), so a future reader finds the decision
+  instead of re-discovering the gap. Named again in the final ticket report as a known,
+  deliberate gap for LH-041 to close.
+
+**How to run it.** `pnpm db:migrate` picks up the corrected `0001_product_schema.sql`;
+`pnpm db:seed` is unchanged.
+
+**Rollback.** `git revert` this commit.
+
 ## TRO-457 — PR review round 2: CodeRabbit findings, 1 fixed, 1 stale (2026-08-10)
 
 **What changed.** GitHub-App CodeRabbit reviewed PR #2 (a separate pass from the local CLI

@@ -103,7 +103,7 @@ CREATE INDEX "batch_jobs_status_idx" ON "batch_jobs" USING btree ("status");--> 
 CREATE UNIQUE INDEX "field_results_verification_field_unique" ON "field_results" USING btree ("verification_id","field_name");--> statement-breakpoint
 CREATE INDEX "label_images_application_id_idx" ON "label_images" USING btree ("application_id");--> statement-breakpoint
 CREATE INDEX "label_images_batch_job_id_idx" ON "label_images" USING btree ("batch_job_id");--> statement-breakpoint
-CREATE INDEX "label_images_batch_filename_idx" ON "label_images" USING btree ("batch_job_id","original_filename");--> statement-breakpoint
+CREATE UNIQUE INDEX "label_images_batch_filename_unique" ON "label_images" USING btree ("batch_job_id","original_filename");--> statement-breakpoint
 CREATE UNIQUE INDEX "review_queue_verification_id_unique" ON "review_queue" USING btree ("verification_id");--> statement-breakpoint
 CREATE INDEX "review_queue_reason_idx" ON "review_queue" USING btree ("reason");--> statement-breakpoint
 CREATE INDEX "review_queue_unresolved_idx" ON "review_queue" USING btree ("created_at") WHERE "review_queue"."disposition" IS NULL;--> statement-breakpoint

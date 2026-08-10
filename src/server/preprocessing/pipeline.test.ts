@@ -85,6 +85,35 @@ describe("preprocessImage", () => {
     const haikuMeta = await sharp(result.haikuVariant).metadata();
     expect(haikuMeta.width).toBe(400);
     expect(haikuMeta.height).toBe(300);
+
+    const sonnetMeta = await sharp(result.sonnetVariant).metadata();
+    expect(sonnetMeta.width).toBe(400);
+    expect(sonnetMeta.height).toBe(300);
+  });
+
+  it("flattens a transparent PNG onto a white background, not sharp's default black", async () => {
+    // sharp's default matte for an alpha channel dropped during JPEG
+    // encoding is black, not white — confirmed against a live sharp run.
+    // A label graphic with a transparent background must not go dark.
+    const transparent = await sharp({
+      create: {
+        width: 20,
+        height: 20,
+        channels: 4,
+        background: { r: 10, g: 10, b: 10, alpha: 0 },
+      },
+    })
+      .png()
+      .toBuffer();
+    const result = await preprocessImage(transparent);
+
+    const { data, info } = await sharp(result.original)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    expect(info.channels).toBe(3);
+    expect(data[0]).toBeGreaterThan(240);
+    expect(data[1]).toBeGreaterThan(240);
+    expect(data[2]).toBeGreaterThan(240);
   });
 
   it("normalizes every output to image/jpeg regardless of the source format", async () => {

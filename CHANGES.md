@@ -4,6 +4,40 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-460 — LH-010 review round 1: 4 CodeRabbit findings, 1 major (2026-08-10)
+
+**What changed.** The factory gate's review step (CodeRabbit) found 4 issues in the initial
+implementation. All 4 fixed:
+
+- **Major.** `clampRegionToBounds` (`region.ts`) clamped a region with `Math.max`/`Math.min`,
+  which silently propagate `NaN` instead of clamping it — a caller passing a non-finite
+  coordinate (a corrupt detector output, not just an out-of-bounds one) would reach sharp's
+  `.extract()` as an invalid crop request with no clear error. Now rejects a non-finite
+  `region` field with `RangeError`, and rounds a fractional coordinate (a detector may report
+  a bounding box in floating point) to the nearest whole pixel before clamping.
+- **Minor.** `preprocessImage`'s JPEG encode of `original` used sharp's default alpha
+  matte, which is **black**, not white — verified with a live sharp run: a fully
+  transparent pixel encoded through `.jpeg()` with no explicit flatten came out `(0, 0, 0)`.
+  A label graphic with a transparent background would go dark. This finding carried no
+  code suggestion, only the instruction; fixed with an explicit
+  `.flatten({ background: "#ffffff" })` before every JPEG encode, including `cropRegion`'s,
+  and a new regression test that round-trips a fully-transparent PNG through the real
+  pipeline and asserts the decoded pixel channels land near-white (confirmed re-verified
+  with the same live-sharp technique: `(255, 255, 255)` with the flatten in place).
+- **Minor.** The no-upscale test only checked `haikuVariant`; extended it to check
+  `sonnetVariant` too, per the finding's own suggested test code.
+- **Minor.** The upload-size error-message test only checked the message's length and that
+  it wasn't a bare "error"/"failed" string. The finding's suggested code checked for the
+  raw byte counts (`String(MAX_UPLOAD_BYTES * 2)`), but its own instruction text allowed
+  "raw byte values **or** their documented formatted representations" — this
+  implementation's `humanBytes()` renders a human-readable size (TH-R20: the message is
+  for a person, not a log line), so the fix checks for `"40.0 MB"` / `"20.0 MB"` instead of
+  the raw byte counts, honoring the instruction's intent rather than its literal sample.
+
+**How to run it.** `pnpm test -- src/server/preprocessing` — 45 tests (up from 42).
+
+**Rollback.** `git revert` this commit. No behavior change outside the four points above.
+
 ## TRO-460 — LH-010: image preprocessing pipeline (2026-08-10)
 
 **What changed.** A new module, `src/server/preprocessing/`, implements PRD §3.1's

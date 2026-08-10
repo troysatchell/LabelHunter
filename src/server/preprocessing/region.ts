@@ -22,20 +22,43 @@ export interface PixelRegion {
  * a rectangle intersection with `[0, imageWidth) x [0, imageHeight)`. A
  * region that overhangs one edge is truncated at that edge; a region that
  * falls entirely outside the image collapses to a 1x1 box at the nearest
- * edge. Always returns a region with `x, y >= 0`, a positive width and
- * height, and `x + width <= imageWidth`, `y + height <= imageHeight` —
- * never throws, so a detector's slightly-off box degrades to the nearest
- * valid crop instead of failing the whole request.
+ * edge. A fractional coordinate (a detector may report a bounding box in
+ * floating-point) is rounded to the nearest whole pixel before clamping —
+ * sharp's `.extract()` requires integers. Always returns a region with
+ * `x, y >= 0`, a positive integer width and height, and
+ * `x + width <= imageWidth`, `y + height <= imageHeight`.
+ *
+ * Never throws for a region that is merely out of bounds — a detector's
+ * slightly-off box degrades to the nearest valid crop instead of failing
+ * the whole request. DOES throw `RangeError` when a `region` field is
+ * NaN or infinite: `Math.max`/`Math.min` silently propagate NaN rather
+ * than clamping it, which would otherwise reach sharp's `.extract()` as
+ * an invalid crop request with no clear error. A non-finite field is a
+ * caller bug, not a detection imprecision, so it is rejected rather than
+ * clamped.
  */
 export function clampRegionToBounds(
   region: PixelRegion,
   imageWidth: number,
   imageHeight: number,
 ): PixelRegion {
-  const left = Math.max(0, region.x);
-  const top = Math.max(0, region.y);
-  const right = Math.min(imageWidth, region.x + region.width);
-  const bottom = Math.min(imageHeight, region.y + region.height);
+  for (const key of ["x", "y", "width", "height"] as const) {
+    if (!Number.isFinite(region[key])) {
+      throw new RangeError(
+        `clampRegionToBounds: region.${key} must be a finite number, got ${region[key]}`,
+      );
+    }
+  }
+
+  const x0 = Math.round(region.x);
+  const y0 = Math.round(region.y);
+  const width0 = Math.round(region.width);
+  const height0 = Math.round(region.height);
+
+  const left = Math.max(0, x0);
+  const top = Math.max(0, y0);
+  const right = Math.min(imageWidth, x0 + width0);
+  const bottom = Math.min(imageHeight, y0 + height0);
 
   const width = Math.max(1, right - left);
   const height = Math.max(1, bottom - top);

@@ -98,6 +98,11 @@ export async function preprocessImage(
       // into the pixel data, and strips the tag from the output — so a
       // viewer with no EXIF support still displays it upright.
       .rotate()
+      // JPEG has no alpha channel. sharp's default matte for a dropped
+      // alpha channel is BLACK, not white (confirmed empirically) — an
+      // explicit white flatten avoids a transparent label graphic going
+      // dark.
+      .flatten({ background: "#ffffff" })
       .jpeg({ quality: 92, mozjpeg: true })
       .toBuffer();
   } catch (cause) {
@@ -175,6 +180,11 @@ export async function cropRegion(
         width: clamped.width,
         height: clamped.height,
       })
+      // Defensive, matching preprocessImage's `original` encode: `source`
+      // is documented to be `original` (already alpha-free), but a crop
+      // called on some other buffer with alpha must still avoid sharp's
+      // default black matte.
+      .flatten({ background: "#ffffff" })
       .jpeg({ quality: 95 })
       .toBuffer();
   } catch (cause) {

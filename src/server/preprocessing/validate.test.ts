@@ -18,15 +18,18 @@ describe("assertUploadSize", () => {
     );
   });
 
-  it("names the actual size and the ceiling in the error message", () => {
+  it("names the actual size and the ceiling in the error message, in human-readable MB", () => {
+    // MAX_UPLOAD_BYTES is exactly 20 MB and this call is exactly 2x that, so
+    // both figures render as clean, checkable decimals — not raw byte counts,
+    // which nobody uploading a photo would read as a size.
     try {
       assertUploadSize(MAX_UPLOAD_BYTES * 2);
       throw new Error("expected assertUploadSize to throw");
     } catch (err) {
       expect(err).toBeInstanceOf(FileTooLargeError);
       const message = (err as Error).message;
-      expect(message).not.toMatch(/^(error|failed)$/i);
-      expect(message.length).toBeGreaterThan(10);
+      expect(message).toContain("40.0 MB");
+      expect(message).toContain("20.0 MB");
     }
   });
 });

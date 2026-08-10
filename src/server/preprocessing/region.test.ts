@@ -42,4 +42,27 @@ describe("clampRegionToBounds", () => {
       clampRegionToBounds({ x: 0, y: 0, width: 1000, height: 800 }, 1000, 800),
     ).toEqual({ x: 0, y: 0, width: 1000, height: 800 });
   });
+
+  it("rounds a fractional region to whole pixels before clamping", () => {
+    // A detector reporting a bounding box in floating-point coordinates
+    // must not reach sharp's .extract(), which requires integers.
+    expect(
+      clampRegionToBounds(
+        { x: 100.4, y: 50.6, width: 199.6, height: 79.5 },
+        1000,
+        800,
+      ),
+    ).toEqual({ x: 100, y: 51, width: 200, height: 80 });
+  });
+
+  it("rejects a non-finite region field (NaN or Infinity) instead of silently propagating it", () => {
+    // Math.max/min with NaN return NaN, which would otherwise reach
+    // sharp's .extract() as a silently invalid crop request.
+    expect(() =>
+      clampRegionToBounds({ x: Number.NaN, y: 0, width: 100, height: 100 }, 1000, 800),
+    ).toThrow(RangeError);
+    expect(() =>
+      clampRegionToBounds({ x: 0, y: 0, width: Number.POSITIVE_INFINITY, height: 100 }, 1000, 800),
+    ).toThrow(RangeError);
+  });
 });

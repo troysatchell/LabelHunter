@@ -4,6 +4,152 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-459 — PR review round 4: final 4 unresolved threads triaged, 2 doc fixes (2026-08-10)
+
+**What changed.** Triage of the last 4 unresolved CodeRabbit threads before merge:
+- `src/server/router/.gitkeep` credited all comparators to LH-013. Corrected: LH-013 owns
+  the four CP-1 comparators; the government-warning comparator is its own CP-2 subsystem
+  (LH-020, `src/server/warning/`). (Fixed.)
+- §6.3's sample user message said the extractor reading is inserted "verbatim — needs no
+  re-encoding." That contradicts §6.3's own `serializeUntrusted` requirement: extractor
+  evidence strings carry verbatim label text, adversarial input like any other. The sample
+  now routes the extractor block through the same escaping. (Fixed.)
+- The two remaining threads (warning-shape rejection payload; JSON.stringify delimiter
+  escape) were already fixed in rounds 2–3 — resolved with pointers, no code change.
+
+**How to run it.** Nothing to run; re-read the two corrected spots.
+
+**Rollback.** `git revert` this commit.
+
+## TRO-459 — PR review round 3: 4 findings, including a real flaw in round 2's own fix (2026-08-10)
+
+**What changed.** CodeRabbit reviewed round 2's fixes and found that one of them — the
+JSON-serialization defense against delimiter injection — was itself incomplete. Verified with a
+real `node -e` run before believing it: `JSON.stringify` escapes quotes, backslashes, and
+control characters, but leaves `<`, `>`, and `/` untouched, so a value containing the literal
+string `</UNTRUSTED_DATA>` still contains it after `JSON.stringify` — the exact attack round 2
+claimed to have closed. Fixed for real this time: Unicode-escape `<`/`>`/`/` **after**
+`JSON.stringify`, verified empirically that the escaped output no longer contains the attack
+string.
+
+3 more findings, all fixed:
+- §4.4's rejection-payload fix (round 2) described the right payload shape for
+  `government_warning` but never updated the downstream predicate that reads it —
+  `MISSING_REQUIRED_FIELD` (§5.3) still said `value === null` uniformly, which is `false` for a
+  field that structurally has no `value`. Now field-shape-aware: `value === null` for the five
+  fields, `present === null || present === false` for the warning.
+- The prompt-injection test requirement asked for the resolver's "disposition" on
+  `government_warning` — but that field never gets a disposition at all (rule 5: re-transcribed,
+  never judged). Rewritten to assert what the field actually produces: the transcription output
+  is byte-identical whether or not a sibling field carries the injection payload.
+
+**How to run it.** Nothing to run; re-read the corrected sections. The escaping claim is
+verifiable directly: `node -e 'console.log(JSON.stringify({v:"</UNTRUSTED_DATA>"}).replace(/[<>\/]/g,c=>"\\u00"+c.charCodeAt(0).toString(16)))'`.
+
+**Rollback.** `git revert` this commit.
+
+## TRO-459 — PR review round 2: 3 more CodeRabbit findings, all fixed (2026-08-10)
+
+**What changed.** A second CodeRabbit pass on the doc found 3 more real issues:
+- §4.4's malformed-confidence rejection described one payload shape (`value: null`) for all
+  fields, but `government_warning` has no `value` — its rejection now sets
+  `present: null, transcription: null` explicitly, so a downstream `value === null` check
+  (which `MISSING_REQUIRED_FIELD` literally uses) doesn't silently miss it.
+- The resolver's untrusted-data delimiting (previous round) wrapped values in
+  `<UNTRUSTED_DATA>` tags but inserted them as freeform text — a value containing the literal
+  string `</UNTRUSTED_DATA>` could still close the tag early. Switched the application-form
+  block to real JSON serialization (`JSON.stringify`, not string concatenation, called out as
+  an implementation requirement) — JSON string-escaping neutralizes the attack structurally,
+  which a text template cannot. Also clarified the image needs no text delimiter: it's a
+  separate image content block, not text, so it cannot contain closing-tag characters.
+- The prompt-injection test requirement said the resolver's decision "does not change based
+  on" an injected value — too broad, since a legitimately different field value should change
+  the verdict. Replaced with a precise oracle: the *targeted* field's disposition must be
+  unaffected by a sibling field's injection payload, while the *injected* field's own
+  disposition still reflects its real (garbled) content.
+
+**How to run it.** Nothing to run; re-read the three corrected sections.
+
+**Rollback.** `git revert` this commit.
+
+## TRO-459 — LH-CP1: ⛔ CHECKPOINT 1 walkthrough material (2026-08-10)
+
+**This entry does not clear a checkpoint.** It adds the material Troy reads *at* the
+checkpoint. CP-1 stays blocking until Troy runs the walkthrough and gives explicit
+acknowledgment. Until then, LH-010 … LH-015 (TRO-460 … TRO-465) do not start.
+
+**What changed.** One new document: `docs/checkpoints/cp1-cascade-router-prompts.md`. No
+product code. It covers the four things PRD §10 requires CP-1 to cover, plus the "defend it"
+Q&A (TH-R1, TH-R8, TH-R10, TH-R19, TH-R21, TH-R22):
+
+- **The Haiku extraction prompt** — full system and user drafts, plus the strict JSON schema.
+  Every field carries `value`, `evidence`, and `confidence`. One load-bearing decision: the
+  extractor sees the image only, never the application record. That removes anchoring, makes
+  the extraction independent evidence rather than a confirmation, and turns the extractor's
+  inferred beverage type into a free cross-check against the declared one.
+- **Confidence thresholds** — three bands (trusted ≥ 0.85, uncertain 0.60–0.85, unusable
+  < 0.60), a higher bar of 0.90 for the warning transcription, and an asymmetry rule: escalate
+  a MISMATCH below 0.90 but a MATCH only below 0.60, because agreement with the application
+  corroborates a weak read and a mismatch does not. Plus three deterministic overrides that
+  ignore confidence entirely — the strongest is that `normalize(value)` must be a substring of
+  `normalize(evidence)`, which catches a confident invention without consulting confidence.
+  Every number is marked **proposed**, with the golden-set sweep (LH-003 → LH-030) that
+  replaces it: reliability diagram, then threshold sweep, then pick the knee of verdict
+  accuracy against auto-verified rate.
+- **The `ReviewReason` routing rules** — a precise deterministic trigger for each of the eight
+  enum members, a precedence order, and the naming principle that keeps two of them apart:
+  `CONFLICTING_EXTRACTION` means we do not trust our own reading; `AMBIGUOUS_*` means we read
+  it fine and it still is not decidable. `LOW_MODEL_CONFIDENCE` is deliberately last — its rate
+  is a monitoring signal that the taxonomy has a gap.
+- **The Sonnet resolver prompt** — full drafts, its output schema, and the rule that keeps the
+  design defensible: the resolver *judges* only brand and class equivalence (where TH-R8
+  literally asks for judgment); everywhere else it returns a corrected reading and
+  deterministic code re-decides. It never judges the government warning — it re-transcribes,
+  and code compares against the statute.
+- **"Defend it" Q&A** — 15 questions with drafted answers, including the five the ticket
+  named, plus prompt injection, extractor blindness, resolver anchoring, escalation-rate
+  blowout, and "how do I know this is not just escalating everything to look safe".
+- **Open questions for Troy** — seven real forks, each with a recommendation and the cost of
+  choosing wrong.
+
+**Two findings worth reading before the walkthrough.**
+
+1. **The resolver cost estimate in PRD §4 looks low.** Derived arithmetic from published
+   prices puts an escalation at about $0.05, not ~$0.02. Two named causes: adaptive thinking is
+   on by default on `claude-sonnet-5` and bills as output tokens, and full-resolution vision
+   costs roughly three times the tokens of a smaller image. Both are deliberate accuracy
+   choices; neither was in the original estimate. A 300-label batch is therefore about $4
+   (cascade) against about $15 (Sonnet on every label) — still ~3.7× cheaper, but only about
+   six full batches against the $25 cap. Open question 4.
+2. **Prompt caching on the extractor will silently do nothing.** The documented minimum
+   cacheable prefix on `claude-haiku-4-5` is 4096 tokens; our extractor prompt is well under
+   that. It fails with no error — just `cache_creation_input_tokens: 0`. Do not add
+   `cache_control` there and do not claim a caching saving.
+
+Related API constraints captured for LH-011/LH-014: `claude-haiku-4-5` rejects
+`output_config.effort`; `claude-sonnet-5` returns a 400 for `temperature`; use
+`output_config.format`, never the deprecated `output_format`; structured outputs cannot bound
+`confidence` to 0–1, so the router rejects (never clamps) an out-of-range value as a broken
+extraction — clamping would move malformed output onto the trusted path.
+
+**Also updated** — pointers only, no logic: `src/server/{extractor,resolver,router}/.gitkeep`
+now name this design document as the source for the ticket that fills each directory.
+
+**How to run it.** Nothing to run. Read
+`docs/checkpoints/cp1-cascade-router-prompts.md` top to bottom — about 40 minutes. The
+appendix is a four-item checklist for the live session.
+
+**Rollback.** Delete `docs/checkpoints/cp1-cascade-router-prompts.md`, revert the three
+`.gitkeep` pointer updates, and revert this entry. Nothing depends on any of it; no code,
+schema, or configuration changed.
+
+**Known limits.** Nothing here is measured. Costs are derived arithmetic with the token
+assumptions written down; latency is "not measured"; thresholds are proposed. Regulatory
+values — ABV optionality per beverage type, ABV tolerance, standards of fill — are marked
+VERIFY and default to the strictest interpretation, for LH-013 to verify against ttb.gov and
+cite. The document deliberately does not decide anything owned by CP-2 (warning subsystem) or
+CP-3 (batch queue).
+
 ## TRO-458 — Align spec schema with the approved image-gen design (2026-08-10)
 
 **What changed.** Troy approved a render-first hybrid design for golden-set images

@@ -40,9 +40,15 @@ report the number and its basis, and wait. (Default from PRD §11 — unconfirme
 until Troy says otherwise.)
 
 ### 4. Credentials, secrets, or outward-facing creation
-The Anthropic API key for deploy, Render account setup, **creating and first-pushing the
-GitHub repo** (TH-R13 — it will be evaluator-visible), installing CodeRabbit, sharing the repo
-with evaluators. The factory cannot complete these and should not try.
+Render account setup, installing CodeRabbit, sharing the repo with evaluators. The factory
+cannot complete these and should not try.
+
+**Cleared 2026-08-10:** GitHub repo creation/first push (done — `troysatchell/LabelHunter`).
+`ANTHROPIC_API_KEY` and `GOOGLE_API_KEY` are both in the primary checkout's `.env.local`;
+`scripts/factory/worktree.sh` passes each through to every ticket worktree automatically.
+Local dev and eval work needing either key is unblocked. **Deploying the key to Render itself
+is still a hard stop** (that's a distinct action — provisioning the runtime environment on a
+third-party platform, §8 of the PRD — not the same as having the key locally).
 
 ### 5. Irreversible actions
 Dropping tables/columns with data, deleting tracked files beyond a ticket's scope, force-push,

@@ -245,7 +245,16 @@ fi
 if [ ! -f CHANGES.md ]; then
   record changes-entry fail "CHANGES.md missing"
 elif grep -qE "(^|[^A-Za-z0-9-])${TICKET}([^A-Za-z0-9-]|\$)" CHANGES.md; then
-  record changes-entry pass "entry for ${TICKET} present"
+  # "An entry mentions the ticket" is not "the file is intact" — CHANGES.md is
+  # append-at-top, so every concurrent branch's merge conflicts on it, and
+  # both obvious auto-resolutions (3-way, union) can splice one entry's body
+  # into another's while reporting success. Verify structure too.
+  if [ -f scripts/factory/merge-changes.mjs ] \
+     && ! node scripts/factory/merge-changes.mjs --check CHANGES.md --expect "${TICKET}" >/dev/null 2>&1; then
+    record changes-entry fail "entry for ${TICKET} present but CHANGES.md is structurally invalid — run: node scripts/factory/merge-changes.mjs --check CHANGES.md --expect ${TICKET}"
+  else
+    record changes-entry pass "entry for ${TICKET} present; structure valid"
+  fi
 else
   record changes-entry fail "no entry mentioning ${TICKET}"
 fi

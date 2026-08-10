@@ -57,3 +57,24 @@ production run (they are paid-for, not speculative); rules 10+ will be LabelHunt
 
 - 2026-08-10 — seeded at factory build; gate still UNVERIFIED (pre-scaffold). The scaffold
   ticket must run the verification checks before anything merges on gate evidence.
+- 2026-08-10 (TRO-456) — **A sub-agent that backgrounds its own final gate run and waits for
+  it never comes back with the result.** Twice, the scaffold agent kicked off
+  `scripts/factory/gate.sh` as a background process "because CodeRabbit takes a few minutes,"
+  then ended its turn saying it would report back — and never did; the orchestrator had to run
+  the gate itself both times to get a real verdict. This is rule 22 from the inherited ship
+  lessons, confirmed live: run the gate in the **foreground** and read the result before
+  finishing the report. A slow step is not a reason to background it — it's a reason to wait
+  on it synchronously.
+- 2026-08-10 (TRO-456) — **An agent's own uncommitted work is invisible to the next gate run.**
+  The scaffold agent made real, correct CodeRabbit-driven fixes (Cache-Control header, a
+  rounding regression test) but never `git commit`ed them — they only existed as working-tree
+  changes. The orchestrator's merge picked them up by accident (via `git status`), not by
+  design. **Before trusting a gate verdict or opening a PR, run `git status --short` in the
+  worktree and confirm it's clean** — an agent's final report claiming a fix is not evidence
+  the fix was committed.
+- 2026-08-10 (TRO-456) — **`git merge main` into a ticket branch conflicts on `CHANGES.md`
+  every time**, exactly as predicted: this repo has no `merge-changes.mjs` (documented in
+  `build-factory`'s `operation.md` but never generated as an actual script here). Resolved by
+  hand twice in one ticket — keep both entries, newest-relevant on top, drop only the
+  conflict-marker lines. If this recurs on a third ticket, generate the real merge tool instead
+  of resolving by hand again (recurrence-ladder rule: 3 = build the mechanical fix).

@@ -1,4 +1,13 @@
 import { defineConfig, devices } from "@playwright/test";
+import { config as loadEnv } from "dotenv";
+
+// Loads .env.local for a plain local checkout, same as drizzle.config.ts.
+// Playwright's config runs as its own Node process — it does not get
+// Next.js's automatic .env.local loading — so without this, a plain
+// checkout's configured PORT was silently ignored in favor of the "3000"
+// fallback below. A no-op in a factory worktree: .factory-env already
+// exports APP_PORT, and dotenv never overrides an already-set variable.
+loadEnv({ path: ".env.local" });
 
 // APP_PORT is the factory-assigned port for this worktree (.factory-env);
 // PORT is the equivalent for a plain local checkout (.env.local). Falls back

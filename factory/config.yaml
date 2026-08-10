@@ -13,30 +13,50 @@ meta:
   generatedAt: 2026-08-10
   generatedBy: build-factory
   baseRef: main
-  bootstrapState: pre-scaffold        # no application code exists yet. The gate REFUSES to run
-                                      # until package.json exists; the scaffold ticket's DoD
-                                      # includes converting planned->detected below AND
-                                      # negative-testing the gate (references/verification.md).
+  bootstrapState: scaffold-in-review  # TRO-456/PR#1 (feat/lh-scaffold) has the real app +
+                                      # toolchain and the gate is fully verified against it
+                                      # (see verification: below) — but `main` itself has not
+                                      # merged it yet, so `main` alone is still pre-scaffold.
+                                      # Awaiting Troy's review (scaffold PR — his call, not
+                                      # auto-merge, per the bootstrap rule in the factory skill).
 
 # ---------------------------------------------------------------------------
-planned:                              # from docs/PRD.md §3.6/§9 — decided, NOT yet run
+detected:                              # measured against TRO-456/PR#1, 2026-08-10 — real
+                                      # commands, all run and green in the worktree AND in
+                                      # CI (run 31432144069). Deploy/render.yaml is still
+                                      # `planned:` — lands with LH-060.
   toolchain:
-    packageManager: pnpm
-    framework: next.js (typescript, single app + background worker process)
-    unitTests: vitest (JSON reporter required — the gate's testdiff depends on it)
-    e2e: playwright
-    db: postgres (render in prod; docker container labelhunter-pg locally) + drizzle
-    deploy: render via render.yaml (web + worker + postgres)
-  commands:                           # the scaffold ticket must make each of these real,
-    typecheck: pnpm typecheck         # then record rc + duration here as detected
-    lint: pnpm lint                   # must have a real eslint config — a configless lint
-                                      # that exits 0 does NOT get wired into the gate
-    build: pnpm build
-    test: pnpm test                   # vitest run --reporter=json, ABSOLUTE --outputFile
-    e2e: pnpm test:e2e
-    evalCheck: pnpm eval:check        # eval harness vs committed baseline (ticket LH-EVAL);
-                                      # gate skips-with-reason until it exists
-    latencyCheck: pnpm latency:check  # p50/p95 vs budget (ticket LH-LAT); Tier 2 by default
+    packageManager: pnpm@10.27.0      # verified: package.json `packageManager`, CI installed it
+    node: ">=22"                      # engines.node; CI ran on node 22
+    framework: next.js@16.3.0 (App Router, TypeScript strict, single app + background worker)
+    unitTests: vitest@4.1.10          # JSON reporter via --outputFile, routed through
+                                      # scripts/run-tests.cjs (see toolchainFindings below)
+    e2e: "@playwright/test@1.62.1"
+    db: postgres:16-alpine (docker container labelhunter-pg, :5434 locally) + drizzle-orm@0.45.2
+    deploy: render via render.yaml (web + worker + postgres) — PLANNED, lands with LH-060
+  commands:                           # each verified to RUN, not merely to exist. rc=0 for
+                                      # all, measured in the TRO-456 worktree AND in CI.
+    typecheck: pnpm typecheck         # tsc --noEmit — rc=0
+    lint: pnpm lint                   # eslint . — real flat config, rc=0 (see gate.sh fix below)
+    build: pnpm build                 # next build — rc=0
+    test: pnpm test                   # node scripts/run-tests.cjs -- --reporter=json
+                                      # --outputFile=<ABSOLUTE path> — rc=0, writes a valid report
+    e2e: pnpm test:e2e                # playwright test — one spec, boots the app, asserts /api/health
+    dbMigrate: pnpm db:migrate         # drizzle-kit migrate — rc=0, verified by direct query,
+                                      # not just exit code
+    evalCheck: pnpm eval:check        # NOT YET a real script — gate G8 skips-with-reason
+                                      # until the eval-harness ticket (LH-030) lands
+    latencyCheck: pnpm latency:check  # NOT YET a real script — Tier 2, lands with LH-031
+  toolchainFindings:                  # bugs found and fixed during the scaffold ticket
+    - "pnpm run <script> -- <args> forwards a literal '--' into argv (npm strips it); Vitest's
+       CLI then reads it as a positional test-name filter, so gate.sh's
+       '--reporter=json --outputFile=X' was silently dropped. Fixed with
+       scripts/run-tests.cjs, a wrapper that strips one leading '--'. Same fix needed for
+       playwright.config.ts's webServer command — passed PORT via the env option instead."
+    - "gate.sh's lint-detection glob ('ls eslint.config.* .eslintrc*') failed whenever only
+       one pattern matched, so a real eslint.config.mjs-only repo always read as 'no config
+       found'. Fixed on main with compgen -G (commit e1b6f13), independent of this ticket's
+       branch."
   sideEffects:
     expectation: unit tests will truncate/reset their target database (drizzle + pg);
       worktree.sh therefore provisions A DATABASE PER TICKET from day one rather than
@@ -135,17 +155,37 @@ gate:
   # budget (TH-R2), cascade-vs-Sonnet benchmark. Conditions must match the recorded
   # environment or the delta is meaningless.
 
-verification:                         # Phase 5 state. Blank/false = NOT trusted yet.
-  noOpBranchFails: not-run            # BLOCKED until scaffold — no suite exists
-  catchesBreakOneFixOne: not-run      # BLOCKED until scaffold
-  quarantineNotWidenable: not-run     # BLOCKED until scaffold
-  isolationSurvivesRetry: partial     # ticket-id validation + reject tested 2026-08-10;
-                                      # db+migrate cycle untestable pre-scaffold
-  ciActuallyRan: partial              # run 31428616460 (2026-08-10, push to main) SUCCESS —
-                                      # but only the pre-scaffold no-op path executed; the
-                                      # real verify path runs first at the scaffold PR
+verification:                         # Phase 5 state — ALL FIVE RUN, 2026-08-10, against
+                                      # TRO-456 (PR #1, feat/lh-scaffold). The gate is TRUSTED.
+  noOpBranchFails: true                # V1: worktree TRO-999 branched from feat/lh-scaffold
+                                      # with zero commits — gate.sh exited 1, naming
+                                      # regression-test/changes-entry/scope as the failures.
+  catchesBreakOneFixOne: true          # V2: forged baseline with 1 knownFailing identity;
+                                      # forged run where that test now passes AND a different
+                                      # one now fails (totals held at 1 -> 1, a count check
+                                      # would pass this). testdiff still reported verdict fail,
+                                      # named the real new failure, reported the fix separately.
+  quarantineNotWidenable: true         # V3: on TRO-999's branch, appended a real test's
+                                      # identity to factory/quarantine.json, committed it, then
+                                      # genuinely broke that same test's source. gate.sh reads
+                                      # the baseline via `git show feat/lh-scaffold:...`, so the
+                                      # branch's widened copy had no effect — verdict fail,
+                                      # tests:FAIL, standalone re-run confirmed 0/1 passed (real).
+  isolationSurvivesRetry: true         # V4: ran worktree.sh TRO-999 twice with identical args.
+                                      # Both exits 0; DB dropped+recreated+migrated cleanly both
+                                      # times; no set -e abort; worktree reuse handled.
+  ciActuallyRan: true                  # V5: PR #1 (github.com/troysatchell/LabelHunter/pull/1)
+                                      # — run 31432144069, verify job SUCCESS in 54s, and
+                                      # (unlike the earlier docs-only push) took the REAL path:
+                                      # Typecheck/Lint/Build/Migrate/Unit tests/Materialize base
+                                      # quarantine/Regression check all ran and passed, not the
+                                      # pre-scaffold no-op.
   knownLimits: >
-    The gate is UNVERIFIED end-to-end because there is nothing to run it against yet.
-    The scaffold ticket's definition of done includes: run every verification.md check,
-    record results here, and only then does the factory trust its own gate. Until that
-    ticket lands, nothing merges on gate evidence.
+    Verified single-process and single-PR only. NOT tested: concurrent gate runs across
+    sibling worktrees (ship's own experience says this is where load-sensitive flakes cluster
+    — watch scripts/factory/gate.sh's standalone-rerun diagnostic once real parallelism
+    starts), the CI job's `Use working-tree quarantine (push builds)` path (only the
+    pull_request path has run for real; a direct push to main has not been exercised since
+    this PR), and the review-capture step under a real GitHub-App-installed CodeRabbit
+    (only the CLI capture has run — the App is not installed, a Troy-only hard stop).
+  verifiedBy: orchestrator session, 2026-08-10, against TRO-456/PR#1

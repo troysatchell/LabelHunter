@@ -4,6 +4,19 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## FACTORY — CLAUDE.md and writing-style rules (2026-08-10)
+
+**What changed.** Added `CLAUDE.md` at the repo root. It orients any agent to the PRD, the
+requirements inventory, and the factory. It sets one writing rule for all prose Claude writes
+here: follow ASD-STE100 (one meaning per word, active voice, short sentences) and Zinsser's
+four principles (simplicity, brevity, clarity, humanity). Updated
+`.claude/skills/labelhunter-factory/references/agent-contract.md` to list `CLAUDE.md` as the
+first required read, matching the reference factory's own pattern.
+
+**How to run it.** Nothing to run. Every future agent session reads `CLAUDE.md` first.
+
+**Rollback.** Delete `CLAUDE.md`; revert the one-line addition to `agent-contract.md`.
+
 ## FACTORY — labelhunter factory build (2026-08-10)
 
 **What changed.** Stood up the ticket factory: `factory/` (config, quarantine baseline,

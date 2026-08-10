@@ -21,11 +21,13 @@ first.
 
 ### Start by reading
 
-1. The ticket body and its PRD section(s) — the PRD's architecture decisions (cascade shape,
+1. `CLAUDE.md` — repo conventions, non-negotiable. Includes the writing-style rules (ASD-STE100
+   + Zinsser's four principles) that govern every comment, commit message, and doc you write.
+2. The ticket body and its PRD section(s) — the PRD's architecture decisions (cascade shape,
    ReviewReason enum, exact-compare warning, USWDS-adjacent aesthetic) are **settled**; do not
    redesign them, implement them.
-2. The TH-R entries appended below — each has an `Acceptance evidence` line; that is the bar.
-3. `CHANGES.md` conventions and the repo's existing code style.
+3. The TH-R entries appended below — each has an `Acceptance evidence` line; that is the bar.
+4. `CHANGES.md` conventions and the repo's existing code style.
 
 ### What you must produce
 

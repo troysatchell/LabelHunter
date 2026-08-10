@@ -19,6 +19,12 @@ describe("formatDuration", () => {
     expect(formatDuration(125_000)).toBe("2m 5s");
   });
 
+  it("carries a rounded-up remainder into the next minute", () => {
+    // Regression: rounding minutes and seconds separately could leave a
+    // remainder of 60 (119.6s used to render "1m 60s" instead of "2m 0s").
+    expect(formatDuration(119_600)).toBe("2m 0s");
+  });
+
   it("rejects negative or non-finite input", () => {
     expect(() => formatDuration(-1)).toThrow(RangeError);
     expect(() => formatDuration(Number.NaN)).toThrow(RangeError);

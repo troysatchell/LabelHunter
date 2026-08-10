@@ -61,6 +61,38 @@ the orchestrator (this agent was told not to edit `factory/config.yaml`, `script
 or `.github/workflows/ci.yml`). This ticket ran `scripts/factory/gate.sh` (no flags) itself and
 reports that verdict verbatim.
 
+**Gate bug found, not fixed here (out of scope — see final ticket report).**
+`scripts/factory/gate.sh`'s lint-detection line (`if ls eslint.config.* .eslintrc* ...`)
+always reports `lint: skip` for a project using only one of the two config styles — `ls`
+exits non-zero if *either* glob has no match, even when the other matched a real file. This
+repo ships a real, working flat config (`eslint.config.mjs`, verified below) but the gate
+still shows `skip`. Not edited per this ticket's instructions (gate.sh is the orchestrator's
+file); flagging for a fix there.
+
+**CodeRabbit review triage (3 findings, all addressed or explicitly skipped):**
+- `src/lib/utils/format.ts` (minor): `formatDuration` could render `119.6s` as `"1m 60s"`
+  instead of `"2m 0s"` (rounding minutes/seconds separately let the remainder hit 60). Fixed —
+  round the total once, then derive minutes/remainder from that. Added a regression case.
+- `src/app/api/health/route.ts` (trivial): add `Cache-Control: no-store` so a proxy/CDN never
+  caches a stale liveness result. Fixed; e2e spec now asserts the header.
+- `drizzle/migrations/0000_meta_healthcheck.sql` (trivial): suggested `bigint identity` instead
+  of `serial` for `_meta.id`. Skipped — `_meta` is a scaffold-only healthcheck table that LH-002
+  replaces with the real schema; not worth a churn migration for a table this ticket doesn't
+  expect to survive past the next one.
+
+## FACTORY — CLAUDE.md and writing-style rules (2026-08-10)
+
+**What changed.** Added `CLAUDE.md` at the repo root. It orients any agent to the PRD, the
+requirements inventory, and the factory. It sets one writing rule for all prose Claude writes
+here: follow ASD-STE100 (one meaning per word, active voice, short sentences) and Zinsser's
+four principles (simplicity, brevity, clarity, humanity). Updated
+`.claude/skills/labelhunter-factory/references/agent-contract.md` to list `CLAUDE.md` as the
+first required read, matching the reference factory's own pattern.
+
+**How to run it.** Nothing to run. Every future agent session reads `CLAUDE.md` first.
+
+**Rollback.** Delete `CLAUDE.md`; revert the one-line addition to `agent-contract.md`.
+
 ## FACTORY — labelhunter factory build (2026-08-10)
 
 **What changed.** Stood up the ticket factory: `factory/` (config, quarantine baseline,

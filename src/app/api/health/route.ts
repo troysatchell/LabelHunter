@@ -5,9 +5,12 @@ import { NextResponse } from "next/server";
 // down the web process's own health signal. A DB-aware readiness check can
 // be added alongside this if a later ticket needs one.
 export function GET() {
-  return NextResponse.json({
-    status: "ok",
-    service: "labelhunter",
-    timestamp: new Date().toISOString(),
-  });
+  return NextResponse.json(
+    {
+      status: "ok",
+      service: "labelhunter",
+      timestamp: new Date().toISOString(),
+    },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }

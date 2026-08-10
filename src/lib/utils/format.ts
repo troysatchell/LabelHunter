@@ -20,7 +20,11 @@ export function formatDuration(ms: number): string {
     return `${seconds.toFixed(seconds < 10 ? 2 : 1)}s`;
   }
 
-  const minutes = Math.floor(seconds / 60);
-  const remainderSeconds = Math.round(seconds - minutes * 60);
+  // Round the total once before splitting into minutes/seconds — rounding
+  // each part separately can carry a remainder of 60 (e.g. 119.6s produced
+  // "1m 60s" instead of "2m 0s").
+  const totalSeconds = Math.round(seconds);
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainderSeconds = totalSeconds % 60;
   return `${minutes}m ${remainderSeconds}s`;
 }

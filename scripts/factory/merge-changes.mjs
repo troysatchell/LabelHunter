@@ -122,13 +122,15 @@ for (const e of entries) {
   }
 }
 
-// --- 5. --expect: confirm a specific ticket's entry is present and intact ---
+// --- 5. --expect: confirm a specific ticket has at least one entry -------
+// Multiple entries for one ticket are legitimate (a second review round adds
+// its own entry rather than rewriting history) — check #2 above already
+// catches an EXACT duplicate heading, which is the actual bad-merge
+// signature. This check only needs to rule out "lost the entry entirely".
 if (expect) {
   const matches = entries.filter((e) => new RegExp(`(^|[^A-Za-z0-9-])${expect}([^A-Za-z0-9-]|$)`).test(e.heading));
   if (matches.length === 0) {
     fatal.push(`--expect ${expect}: no entry heading mentions it — wrong file, or the entry was lost in a merge`);
-  } else if (matches.length > 1) {
-    fatal.push(`--expect ${expect}: matched ${matches.length} entries — likely a duplicate from a bad merge`);
   }
 }
 

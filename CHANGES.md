@@ -77,6 +77,46 @@ VERIFY and default to the strictest interpretation, for LH-013 to verify against
 cite. The document deliberately does not decide anything owned by CP-2 (warning subsystem) or
 CP-3 (batch queue).
 
+## FACTORY — merge-changes.mjs (2026-08-10)
+
+**What changed.** Three tickets in a row (TRO-456 twice, TRO-457) hit the same `CHANGES.md`
+merge conflict — every branch adds an entry at the top, so every concurrent merge collides on
+the same lines. Per the recurrence-ladder rule in `references/lessons.md` ("3 = build the
+mechanical fix"), added `scripts/factory/merge-changes.mjs --check`: parses the file into
+whole entries (never line-by-line), checks per-entry fence balance, duplicate headings, and
+(with `--expect TICKET`) that a specific ticket's entry survived intact. Wired into `gate.sh`
+G7 alongside the existing ticket-ID grep. Negative-tested: a synthetic file with a spliced
+fence and one with a duplicated heading both correctly fail; a well-formed file passes.
+
+**How to run it.** `node scripts/factory/merge-changes.mjs --check CHANGES.md` (add
+`--expect TRO-nnn` to also confirm one ticket's entry). Runs automatically as part of the gate.
+
+**Rollback.** `git revert` this commit; G7 falls back to the grep-only check.
+
+## TRO-456 — PR review round 2: CodeRabbit findings, 4 fixed (2026-08-10)
+
+**What changed.** GitHub-App CodeRabbit reviewed PR #1 and requested changes. All four inline
+findings were real defects in code this PR added; all four are fixed here.
+- `playwright.config.ts` (major): read `PORT`/`APP_PORT` straight from `process.env` with no
+  `.env.local` loader. A factory worktree works by accident (`.factory-env` exports the
+  variable into the shell); a plain checkout following this PR's own "How to run it"
+  instructions would silently fall back to port 3000. Added the same `dotenv` load
+  `drizzle.config.ts` already uses.
+- `src/lib/db/index.ts` (major): the `pg.Pool` had no `error` listener. An idle client that
+  loses its connection emits `error` on the pool; with nothing listening, Node treats it as
+  unhandled and can crash the process. Added a listener that logs and lets the pool recover.
+- `src/lib/db/index.ts` (trivial): `connectionTimeoutMillis` defaulted to 0 (no timeout) on an
+  unreachable database. Set to 10s.
+- `src/lib/utils/format.ts` (minor): the third rounding-boundary bug in this function — `999.5`
+  rounded to `"1000ms"` while `formatDuration(1000)` itself renders `"1.00s"`, because the
+  millisecond branch decided its unit on the unrounded value. Rounds once now, before any
+  branch. A standing lesson on this pattern is in `references/lessons.md`.
+
+**How to run it.** `pnpm test` — one new case (`formatDuration(999.5)`). No other setup change.
+
+**Rollback.** `git revert` this commit; each fix is independent of the others and of the
+original scaffold commits.
+
 ## TRO-456 — LH-001: Scaffold Next.js + TS + Vitest + Playwright + Drizzle + CI (2026-08-10)
 
 **What changed.** Stood up the working application scaffold (TH-R13, TH-R18, TH-R19) that

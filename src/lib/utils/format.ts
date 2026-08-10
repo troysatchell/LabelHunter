@@ -11,11 +11,15 @@ export function formatDuration(ms: number): string {
     );
   }
 
-  if (ms < 1000) {
-    return `${Math.round(ms)}ms`;
+  // Round milliseconds before picking a unit — 999.5ms rounds to 1000, and
+  // formatDuration(1000) already returns seconds ("1.00s"), so an unrounded
+  // check here would render the same instant two different ways.
+  const roundedMs = Math.round(ms);
+  if (roundedMs < 1000) {
+    return `${roundedMs}ms`;
   }
 
-  const seconds = ms / 1000;
+  const seconds = roundedMs / 1000;
   if (seconds < 60) {
     const decimalPlaces = seconds < 10 ? 2 : 1;
     const rendered = Number(seconds.toFixed(decimalPlaces));

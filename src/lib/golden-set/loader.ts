@@ -17,8 +17,10 @@ import type {
   GoldenSetCase,
   GoldenSetCategory,
   GoldenSetManifest,
+  GoldenSetProvenance,
   LabelVerdict,
   ReviewReason,
+  RubricVector,
 } from "./types";
 
 const DEFAULT_MANIFEST_PATH = path.resolve(
@@ -71,6 +73,14 @@ const CATEGORIES: readonly GoldenSetCategory[] = [
   "conflicting-application-vs-label",
 ];
 const BEVERAGE_TYPES: readonly BeverageType[] = ["beer", "wine", "spirits"];
+const PROVENANCE_VALUES: readonly GoldenSetProvenance[] = [
+  "rendered",
+  "rendered+degraded",
+  "ai-generated",
+];
+const RUBRIC_VECTORS: readonly RubricVector[] = [
+  "V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10",
+];
 const EXPECTED_FIELD_KEYS = [
   "brandName",
   "classType",
@@ -155,6 +165,30 @@ function checkEnum<T extends string>(
     problems.push(
       `${where}: field "${key}" must be one of ${allowed.join(", ")}, got ${JSON.stringify(value)}`,
     );
+  }
+}
+
+function checkVectors(
+  problems: string[],
+  where: string,
+  obj: Record<string, unknown>,
+  key: string,
+): void {
+  if (!(key in obj)) {
+    problems.push(`${where}: missing required field "${key}"`);
+    return;
+  }
+  const value = obj[key];
+  if (!Array.isArray(value)) {
+    problems.push(`${where}: field "${key}" must be an array, got ${JSON.stringify(value)}`);
+    return;
+  }
+  for (const v of value) {
+    if (typeof v !== "string" || !(RUBRIC_VECTORS as readonly string[]).includes(v)) {
+      problems.push(
+        `${where}: field "${key}" contains an invalid vector ${JSON.stringify(v)} — must be one of ${RUBRIC_VECTORS.join(", ")}`,
+      );
+    }
   }
 }
 
@@ -349,6 +383,19 @@ function checkCase(problems: string[], index: number, raw: unknown): void {
         `${caseLabel}: imagePath basename "${basenameWithoutExtension(imagePath)}" must match caseId "${String(raw.caseId)}"`,
       );
     }
+  }
+
+  checkEnum(problems, caseLabel, raw, "provenance", PROVENANCE_VALUES);
+  checkField(problems, caseLabel, raw, "verified", (v) => typeof v === "boolean", "a boolean");
+  checkVectors(problems, caseLabel, raw, "vectors");
+  if (raw.provenance === "ai-generated" && raw.verified !== true) {
+    // Design doc §3: an ai-generated image can silently fail to render the
+    // exact text its spec claims. The eval harness must not trust one until
+    // a human has confirmed it. This is a MANIFEST-level rule, not just a
+    // type constraint, so it is checked here rather than only in the type.
+    problems.push(
+      `${caseLabel}: provenance "ai-generated" requires verified: true before the eval harness may use it (currently ${JSON.stringify(raw.verified)})`,
+    );
   }
 
   if ("application" in raw) {

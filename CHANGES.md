@@ -4,6 +4,36 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-458 — Align spec schema with the approved image-gen design (2026-08-10)
+
+**What changed.** Troy approved a render-first hybrid design for golden-set images
+(`docs/superpowers/specs/2026-08-10-golden-label-image-gen-design.md`) and rescoped this
+ticket to core-only (degradations → LH-004, Imagen → LH-005, verify gate → LH-006). Per the
+ticket's note, aligned the spec schema with design §3 before merging:
+- Added `provenance` (`rendered | rendered+degraded | ai-generated`), `verified` (boolean),
+  and `vectors` (`audit/rubric.md` Appendix A, V1–V10) to `GoldenSetCase` and to every one of
+  the 29 committed cases.
+- Loader now enforces `provenance: "ai-generated"` requires `verified: true` — an AI-generated
+  image can silently fail to render the exact text its spec claims; the eval harness must not
+  trust one until a human confirms it.
+- Mapped every case to the rubric vector(s) it evidences and found a real, previously-invisible
+  gap: **V7** (net-contents format match, `"750 mL"` vs `"750ml"`) has no covering case. Added
+  a test that asserts this gap explicitly (`loader.test.ts`) so it can't silently reappear once
+  closed, and documented it in `golden-set/README.md` rather than quietly patching around it.
+- 8 new regression tests (unknown provenance, unknown vector, unverified ai-generated case
+  rejected, verified one accepted, vector-coverage assertion, ai-generated-implies-verified
+  assertion on the real manifest).
+
+**Still not done — the renderer itself.** This ticket's scope was the schema; producing actual
+pixels is LH-003's remaining work (or a split-off), tracked against the design doc's §2
+component list (`render.ts`/`degrade.ts`/`imagen.ts`/`verify.ts`/`build.ts`). `golden-set/images/`
+is still empty.
+
+**How to run it.** `pnpm test -- src/lib/golden-set` — 26 tests, up from 12.
+
+**Rollback.** `git revert` this commit; the manifest and loader return to the pre-alignment
+shape (still valid, just missing `provenance`/`verified`/`vectors`).
+
 ## TRO-458 — LH-003: Golden set v1 — ground-truth schema, manifest, loader (2026-08-10)
 
 **What changed.** Ground-truth data and tooling for the golden set (TH-R12), scoped to the

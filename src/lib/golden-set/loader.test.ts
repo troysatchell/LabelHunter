@@ -14,6 +14,9 @@ function validCase(overrides: Partial<GoldenSetCase> = {}): GoldenSetCase {
     category: "clean-match",
     beverageType: "spirits",
     imagePath: "golden-set/images/case-01-clean-match.jpg",
+    provenance: "rendered",
+    verified: false,
+    vectors: ["V1"],
     application: {
       brandName: "Old Tom Distillery",
       classType: "Straight Bourbon Whiskey",
@@ -160,6 +163,54 @@ describe("validateManifest", () => {
     expect(() => validateManifest(broken)).toThrow(GoldenSetValidationError);
   });
 
+  it("rejects an unknown provenance value", () => {
+    const broken = manifest([
+      // @ts-expect-error -- intentionally malformed input for the red-first test
+      validCase({ provenance: "hand-drawn" }),
+    ]);
+
+    expect(() => validateManifest(broken)).toThrow(GoldenSetValidationError);
+  });
+
+  it("rejects an unknown rubric vector", () => {
+    const broken = manifest([
+      // @ts-expect-error -- intentionally malformed input for the red-first test
+      validCase({ vectors: ["V1", "V99"] }),
+    ]);
+
+    expect(() => validateManifest(broken)).toThrow(GoldenSetValidationError);
+    try {
+      validateManifest(broken);
+      expect.unreachable("validateManifest should have thrown");
+    } catch (err) {
+      const problems = (err as GoldenSetValidationError).problems;
+      expect(problems.some((p) => p.includes("V99"))).toBe(true);
+    }
+  });
+
+  it("rejects an ai-generated case that is not verified", () => {
+    const broken = manifest([
+      validCase({ provenance: "ai-generated", verified: false }),
+    ]);
+
+    expect(() => validateManifest(broken)).toThrow(GoldenSetValidationError);
+    try {
+      validateManifest(broken);
+      expect.unreachable("validateManifest should have thrown");
+    } catch (err) {
+      const problems = (err as GoldenSetValidationError).problems;
+      expect(problems.some((p) => p.includes("ai-generated") && p.includes("verified"))).toBe(true);
+    }
+  });
+
+  it("accepts an ai-generated case that is verified", () => {
+    const ok = manifest([
+      validCase({ provenance: "ai-generated", verified: true }),
+    ]);
+
+    expect(() => validateManifest(ok)).not.toThrow();
+  });
+
   it("collects more than one problem in a single pass", () => {
     const broken = manifest([
       validCase({ caseId: "case-01-clean-match" }),
@@ -218,6 +269,38 @@ describe("loadGoldenSetManifest", () => {
     expect(stonesThrow?.label.brandName).toBe("STONE'S THROW");
     expect(stonesThrow?.application.brandName).toBe("Stone's Throw");
     expect(stonesThrow?.expected.fields.brandName.verdict).toBe("MATCH");
+  });
+
+  it("covers 8 of 10 rubric vectors; V7 and V10 are known gaps (design doc §4)", () => {
+    // V7 (net-contents format match, e.g. "750 mL" vs "750ml") has no
+    // dedicated case yet. V10 (batch of >=20) is a property of the manifest
+    // as a whole, not any single case, and is asserted separately below.
+    // If this test starts failing because V7 got covered, DELETE the
+    // exclusion, don't widen it — that is the gap closing, which is good.
+    const result = loadGoldenSetManifest();
+    const covered = new Set(result.cases.flatMap((c) => c.vectors));
+    const allVectors = ["V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10"] as const;
+    const knownGaps = new Set(["V7", "V10"]);
+    for (const v of allVectors) {
+      if (knownGaps.has(v)) {
+        expect(covered.has(v), `${v} was expected to still be a known gap`).toBe(false);
+      } else {
+        expect(covered.has(v), `${v} should be covered by at least one case`).toBe(true);
+      }
+    }
+  });
+
+  it("has at least 20 cases usable as a batch (V10's requirement on the set, not one case)", () => {
+    const result = loadGoldenSetManifest();
+    expect(result.cases.length).toBeGreaterThanOrEqual(20);
+  });
+
+  it("requires every ai-generated case to be verified before it can load", () => {
+    const result = loadGoldenSetManifest();
+    const aiGenerated = result.cases.filter((c) => c.provenance === "ai-generated");
+    for (const c of aiGenerated) {
+      expect(c.verified, `${c.caseId} is ai-generated and must be verified`).toBe(true);
+    }
   });
 
   it("includes a title-case-warning case matching Jenny Park's catch required by TH-R9", () => {

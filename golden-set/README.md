@@ -11,22 +11,34 @@ and what the Validation Router should decide. Later tickets use it two ways:
 
 ## Known gap: no images yet
 
-**This ticket (TRO-458 / LH-003) ships the ground-truth data and the pairing convention. It
-does not ship the label images.** `golden-set/images/` is empty. Every `imagePath` in
-`manifest.json` points at a file that does not exist yet.
+**This ticket ships the ground-truth data, the pairing convention, and the ai-generated /
+verified provenance rules. It does not yet ship the label images or the renderer that
+produces them.** `golden-set/images/` is empty. Every `imagePath` in `manifest.json` points
+at a file that does not exist yet.
 
-Why: generating the images needs an AI image-generation tool or a camera, and the agent that
-wrote this manifest has neither. Writing placeholder files with a `.jpg` extension would be
-worse than leaving the directory empty — a placeholder passes a file-existence check while
-being useless for extraction testing, which hides the gap instead of naming it.
+The image-generation approach is now decided (2026-08-10, approved with Troy):
+`docs/superpowers/specs/2026-08-10-golden-label-image-gen-design.md` — a render-first hybrid.
+An HTML/CSS→PNG renderer (`scripts/golden/render.ts`, Playwright, committed fonts) produces
+exact-text label images for every case in this manifest (`provenance: "rendered"` or
+`"rendered+degraded"`); Gemini/Imagen is used only for realism at the edges — backdrops and a
+handful of fully AI-generated "wild" labels (`provenance: "ai-generated"`, requiring
+`verified: true` before the eval harness may use them — see the loader's validation). That
+renderer, plus the degradation pass and the Imagen step, are **not built yet** — they are
+tracked as their own tickets (LH-004 degradation, LH-005 Imagen, LH-006 verify gate + CI
+smoke), all downstream of this one. This ticket's job was the spec schema and the 29 cases;
+producing pixels is the next ticket's job.
 
-**What a follow-up needs to do:** generate or source 29 label images (AI image generation
-per the brief, TH-R12; a few real bottle photos per PRD §12 risk mitigation), and save each
-one at the `imagePath` its case already names in `manifest.json`. The case's `label` field
-in the manifest is the spec for what the image must show — brand, class/type, ABV, net
-contents, government warning text, and (for the image-defect categories) the specific visual
-flaw the `notes` field describes. LH-021 ("Warning cases in golden set + eval") is the ticket
-that most directly depends on this landing.
+Writing placeholder files with a `.jpg` extension would be worse than leaving the directory
+empty — a placeholder passes a file-existence check while being useless for extraction
+testing, which hides the gap instead of naming it.
+
+**Known rubric-vector gap (`audit/rubric.md` Appendix A):** every case is tagged with the
+vectors it provides evidence for (`vectors` field). Two vectors currently have **no** covering
+case: **V7** (net-contents format match, e.g. `"750 mL"` vs `"750ml"` — no case isolates this
+as its distinguishing feature) and **V10** (batch of ≥20 — a property of the manifest as a
+whole, not any single case; the manifest's 29 cases already satisfy the ≥20 count, but no case
+individually claims V10). `loader.test.ts` asserts these two gaps explicitly so they can't
+silently drift — closing V7 means adding a case, not editing the test's exclusion list.
 
 ## Manifest format
 
@@ -38,6 +50,9 @@ in `cases` is a `GoldenSetCase` — the TypeScript type is the schema of record,
 |---|---|
 | `caseId`, `description`, `category`, `beverageType` | Identity: a unique ID, a one-line summary, which of the 12 required test categories the case belongs to, and beer/wine/spirits. |
 | `imagePath` | Where the label image lives (see naming convention below). Not yet a real file — see "Known gap" above. |
+| `provenance` | How the (not-yet-existing) image will be produced: `rendered`, `rendered+degraded`, or `ai-generated`. Design doc §2/§5. |
+| `verified` | `true` only once a real image exists and a human confirmed it matches its spec. Required `true` for any `ai-generated` case before the eval harness may use it — enforced by the loader, not just documentation. Every case here is `false`; no images exist yet. |
+| `vectors` | Which `audit/rubric.md` completion vectors (V1–V10) this case is evidence for. May be empty. See the known-gap note above for V7/V10. |
 | `application` | The five example fields as filed on the application (PRD §2, §5, TH-R11). |
 | `label` | The same fields as a careful human reader sees them on the label, plus warning-specific detail (`governmentWarningPrefixAllCaps`, presence flags). |
 | `expected` | The Validation Router's expected output: a verdict + one-line reason per field, a label-level verdict, and — only when the label-level verdict is `REVIEW` — the `ReviewReason` that routes the label to the Sonnet resolver (PRD §3.3). |

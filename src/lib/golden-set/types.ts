@@ -119,6 +119,24 @@ export interface GoldenExpectedResult {
 }
 
 /**
+ * How a case's image will be produced. See
+ * `docs/superpowers/specs/2026-08-10-golden-label-image-gen-design.md` §2 —
+ * the render-first hybrid: a spec-driven renderer guarantees exact text,
+ * Imagen adds realism only where exact text does not matter.
+ */
+export type GoldenSetProvenance = "rendered" | "rendered+degraded" | "ai-generated";
+
+/**
+ * A rubric completion vector this case provides evidence for
+ * (`audit/rubric.md`, Appendix A: V1–V10). A case may cover zero, one, or
+ * several. `V7` and `V10` are not yet covered by any case in this manifest —
+ * see `golden-set/README.md`.
+ */
+export type RubricVector =
+  | "V1" | "V2" | "V3" | "V4" | "V5"
+  | "V6" | "V7" | "V8" | "V9" | "V10";
+
+/**
  * One golden-set test case: an application record, the label ground truth,
  * the router's expected verdict, and a pointer to the label image.
  */
@@ -136,6 +154,19 @@ export interface GoldenSetCase {
    * naming convention, never that the file exists.
    */
   imagePath: string;
+  /** How the (not-yet-existing) image will be produced. */
+  provenance: GoldenSetProvenance;
+  /**
+   * `true` only once a real image exists AND a human has confirmed it
+   * actually shows what this spec claims. Required `true` before the eval
+   * harness may use a `provenance: "ai-generated"` case (design doc §3) —
+   * an AI-generated image can silently fail to render the exact text its
+   * spec asserts. Every case in this manifest is `false`; no images exist
+   * yet.
+   */
+  verified: boolean;
+  /** Rubric vectors (`audit/rubric.md` Appendix A) this case is evidence for. May be empty. */
+  vectors: RubricVector[];
   application: GoldenApplicationFields;
   label: GoldenLabelFields;
   expected: GoldenExpectedResult;

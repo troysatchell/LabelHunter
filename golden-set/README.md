@@ -28,22 +28,22 @@ The pipeline is the render-first hybrid design doc §2 lays out:
 - **`scripts/golden/build.ts`** — orchestrates render → degrade for every case, and writes
   the committed JPEG at its manifest path. Run it with `pnpm golden:build`.
 
-**Still not done — `ai-generated` wild labels.** design doc §5 describes about 5 fully
+**Still not done — `ai-generated` wild labels.** Design doc §5 describes about 5 fully
 `ai-generated` "wild" labels (text included). No case in this manifest has `provenance:
 "ai-generated"` yet. When a future ticket adds one, its image starts out absent — the same way
 every case here started before LH-004. That ticket must land the image and set `verified: true`
-in the same manifest change. The loader already rejects a `verified: false` `ai-generated` case
-at load time, but only checks the schema shape, not whether the file actually exists —
-`scripts/golden/images.test.ts` checks that part.
+in the same manifest change. The loader rejects a `verified: false` `ai-generated` case at load time. It checks the schema
+shape only, not whether the file exists. `scripts/golden/images.test.ts` checks that the file
+exists.
 
 **Still not done — the realistic-corpus track.** A newer design,
 `docs/superpowers/specs/2026-08-11-realistic-corpus-gemini-design.md`, supersedes the rest of the
-original §5 scope: Gemini generates realistic bottle photographs (steady / motion-blur /
-camera-shake) from real reference photos, and the renderer's exact-text label is composited onto
-them — no warning-text transcription risk, unlike `ai-generated`. The tooling is built
-(`scripts/golden/{imagenPrompt,blankRegionDetector,compositeBackdrop,imagen}.ts`) and tested
-against synthetic fixtures, but `assets/golden/references/` is still empty — no case in this
-manifest has `provenance: "rendered+ai-backdrop"` yet. To add one once real bottle photos exist:
+original §5 scope: Gemini generates realistic bottle photographs — steady, motion-blur, or camera-shake — from real
+reference photos. The renderer composites its exact-text label onto each photo. This removes the
+warning-text transcription risk that `ai-generated` cases carry. The tooling exists, tested against synthetic fixtures
+(`scripts/golden/{imagenPrompt,blankRegionDetector,compositeBackdrop,imagen}.ts`).
+`assets/golden/references/` is still empty — no case in this manifest has
+`provenance: "rendered+ai-backdrop"` yet. To add one once real bottle photos exist:
 
 1. Add a bottle reference JSON + photo under `assets/golden/references/` (schema:
    `src/lib/golden-set/bottleReference.ts`).

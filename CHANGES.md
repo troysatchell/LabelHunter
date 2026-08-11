@@ -109,8 +109,8 @@ stacks and removes the three `@fontsource/*` devDependencies from `package.json`
 install` and then `pnpm golden:build` again after a revert. The 29 committed images are pixel
 data, not source. They need a fresh render to match the reverted code.
 
-**Review triage.** Five local CodeRabbit rounds against this ticket's own commits, seven real
-findings fixed, four dismissed:
+**Review triage.** Six local CodeRabbit rounds against this ticket's own commits, seven real
+findings fixed, five dismissed:
 - Round 1 (major, `CHANGES.md`): the entry's font and license bullets were sentence
   fragments — no explicit subject or verb. A full ASD-STE100 rewrite fixed this. Every fact
   stayed; every sentence gained a subject and a verb.
@@ -172,6 +172,15 @@ findings fixed, four dismissed:
   ever observed; not invented speculatively here. The finding's narrower, valid half — no
   stack should fall back to generic `cursive`/`fantasy` — was already covered by round 2's
   test.
+- Round 6, dismissed (minor, `CHANGES.md`): a third recurrence of the `DATABASE_URL` topic
+  (rounds 3 and 4 above), this time asking this entry to remove the claim that
+  `render.test.ts`/`degrade.test.ts`/`images.test.ts` were run with `DATABASE_URL` unset and
+  passed. That claim is true. It was checked directly, twice, not assumed once. Removing a
+  verified claim because a reviewer stayed uneasy about it would manufacture doubt about a
+  fact, not correct an error — the opposite of what CLAUDE.md's provenance rule asks for. The
+  actionable half of this recurring concern was already accepted in round 4: "How to run it"
+  leads with sourcing `.factory-env` regardless of what any one command strictly needs. This
+  entry stops here on this topic.
 
 **Not done here (explicitly out of scope).** LH-006 plans a CI smoke test: render one label
 headlessly, then run `verify.ts`. TRO-505 does not build that test. TRO-505 only removes the

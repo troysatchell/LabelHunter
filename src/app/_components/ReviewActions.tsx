@@ -71,7 +71,16 @@ export function ReviewActions({ reviewQueueId, submit = submitDisposition, onRes
     }
     setPhase({ status: "success", disposition: result.disposition });
     try {
-      onResolved(result);
+      // `onResolved`'s type says it returns `void`, but TypeScript allows a
+      // caller to pass an async function there anyway (a `void`-returning
+      // callback type accepts one that returns a value, including a
+      // Promise). `await`ing a non-Promise value is a no-op, so this line
+      // is safe either way — and it is required either way: a *synchronous*
+      // throw was already caught by wrapping the call in try/catch, but an
+      // *asynchronous* rejection needs an await in the same try/catch to be
+      // caught at all (CodeRabbit finding, local review round 2 — the first
+      // version of this fix only handled the synchronous case).
+      await onResolved(result);
     } catch (error) {
       // The decision is already recorded — a failure in the caller's own
       // callback (e.g. a router.push navigation error) must not become an

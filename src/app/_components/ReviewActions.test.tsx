@@ -132,4 +132,25 @@ describe("ReviewActions — TH-R3, two large obvious buttons, no hidden actions"
     expect(consoleError).toHaveBeenCalledWith("onResolved threw after a successful review-queue decision", expect.any(Error));
     consoleError.mockRestore();
   });
+
+  it("also logs an asynchronous rejection from onResolved, not only a synchronous throw", async () => {
+    // onResolved's type says it returns void, but nothing stops a caller
+    // from passing an async function — a synchronous try/catch alone does
+    // not observe a rejection that surfaces after onResolved has already
+    // returned its own pending promise (CodeRabbit finding, local review
+    // round 3).
+    const user = userEvent.setup();
+    const submit = vi.fn().mockResolvedValue(RECORDED);
+    const onResolved = vi.fn(async () => {
+      throw new Error("async navigation failed");
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    render(<ReviewActions reviewQueueId={42} submit={submit} onResolved={onResolved} />);
+
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+
+    expect(await screen.findByText(/Recorded/)).toBeInTheDocument();
+    expect(consoleError).toHaveBeenCalledWith("onResolved threw after a successful review-queue decision", expect.any(Error));
+    consoleError.mockRestore();
+  });
 });

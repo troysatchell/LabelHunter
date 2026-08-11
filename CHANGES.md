@@ -6,11 +6,12 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
 ## TRO-476 — PR #16 review round 2: 20 CodeRabbit findings, 19 fixed, 1 filed as TRO-507 (2026-08-11)
 
-**What changed.** CodeRabbit reviewed PR #16 in two passes: the GitHub PR review (11
-findings), then the gate's own local CLI capture against the resulting commit (9 more,
-including 2 in this round's own fixes). The orchestrator checked every finding against the
-current code, not on trust. All 20 named a real, narrow issue. Nineteen are fixed here. One
-is real but out of this PR's scope. It is filed as TRO-507.
+**What changed.** CodeRabbit reviewed PR #16 twice. The GitHub PR review reported 11
+findings. The gate's local CLI capture then reported 9 more findings against the resulting
+commit. Two of those 9 were regressions in this round's own fixes. The orchestrator checked
+every finding against the current code, not on trust. All 20 findings named a real, narrow
+issue. Nineteen are fixed here. One is real but out of this PR's scope. It is filed as
+TRO-507.
 
 **Buttons stayed live after a conflict.** A 409 conflict left the Approve and Reject buttons
 enabled. A retry could only ever 409 again. TH-R3 asks for no hidden actions. A dead action

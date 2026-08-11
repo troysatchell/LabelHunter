@@ -53,20 +53,20 @@ function isReviewQueueErrorResponse(payload: unknown): payload is ReviewQueueErr
   return typeof kind === "string" && (REVIEW_QUEUE_ERROR_KINDS as readonly string[]).includes(kind) && typeof message === "string";
 }
 
-/** A string only counts as a timestamp when it actually parses — `typeof
- * === "string"` alone lets server drift through as an unparseable value
- * that `formatTimestampUTC` (`new Date(value)`) would silently render as
- * "Invalid Date UTC" (CodeRabbit finding, PR #16 review round 2). */
-function isParseableTimestamp(value: unknown): value is string {
-  return typeof value === "string" && !Number.isNaN(new Date(value).getTime());
+/** True only for the exact canonical form `Date.prototype.toISOString()`
+ * produces — which is how every review-queue route on the server side
+ * writes these fields (`route.ts`: `.toISOString()`). Merely parseable was
+ * not enough: `new Date("2026-08-11")` (no time) parses fine, but it is
+ * not the shape this client's own server ever sends, so accepting it would
+ * hide real drift instead of catching it. The round-trip through
+ * `toISOString()` rejects anything — missing milliseconds, a non-`Z`
+ * offset, any other valid-but-non-canonical form — that is not byte-for-
+ * byte what the server actually writes (CodeRabbit finding, local review
+ * round 3; first version, round 2, only checked "does this parse at all"). */
+function isCanonicalTimestamp(value: unknown): value is string {
+  return typeof value === "string" && !Number.isNaN(new Date(value).getTime()) && new Date(value).toISOString() === value;
 }
 
-/** True only when `item` has every `ReviewQueueListItemWire` field, with an
- * enum field checked against its real closed set — not just "is a
- * string". A malformed item (a schema drift between server and client, a
- * proxy, a future API version) must never reach `ReviewQueueList.tsx` as
- * if it were a real item; standing rule 13 applies at this boundary the
- * same as at any other. */
 /** Positive integer — the same contract the server's own route validation
  * requires (`route.ts`: `!Number.isInteger(id) || id <= 0` rejects a
  * request). A wire id of 0, negative, or fractional is exactly as
@@ -76,6 +76,12 @@ function isPositiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
+/** True only when `item` has every `ReviewQueueListItemWire` field, with an
+ * enum field checked against its real closed set — not just "is a
+ * string". A malformed item (a schema drift between server and client, a
+ * proxy, a future API version) must never reach `ReviewQueueList.tsx` as
+ * if it were a real item; standing rule 13 applies at this boundary the
+ * same as at any other. */
 function isReviewQueueListItemWire(item: unknown): item is ReviewQueueListItemWire {
   if (typeof item !== "object" || item === null) return false;
   const row = item as Partial<ReviewQueueListItemWire>;
@@ -92,7 +98,7 @@ function isReviewQueueListItemWire(item: unknown): item is ReviewQueueListItemWi
     (BEVERAGE_TYPES as readonly string[]).includes(row.beverageType) &&
     typeof row.labelVerdict === "string" &&
     (LABEL_VERDICTS as readonly string[]).includes(row.labelVerdict) &&
-    isParseableTimestamp(row.createdAt)
+    isCanonicalTimestamp(row.createdAt)
   );
 }
 
@@ -109,7 +115,7 @@ function isRecordDispositionResponse(payload: unknown): payload is RecordDisposi
     typeof body.id === "number" &&
     typeof body.disposition === "string" &&
     (REVIEW_DISPOSITIONS as readonly string[]).includes(body.disposition) &&
-    isParseableTimestamp(body.disposedAt)
+    isCanonicalTimestamp(body.disposedAt)
   );
 }
 
@@ -119,7 +125,7 @@ function isRecordDispositionConflictResponse(payload: unknown): payload is Recor
   return (
     typeof body.disposition === "string" &&
     (REVIEW_DISPOSITIONS as readonly string[]).includes(body.disposition) &&
-    isParseableTimestamp(body.disposedAt)
+    isCanonicalTimestamp(body.disposedAt)
   );
 }
 

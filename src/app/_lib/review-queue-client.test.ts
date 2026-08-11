@@ -63,6 +63,16 @@ describe("fetchReviewQueue — designed error states", () => {
     await expect(fetchReviewQueue({ fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
   });
 
+  it("does not trust a 200 item whose createdAt parses but is not the server's own canonical toISOString() form — local review round 3", async () => {
+    // "2026-08-11" parses fine (midnight UTC) but the server never sends
+    // this shape — only its own `.toISOString()` output. Accepting a
+    // merely-parseable value here would hide real client/server drift
+    // instead of catching it.
+    const nonCanonical = { ...SAMPLE_ITEM, createdAt: "2026-08-11" };
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ items: [nonCanonical] }), { status: 200 }));
+    await expect(fetchReviewQueue({ fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
+  });
+
   it("aborts and reports a timeout when the server never responds in time", async () => {
     const fetchImpl = vi.fn(
       (_url: string | URL | Request, init?: RequestInit) =>

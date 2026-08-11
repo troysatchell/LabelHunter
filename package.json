@@ -19,10 +19,12 @@
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx src/lib/db/seed.ts",
     "golden:build": "tsx scripts/golden/build.ts",
+    "golden:imagen": "tsx scripts/golden/imagen.ts",
     "latency:check": "tsx scripts/latency/measure.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",
+    "@google/genai": "^2.16.0",
     "drizzle-orm": "0.45.2",
     "next": "16.3.0",
     "pg": "8.23.0",

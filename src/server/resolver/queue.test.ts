@@ -376,4 +376,25 @@ describe("findExistingReviewQueueEntry — real database", () => {
       await cleanup(applicationId);
     }
   });
+
+  it("throws on a stored resolution whose fields array is empty — PR #10 review round 3", async () => {
+    const { applicationId, verificationId } = await makeVerificationFixture();
+    try {
+      // deriveOutcome([]) returns "resolved" — an empty array's .every(...)
+      // is vacuously true, the same shape of gap response.ts's own
+      // deriveResolvedFields already guards against for an empty
+      // flaggedFields list. A stored row with no fields at all is not a
+      // real resolution of anything and must not be handed back to a
+      // caller as one.
+      await db.insert(reviewQueue).values({
+        verificationId,
+        reason: "AMBIGUOUS_BRAND",
+        resolverOutput: { outcome: "resolved", fields: [] },
+      });
+
+      await expect(findExistingReviewQueueEntry(verificationId)).rejects.toThrow(/does not match/);
+    } finally {
+      await cleanup(applicationId);
+    }
+  });
 });

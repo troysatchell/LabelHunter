@@ -129,12 +129,21 @@ function isResolvedFieldResult(value: unknown): value is ResolvedFieldResult {
  * `outcome` this way rather than trusting a fresh API response's own
  * `overall` (CP-1 §6.4); a row read back out of storage gets the identical
  * scrutiny, not less.
+ *
+ * `fields` must also be non-empty (PR #10 review, round 3): `deriveOutcome`
+ * takes whatever `fields` array it is given and stays a plain, total
+ * function over it — `[].every(...)` is vacuously true, so
+ * `deriveOutcome([])` returns `"resolved"` on a resolution that resolved
+ * nothing. `response.ts`'s own `deriveResolvedFields` already guards this
+ * exact case at ITS call site, before ever calling `deriveOutcome`, rather
+ * than pushing the guard into the shared formula — this function guards its
+ * own call site the same way, not by teaching `deriveOutcome` to throw.
  */
 function isResolverResolution(value: unknown): value is ResolverResolution {
   if (typeof value !== "object" || value === null) return false;
   const obj = value as Record<string, unknown>;
   if (obj.outcome !== "resolved" && obj.outcome !== "needs-human") return false;
-  if (!Array.isArray(obj.fields)) return false;
+  if (!Array.isArray(obj.fields) || obj.fields.length === 0) return false;
 
   const fields: ResolvedFieldResult[] = [];
   for (const item of obj.fields) {

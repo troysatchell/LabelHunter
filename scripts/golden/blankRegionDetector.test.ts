@@ -56,4 +56,10 @@ describe("detectBlankRegionQuad", () => {
     expect(quad).not.toBeNull();
     expect(Math.abs(quad!.topLeft.x - 200)).toBeLessThanOrEqual(15);
   });
+
+  it("returns null when the matching region is too large (blown highlight/loose tolerance)", async () => {
+    const fixture = await makeFixture(2, 2, 796, 596);
+    const quad = await detectBlankRegionQuad(fixture, TARGET_COLOR, 10);
+    expect(quad).toBeNull();
+  });
 });

@@ -48,6 +48,8 @@ interface RgbColor {
 const DETECTION_WIDTH = 240;
 /** A matched region smaller than this fraction of the frame is noise (a cap glint, a highlight), not the label. */
 const MIN_REGION_FRACTION = 0.02;
+/** A matched region larger than this fraction prevents a silently-wrong oversized match from blown highlights or loose tolerance. */
+const MAX_REGION_FRACTION = 0.85;
 
 function colorDistance(a: RgbColor, b: RgbColor): number {
   return Math.max(Math.abs(a.r - b.r), Math.abs(a.g - b.g), Math.abs(a.b - b.b));
@@ -115,7 +117,7 @@ export async function detectBlankRegionQuad(
     }
   }
 
-  if (bestComponent.length < width * height * MIN_REGION_FRACTION) {
+  if (bestComponent.length < width * height * MIN_REGION_FRACTION || bestComponent.length > width * height * MAX_REGION_FRACTION) {
     return null;
   }
 

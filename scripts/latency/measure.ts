@@ -137,9 +137,17 @@ async function runOnce(
   const start = performance.now();
   try {
     const response = await handleVerifyRequest(request, deps);
-    // Rounded to the nearest millisecond — sub-ms precision is noise at the
-    // multi-second, network-bound scale this harness measures, and a
-    // committed evidence file reads better without it.
+    // Stop the clock HERE, before response.json() — on purpose, not an
+    // oversight. `route.ts` builds the response with `NextResponse.json(...)`,
+    // which serializes the body eagerly at construction time, so the actual
+    // work is already done once `handleVerifyRequest` resolves. Parsing that
+    // already-serialized body below is this harness's OWN bookkeeping (it
+    // wants labelVerdict/headlineReason/applicationId for the log and the
+    // cleanup step) — a real client would do the equivalent parse on its own
+    // side, after the server's own clock has already stopped. Counting it
+    // here would inflate the number with a cost the server itself never
+    // pays. Also rounded to the nearest millisecond — sub-ms precision is
+    // noise at the multi-second, network-bound scale this harness measures.
     const durationMs = Math.round(performance.now() - start);
     const body: unknown = await response.json().catch(() => null);
     if (response.status !== 200) {
@@ -280,8 +288,15 @@ async function main(): Promise<void> {
       }
     }
   } finally {
-    await rm(scratchDir, { recursive: true, force: true });
-    await pool.end();
+    // Nested finally: pool.end() must run even if rm() itself throws (rare —
+    // `force: true` already suppresses a missing-path error, but not e.g. a
+    // permissions error). An open pool keeps the Node event loop alive, so a
+    // leaked one would hang this script instead of exiting.
+    try {
+      await rm(scratchDir, { recursive: true, force: true });
+    } finally {
+      await pool.end();
+    }
   }
 
   const successful = runResults.filter((r) => r.ok);

@@ -10,8 +10,10 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
 - `scripts/latency/percentile.ts` — pure percentile math. `percentile(valuesMs, p)` uses the
   nearest-rank method: sort ascending, then `rank = ceil(p/100 * n)`. `summarizeLatencies
-  (valuesMs)` returns count/min/max/mean/p50/p95 in one pass. Neither function touches a
-  clock, a network, or disk. Written before `measure.ts`, TDD-style (PRD §6).
+  (valuesMs)` returns count/min/max/mean/p50/p95 from one function call — a reduce for the
+  sum, separate min/max scans, and two calls to `percentile` (each sorts its own copy of the
+  input). Fine at this harness's sample sizes (15-50); not a single-pass algorithm. Neither
+  function touches a clock, a network, or disk. Written before `measure.ts`, TDD-style (PRD §6).
 - `scripts/latency/percentile.test.ts` — 12 unit tests against synthetic millisecond arrays.
   Covers known nearest-rank values on 10- and 20-sample arrays. Covers the empty-array and
   out-of-range-`p` guards: both throw `RangeError`, never return a silent `NaN`. Covers
@@ -48,11 +50,35 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 - `package.json` — added the `latency:check` script, matching `factory/config.yaml`'s
   planned `commands.latencyCheck` name.
 
-**Local CodeRabbit triage (2 findings, both fixed).** `scripts/factory/gate.sh`'s review
-step ran before any PR existed and found two real issues, both fixed in this same entry: this
-CHANGES.md entry read as too dense in three spots (fixed above and below, shorter sentences
-throughout); `measure.ts`'s `--runs` had no upper bound, so a typo could spend real API money
-at scale (fixed by the `MAX_RUNS` cap in `args.ts`, with its own regression test).
+**Local CodeRabbit triage, two passes (7 findings, 6 fixed, 1 dismissed).**
+`scripts/factory/gate.sh`'s review step ran before any PR existed. Both passes' findings are
+folded into this same entry rather than split into separate round entries, since no PR
+existed yet for either pass to review.
+
+- This CHANGES.md entry read as too dense in several spots — fixed with shorter, single-
+  clause sentences throughout (no fact, command, or number changed).
+- `measure.ts`'s `--runs` had no upper bound, so a typo could spend real API money at scale —
+  fixed with the `MAX_RUNS` cap in `args.ts`, with its own regression test.
+- This entry's own claim that `summarizeLatencies` runs "in one pass" was not accurate — it
+  reduces once for the sum, scans twice more for min/max, and calls `percentile` twice (each
+  of which sorts its own copy of the input). Fixed the wording here and in
+  `percentile.test.ts`'s describe title; the sort-based approach is still correct and fast
+  enough at 15-50 samples, just not single-pass.
+- This entry's claim that the ~1.2s gap against PRD §3.8's internal sub-target "most likely"
+  came from this machine or network running slower than Render was unsupported speculation —
+  this harness never measured Render at all. Fixed: the cause is reported as not established.
+- The "How to run it" section did not repeat this repo's `DATABASE_URL` discipline for
+  `pnpm test` — fixed by adding the same reminder other entries use.
+- **Dismissed:** a suggestion to compute `durationMs` after `response.json()` instead of
+  before it. Checked against the actual code first: `durationMs` is already computed before
+  the `response.json()` call, not after — the suggestion described code this file does not
+  have. The current order is intentional (`route.ts`'s `NextResponse.json(...)` already
+  serializes the body by the time `handleVerifyRequest` resolves, so parsing it afterward is
+  this harness's own bookkeeping, not server time). Added a comment explaining why, instead
+  of the suggested reorder, which would have inflated the measured number.
+- A `finally` block called `rm(scratchDir, ...)` then `pool.end()` — if `rm` itself threw,
+  `pool.end()` would never run, leaking an open connection pool that keeps the process alive.
+  Fixed with a nested `try`/`finally` so `pool.end()` always runs.
 
 **The measured numbers (observed, not derived, not fabricated).** 20 runs, case
 `case-01-clean-match-spirits` (the golden set's own "TH-R11 reference example": a clean
@@ -78,10 +104,16 @@ seconds," PRD §3.8's ~5s p50. This measurement meets it: 4232 ms p50 is under 5
 the fast path. The measured p50 runs about 1.2s over that internal figure. The measured p95
 (4763 ms) still clears the ≤5s p95 ceiling. One run of 20 — the max, 5277 ms — landed just
 past the literal 5-second mark. That is expected at a 95th-percentile reading on 20 samples:
-by definition, up to 1 in 20 sits above p95. It is not evidence of a systemic miss. This gap
-most likely comes from this machine and network running slower than Render will. It is not
-evidence of a broken pipeline. This entry reports it as an observed fact, not tuned away, per
-CLAUDE.md's "never fabricate a number."
+by definition, up to 1 in 20 sits above p95. It is not evidence of a systemic miss.
+
+**The cause of the ~1.2s gap against the internal sub-target is not established.** This
+harness ran on one local machine, once, against the live Anthropic API. It cannot tell apart
+three explanations: normal call-to-call variance in the live Haiku call itself, this
+machine's or network's own conditions, or PRD §3.8's ~3s figure being a pre-measurement
+estimate that ran a little optimistic. Nothing here points to a broken pipeline. This entry
+reports the gap as an observed, unexplained fact, not tuned away, per CLAUDE.md's "never
+fabricate a number" — that rule covers a confident wrong explanation as much as a wrong
+number.
 
 **Every run returned `REVIEW` / `LOW_MODEL_CONFIDENCE` — expected, not a bug.** This is not a
 Haiku confidence problem on the label's other four fields. The cause is
@@ -105,11 +137,18 @@ plumbing smoke-test runs (one before the 20-run measurement, one after the `args
 below) plus the 20-run measurement itself. PRD §4's own estimate is ~$0.005/label for the
 extractor — about $0.11, against the $25 build+eval spend cap.
 
-**How to run it.** `source .factory-env` (or otherwise set `ANTHROPIC_API_KEY` and
-`DATABASE_URL`), then `pnpm latency:check`. Defaults to 20 runs against
+**A note on running tests.** `pnpm test` reads `DATABASE_URL`. Every worktree gets its own
+database (`scripts/factory/worktree.sh`); running tests with `DATABASE_URL` unset, or
+pointing at any database other than the current worktree's own, is this repo's own
+non-negotiable rule (`CLAUDE.md`) — test provisioning resets the target schema. `source
+.factory-env` before running `pnpm test` below, same as for `pnpm latency:check`.
+
+**How to run it.** `source .factory-env` (or otherwise set `ANTHROPIC_API_KEY` and a
+worktree-scoped `DATABASE_URL`), then `pnpm latency:check`. Defaults to 20 runs against
 `case-01-clean-match-spirits`. Override with `--runs=<n>` and `--case=<caseId>`. `pnpm test`
-runs the math and argument-parsing unit tests (`percentile.test.ts`, `args.test.ts`) — free,
-no live call.
+runs the full suite, including this ticket's math and argument-parsing unit tests
+(`percentile.test.ts`, `args.test.ts`) — those two files make no live call and touch no
+database, but the rest of `pnpm test` does.
 
 **What this ticket could not verify.**
 

@@ -61,7 +61,7 @@ describe("percentile — nearest-rank, PRD §3.8's p50/p95", () => {
   });
 });
 
-describe("summarizeLatencies — count/min/max/mean/p50/p95 in one pass", () => {
+describe("summarizeLatencies — count/min/max/mean/p50/p95 from one function call", () => {
   it("throws on an empty array — never reports a summary with no data", () => {
     expect(() => summarizeLatencies([])).toThrow(RangeError);
   });

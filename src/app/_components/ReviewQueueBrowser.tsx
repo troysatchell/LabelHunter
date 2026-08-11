@@ -17,6 +17,7 @@ import { ReviewQueueList } from "./ReviewQueueList";
 
 type Phase =
   | { status: "loading" }
+  | { status: "refreshing"; items: ReviewQueueListItemWire[] }
   | { status: "success"; items: ReviewQueueListItemWire[] }
   | { status: "error"; message: string };
 
@@ -55,12 +56,22 @@ export function ReviewQueueBrowser({ fetchItems = fetchReviewQueue }: ReviewQueu
   }, [requestId, fetchItems]);
 
   function refresh() {
-    setPhase({ status: "loading" });
+    // Keep the current rows mounted during a manual refresh — swapping to
+    // the bare "loading" state here unmounted the whole list and threw
+    // away the reviewer's scroll position on every refresh, defeating the
+    // point of this control (this file's own comment above: "a queue a
+    // reviewer can churn through smoothly") (CodeRabbit finding, PR #16
+    // review round 2).
+    setPhase((current) => (current.status === "success" ? { status: "refreshing", items: current.items } : { status: "loading" }));
     setRequestId((id) => id + 1);
   }
 
   if (phase.status === "loading") {
-    return <p className="status-banner">Loading the review queue…</p>;
+    return (
+      <p className="status-banner" role="status">
+        Loading the review queue…
+      </p>
+    );
   }
 
   if (phase.status === "error") {
@@ -75,10 +86,12 @@ export function ReviewQueueBrowser({ fetchItems = fetchReviewQueue }: ReviewQueu
     );
   }
 
+  const isRefreshing = phase.status === "refreshing";
+
   return (
     <>
-      <button type="button" className="secondary-button" onClick={refresh}>
-        Refresh
+      <button type="button" className="secondary-button" disabled={isRefreshing} onClick={refresh}>
+        {isRefreshing ? "Refreshing…" : "Refresh"}
       </button>
       <ReviewQueueList items={phase.items} />
     </>

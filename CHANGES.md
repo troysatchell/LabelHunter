@@ -4,6 +4,62 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-476 — PR #16 review round 2: 11 CodeRabbit findings, 10 fixed, 1 filed as TRO-507 (2026-08-11)
+
+**What changed.** CodeRabbit reviewed PR #16 against `main`. It reported 11 findings. The
+orchestrator checked each one against the current code, not on trust. All 11 named a real,
+narrow issue. Ten are fixed here. One is real but out of this PR's scope, filed as TRO-507.
+
+Fixed:
+- `ReviewActions.tsx`: a 409 conflict left the Approve/Reject buttons enabled. A retry could
+  only ever 409 again — a dead action, the thing TH-R3's "no hidden actions" rule exists to
+  prevent. `onResolved` also ran inside the same `try` block as the network call, so a
+  failure in the caller's own callback (for example a failed `router.push`) was reported as
+  "could not record this decision," although the server had recorded it. Both fixed: a
+  conflict now disables the buttons for good, and `onResolved` runs only after the success
+  state is committed.
+- `ReviewQueueBrowser.tsx`: a manual refresh unmounted the whole list and lost the reviewer's
+  scroll position — the opposite of the "queue a reviewer can churn through smoothly" this
+  file's own comment names as the point of the control. A refresh now keeps the rows mounted
+  and shows "Refreshing…" on the button instead.
+- `review-queue-client.ts`: neither request had a timeout. A hung connection left the queue
+  in "loading" and the action buttons disabled indefinitely. Both requests now abort after
+  15s (`verify-client.ts`'s own established pattern, sized down: neither call here reaches a
+  model). Also: `createdAt`/`disposedAt` were checked as strings, not as parseable
+  timestamps — a malformed value would have rendered "Invalid Date UTC" silently. Both now
+  require `new Date(value)` to parse.
+- `review-queue/route.ts` and `review-queue/[reviewQueueId]/route.ts`: both routes discarded
+  the caught error before returning their 503. An operator seeing repeated 503s had no signal
+  to diagnose. Both now log the cause first (`console.error`, `db/index.ts`'s own existing
+  pattern — not `verify/route.ts`'s, which CodeRabbit named but which does not actually log).
+- `ReviewQueueList.tsx`: every row's link shared the accessible name "Review this item" — a
+  screen-reader user listing the page's links could not tell rows apart. The name now
+  includes the brand. The timestamp now sits inside a `<time dateTime=…>` element.
+- `ReviewActions.tsx`'s success banner had no live-region role, so a screen reader never
+  announced it. Added `role="status"`, matching the error panel's existing `role="alert"`.
+- Two trivial test gaps closed: a 409 response missing `disposition` had no test coverage;
+  a test titled "without touching the database" asserted only the response, not the claim in
+  its own name — it now injects a `db` that throws on any access.
+- `route.test.ts` and `[reviewQueueId]/route.test.ts` duplicated the same fixture and cleanup
+  helpers. Both now import them from a new `test-support.ts`.
+
+Filed as **TRO-507** (not fixed here — CodeRabbit tagged it a "Heavy lift"): the list endpoint
+defaults to 100 rows with no pagination, so a queue past that size silently hides the rest.
+CHANGES.md's own claim below ("returns every unresolved item") was corrected in place to
+state the current, accurate limit.
+
+**Tests.** `pnpm test -- src/app/_components/ReviewActions.test.tsx
+src/app/_components/ReviewQueueBrowser.test.tsx src/app/_lib/review-queue-client.test.ts
+src/app/api/review-queue` — every fix above has a new or extended case that failed before
+the fix and passes after.
+
+**How to run it.** Point `DATABASE_URL` at this worktree's own database first — schema
+provisioning resets it. `source .factory-env`, then `pnpm test`, `pnpm typecheck`, `pnpm
+lint`, `pnpm build`.
+
+**Rollback.** `git revert` this commit. The two TRO-476 entries below stand on their own;
+this round only tightens them.
+
 ## TRO-476 — local CodeRabbit review round 1: 6 findings, 6 fixed (2026-08-11)
 
 **What changed.** `scripts/factory/gate.sh`'s local CodeRabbit CLI reviewed this branch
@@ -72,8 +128,10 @@ escalation-to-human-review loop is the differentiated idea. It is not a UI detai
 top.
 
 - **List endpoint.** `GET /api/review-queue` (`src/app/api/review-queue/route.ts`) returns
-  every unresolved item, oldest first. Its `WHERE` clause matches
-  `review_queue_unresolved_idx` (`schema.ts`), the partial index built for this query.
+  unresolved items, oldest first, up to `listUnresolvedReviewQueue`'s default 100-row limit
+  (round 1's own fix, above). It does not paginate past that limit yet — see round 2, below.
+  Its `WHERE` clause matches `review_queue_unresolved_idx` (`schema.ts`), the partial index
+  built for this query.
   `EXPLAIN` against this worktree's database confirms the index serves the filter. The
   table was empty during that check. This is not a claim about a larger, real-world table.
   See `src/server/review-queue/list.ts`'s own comment for the exact, honest result.

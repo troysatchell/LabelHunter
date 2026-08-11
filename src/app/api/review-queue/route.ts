@@ -31,7 +31,11 @@ export async function handleReviewQueueListRequest(deps: ReviewQueueListRouteDep
       items: items.map((item) => ({ ...item, createdAt: item.createdAt.toISOString() })),
     };
     return NextResponse.json(body, { status: 200 });
-  } catch {
+  } catch (cause) {
+    // Bind and log rather than discard — an operator who sees repeated
+    // 503s otherwise has no signal to diagnose (CodeRabbit finding, PR #16
+    // review round 2).
+    console.error("Could not load the review queue", cause);
     return errorResponse(503, "LabelHunter could not load the review queue. Try again.");
   }
 }

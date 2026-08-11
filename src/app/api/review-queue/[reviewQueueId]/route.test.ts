@@ -5,33 +5,10 @@
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "../../../../lib/db";
-import { applications, labelImages, reviewQueue, verifications } from "../../../../lib/db/schema";
-import { handleRecordDispositionRequest } from "./route";
+import { reviewQueue } from "../../../../lib/db/schema";
+import { handleRecordDispositionRequest, type RecordDispositionRouteDeps } from "./route";
+import { cleanup, makeQueueItemFixture } from "../test-support";
 import type { RecordDispositionConflictResponse, RecordDispositionResponse, ReviewQueueErrorResponse } from "../types";
-
-async function makeQueueItemFixture() {
-  const [application] = await db
-    .insert(applications)
-    .values({ beverageType: "spirits", brandName: "Old Tom Distillery", classType: "Straight Bourbon Whiskey", netContentsValue: 750, netContentsUnit: "mL" })
-    .returning();
-  const [labelImage] = await db
-    .insert(labelImages)
-    .values({ applicationId: application.id, storagePath: "test-fixtures/tro-476.jpg", originalFilename: "tro-476.jpg", widthPx: 1000, heightPx: 1200 })
-    .returning();
-  const [verification] = await db
-    .insert(verifications)
-    .values({ applicationId: application.id, labelImageId: labelImage.id, verdict: "REVIEW", resolutionPath: "EXTRACTOR_ONLY" })
-    .returning();
-  const [queueRow] = await db
-    .insert(reviewQueue)
-    .values({ verificationId: verification.id, reason: "AMBIGUOUS_BRAND" })
-    .returning();
-  return { applicationId: application.id, queueId: queueRow.id };
-}
-
-async function cleanup(applicationId: number) {
-  await db.delete(applications).where(eq(applications.id, applicationId));
-}
 
 function patchRequest(body: unknown): Request {
   return new Request("http://localhost/api/review-queue/1", {
@@ -103,7 +80,20 @@ describe("PATCH /api/review-queue/:reviewQueueId", () => {
   });
 
   it("returns 400 VALIDATION on a non-integer id, without touching the database", async () => {
-    const response = await handleRecordDispositionRequest(patchRequest({ disposition: "APPROVED" }), "not-a-number");
+    // A Proxy that throws on any property access — the title's claim is
+    // only actually asserted if reaching the database would fail the test
+    // loudly, not merely go unobserved (CodeRabbit finding, PR #16 review
+    // round 2).
+    const untouchedDb = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error("the database must not be touched for a non-integer id");
+        },
+      },
+    ) as RecordDispositionRouteDeps["db"];
+
+    const response = await handleRecordDispositionRequest(patchRequest({ disposition: "APPROVED" }), "not-a-number", { db: untouchedDb });
     expect(response.status).toBe(400);
     const body = (await response.json()) as ReviewQueueErrorResponse;
     expect(body.error.kind).toBe("VALIDATION");

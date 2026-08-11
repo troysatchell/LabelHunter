@@ -65,7 +65,7 @@ describe("ReviewActions — TH-R3, two large obvious buttons, no hidden actions"
     expect(onResolved).not.toHaveBeenCalled();
   });
 
-  it("on a 409 conflict, shows which decision already won instead of a bare conflict message", async () => {
+  it("on a 409 conflict, shows which decision already won instead of a bare conflict message, and leaves the buttons disabled", async () => {
     const user = userEvent.setup();
     const submit = vi
       .fn()
@@ -74,5 +74,30 @@ describe("ReviewActions — TH-R3, two large obvious buttons, no hidden actions"
 
     await user.click(screen.getByRole("button", { name: "Approve" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/already rejected/i);
+    // The server already recorded a decision — re-enabling here would leave
+    // a dead action a retry can only ever 409 against (CodeRabbit finding,
+    // PR #16 review round 2).
+    expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeDisabled();
+  });
+
+  it("commits the success state before calling onResolved, so a failure in onResolved cannot be mistaken for a record failure", async () => {
+    const user = userEvent.setup();
+    const submit = vi.fn().mockResolvedValue(RECORDED);
+    // Asserts ordering directly, rather than making onResolved throw: `void
+    // act(...)` in the click handler means a throw here would reject an
+    // unobserved promise, not something `user.click()` itself surfaces
+    // (CodeRabbit finding, PR #16 review round 2 — onResolved used to run
+    // inside the same try/catch as the network call, so its own failures,
+    // e.g. a router.push navigation error, were reported as "could not
+    // record this decision" even though the decision had already recorded).
+    const onResolved = vi.fn(() => {
+      expect(screen.getByText(/Recorded/)).toBeInTheDocument();
+    });
+    render(<ReviewActions reviewQueueId={42} submit={submit} onResolved={onResolved} />);
+
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+    expect(onResolved).toHaveBeenCalledWith(RECORDED);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

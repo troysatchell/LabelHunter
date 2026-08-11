@@ -54,6 +54,32 @@ describe("fetchReviewQueue — designed error states", () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ items: [SAMPLE_ITEM, malformed] }), { status: 200 }));
     await expect(fetchReviewQueue({ fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
   });
+
+  it("does not trust a 200 item whose createdAt is a string but not a parseable timestamp — PR #16 review round 2", async () => {
+    // `typeof === "string"` alone let server drift through; formatTimestampUTC
+    // (`new Date(value)`) would have silently rendered "Invalid Date UTC".
+    const badTimestamp = { ...SAMPLE_ITEM, createdAt: "not-a-date" };
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ items: [badTimestamp] }), { status: 200 }));
+    await expect(fetchReviewQueue({ fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
+  });
+
+  it("aborts and reports a timeout when the server never responds in time", async () => {
+    const fetchImpl = vi.fn(
+      (_url: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            const err = new Error("aborted");
+            err.name = "AbortError";
+            reject(err);
+          });
+        }),
+    );
+
+    await expect(fetchReviewQueue({ fetchImpl, timeoutMs: 15 })).rejects.toMatchObject({
+      kind: "SERVICE",
+      message: expect.stringMatching(/took too long/i),
+    });
+  });
 });
 
 describe("submitDisposition — the happy path", () => {
@@ -98,5 +124,42 @@ describe("submitDisposition — designed error states", () => {
   it("does not trust an error body whose kind is outside REVIEW_QUEUE_ERROR_KINDS — falls back to SERVICE", async () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ error: { kind: "BOGUS", message: "x" } }), { status: 422 }));
     await expect(submitDisposition(7, "APPROVED", { fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
+  });
+
+  it("classifies a 409 with no disposition field as CONFLICT without conflictDisposition", async () => {
+    // `isRecordDispositionConflictResponse` rejects a body missing
+    // `disposition`; `isReviewQueueErrorResponse` then matches it instead,
+    // so the client must still throw CONFLICT (just without the specific
+    // disposition), not fall through to a generic SERVICE error.
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ error: { kind: "CONFLICT", message: "Already decided." } }), { status: 409 }));
+    await expect(submitDisposition(7, "APPROVED", { fetchImpl })).rejects.toMatchObject({
+      kind: "CONFLICT",
+      conflictDisposition: undefined,
+    });
+  });
+
+  it("does not trust a 200 response whose disposedAt is a string but not a parseable timestamp — PR #16 review round 2", async () => {
+    const fetchImpl = vi.fn(
+      async () => new Response(JSON.stringify({ id: 7, disposition: "APPROVED", disposedAt: "not-a-date" }), { status: 200 }),
+    );
+    await expect(submitDisposition(7, "APPROVED", { fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
+  });
+
+  it("aborts and reports a timeout when the server never responds in time", async () => {
+    const fetchImpl = vi.fn(
+      (_url: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            const err = new Error("aborted");
+            err.name = "AbortError";
+            reject(err);
+          });
+        }),
+    );
+
+    await expect(submitDisposition(7, "APPROVED", { fetchImpl, timeoutMs: 15 })).rejects.toMatchObject({
+      kind: "SERVICE",
+      message: expect.stringMatching(/took too long/i),
+    });
   });
 });

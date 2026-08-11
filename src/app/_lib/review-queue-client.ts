@@ -31,9 +31,19 @@ export class ReviewQueueClientError extends Error {
 }
 
 export interface ReviewQueueRequestOptions {
+  /** Hard ceiling on the request, matching TH-R20's "API failure/timeout
+   * with a retry affordance" designed error state — same shape as
+   * verify-client.ts's `timeoutMs`, sized down: neither request here calls
+   * a model, so 15s is generous for a plain DB-backed read or write
+   * (CodeRabbit finding, PR #16 review round 2 — without this, a hung
+   * connection left the queue in "loading" and the action buttons disabled
+   * indefinitely). */
+  timeoutMs?: number;
   /** Injected in tests; defaults to the global `fetch`. */
   fetchImpl?: typeof fetch;
 }
+
+const DEFAULT_TIMEOUT_MS = 15_000;
 
 function isReviewQueueErrorResponse(payload: unknown): payload is ReviewQueueErrorResponse {
   if (typeof payload !== "object" || payload === null || !("error" in payload)) return false;
@@ -41,6 +51,14 @@ function isReviewQueueErrorResponse(payload: unknown): payload is ReviewQueueErr
   if (typeof error !== "object" || error === null) return false;
   const { kind, message } = error as { kind?: unknown; message?: unknown };
   return typeof kind === "string" && (REVIEW_QUEUE_ERROR_KINDS as readonly string[]).includes(kind) && typeof message === "string";
+}
+
+/** A string only counts as a timestamp when it actually parses — `typeof
+ * === "string"` alone lets server drift through as an unparseable value
+ * that `formatTimestampUTC` (`new Date(value)`) would silently render as
+ * "Invalid Date UTC" (CodeRabbit finding, PR #16 review round 2). */
+function isParseableTimestamp(value: unknown): value is string {
+  return typeof value === "string" && !Number.isNaN(new Date(value).getTime());
 }
 
 /** True only when `item` has every `ReviewQueueListItemWire` field, with an
@@ -65,7 +83,7 @@ function isReviewQueueListItemWire(item: unknown): item is ReviewQueueListItemWi
     (BEVERAGE_TYPES as readonly string[]).includes(row.beverageType) &&
     typeof row.labelVerdict === "string" &&
     (LABEL_VERDICTS as readonly string[]).includes(row.labelVerdict) &&
-    typeof row.createdAt === "string"
+    isParseableTimestamp(row.createdAt)
   );
 }
 
@@ -82,7 +100,7 @@ function isRecordDispositionResponse(payload: unknown): payload is RecordDisposi
     typeof body.id === "number" &&
     typeof body.disposition === "string" &&
     (REVIEW_DISPOSITIONS as readonly string[]).includes(body.disposition) &&
-    typeof body.disposedAt === "string"
+    isParseableTimestamp(body.disposedAt)
   );
 }
 
@@ -92,7 +110,7 @@ function isRecordDispositionConflictResponse(payload: unknown): payload is Recor
   return (
     typeof body.disposition === "string" &&
     (REVIEW_DISPOSITIONS as readonly string[]).includes(body.disposition) &&
-    typeof body.disposedAt === "string"
+    isParseableTimestamp(body.disposedAt)
   );
 }
 
@@ -109,12 +127,20 @@ function defaultFetch(): typeof fetch {
  * even parse. */
 export async function fetchReviewQueue(options: ReviewQueueRequestOptions = {}): Promise<ReviewQueueListItemWire[]> {
   const fetchImpl = options.fetchImpl ?? defaultFetch();
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   let response: Response;
   try {
-    response = await fetchImpl("/api/review-queue");
+    response = await fetchImpl("/api/review-queue", { signal: controller.signal });
   } catch {
+    if (controller.signal.aborted) {
+      throw new ReviewQueueClientError("SERVICE", "LabelHunter took too long to respond. Check your connection and try again.");
+    }
     throw new ReviewQueueClientError("SERVICE", "LabelHunter could not reach the server. Check your connection and try again.");
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   let payload: unknown;
@@ -147,6 +173,9 @@ export async function submitDisposition(
   options: ReviewQueueRequestOptions = {},
 ): Promise<RecordDispositionResponse> {
   const fetchImpl = options.fetchImpl ?? defaultFetch();
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   let response: Response;
   try {
@@ -154,9 +183,15 @@ export async function submitDisposition(
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ disposition }),
+      signal: controller.signal,
     });
   } catch {
+    if (controller.signal.aborted) {
+      throw new ReviewQueueClientError("SERVICE", "LabelHunter took too long to respond. Check your connection and try again.");
+    }
     throw new ReviewQueueClientError("SERVICE", "LabelHunter could not reach the server. Check your connection and try again.");
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   let payload: unknown;

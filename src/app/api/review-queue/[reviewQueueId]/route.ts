@@ -91,7 +91,13 @@ export async function handleRecordDispositionRequest(
       disposedAt: outcome.disposedAt.toISOString(),
     };
     return NextResponse.json(body, { status: 200 });
-  } catch {
+  } catch (cause) {
+    // Bind and log rather than discard: `recordDisposition` throws a
+    // specific error when a review_queue row violates the disposition/
+    // disposedAt consistency invariant, and that message was previously
+    // lost, leaving an operator who sees repeated 503s with no signal to
+    // diagnose (CodeRabbit finding, PR #16 review round 2).
+    console.error("Could not record a review-queue disposition", cause);
     return errorResponse(503, "SERVICE", "LabelHunter could not record this decision. Try again.");
   }
 }

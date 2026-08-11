@@ -16,7 +16,7 @@ type Phase =
   | { status: "idle" }
   | { status: "pending"; disposition: ReviewDisposition }
   | { status: "success"; disposition: ReviewDisposition }
-  | { status: "error"; message: string };
+  | { status: "error"; message: string; retryable: boolean };
 
 const DISPOSITION_VERB: Record<ReviewDisposition, string> = {
   APPROVED: "approved",
@@ -35,39 +35,55 @@ export interface ReviewActionsProps {
 
 export function ReviewActions({ reviewQueueId, submit = submitDisposition, onResolved }: ReviewActionsProps) {
   const [phase, setPhase] = useState<Phase>({ status: "idle" });
-  const isPending = phase.status === "pending";
+  // A CONFLICT means the server already recorded a decision on this item —
+  // re-enabling the buttons would leave a dead action a retry can only ever
+  // 409 against (TH-R3: "no hidden actions" applies to actions that can
+  // never succeed too, not only ones that are invisible). Every other error
+  // is retryable (CodeRabbit finding, PR #16 review round 2).
+  const isDisabled = phase.status === "pending" || phase.status === "success" || (phase.status === "error" && !phase.retryable);
 
   async function act(disposition: ReviewDisposition) {
     setPhase({ status: "pending", disposition });
+    // `result` is read outside the `try` so a failure in `onResolved` itself
+    // (e.g. the caller's `router.push`) never gets reported as "could not
+    // record this decision" — the decision was recorded; only the
+    // afterward step failed (CodeRabbit finding, PR #16 review round 2).
+    let result: RecordDispositionResponse;
     try {
-      const result = await submit(reviewQueueId, disposition);
-      setPhase({ status: "success", disposition: result.disposition });
-      onResolved(result);
+      result = await submit(reviewQueueId, disposition);
     } catch (error) {
       if (error instanceof ReviewQueueClientError && error.kind === "CONFLICT" && error.conflictDisposition) {
         setPhase({
           status: "error",
           message: `Someone already ${DISPOSITION_VERB[error.conflictDisposition]} this item. Your decision was not recorded.`,
+          retryable: false,
         });
         return;
       }
       const message = error instanceof ReviewQueueClientError ? error.message : "LabelHunter could not record this decision. Try again.";
-      setPhase({ status: "error", message });
+      setPhase({ status: "error", message, retryable: true });
+      return;
     }
+    setPhase({ status: "success", disposition: result.disposition });
+    onResolved(result);
   }
 
   return (
     <div className="review-actions">
       <div className="review-actions__buttons">
-        <button type="button" className="primary-button" disabled={isPending} onClick={() => void act("APPROVED")}>
+        <button type="button" className="primary-button" disabled={isDisabled} onClick={() => void act("APPROVED")}>
           Approve
         </button>
-        <button type="button" className="reject-button" disabled={isPending} onClick={() => void act("REJECTED")}>
+        <button type="button" className="reject-button" disabled={isDisabled} onClick={() => void act("REJECTED")}>
           Reject
         </button>
       </div>
 
-      {phase.status === "success" && <p className="status-banner">Recorded: {DISPOSITION_VERB[phase.disposition]}.</p>}
+      {phase.status === "success" && (
+        <p className="status-banner" role="status">
+          Recorded: {DISPOSITION_VERB[phase.disposition]}.
+        </p>
+      )}
 
       {phase.status === "error" && (
         <div className="error-panel" role="alert">

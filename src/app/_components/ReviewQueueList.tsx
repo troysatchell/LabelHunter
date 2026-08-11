@@ -26,8 +26,13 @@ export function ReviewQueueList({ items }: ReviewQueueListProps) {
           <p className="review-queue-row__context">
             {item.brandName} — {item.classType}
           </p>
-          <p className="review-queue-row__waiting">Waiting since {formatTimestampUTC(item.createdAt)}</p>
-          <Link href={`/review-queue/${item.id}`} className="secondary-button">
+          <p className="review-queue-row__waiting">
+            Waiting since <time dateTime={item.createdAt}>{formatTimestampUTC(item.createdAt)}</time>
+          </p>
+          {/* Every row's link otherwise shares the name "Review this item" —
+              a screen-reader user listing the page's links has no way to
+              tell rows apart (CodeRabbit finding, PR #16 review round 2). */}
+          <Link href={`/review-queue/${item.id}`} className="secondary-button" aria-label={`Review this item: ${item.brandName}`}>
             Review this item
           </Link>
         </li>

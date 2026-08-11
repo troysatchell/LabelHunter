@@ -67,4 +67,30 @@ describe("ReviewQueueBrowser", () => {
 
     expect(fetchItems).toHaveBeenCalledTimes(2);
   });
+
+  it("keeps the list mounted and shows a Refreshing state while a manual refresh is in flight", async () => {
+    // A promise this test controls the resolution of — same pattern
+    // VerifyForm.test.tsx uses to assert a pending state deterministically.
+    let resolveRefetch!: (items: ReviewQueueListItemWire[]) => void;
+    const fetchItems = vi
+      .fn()
+      .mockResolvedValueOnce([ITEM])
+      .mockImplementationOnce(() => new Promise<ReviewQueueListItemWire[]>((resolve) => (resolveRefetch = resolve)));
+    const user = userEvent.setup();
+    render(<ReviewQueueBrowser fetchItems={fetchItems} />);
+
+    await screen.findByTestId("review-queue-row-42");
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+
+    // The row and the Refresh button both stay in the document during the
+    // in-flight refresh — swapping to the bare "loading" state here used to
+    // unmount the whole list and throw away the reviewer's scroll position
+    // on every refresh (CodeRabbit finding, PR #16 review round 2).
+    expect(screen.getByTestId("review-queue-row-42")).toBeInTheDocument();
+    const refreshButton = screen.getByRole("button", { name: "Refreshing…" });
+    expect(refreshButton).toBeDisabled();
+
+    resolveRefetch([ITEM]);
+    expect(await screen.findByRole("button", { name: "Refresh" })).toBeEnabled();
+  });
 });

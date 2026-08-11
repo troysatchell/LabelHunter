@@ -5,40 +5,10 @@
  * id (see `src/server/review-queue/list.test.ts`'s file comment: this
  * suite shares one worktree database with every other `*.test.ts` file).
  */
-import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { db } from "../../../lib/db";
-import { applications, labelImages, reviewQueue, verifications } from "../../../lib/db/schema";
 import { GET } from "./route";
+import { cleanup, makeQueueItemFixture } from "./test-support";
 import type { ReviewQueueListResponse } from "./types";
-
-async function makeQueueItemFixture(disposed = false) {
-  const [application] = await db
-    .insert(applications)
-    .values({ beverageType: "spirits", brandName: "Old Tom Distillery", classType: "Straight Bourbon Whiskey", netContentsValue: 750, netContentsUnit: "mL" })
-    .returning();
-  const [labelImage] = await db
-    .insert(labelImages)
-    .values({ applicationId: application.id, storagePath: "test-fixtures/tro-476.jpg", originalFilename: "tro-476.jpg", widthPx: 1000, heightPx: 1200 })
-    .returning();
-  const [verification] = await db
-    .insert(verifications)
-    .values({ applicationId: application.id, labelImageId: labelImage.id, verdict: "REVIEW", resolutionPath: "EXTRACTOR_ONLY" })
-    .returning();
-  const [queueRow] = await db
-    .insert(reviewQueue)
-    .values({
-      verificationId: verification.id,
-      reason: "AMBIGUOUS_BRAND",
-      ...(disposed ? { disposition: "APPROVED" as const, disposedAt: new Date() } : {}),
-    })
-    .returning();
-  return { applicationId: application.id, queueId: queueRow.id };
-}
-
-async function cleanup(applicationId: number) {
-  await db.delete(applications).where(eq(applications.id, applicationId));
-}
 
 describe("GET /api/review-queue", () => {
   it("returns 200 with an unresolved item, and the createdAt travels as an ISO string", async () => {

@@ -7,11 +7,12 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 ## TRO-505 — golden renderer fonts: embedded, not system (2026-08-11)
 
 **What changed.** `scripts/golden/render.ts` used three system-font stacks: Helvetica/Arial,
-plus generic `cursive`/`fantasy` fallbacks for the two odd-typography cases. A different OS
-could substitute different fonts for those generic fallbacks. `render.ts`'s own KNOWN
-LIMITATION comment named this gap directly. Design doc §2 says fonts must be committed to the
-repo. This ticket closes that gap. TH-R17 grades correctness. An unrepeatable render pipeline
-is a correctness gap, not a cosmetic one.
+plus generic `cursive`/`fantasy` fallbacks for the two odd-typography cases. Those generic
+fallbacks named no real font file, only a category. A different OS could substitute a
+different real font for each category. `render.ts`'s own KNOWN LIMITATION comment named this
+OS-font-substitution risk directly. Design doc §2 says fonts must be committed to the repo.
+This ticket embeds every font instead, removing the substitution risk entirely. TH-R17 grades
+correctness. An unrepeatable render pipeline is a correctness problem, not a cosmetic one.
 
 Every font is now a pinned npm package. `render.ts` reads each font's real WOFF2 file and
 embeds it as a base64 `data:` URI inside a `@font-face` block. Chromium never asks the host OS

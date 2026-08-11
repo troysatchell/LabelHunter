@@ -203,9 +203,26 @@ const FONT_FACES_CSS = `
   }
 `;
 
+/**
+ * `BASE_FONT_STACK` keeps a generic `sans-serif` fallback: `Inter` is the
+ * base font itself, so there is no more-embedded family left to fall back
+ * to if its `@font-face` somehow failed to apply.
+ *
+ * `SCRIPT_FONT_STACK` and `BLACKLETTER_FONT_STACK` fall back to `"Inter"`,
+ * not a generic `cursive`/`fantasy` family. `cursive` and `fantasy` name no
+ * real font — only a category — so the OS would still pick the actual face
+ * for either one, exactly the substitution risk this file just closed.
+ * `Inter` is also embedded above, so even this fallback path stays
+ * file-embedded and deterministic. In today's committed HTML this fallback
+ * never actually triggers — `render.test.ts`'s "embeds each font family's
+ * real @fontsource file bytes" test confirms `buildLabelHtml` requests
+ * `Dancing Script` and `UnifrakturMaguntia` directly, and both load — but a
+ * future regression that broke one of those two `@font-face` rules would
+ * degrade to Inter, not silently to an OS-dependent generic family.
+ */
 const BASE_FONT_STACK = '"Inter", sans-serif';
-const SCRIPT_FONT_STACK = '"Dancing Script", cursive';
-const BLACKLETTER_FONT_STACK = '"UnifrakturMaguntia", fantasy';
+const SCRIPT_FONT_STACK = '"Dancing Script", "Inter"';
+const BLACKLETTER_FONT_STACK = '"UnifrakturMaguntia", "Inter"';
 const DEFAULT_WARNING_FONT_SIZE_PX = 24;
 const TINY_WARNING_FONT_SIZE_PX = 9;
 const DEFAULT_CLASS_TYPE_FONT_WEIGHT = 500;

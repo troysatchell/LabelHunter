@@ -164,6 +164,28 @@ describe("buildLabelHtml font embedding (TRO-505)", () => {
       ).toBe(false);
     }
   });
+
+  it("never falls back to an OS-dependent generic font family (cursive, fantasy)", () => {
+    // CodeRabbit round 2 on this ticket: SCRIPT_FONT_STACK and
+    // BLACKLETTER_FONT_STACK used to fall back to the generic `cursive` /
+    // `fantasy` CSS categories. Neither names a real font file — the OS
+    // still picks an actual face for either one, the exact substitution
+    // risk this file exists to close. Both now fall back to "Inter",
+    // itself embedded above, so even the fallback path stays deterministic.
+    // Checked across every case, not just the two odd-typography ones —
+    // this is a page-wide CSS property, not a per-case one.
+    for (const c of renderableCases) {
+      const html = buildLabelHtml(c);
+      expect(
+        html.includes("cursive"),
+        `${c.caseId}: must not fall back to the generic cursive family`,
+      ).toBe(false);
+      expect(
+        html.includes("fantasy"),
+        `${c.caseId}: must not fall back to the generic fantasy family`,
+      ).toBe(false);
+    }
+  });
 });
 
 describe("renderLabelImage determinism", () => {

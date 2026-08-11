@@ -4,6 +4,97 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-460 — LH-010 review round 1: 4 CodeRabbit findings, 1 major (2026-08-10)
+
+**What changed.** The factory gate's review step (CodeRabbit) found 4 issues in the initial
+implementation. All 4 fixed:
+
+- **Major.** `clampRegionToBounds` (`region.ts`) clamped a region with `Math.max`/`Math.min`,
+  which silently propagate `NaN` instead of clamping it — a caller passing a non-finite
+  coordinate (a corrupt detector output, not just an out-of-bounds one) would reach sharp's
+  `.extract()` as an invalid crop request with no clear error. Now rejects a non-finite
+  `region` field with `RangeError`, and rounds a fractional coordinate (a detector may report
+  a bounding box in floating point) to the nearest whole pixel before clamping.
+- **Minor.** `preprocessImage`'s JPEG encode of `original` used sharp's default alpha
+  matte, which is **black**, not white — verified with a live sharp run: a fully
+  transparent pixel encoded through `.jpeg()` with no explicit flatten came out `(0, 0, 0)`.
+  A label graphic with a transparent background would go dark. This finding carried no
+  code suggestion, only the instruction; fixed with an explicit
+  `.flatten({ background: "#ffffff" })` before every JPEG encode, including `cropRegion`'s,
+  and a new regression test that round-trips a fully-transparent PNG through the real
+  pipeline and asserts the decoded pixel channels land near-white (confirmed re-verified
+  with the same live-sharp technique: `(255, 255, 255)` with the flatten in place).
+- **Minor.** The no-upscale test only checked `haikuVariant`; extended it to check
+  `sonnetVariant` too, per the finding's own suggested test code.
+- **Minor.** The upload-size error-message test only checked the message's length and that
+  it wasn't a bare "error"/"failed" string. The finding's suggested code checked for the
+  raw byte counts (`String(MAX_UPLOAD_BYTES * 2)`), but its own instruction text allowed
+  "raw byte values **or** their documented formatted representations" — this
+  implementation's `humanBytes()` renders a human-readable size (TH-R20: the message is
+  for a person, not a log line), so the fix checks for `"40.0 MB"` / `"20.0 MB"` instead of
+  the raw byte counts, honoring the instruction's intent rather than its literal sample.
+
+**How to run it.** `pnpm test -- src/server/preprocessing` — 45 tests (up from 42).
+
+**Rollback.** `git revert` this commit. No behavior change outside the four points above.
+
+## TRO-460 — LH-010: image preprocessing pipeline (2026-08-10)
+
+**What changed.** A new module, `src/server/preprocessing/`, implements PRD §3.1's
+preprocessing stage — the step between upload and the Haiku extractor (LH-011, not built
+yet). It lives as its own module, a sibling of `src/server/{extractor,router,warning,resolver}/`,
+because the PRD diagram draws preprocessing as its own boxed pipeline stage, and the
+extractor's own `.gitkeep` scopes that directory to LH-011's Haiku call only.
+
+`preprocessImage(upload: Buffer)` runs one uploaded label image through:
+
+- **EXIF rotation.** `sharp`'s `.rotate()` bakes the EXIF orientation into the pixel data
+  and strips the tag — a viewer with no EXIF support still displays the image upright.
+  Confirmed live: a 100×60 fixture tagged orientation 6 decodes, after `.rotate()`, to a
+  60×100 buffer with no orientation tag left.
+- **Three buffers, one format.** `original` (full resolution, reserved for OCR — a later
+  ticket), `haikuVariant` (≤1568px long edge), `sonnetVariant` (≤2576px long edge, reserved
+  for the Sonnet resolver — LH-014, not called here). Every buffer is JPEG, regardless of
+  the upload's source format, because the Claude vision API never accepts `image/heic` and
+  a single fixed `mediaType` means every consumer avoids a format branch.
+- **Format validation.** Accepts JPEG, PNG, WEBP, and HEIF/HEIC (`sharp` decodes HEIC, the
+  default capture format on recent iPhones). Rejects anything else — including formats
+  `sharp` can decode but a label photo would never be, like GIF or TIFF — with
+  `UnsupportedFormatError`, not a generic failure.
+- **Size ceilings.** `FileTooLargeError` above 20 MB (byte size). `ImageDimensionsTooLargeError`
+  above 100 megapixels decoded (a decompression-bomb guard — bounds decode cost independent
+  of the file's size on disk). `UnreadableImageError` for a corrupt or truncated file.
+- **A warning-region crop hook.** `cropRegion(source, region)` extracts a caller-supplied
+  pixel box from a full-resolution buffer at native DPI. This ticket does not detect the
+  warning block — LH-020 (its own CP-2-gated subsystem) does — but the crop math exists now
+  so LH-020 has something to call. `clampRegionToBounds` (pure, unit tested) guarantees the
+  box sharp receives is always valid, even when a detector's box runs slightly outside the
+  image.
+
+**Two resolution caps confirmed live, not just read from the docs.** `docs/checkpoints/
+cp1-cascade-router-prompts.md` §3.5 named this ticket to confirm the Haiku 1568px / Sonnet
+2576px vision caps against a real call. A 3200×2400 synthetic JPEG sent to both models
+(temperature 0 on Haiku; `effort: low` on Sonnet, which rejects `temperature`) measured
+1582 input tokens on `claude-haiku-4-5` and 4761 on `claude-sonnet-5` — a 3.0× ratio, and
+after subtracting prompt overhead, within a few tokens of Anthropic's own published
+1568-token and ~4784-token figures at those two caps. Both caps stand as measured, current.
+
+**How to run it.** `pnpm test -- src/server/preprocessing` runs the 42 preprocessing tests
+in isolation (77 pass repo-wide). No database, no API key, and no network call are needed
+for the shipped code — the live resolution-cap confirmation above was a one-time diagnostic,
+not part of the test suite.
+
+**Rollback.** `git revert` this commit. Nothing outside `src/server/preprocessing/`,
+`package.json`, and `pnpm-lock.yaml` (the new `sharp` dependency) changed.
+
+**Known limits.** LH-051 (imperfect-image handling, TH-R10's graceful-degradation judgment
+call) is explicitly out of scope — this ticket rejects only structurally invalid input
+(wrong format, corrupt file, oversized file). A blurry-but-valid JPEG passes through
+unchanged; deciding whether a low-quality read should downgrade to a review outcome is
+LH-051's job. The HEIC-acceptance claim rests on `sharp`'s reported `libheif` support
+(`sharp.versions.heif`) — not measured against a real iPhone HEIC capture, since none was
+available in this worktree.
+
 ## TRO-459 — PR review round 4: final 4 unresolved threads triaged, 2 doc fixes (2026-08-10)
 
 **What changed.** Triage of the last 4 unresolved CodeRabbit threads before merge:

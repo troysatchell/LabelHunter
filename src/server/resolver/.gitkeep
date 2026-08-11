@@ -1,6 +1,0 @@
-Sonnet Resolver (PRD §3.1/§3.2) lands here — LH-014 / TRO-464. Deliberately empty in
-the scaffold ticket (TRO-456).
-
-Design settled at CHECKPOINT 1: docs/checkpoints/cp1-cascade-router-prompts.md §6
-(system prompt, user message, output schema, and the rule that the resolver judges
-brand and class only — code decides everything else). Read it before writing code here.

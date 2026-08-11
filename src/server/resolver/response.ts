@@ -35,6 +35,7 @@ import type {
   ResolverDisposition,
   ResolverField,
   ResolverJudgedField,
+  ResolverOutcome,
   ResolverResolution,
 } from "./types";
 
@@ -169,6 +170,25 @@ function isJudgedField(field: string): field is ResolverJudgedField {
 }
 
 /**
+ * The one formula for "does a human still need to look at this label,"
+ * given a label's per-field results (CP-1 §6.4: recomputed from the derived
+ * fields, never trusted from a raw source). A human is needed when any
+ * judged field's disposition is `NEEDS_HUMAN`, or any correction field's
+ * `needsHuman` flag is set — otherwise every field is decided, so the label
+ * is resolved.
+ *
+ * Exported so `queue.ts` can apply the identical rule to a `ResolverResolution`
+ * read back from the database (PR #10 review, round 2) — one formula, so a
+ * fresh API response and a stored row cannot silently drift on what
+ * "resolved" means.
+ */
+export function deriveOutcome(fields: ResolvedFieldResult[]): ResolverOutcome {
+  return fields.every((field) => (field.kind === "judged" ? field.disposition !== "NEEDS_HUMAN" : !field.needsHuman))
+    ? "resolved"
+    : "needs-human";
+}
+
+/**
  * Looks up exactly the caller-flagged fields in the raw response and
  * enforces CP-1 §6.5's judges-only-brand/class rule while doing it. Throws
  * `ResolverResponseError` when a flagged field has no matching entry, or
@@ -257,11 +277,7 @@ export function deriveResolvedFields(raw: RawResolverResponse, flaggedFields: Fl
     throw new ResolverResponseError(problems);
   }
 
-  const outcome = fields.every((field) => (field.kind === "judged" ? field.disposition !== "NEEDS_HUMAN" : !field.needsHuman))
-    ? "resolved"
-    : "needs-human";
-
-  return { outcome, fields };
+  return { outcome: deriveOutcome(fields), fields };
 }
 
 /**

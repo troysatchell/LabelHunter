@@ -210,6 +210,45 @@ describe("assertUntrustedInputWithinBounds", () => {
     });
   });
 
+  describe("extraction.image_quality is validated too — PR #10 review round 2", () => {
+    it("rejects an oversized image_quality.legible value", () => {
+      const input = baseInput();
+      input.extraction = {
+        ...input.extraction,
+        image_quality: { ...input.extraction.image_quality, legible: "x".repeat(SHORT_FIELD_MAX_LENGTH + 1) as never },
+      };
+      expect(() => assertUntrustedInputWithinBounds(input)).toThrow(/extraction\.image_quality\.legible/);
+    });
+
+    it("rejects an oversized image_quality.issues entry", () => {
+      const input = baseInput();
+      input.extraction = {
+        ...input.extraction,
+        image_quality: { ...input.extraction.image_quality, issues: ["x".repeat(SHORT_FIELD_MAX_LENGTH + 1) as never] },
+      };
+      expect(() => assertUntrustedInputWithinBounds(input)).toThrow(/extraction\.image_quality\.issues\[0\]/);
+    });
+
+    it("rejects an image_quality.issues value that is not an array, without throwing an uncontrolled TypeError", () => {
+      const input = baseInput();
+      input.extraction = {
+        ...input.extraction,
+        image_quality: { ...input.extraction.image_quality, issues: "none" as never },
+      };
+      expect(() => assertUntrustedInputWithinBounds(input)).toThrow(/extraction\.image_quality\.issues.*expected an array/);
+    });
+
+    it("rejects a null image_quality container instead of crashing on its properties", () => {
+      const input = baseInput();
+      input.extraction = { ...input.extraction, image_quality: null as never };
+      expect(() => assertUntrustedInputWithinBounds(input)).toThrow(/extraction\.image_quality.*expected an object/);
+    });
+
+    it("accepts a well-formed image_quality object", () => {
+      expect(() => assertUntrustedInputWithinBounds(baseInput())).not.toThrow();
+    });
+  });
+
   describe("router-derived text is validated too — PR #10 review", () => {
     it("rejects an implausibly long router field reason", () => {
       const input = baseInput();

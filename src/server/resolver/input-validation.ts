@@ -75,16 +75,20 @@ function checkLength(value: unknown, path: string, max: number, problems: string
   }
 }
 
-/** Validates an `alternates` array itself is actually an array before
- * checking each entry — a non-array here (an object, a bare string, `null`)
- * is rejected outright rather than iterated, which would either throw an
- * uncontrolled `TypeError` (`.forEach` on a non-array) or, worse, silently
- * do nothing on a value like a string (arrays and strings both have
- * `.length`, but only an array is iterable the way this check assumes). */
-function checkAlternates(value: unknown, path: string, max: number, problems: string[]): void {
+/** Validates a string array itself is actually an array before checking each
+ * entry — a non-array here (an object, a bare string, `null`) is rejected
+ * outright rather than iterated, which would either throw an uncontrolled
+ * `TypeError` (`.forEach` on a non-array) or, worse, silently do nothing on
+ * a value like a string (arrays and strings both have `.length`, but only
+ * an array is iterable the way this check assumes). Shared by
+ * `extraction[field].alternates` and `extraction.image_quality.issues` —
+ * both are "an array of short strings," the same shape under a different
+ * name. `label` names the array in the error text, so a rejected `issues`
+ * array is not misreported as `alternates`. */
+function checkStringArray(value: unknown, path: string, max: number, problems: string[], label: string): void {
   if (!Array.isArray(value)) {
     problems.push(
-      `${path}: expected an array, got ${describeUnknown(value)} — refusing to embed non-array untrusted alternates in the resolver prompt`,
+      `${path}: expected an array, got ${describeUnknown(value)} — refusing to embed non-array untrusted ${label} in the resolver prompt`,
     );
     return;
   }
@@ -155,7 +159,11 @@ function describeUnknown(value: unknown): string {
  * `router.fields[].reason` and `flaggedFields[].trigger` are checked for
  * the same reason (PR #10 review): a comparator's `note` can embed the
  * extractor's raw label reading in `reason`, and `trigger` is typically
- * that same text, carried through by the caller.
+ * that same text, carried through by the caller. `extraction.image_quality`
+ * is checked too (PR #10 review, round 2) — `buildExtractionBlock` in
+ * `user-message.ts` serializes the whole `extraction` object, including
+ * `image_quality`, so it is exactly as reachable as the five per-field
+ * reads above and was missing this same check by oversight, not by design.
  */
 export function assertUntrustedInputWithinBounds(input: {
   application: ApplicationRecord;
@@ -173,13 +181,19 @@ export function assertUntrustedInputWithinBounds(input: {
   checkFiniteNumber(application.alcoholContentPercent, "application.alcoholContentPercent", problems, { optional: true });
   checkFiniteNumber(application.netContentsValue, "application.netContentsValue", problems);
 
+  const quality: unknown = extraction.image_quality;
+  if (checkObject(quality, "extraction.image_quality", problems)) {
+    checkLength(quality.legible, "extraction.image_quality.legible", SHORT_FIELD_MAX_LENGTH, problems);
+    checkStringArray(quality.issues, "extraction.image_quality.issues", SHORT_FIELD_MAX_LENGTH, problems, "issues");
+  }
+
   for (const field of ["brand_name", "class_type", "alcohol_content", "net_contents", "beverage_type"] as const) {
     const extracted: unknown = extraction[field];
     const path = `extraction.${field}`;
     if (checkObject(extracted, path, problems)) {
       checkLength(extracted.value, `${path}.value`, SHORT_FIELD_MAX_LENGTH, problems);
       checkLength(extracted.evidence, `${path}.evidence`, SHORT_FIELD_MAX_LENGTH, problems);
-      checkAlternates(extracted.alternates, `${path}.alternates`, SHORT_FIELD_MAX_LENGTH, problems);
+      checkStringArray(extracted.alternates, `${path}.alternates`, SHORT_FIELD_MAX_LENGTH, problems, "alternates");
     }
   }
 

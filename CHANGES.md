@@ -4,6 +4,71 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-464 — PR #10 review round 2: 4 CodeRabbit comments, 4 fixed (2026-08-11)
+
+**What changed.** GitHub's CodeRabbit posted a second review round on PR #10.
+It found 4 new problems in the code this branch had already pushed. Each was
+checked against the current code, not applied on trust. All four named a
+real, narrow defect. Two are in CHANGES.md's own prose. Two are in the
+resolver's boundary checks. All four are fixed here.
+
+- **CHANGES.md — the deferred-race paragraph overclaimed.** The entry
+  below for round 1 said the `index.ts` TOCTOU race "is not reachable
+  today," reasoning from "no caller exists in this repo yet." That reasoning
+  proves less than the sentence claimed. `resolveEscalatedLabel` is
+  exported. A caller outside this repo, or a future caller inside it, can
+  still call the function twice for one verification and hit the same race.
+  The sentence is narrowed to what the evidence actually supports: the race
+  cannot happen through this repo's own code today. It does not say the
+  race cannot happen at all.
+- **CHANGES.md — the test instructions skipped a setup step.** The same
+  entry's "How to run it" line named `pnpm test -- src/server/resolver`
+  but not the `DATABASE_URL` step this file's own later note (the "A note
+  on running tests" section, below) and the original LH-014 entry both
+  already state. Added the same phrasing this file already uses elsewhere:
+  the command needs `DATABASE_URL` pointed at a migrated worktree database,
+  `source .factory-env` first.
+- **`input-validation.ts` — one extraction field reached the prompt with no
+  length bound.** `assertUntrustedInputWithinBounds` checked six of the
+  seven top-level fields on `HaikuExtractionResult`. It skipped
+  `image_quality`. `buildExtractionBlock` (`user-message.ts`) serializes the
+  whole `extraction` object, `image_quality` included, so its `legible` and
+  `issues` strings were exactly as reachable as the six checked fields,
+  with no check of their own. Added the same object-then-length checks
+  the other fields already get. `checkAlternates` is now `checkStringArray`
+  — one function, shared by `alternates` and the new `issues` check, with a
+  `label` parameter so a rejected `issues` array is not misreported as
+  `alternates` in the error text.
+- **`queue.ts` — a stored resolution got a looser check than a fresh one.**
+  `isResolvedFieldResult` accepted any finite `confidence`, including `42`.
+  `response.ts`'s own validation rejects anything outside `[0, 1]`. A row
+  already sitting in the database was trusted more than a response that had
+  just arrived. Separately, `isResolverResolution` never checked that a
+  row's stored `outcome` actually matched what its `fields` said: a row
+  claiming `"resolved"` next to a judged field's `NEEDS_HUMAN` disposition,
+  or a correction field's `needsHuman: true`, passed silently. A caller
+  would have read that label as resolved when the resolver's own answer, if
+  read correctly, said a human still needed to look. `response.ts` now
+  exports `deriveOutcome(fields)` — the one formula both `deriveResolvedFields`
+  and `queue.ts` call, so a fresh response and a stored row cannot silently
+  disagree about what "resolved" means.
+
+**Dismissed: none.** Every finding named a real gap. None misread the code.
+None contradicted a settled design.
+
+**Tests.** `pnpm test -- src/server/resolver` runs 11 files and 130 cases (up
+from 121). Every new test was confirmed red-first against the pre-fix code.
+The four `image_quality` cases found no rejection at all. The four `queue.ts`
+cases found the corrupted row returned instead of rejected.
+
+**How to run it.** `source .factory-env` first — this command needs
+`DATABASE_URL` pointed at a migrated worktree database. Then
+`pnpm test -- src/server/resolver`. `pnpm test` — 587 cases pass repo-wide.
+`pnpm typecheck` / `pnpm lint` / `pnpm build` are all clean.
+
+**Rollback.** `git revert` this commit. The three earlier TRO-464 entries
+below stand on their own; this round only tightens them.
+
 ## TRO-464 — PR #10 review round: 13 CodeRabbit comments, 10 fixed, 2 dismissed, 1 deferred (2026-08-11)
 
 **What changed.** GitHub's CodeRabbit review of PR #10 posted 13 comments. Each
@@ -99,19 +164,23 @@ before they reach the prompt. `input-validation.ts` now bounds their length too.
   the winner's result — which is a genuinely different, heavier shape than a
   pre-flight check, and CP-1 §10 already assigns "queue design, concurrency,
   rate-limit strategy, partial-failure semantics" to CP-3, not this ticket.
-  No caller of `resolveEscalatedLabel` exists in this repo yet outside its own
-  tests, so the race is not reachable today. The CHANGES.md overclaim this
-  finding also caught ("the model is never called twice") is corrected in the
-  PR review round 1 entry below. Filed as a CP-3-scoped follow-up, not
-  silently dropped.
+  No caller of `resolveEscalatedLabel` exists in this repo's production code
+  yet, outside its own tests. That proves the race cannot happen through this
+  repo's own code today. It does not prove the race is gone —
+  `resolveEscalatedLabel` is exported. An external caller could still call it
+  twice for the same verification. So could a future caller inside this repo.
+  Either would hit the same race. The CHANGES.md overclaim this finding also
+  caught ("the model is never called twice") is corrected in the PR review
+  round 1 entry below. Filed as a CP-3-scoped follow-up, not silently dropped.
 
 **Tests.** `pnpm test -- src/server/resolver` runs 11 files and 121 cases (up
 from 91). Every fix's regression test was confirmed red-first against the
 pre-fix code before being restored, the same discipline as the round-1 entry
 below.
 
-**How to run it.** `pnpm test -- src/server/resolver`. `pnpm typecheck` /
-`pnpm lint` / `pnpm build` clean.
+**How to run it.** `pnpm test -- src/server/resolver` (needs `DATABASE_URL`
+pointed at a migrated worktree database — source `.factory-env` first).
+`pnpm typecheck` / `pnpm lint` / `pnpm build` clean.
 
 **Rollback.** `git revert` this commit.
 

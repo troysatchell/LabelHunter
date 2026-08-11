@@ -19,6 +19,7 @@
 import { reviewQueue } from "../../lib/db/schema";
 import { db as defaultDb } from "../../lib/db";
 import type { ReviewReason } from "../router/types";
+import { deriveOutcome } from "./response";
 import type { ResolvedFieldResult, ResolverResolution } from "./types";
 
 export interface InsertReviewQueueEntryParams {
@@ -79,6 +80,12 @@ const DISPOSITION_VALUES = new Set(["RESOLVED_MATCH", "RESOLVED_MISMATCH", "NEED
  * previously accepted `{ outcome: "resolved", fields: [null] }` as a valid
  * `ResolverResolution` — `isResolverResolution` checked that `fields` was
  * an array, never what was inside it.
+ *
+ * `confidence` must fall within `[0, 1]`, the same range
+ * `response.ts`'s `ValidationContext.unitInterval` enforces on a fresh API
+ * response (PR #10 review, round 2) — a stored row is exactly as capable of
+ * carrying a `confidence: 42` as a raw response is, and this check is the
+ * only thing standing between that row and a caller that trusts it.
  */
 function isResolvedFieldResult(value: unknown): value is ResolvedFieldResult {
   if (typeof value !== "object" || value === null) return false;
@@ -86,7 +93,9 @@ function isResolvedFieldResult(value: unknown): value is ResolvedFieldResult {
   if (typeof obj.correctedValue !== "string" && obj.correctedValue !== null) return false;
   if (typeof obj.evidence !== "string") return false;
   if (typeof obj.reason !== "string") return false;
-  if (typeof obj.confidence !== "number" || !Number.isFinite(obj.confidence)) return false;
+  if (typeof obj.confidence !== "number" || !Number.isFinite(obj.confidence) || obj.confidence < 0 || obj.confidence > 1) {
+    return false;
+  }
 
   if (obj.kind === "judged") {
     return (
@@ -111,13 +120,29 @@ function isResolvedFieldResult(value: unknown): value is ResolvedFieldResult {
  * being silently misread as a real resolution. Validates every element of
  * `fields`, not just that `fields` itself is an array — see
  * `isResolvedFieldResult` above for why that distinction is load-bearing.
+ *
+ * The stored `outcome` must also agree with what `deriveOutcome` (from the
+ * validated `fields`) would compute — a judged field's `NEEDS_HUMAN`
+ * disposition or a correction field's `needsHuman: true` flag, sitting next
+ * to a stored `outcome: "resolved"`, is a row that contradicts its own
+ * fields (PR #10 review, round 2). `response.ts` already recomputes
+ * `outcome` this way rather than trusting a fresh API response's own
+ * `overall` (CP-1 §6.4); a row read back out of storage gets the identical
+ * scrutiny, not less.
  */
 function isResolverResolution(value: unknown): value is ResolverResolution {
   if (typeof value !== "object" || value === null) return false;
   const obj = value as Record<string, unknown>;
   if (obj.outcome !== "resolved" && obj.outcome !== "needs-human") return false;
   if (!Array.isArray(obj.fields)) return false;
-  return obj.fields.every(isResolvedFieldResult);
+
+  const fields: ResolvedFieldResult[] = [];
+  for (const item of obj.fields) {
+    if (!isResolvedFieldResult(item)) return false;
+    fields.push(item);
+  }
+
+  return obj.outcome === deriveOutcome(fields);
 }
 
 /**

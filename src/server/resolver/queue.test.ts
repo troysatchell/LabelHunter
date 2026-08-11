@@ -252,4 +252,128 @@ describe("findExistingReviewQueueEntry — real database", () => {
       await cleanup(applicationId);
     }
   });
+
+  it("throws when a fields member's confidence is out of the [0, 1] range — PR #10 review round 2", async () => {
+    const { applicationId, verificationId } = await makeVerificationFixture();
+    try {
+      // response.ts's own validation would reject confidence: 42 outright
+      // (ValidationContext.unitInterval). A row written directly to the
+      // table, bypassing that parse step, must be rejected the same way —
+      // otherwise a corrupted row is returned to a caller as if Sonnet had
+      // actually reported 42 out of a possible 1.
+      await db.insert(reviewQueue).values({
+        verificationId,
+        reason: "AMBIGUOUS_BRAND",
+        resolverOutput: {
+          outcome: "resolved",
+          fields: [
+            {
+              kind: "judged",
+              field: "brand_name",
+              disposition: "RESOLVED_MATCH",
+              correctedValue: "Stone's Throw",
+              evidence: "STONE'S THROW",
+              reason: "Matches the application.",
+              confidence: 42,
+            },
+          ],
+        },
+      });
+
+      await expect(findExistingReviewQueueEntry(verificationId)).rejects.toThrow(/does not match/);
+    } finally {
+      await cleanup(applicationId);
+    }
+  });
+
+  it("throws when the stored outcome is \"resolved\" but a judged field's disposition is NEEDS_HUMAN — PR #10 review round 2", async () => {
+    const { applicationId, verificationId } = await makeVerificationFixture();
+    try {
+      // deriveOutcome (response.ts) would recompute "needs-human" from this
+      // exact fields array. A stored row claiming "resolved" anyway is
+      // self-contradictory — the same shape of gap the judges-only-
+      // brand/class rule already guards against on the parsing side.
+      await db.insert(reviewQueue).values({
+        verificationId,
+        reason: "AMBIGUOUS_BRAND",
+        resolverOutput: {
+          outcome: "resolved",
+          fields: [
+            {
+              kind: "judged",
+              field: "brand_name",
+              disposition: "NEEDS_HUMAN",
+              correctedValue: null,
+              evidence: "STONE'S THROW",
+              reason: "Illegible even at full resolution.",
+              confidence: 0.4,
+            },
+          ],
+        },
+      });
+
+      await expect(findExistingReviewQueueEntry(verificationId)).rejects.toThrow(/does not match/);
+    } finally {
+      await cleanup(applicationId);
+    }
+  });
+
+  it("throws when the stored outcome is \"resolved\" but a correction field's needsHuman is true — PR #10 review round 2", async () => {
+    const { applicationId, verificationId } = await makeVerificationFixture();
+    try {
+      await db.insert(reviewQueue).values({
+        verificationId,
+        reason: "AMBIGUOUS_ABV",
+        resolverOutput: {
+          outcome: "resolved",
+          fields: [
+            {
+              kind: "correction",
+              field: "alcohol_content",
+              needsHuman: true,
+              correctedValue: null,
+              evidence: "",
+              reason: "Glare obscures the numeral even at full resolution.",
+              confidence: 0.3,
+            },
+          ],
+        },
+      });
+
+      await expect(findExistingReviewQueueEntry(verificationId)).rejects.toThrow(/does not match/);
+    } finally {
+      await cleanup(applicationId);
+    }
+  });
+
+  it("throws when the stored outcome is \"needs-human\" but every field is actually decided — PR #10 review round 2", async () => {
+    const { applicationId, verificationId } = await makeVerificationFixture();
+    try {
+      // The mismatch check must catch both directions — an "optimistic"
+      // outcome and a "pessimistic" one are equally a sign the stored
+      // outcome was not really recomputed from these fields.
+      await db.insert(reviewQueue).values({
+        verificationId,
+        reason: "AMBIGUOUS_BRAND",
+        resolverOutput: {
+          outcome: "needs-human",
+          fields: [
+            {
+              kind: "judged",
+              field: "brand_name",
+              disposition: "RESOLVED_MATCH",
+              correctedValue: "Stone's Throw",
+              evidence: "STONE'S THROW",
+              reason: "Matches the application.",
+              confidence: 0.95,
+            },
+          ],
+        },
+      });
+
+      await expect(findExistingReviewQueueEntry(verificationId)).rejects.toThrow(/does not match/);
+    } finally {
+      await cleanup(applicationId);
+    }
+  });
 });

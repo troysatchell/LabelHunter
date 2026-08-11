@@ -250,6 +250,9 @@ interface HarnessReport {
    * message on a failure — same "housekeeping, not a measurement problem"
    * meaning as `cleanupFailures`. */
   scratchDirCleanupError: string | null;
+  /** `null` on a clean database-pool close. The error message on a
+   * failure — same meaning as `scratchDirCleanupError`. */
+  closePoolError: string | null;
   runs: RunResult[];
 }
 
@@ -278,7 +281,20 @@ async function main(): Promise<void> {
   console.log(`measure.ts: ${runs} run(s) against case "${caseId}" (${caseSpec.category}, ${caseSpec.beverageType})`);
   console.log(`measure.ts: model ${HAIKU_EXTRACTOR_MODEL} — each run is one real, live API call.`);
 
-  const pool = new Pool({ connectionString });
+  const pool = new Pool({
+    connectionString,
+    // Same two safeguards as src/lib/db/index.ts's shared pool, and for the
+    // same reason: pg's own default `connectionTimeoutMillis` is 0 (no
+    // timeout), so an unreachable database would hang this script forever
+    // instead of failing fast, and an idle client that loses its connection
+    // emits an unhandled "error" event with no listener registered — Node
+    // treats that as fatal and crashes the process outright, which would be
+    // a real risk over a 20-plus-run session that runs for a minute or more.
+    connectionTimeoutMillis: 10_000,
+  });
+  pool.on("error", (err) => {
+    console.error("measure.ts: unexpected error on idle Postgres client", err);
+  });
   const db = drizzle(pool, { schema });
   const scratchDir = await mkdtemp(path.join(tmpdir(), "labelhunter-tro471-latency-"));
 
@@ -293,6 +309,7 @@ async function main(): Promise<void> {
   const runResults: RunResult[] = [];
   const cleanupFailures: CleanupFailure[] = [];
   let scratchDirCleanupError: string | null = null;
+  let closePoolError: string | null = null;
   try {
     for (let i = 1; i <= runs; i++) {
       const result = await runOnce(i, imageBytes, imagePath, mediaType, caseSpec, deps);
@@ -320,12 +337,15 @@ async function main(): Promise<void> {
     // propagate past this whole function, silently discarding every
     // already-completed, already-paid-for run's results (a real PR review
     // finding, not a hypothetical).
-    ({ scratchDirCleanupError } = await cleanupScratchDirAndPool(
+    ({ scratchDirCleanupError, closePoolError } = await cleanupScratchDirAndPool(
       () => rm(scratchDir, { recursive: true, force: true }),
       () => pool.end(),
     ));
     if (scratchDirCleanupError) {
       console.warn(`measure.ts: failed to remove scratch directory ${scratchDir}: ${scratchDirCleanupError}`);
+    }
+    if (closePoolError) {
+      console.warn(`measure.ts: failed to close the database pool: ${closePoolError}`);
     }
   }
 
@@ -371,6 +391,7 @@ async function main(): Promise<void> {
     },
     cleanupFailures,
     scratchDirCleanupError,
+    closePoolError,
     runs: runResults,
   };
 
@@ -402,13 +423,19 @@ async function main(): Promise<void> {
         `The latency numbers above are still valid; this is a housekeeping failure, not a measurement one.`,
     );
   }
+  if (closePoolError) {
+    console.warn(
+      `measure.ts: the database pool did not close cleanly (${closePoolError}). ` +
+        `The latency numbers above are still valid; this is a housekeeping failure, not a measurement one.`,
+    );
+  }
 
   // Non-zero on a measurement failure (no successful run to report) OR any
-  // cleanup failure (an application row or the scratch directory left
-  // behind) — every one of these cases still writes a fully valid report;
-  // a caller checking the exit code should know follow-up is needed rather
-  // than trust a silent "0" that hid it.
-  if (successful.length === 0 || cleanupFailures.length > 0 || scratchDirCleanupError) {
+  // cleanup failure (an application row, the scratch directory, or the
+  // database pool itself) — every one of these cases still writes a fully
+  // valid report; a caller checking the exit code should know follow-up is
+  // needed rather than trust a silent "0" that hid it.
+  if (successful.length === 0 || cleanupFailures.length > 0 || scratchDirCleanupError || closePoolError) {
     process.exitCode = 1;
   }
 }

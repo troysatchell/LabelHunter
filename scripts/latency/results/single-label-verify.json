@@ -38,6 +38,7 @@
   },
   "cleanupFailures": [],
   "scratchDirCleanupError": null,
+  "closePoolError": null,
   "runs": [
     {
       "index": 1,

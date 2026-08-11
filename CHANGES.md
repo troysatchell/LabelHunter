@@ -151,24 +151,25 @@ that would actually run a batch (LH-041) do not exist yet. `src/worker/` is stil
 not latency-bound. A number extrapolated from the single-label figure above would not be a
 measurement. It would be a guess dressed as one. Deferred to LH-041.
 
-**Approximate real API spend.** 23 real Haiku calls total from this ticket's own work: 3
-plumbing smoke-test runs (one before the 20-run measurement, one after the `args.ts` refactor,
-one after the `cleanupFailures` fix — all in the review-triage bullets above) plus the 20-run
-measurement itself. PRD §4's own estimate is ~$0.005/label for the extractor — about $0.12,
-against the $25 build+eval spend cap.
+**Approximate real API spend.** This ticket's own work made 25 real Haiku calls in total. 20
+of those are the committed measurement. The other 5 are one-run plumbing smoke tests, run
+after each round of fixes to confirm the wiring still works end to end. PRD §4 estimates
+~$0.005 per label call. The running total is about $0.13, against the $25 build+eval spend
+cap.
 
 **A note on running tests.** `pnpm test` reads `DATABASE_URL`. Every worktree gets its own
-database (`scripts/factory/worktree.sh`); running tests with `DATABASE_URL` unset, or
-pointing at any database other than the current worktree's own, is this repo's own
-non-negotiable rule (`CLAUDE.md`) — test provisioning resets the target schema. `source
-.factory-env` before running `pnpm test` below, same as for `pnpm latency:check`.
+database (`scripts/factory/worktree.sh`). Running tests with `DATABASE_URL` unset, or
+pointing at any database other than the current worktree's own, breaks this repo's own
+non-negotiable rule (`CLAUDE.md`) — test provisioning resets the target schema. Run `source
+.factory-env` before `pnpm test`, the same as before `pnpm latency:check`.
 
-**How to run it.** `source .factory-env` (or otherwise set `ANTHROPIC_API_KEY` and a
-worktree-scoped `DATABASE_URL`), then `pnpm latency:check`. Defaults to 20 runs against
-`case-01-clean-match-spirits`. Override with `--runs=<n>` and `--case=<caseId>`. `pnpm test`
-runs the full suite, including this ticket's math and argument-parsing unit tests
-(`percentile.test.ts`, `args.test.ts`) — those two files make no live call and touch no
-database, but the rest of `pnpm test` does.
+**How to run it.** Run `source .factory-env`, or set `ANTHROPIC_API_KEY` and a
+worktree-scoped `DATABASE_URL` yourself. Then run `pnpm latency:check`. It defaults to 20 runs
+against `case-01-clean-match-spirits`. Override the count or the case with `--runs=<n>` and
+`--case=<caseId>`. `pnpm test` runs the full suite. That includes this ticket's math,
+argument-parsing, and cleanup-flow unit tests (`percentile.test.ts`, `args.test.ts`,
+`cleanup.test.ts`). Those three files make no live call and touch no database. The rest of
+`pnpm test` does.
 
 **What this ticket could not verify.**
 
@@ -222,14 +223,41 @@ suggested diff alone. All three named a real defect.
   "still closes the pool" tests fail with the raw rejection instead of a normal assertion
   failure, then restored the fix and confirmed all 5 pass.
 
-**Ledger.** All three findings recorded in `factory/review-findings.jsonl`
-(`source: "pr"`, `pr: "13"`).
+**A follow-up local `gate.sh` pass found 3 more issues while preparing this round's fix.**
+These came from the local CodeRabbit CLI capture (`.factory/coderabbit.json`), not the GitHub
+PR review — a fourth local round, on top of the three the original entry already names, not
+part of round 1 above. All three were real.
 
-**How to run it.** `pnpm test` covers all three fixes (`percentile.test.ts`,
+- **CHANGES.md — the "Approximate real API spend," "A note on running tests," and "How to
+  run it" sections were still dense.** Rewritten into short sentences with one fact each. No
+  command, count, or number changed.
+- **`scripts/latency/cleanup.ts` — `closePool`'s own rejection could still escape the "never
+  throws" contract.** The prior fix caught a `removeScratchDir` failure but left `closePool`
+  unguarded — the exact same defect class, one function later. Fixed: `closePool` is now
+  wrapped in its own `try`/`catch`, returned as a new `closePoolError` field, never re-thrown.
+  `measure.ts` threads `closePoolError` into the report and the exit code the same way
+  `scratchDirCleanupError` already works. Two new `cleanup.test.ts` cases confirmed red
+  first (a rejected `closePool` failed the test line itself, not an assertion) before the fix,
+  then green after it.
+- **`scripts/latency/measure.ts` — its own `Pool` had no error listener and no connection
+  timeout.** `src/lib/db/index.ts`'s shared pool already carries both safeguards, fixed there
+  as a PR review finding on TRO-456. Without them, an idle client losing its connection during
+  a multi-minute, 20-plus-run session would crash the whole process (Node treats an
+  unlistened-for `"error"` event on an `EventEmitter` as fatal), and an unreachable database
+  would hang forever instead of failing fast. Fixed: matched `src/lib/db/index.ts`'s exact
+  pattern — `connectionTimeoutMillis: 10_000` plus an `error` listener that logs and continues.
+  This is the same defect family recurring in a second file; the ledger records it under the
+  existing `unhandled-error`/`resource-timeout` slugs rather than a new one.
+
+**Ledger.** All six findings recorded in `factory/review-findings.jsonl` — the first three
+`source: "pr"`, `pr: "13"`; the follow-up three `source: "local-cli"`.
+
+**How to run it.** `pnpm test` covers every fix in this entry (`percentile.test.ts`,
 `cleanup.test.ts`) — no live call, no real money. `pnpm latency:check --runs=1` smoke-tests
-the wired-in `cleanup.ts` end to end (one real API call); the committed 20-run
-`results/single-label-verify.json` is unaffected — restored from git after each smoke test in
-this round, same as prior rounds.
+the wiring end to end with one real API call. This round ran that smoke test twice: once
+after wiring `cleanup.ts` in, once more after the follow-up local pass's `closePoolError` and
+`Pool` changes. The committed 20-run `results/single-label-verify.json` is unaffected by
+either — restored from git each time, same as every prior round.
 
 **Rollback.** `git revert` this commit. `scripts/latency/cleanup.ts` and `cleanup.test.ts` are
 new files with no other caller; deleting them and reverting `measure.ts`'s import and cleanup

@@ -65,4 +65,27 @@ describe("cleanupScratchDirAndPool", () => {
 
     expect(order).toEqual(["remove", "close"]);
   });
+
+  it("never throws when closePool itself rejects — the same 'never throws' contract", async () => {
+    const removeScratchDir = vi.fn().mockResolvedValue(undefined);
+    const closePool = vi.fn().mockRejectedValue(new Error("pool.end() failed"));
+
+    // Same point as the removeScratchDir test above: no try/catch here on
+    // purpose. A version of this function that let closePool's rejection
+    // propagate would fail this line itself, not the assertion below.
+    const outcome = await cleanupScratchDirAndPool(removeScratchDir, closePool);
+
+    expect(outcome.closePoolError).toBe("pool.end() failed");
+    expect(outcome.scratchDirCleanupError).toBeNull();
+  });
+
+  it("captures both errors when removeScratchDir and closePool both reject", async () => {
+    const removeScratchDir = vi.fn().mockRejectedValue(new Error("rm failed"));
+    const closePool = vi.fn().mockRejectedValue(new Error("close failed"));
+
+    const outcome = await cleanupScratchDirAndPool(removeScratchDir, closePool);
+
+    expect(outcome.scratchDirCleanupError).toBe("rm failed");
+    expect(outcome.closePoolError).toBe("close failed");
+  });
 });

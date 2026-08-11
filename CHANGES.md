@@ -4,14 +4,14 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
-## TRO-476 — PR #16 review round 2: 20 CodeRabbit findings, 19 fixed, 1 filed as TRO-507 (2026-08-11)
+## TRO-476 — PR #16 review round 2: 24 CodeRabbit findings, 22 fixed, 1 filed, 1 dismissed (2026-08-11)
 
-**What changed.** CodeRabbit reviewed PR #16 twice. The GitHub PR review reported 11
-findings. The gate's local CLI capture then reported 9 more findings against the resulting
-commit. Two of those 9 were regressions in this round's own fixes. The orchestrator checked
-every finding against the current code, not on trust. All 20 findings named a real, narrow
-issue. Nineteen are fixed here. One is real but out of this PR's scope. It is filed as
-TRO-507.
+**What changed.** CodeRabbit reviewed PR #16 across three passes: the GitHub PR review (11
+findings), then two rounds of the gate's local CLI capture against each resulting commit (9,
+then 4 more). Three of those 13 local findings were regressions in this round's own earlier
+fixes. The orchestrator checked every finding against the current code, not on trust. All 24
+findings named a real, narrow issue. Twenty-two are fixed here. One is real but out of this
+PR's scope; it is filed as TRO-507. One is dismissed, with the reason stated below.
 
 **Buttons stayed live after a conflict.** A 409 conflict left the Approve and Reject buttons
 enabled. A retry could only ever 409 again. TH-R3 asks for no hidden actions. A dead action
@@ -72,6 +72,19 @@ any link name loosely; it now requires the exact name and checks the `<time>` el
 
 **`route.test.ts` and `[reviewQueueId]/route.test.ts` duplicated the same fixture and
 cleanup helpers.** Both now import them from a new `test-support.ts`.
+
+**A failed manual refresh replaced a working list with a bare error panel.** The reviewer
+lost the rows they already had on screen. A refresh failure now keeps the rows mounted and
+shows the error alongside them, the same principle as the earlier in-flight-refresh fix.
+
+**The PATCH response's `id` field used a weaker check than the list response's items.** Both
+now require the same positive-integer shape the server route itself enforces.
+
+**Dismissed: `format-timestamp.ts`'s minute-level precision.** A reviewer suggested
+second-level precision for the "waiting since" timestamp. This is a triage cue for a human
+scanning a queue, not a legal-record field. The file's own doc comment already states the
+accuracy rationale for an absolute UTC timestamp. Minute-level is the correct grain for that
+purpose. Not changed.
 
 **Filed as TRO-507, not fixed here.** CodeRabbit tagged it a "Heavy lift." The list endpoint
 defaults to 100 rows. It has no pagination past that limit. CHANGES.md's own claim below

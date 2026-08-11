@@ -93,4 +93,23 @@ describe("ReviewQueueBrowser", () => {
     resolveRefetch([ITEM]);
     expect(await screen.findByRole("button", { name: "Refresh" })).toBeEnabled();
   });
+
+  it("a failed manual refresh keeps the list on screen next to the error, instead of replacing it", async () => {
+    // A refresh failure used to reach the same bare "error" state as the
+    // initial load, discarding a working list the reviewer already had on
+    // screen (CodeRabbit finding, local review round 3).
+    const user = userEvent.setup();
+    const fetchItems = vi
+      .fn()
+      .mockResolvedValueOnce([ITEM])
+      .mockRejectedValueOnce(new ReviewQueueClientError("SERVICE", "LabelHunter could not load the review queue. Try again."));
+    render(<ReviewQueueBrowser fetchItems={fetchItems} />);
+
+    await screen.findByTestId("review-queue-row-42");
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("LabelHunter could not load the review queue. Try again.");
+    expect(screen.getByTestId("review-queue-row-42")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled();
+  });
 });

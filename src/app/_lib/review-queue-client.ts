@@ -112,7 +112,7 @@ function isRecordDispositionResponse(payload: unknown): payload is RecordDisposi
   if (typeof payload !== "object" || payload === null) return false;
   const body = payload as Partial<RecordDispositionResponse>;
   return (
-    typeof body.id === "number" &&
+    isPositiveInteger(body.id) &&
     typeof body.disposition === "string" &&
     (REVIEW_DISPOSITIONS as readonly string[]).includes(body.disposition) &&
     isCanonicalTimestamp(body.disposedAt)

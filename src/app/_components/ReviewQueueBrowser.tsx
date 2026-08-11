@@ -19,7 +19,8 @@ type Phase =
   | { status: "loading" }
   | { status: "refreshing"; items: ReviewQueueListItemWire[] }
   | { status: "success"; items: ReviewQueueListItemWire[] }
-  | { status: "error"; message: string };
+  | { status: "error"; message: string }
+  | { status: "refresh-error"; items: ReviewQueueListItemWire[]; message: string };
 
 export interface ReviewQueueBrowserProps {
   /** Injected in tests; defaults to the real network call. */
@@ -47,7 +48,12 @@ export function ReviewQueueBrowser({ fetchItems = fetchReviewQueue }: ReviewQueu
       (error: unknown) => {
         if (cancelled) return;
         const message = error instanceof ReviewQueueClientError ? error.message : "LabelHunter could not load the review queue. Try again.";
-        setPhase({ status: "error", message });
+        // A failed manual refresh keeps the rows on screen, next to the
+        // error, instead of replacing a working list with a bare error
+        // panel — the same reason `refresh()` below keeps rows mounted
+        // while the request is in flight (CodeRabbit finding, local
+        // review round 3).
+        setPhase((current) => (current.status === "refreshing" ? { status: "refresh-error", items: current.items, message } : { status: "error", message }));
       },
     );
     return () => {
@@ -93,6 +99,12 @@ export function ReviewQueueBrowser({ fetchItems = fetchReviewQueue }: ReviewQueu
       <button type="button" className="secondary-button" disabled={isRefreshing} onClick={refresh}>
         {isRefreshing ? "Refreshing…" : "Refresh"}
       </button>
+      {phase.status === "refresh-error" && (
+        <div className="error-panel" role="alert">
+          <p className="error-panel__title">Could not refresh the review queue</p>
+          <p className="error-panel__message">{phase.message}</p>
+        </div>
+      )}
       <ReviewQueueList items={phase.items} />
     </>
   );

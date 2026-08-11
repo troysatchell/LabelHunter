@@ -81,6 +81,22 @@ describe("applyFieldOverrides — rule 2: evidence supports value (numeric ABV) 
     const outcome = applyFieldOverrides(field({ value: "unreadable", evidence: "unreadable smudge" }), "numeric_abv");
     expect(outcome.rejected).toBe(false);
   });
+
+  it("supports a value stated as a percent when the evidence states only the equivalent proof — cross-axis, CodeRabbit finding", () => {
+    // "45%" and "90 Proof" are the same reading on the canonical percent
+    // scale (27 CFR 5.1). Before this fix, the check compared percent to
+    // percent and proof to proof ONLY — never across axes — so a value
+    // stated as a percent, evidenced only by a proof reading (e.g. the
+    // extractor's own value/evidence split lands on different sides of the
+    // same ABV statement), was wrongly rejected as unsupported.
+    const outcome = applyFieldOverrides(field({ value: "45%", evidence: "90 Proof" }), "numeric_abv");
+    expect(outcome.rejected).toBe(false);
+  });
+
+  it("still rejects a value whose canonical percent the evidence does not support, even across axes", () => {
+    const outcome = applyFieldOverrides(field({ value: "45%", evidence: "150 Proof" }), "numeric_abv"); // 150 proof = 75%
+    expect(outcome.rejected).toBe(true);
+  });
 });
 
 describe("applyFieldOverrides — rule 2: evidence supports value (numeric net contents)", () => {

@@ -4,6 +4,7 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+<<<<<<< HEAD
 ## TRO-497 — PR review round 3: GitHub PR #9, 11 fixed, 2 dismissed (2026-08-11)
 
 **What changed.** PR #9's CodeRabbit review (the tool running against the live GitHub diff,
@@ -325,6 +326,138 @@ LH-005 (Imagen) and LH-006 (verify gate) are both still open, and unblocked eith
 **Not done here (explicitly out of scope).** `scripts/golden/verify.ts` (LH-006) and
 `scripts/golden/imagen.ts` (LH-005) — neither written nor called. No code in this ticket
 performs a network call.
+=======
+## TRO-463 / TRO-504 — LH-013: real field comparators (2026-08-11)
+
+**What changed.** This ticket builds the real field comparators under `src/server/comparators/`.
+They replace the router's placeholder judgment logic. They serve TH-R8 and TH-R11.
+
+- `normalize.ts` — the fuzzy-match normalizer. Six steps: Unicode NFKC, casefold, apostrophe
+  folding, diacritic stripping, whitespace collapse, punctuation drop. Apostrophe folding runs
+  before NFKC, not after. NFKC decomposes the acute accent (´) into a space and a combining
+  mark. Folding first keeps that character from disappearing before the fold rule can see it.
+  A code comment explains the exception.
+- `similarity.ts` — normalized Levenshtein distance. It backs the brand/class fuzzy match.
+- `brand.ts` — the real `brand_name` / `class_type` comparator. TH-R8's named case: label
+  "STONE'S THROW" against application "Stone's Throw" now MATCHes, with a note. Similarity at
+  or above 0.95 MATCHes. Below 0.95, the field goes to NEEDS_REVIEW. It never returns MISMATCH.
+  A brand comparator is a judgment tool, not an exact one.
+- `abv.ts` — the real ABV grammar. It reads a percent, a proof statement, or both, in either
+  order. It checks proof against percent: 27 CFR 5.1 defines proof as twice the percent by
+  volume. It compares the label's percent against the application's declared percent.
+- `net-contents.ts` — the real net-contents grammar. It reads a value and a unit (mL, L, fl
+  oz), converts units, and compares the label's quantity against the application's.
+- `index.ts` — `productionComparators`, the one import site LH-015 (TRO-465) wires into
+  `routeLabel` in place of the router's placeholder set.
+
+**TRO-504's three deferred edge cases close here, not as patches to the code they name.**
+
+1. Combining marks did not stop `text-boundary.ts`'s evidence check from reading a combining
+   mark's position as a word boundary. An unaccented value could pass as evidence for a
+   different, accented word. `\p{M}` now joins `\p{L}\p{N}` in that check's lookaround.
+2. `text-boundary.ts`'s casefold used bare `toLowerCase()`. German ß did not fold to "ss", so
+   an all-caps label spelling and a mixed-case ß spelling of the same word did not match. Both
+   `text-boundary.ts` and the new fuzzy normalizer now fold ß (and ẞ) to "ss".
+3. The net-contents parser stopped at the first number in the text and gave up if that
+   number's unit did not match. `"90 Proof 750 mL"` returned no match instead of finding
+   `750 mL`. The real parser scans every number in the text and returns the first one a known
+   unit follows.
+
+**A regulatory VERIFY cell closes.** `required-fields.ts` marked beer's `alcohol_content` cell
+VERIFY. 27 CFR 7.65(a) states an alcohol content statement is optional on a malt beverage
+label, unless a state law prohibits or requires it. This system models the federal rule, not
+state law. The cell is now `not_required`, cited. Wine's cell stays VERIFY: 27 CFR 4.36(a)'s
+real rule is conditional on the wine's own ABV and its class/type wording. The required-field
+table has no way to express that condition without a larger schema change. The comment states
+what was verified and what still needs a larger fix.
+
+**Two numbers move from "fails safe, unverified" to "verified, and zero is correct."** TTB's
+ABV tolerance regulations govern the bottled product against its own label (27 CFR 5.65(b) for
+spirits, 27 CFR 4.36(b) for wine). This comparator checks a different thing: does the label's
+printed number match the application form's declared number. Zero tolerance is the right
+answer for that second question. It is not a stand-in for the first.
+
+**Wiring.** `field-resolution.ts` and `overrides.ts` import their numeric parsing from
+`../comparators/abv.ts` and `../comparators/net-contents.ts` now, not from
+`provisional-numeric.ts`. That file's docstring says LH-013 replaces its callers, not
+necessarily the file itself. Its only remaining caller is `test-support.ts`'s own placeholder
+fixtures, which belong to the already-merged LH-012 router-core ticket. The docstring is
+narrowed to say so.
+
+**A known gap, left open rather than silently fixed.** CP-1 §5.3 names three literal
+apostrophe variants to fold: the straight apostrophe, the backtick, and the acute accent. A
+label extracted by a real vision model may use a Unicode right single quotation mark (’,
+U+2019) as a stylized apostrophe instead. That character is not one of the three named
+variants, so it is not folded. Measured effect: "Stone’s Throw" against "Stone’s Throw" scores
+about 0.923 similarity. That is just under the 0.95 match threshold. The pair routes to
+NEEDS_REVIEW, not a clean MATCH. `docs/checkpoints/cp1-cascade-router-prompts.md` should decide
+whether to widen the rule. This ticket implements the rule as written, not a guess at its
+intent.
+
+**Six more fixes from this ticket's own CodeRabbit review round, applied before this commit.**
+Each one is a real gap, each has a named regression test, and each keeps the comparators pure
+functions with no new dependency.
+
+- `brand.ts`: two values that both normalize to an empty string (e.g. "..." against "---",
+  once punctuation is stripped) no longer score a false MATCH. Empty normalized text has
+  nothing left to judge, so it now routes to NEEDS_REVIEW like any other undecidable pair.
+- `abv.ts`: `compareAbv` now catches a self-contradictory label (CP-1's own named example, "45%
+  Alc./Vol. (100 Proof)") on its own, as a pure function — not only through the router's
+  separate structural check. It reports NEEDS_REVIEW even when the stated percent happens to
+  equal the application's.
+- `net-contents.ts`: `parseNetContents` now reads a comma-grouped thousands number
+  ("1,000 mL") as one value, and does not misread a comma-decimal (European-style "1,5") as a
+  US decimal.
+- `net-contents.ts`: `compareNetContents` now MATCHes two equal zero quantities. The tolerance
+  check divides by the application's quantity, defined as an infinite fraction when that
+  quantity is zero — correct when the label states something else, wrong when the label also
+  states zero and the two numbers actually agree.
+- `field-resolution.ts`: `checkAbvStructural`'s tolerance-vs-application check now reads a
+  proof-only label's canonical percent (27 CFR 5.1), not only a label that states a percent
+  directly. A proof-only reading used to skip this check entirely.
+- `overrides.ts`: the ABV evidence-support check now compares the value and the evidence on
+  the canonical percent scale, not axis-by-axis (percent-vs-percent, proof-vs-proof only). A
+  value stated as "45%" whose evidence states only "90 Proof" is the same reading and is now
+  recognized as such — this is the same bug class TRO-462's own `abvAlternatesConflict` fix
+  already closed for the alternates check, now closed here too.
+
+**Two required-fields.ts findings from that same review round, not adopted.** CodeRabbit
+suggested reverting beer's `alcohol_content` cell from `not_required` back to `verify`. This
+ticket verified the regulation directly (27 CFR 7.65(a), fetched and quoted in the code
+comment): a malt beverage label's alcohol content statement is optional under federal law.
+`not_required` is the cited, correct value, not a guess CodeRabbit's heuristic should override.
+
+**Three more fixes from PR #8's GitHub review, applied before this commit.** Each one has a
+named regression test.
+
+- `net-contents.ts`: `parseNetContents("1,5 L")` used to return `{ value: 5, unit: "l" }`
+  instead of failing. The comma-grouping fix above stopped it from misreading "1,5" as "1.5",
+  but it left the orphaned "5" behind as a fresh candidate. `NUMBER_PATTERN` now refuses to
+  read a bare number that sits directly after a comma, so a malformed comma-decimal rejects the
+  whole read instead of handing back a different, wrong quantity.
+- `field-resolution.ts`: `checkNetContentsStructural`'s alternates check now MATCHes two equal
+  zero quantities, the same zero-division bug already fixed in `compareNetContents`, present
+  here too.
+- `text-boundary.ts`: `normalizeForBoundaryMatch` now calls `.normalize("NFC")` first. A
+  precomposed accented letter and its canonically equivalent decomposed form (a base letter
+  plus a combining mark) used to normalize to different strings. They are the same text under
+  Unicode's own definition, and now they normalize the same way.
+
+**A note on running tests.** `pnpm test` and `pnpm test -- <path>` both read `DATABASE_URL`.
+Every worktree gets its own database (`scripts/factory/worktree.sh`); running tests with
+`DATABASE_URL` unset, or pointing at any database other than the current worktree's own, is
+this repo's own non-negotiable rule (`CLAUDE.md`) — test provisioning resets the target
+schema. `source .factory-env` before running either command below.
+
+**How to run it.** `pnpm test -- src/server/comparators src/server/router` runs the new and
+changed suites. `pnpm test` runs everything; 344 tests pass repo-wide. `pnpm typecheck` and
+`pnpm lint` are both clean.
+
+**Rollback.** `git revert` this commit. That one command is the whole procedure. The same
+commit changed `field-resolution.ts` and `overrides.ts`'s imports. It also added the module
+they import from. A revert restores the old imports and the old behavior together. Nothing is
+left to fix by hand.
+>>>>>>> origin/main
 
 ## TRO-462 — PR review round 2: orchestrator triage, 2 fixed, 3 deferred (2026-08-10)
 

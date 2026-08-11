@@ -352,15 +352,16 @@ type guarantee, and a real fix needs a second identity channel disproportionate 
 measurement harness; the failure is already loud (non-zero exit), not silent.
 
 **PR #13 review round 2 (2026-08-11), 1 finding, fixed.** The process exit code stayed `0`
-whenever at least one run succeeded, even when other runs in the same batch failed —
-`successful.length === 0 || cleanupFailures.length > 0 || ...` never checked `failed.length`.
-A caller that only checks the exit code (a CI step, a cron wrapper) would read a 15/20
-partial-failure run as clean. Fixed: extracted the decision into
-`scripts/latency/exit-status.ts`'s `computeExitCode` (a pure function, matching this file's own
-`percentile.ts`/`args.ts`/`cleanup.ts`/`response.ts` split-for-testability pattern), which adds
-an explicit `failedCount > 0` branch. 6 new unit tests in `exit-status.test.ts`; red-then-green
-confirmed by temporarily disabling the new branch and watching the "some runs failed" case fail
-for the right reason, then restoring it.
+whenever at least one run succeeded. It stayed `0` even when other runs in the same batch
+failed. The condition — `successful.length === 0 || cleanupFailures.length > 0 || ...` — never
+checked `failed.length`. A caller that only checks the exit code (a CI step, a cron wrapper)
+would read a 15/20 partial-failure run as clean. Fixed: the decision moved into a new pure
+function, `computeExitCode` in `scripts/latency/exit-status.ts`. This matches the split this
+file already uses for `percentile.ts`, `args.ts`, `cleanup.ts`, and `response.ts` — pure logic
+in its own file, testable without a live call. `computeExitCode` adds an explicit
+`failedCount > 0` branch. `exit-status.test.ts` adds 6 unit tests. Red-then-green confirmed by
+temporarily disabling the new branch, watching the "some runs failed" case fail for the right
+reason, then restoring it.
 
 ## TRO-464 — PR #10 review round 3: 3 CodeRabbit comments, 2 fixed, 1 dismissed (2026-08-11)
 

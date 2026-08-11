@@ -14,7 +14,7 @@
  * detail into `src/app/api/verify/route.ts`.
  */
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 /** Default base directory: `var/uploads` under the process's cwd (the repo
@@ -73,4 +73,36 @@ export async function saveLabelImage(
   // directory with a different name, instead of claiming a location the
   // file was never written to.
   return { storagePath: path.join(path.basename(baseDir), filename), absolutePath };
+}
+
+/**
+ * Reads back the bytes `saveLabelImage` wrote, given the `storagePath`
+ * value that call returned (TRO-466, PRD §5 — the Detail view's
+ * side-by-side label image).
+ *
+ * `storagePath` is opaque outside this module (see the module comment
+ * above) — this function is the one place that un-opaques it, mirroring
+ * `saveLabelImage`'s own filename construction exactly, so a caller never
+ * needs to know the base-directory convention itself.
+ *
+ * `path.basename` on the input, not a direct join: `storagePath` already
+ * carries a leading directory component (e.g. `"uploads/<uuid>-name.jpg"`),
+ * and discarding everything before the final segment is also what keeps a
+ * corrupted or crafted `storagePath` from ever escaping `baseDir` on the
+ * read side — the same guarantee `sanitizeFilenameComponent` gives the
+ * write side.
+ */
+export async function readLabelImage(
+  storagePath: string,
+  options: SaveLabelImageOptions = {},
+): Promise<Buffer> {
+  const baseDir = options.baseDir ?? DEFAULT_BASE_DIR;
+  const filename = path.basename(storagePath);
+  // `turbopackIgnore`: `baseDir` is parameterized (tests override it), so
+  // Turbopack's build-time tracer cannot prove it always resolves to
+  // `DEFAULT_BASE_DIR`'s "var/uploads" subfolder and, left alone, traces
+  // (and bundles) the whole project as a false-positive precaution — this
+  // ignore comment is Next's own documented opt-out for exactly this case.
+  // Confirmed with `pnpm build`: both warnings clear, route list unchanged.
+  return readFile(/* turbopackIgnore: true */ path.join(/* turbopackIgnore: true */ baseDir, filename));
 }

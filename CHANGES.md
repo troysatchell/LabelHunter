@@ -4,6 +4,160 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-465 — LH-013 comparator swap (2026-08-11)
+
+**What changed.** LH-013 (TRO-463) merged real field comparators to `main`
+(`src/server/comparators/`). This ticket's one swap point,
+`src/app/api/verify/route.ts`, now imports `productionComparators` from there instead of
+the provisional stand-in. `provisional-comparators.ts` and its test are deleted — nothing
+else in the repo imported them.
+
+**Behavioral change, honest.** `alcohol_content` and `net_contents` can now report a
+`MISMATCH` on a genuine numeric disagreement — the provisional stand-in never asserted
+`MISMATCH` for any field. `brand_name`/`class_type` still never do (CP-1 §5.3: a judgment
+call routes to REVIEW, never a silent FAIL — LH-013's own design, unchanged by this ticket).
+The label-level verdict a real disagreement now produces is still `REVIEW`, not `FAIL`: the
+government warning has no comparator yet (LH-020) and always needs review today, and REVIEW
+outranks FAIL in the rollup. `route.test.ts` updated: the STONE'S THROW case now asserts a
+real `MATCH` with a normalization note (TH-R8, previously untestable under the provisional
+stand-in's plain casefold); a new test asserts the ABV field-level `MISMATCH` this ticket
+could not previously produce. No test was weakened — every changed assertion states the real
+comparator's real behavior, verified by reading `src/server/comparators/*.ts` directly, not
+by trusting either side's prose.
+
+**How to run it.** `pnpm typecheck`, `pnpm lint`, `pnpm test` (400 tests), `pnpm build` — all
+green.
+
+**Rollback.** `git revert` this commit. The provisional comparator files it deletes are
+restored by the revert; no other ticket depends on them.
+
+## TRO-465 — PR review round 1: orchestrator triage, 9 fixed, 0 dismissed (2026-08-11)
+
+**What changed.** The worktree's captured CodeRabbit review (`.factory/coderabbit.json`, 9
+findings) was triaged against current code, not against the review text's own instructions.
+Every finding checked out as real and current — none was stale or a misread. All 9 fixed.
+
+Fixed, real:
+
+- `verify-client.ts` (critical): the default `fetchImpl` was a bare `fetch` reference. Some
+  engines throw "Illegal invocation" when `fetch` runs detached from its receiver. Fixed:
+  `globalThis.fetch.bind(globalThis)`. Added a test that stubs `globalThis.fetch` and confirms
+  the default path works with no injected `fetchImpl`.
+- `verify-client.ts` (major): `isVerifyErrorResponse` accepted any object with an `error` key,
+  with no check that `kind` was a real `VerifyErrorKind` or that `message` was a string. A
+  successful response was cast to `VerifySuccessResponse` with zero shape check. Fixed: `kind`
+  now checks against a new `VERIFY_ERROR_KINDS` array (`types.ts`), and a new
+  `isVerifySuccessResponse` guard checks `applicationId`, `verificationId`, `labelVerdict`
+  (against `LABEL_VERDICTS`), and `fields` before trusting the body. Either check failing now
+  throws the same designed `VerifyClientError("SERVICE", …)` instead of letting a malformed
+  body reach `ResultsChecklist` and crash it. Four new tests cover the paths this closes.
+- `ResultsChecklist.tsx` (major): its own `aria-live="polite"` wrapper mounts fresh, with its
+  content already inside, only once a result exists — a live region that appears with content
+  already in it is not guaranteed to be announced (WAI-ARIA). Fixed: `ResultsChecklist` no
+  longer sets `aria-live` itself; `VerifyForm.tsx` now renders it inside the one persistent
+  `aria-live="polite"` region that already existed for the loading message, present from the
+  form's first render.
+- `parse-request.test.ts` (trivial, ×2): added a test for the inclusive alcohol-content
+  boundaries (0 and 100 both parse) and a test for a missing `netContentsUnit` (same rejection
+  message as an unrecognized one).
+- `ResultsChecklist.test.tsx` (trivial): added a test for a `MISMATCH` row — the suite
+  previously only exercised `MATCH` and `NEEDS_REVIEW`.
+- `VerifyForm.tsx` (trivial): added a comment on the `FormData` build explaining why it must
+  run before `setPhase({ status: "loading" })` — every control disables on loading, and a
+  disabled control is excluded from `FormData` by the HTML forms spec itself.
+- `CHANGES.md` (minor, ×2): reworded the provisional-comparators bullet for precision
+  (`provisional-comparators.ts` defines the default bundle; `route.ts` is the call site that
+  passes it into `routeLabel`) and rewrote the styling/jsdom/how-to-run prose to ASD-STE100 —
+  shorter sentences, one instruction each, no hedging, no embedded test/file counts that go
+  stale on the next edit.
+
+Not raised by this review, confirmed unchanged: no finding asked for the real field
+comparators or the warning subsystem. The provisional stand-in and the `warningResult: null`
+wiring stay exactly as this ticket's original entry describes — settled design, not something
+this round touched. `main` still does not have LH-013 merged (re-checked before this round).
+
+**How to run it.** `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` — all green.
+
+**Rollback.** `git revert` this commit. Independent of the original TRO-465 commit below;
+reverting this one alone restores the pre-triage behavior without touching the rest of the
+ticket.
+
+## TRO-465 — LH-015: Verify screen + results checklist (2026-08-11)
+
+**What changed.** The single-label verify flow now runs end to end. It serves PRD §3.8, §5,
+and TH-R1, TH-R3, TH-R20.
+
+- `src/app/api/verify/route.ts` — a new `POST /api/verify` route. One request does the whole
+  fast path: preprocess the photo, run the Haiku extractor, route the result, persist
+  `applications`, `label_images`, `verifications`, `field_results`, and — on a REVIEW verdict —
+  `review_queue`. It returns per-field verdicts and the label verdict in the same response. It
+  never calls Sonnet. A REVIEW verdict returns immediately with an explicit "needs review —
+  {reason}" flag, matching PRD §3.8's latency contract; LH-014's resolver (a sibling ticket,
+  not yet merged) consumes the `review_queue` row later, on its own schedule.
+- `src/app/api/verify/parse-request.ts` — boundary validation for the multipart form: image
+  present, beverage type in the closed set, brand name and class/type non-blank, alcohol
+  content a number in 0–100 or blank, net contents a positive number with a recognized unit.
+  Every rejection carries a specific, plain-language message.
+- `src/app/api/verify/types.ts` — shapes shared between the route and the UI.
+- `src/server/router/provisional-comparators.ts` — **LH-013 (TRO-463) has not merged.** This
+  file defines the default `FieldComparators` bundle: exact text match after a trim and a
+  casefold, and the router's own provisional numeric parser for ABV and net contents. It never
+  returns `MISMATCH` on its own (PRD §3.3: a real disagreement routes to REVIEW, never a
+  silent FAIL). `route.ts` is the only production call site that passes a `FieldComparators`
+  value into `routeLabel` — it does so through `VerifyRouteDeps.comparators`, defaulted to
+  this bundle. Swap the one import in `route.ts` for LH-013's real bundle when it lands;
+  nothing else changes.
+- **The government warning has no comparator yet either** (LH-020, gated by CP-2, not yet
+  merged). `route.ts` passes `warningResult: null` to `routeLabel` — honestly, not a
+  fabricated match. `resolveGovernmentWarningField` (LH-012) already handles a `null` result
+  by routing to `NEEDS_REVIEW`. Until LH-020 lands, every label with a warning on it needs
+  review for that one field. Expected, not a bug in this ticket.
+- `src/server/storage/local-file-storage.ts` — writes the uploaded photo to `var/uploads/`
+  (gitignored) and returns the path `label_images.storage_path` stores. Prototype-appropriate,
+  not a durable store: Render's filesystem is ephemeral, so a redeploy can lose these files
+  while the database row survives. Documented in the file as a one-file swap point for a real
+  object store later.
+- `src/app/page.tsx` — replaces the scaffold placeholder with the Verify screen: upload
+  control, the five application fields plus the beverage-type selector, one Verify button.
+- `src/app/_components/VerifyForm.tsx`, `ResultsChecklist.tsx`, `ErrorPanel.tsx` —
+  the form, the results checklist (✓ / ✗ / ⚠ rows with evidence and the one-line reason from
+  `reason-text.ts`, never a bare confidence number), and the designed error panel (`role="alert"`,
+  not a toast) for every failure mode TH-R20 names.
+- `src/app/_lib/verify-client.ts` — the fetch wrapper. Classifies every failure into
+  `VerifyClientError` with a `kind`: a structured error body from the server, a non-2xx
+  response with none, a response this client cannot parse, a network failure, or a 45-second
+  client-side timeout (`AbortController`) for the case the server never answers.
+- `src/app/globals.css` — USWDS-influenced styling: navy and white, 18px base type, and
+  high-contrast focus rings. No purple-gradient AI slop. No emoji-driven design. Dark mode
+  follows `prefers-color-scheme`.
+
+**A jsdom finding, not a product bug.** `VerifyForm` reads the selected photo from the file
+input's own `.files` ref, not `new FormData(form).get("image")`. In this repo's jsdom test
+environment, a `FormData` built from a form element reconstructs its file entries with the
+right filename but `size: 0`. The reconstruction loses the underlying bytes. Reading the input
+directly avoids the problem.
+
+**How to run it.** Run `pnpm dev` and open `/`. Run
+`pnpm test -- src/app src/server/router/provisional-comparators.test.ts src/server/storage`
+for this ticket's own suites. Run `pnpm test` for the full suite; every test passes. Run
+`pnpm build`; it succeeds. A manual smoke test against `pnpm start` confirmed the page
+renders. The same test confirmed that `/api/verify` returns the correct JSON for a missing
+image and for an unreadable image, over a real HTTP request. The smoke test made no live
+Anthropic call.
+
+**What this ticket could not verify.** No live Haiku call, and no real photograph of a real
+label — every test mocks the Anthropic client (`makeMockMessage`, matching
+`src/server/extractor/index.test.ts`'s own pattern) or uses a synthetic sharp-generated JPEG.
+A true end-to-end run needs a real `ANTHROPIC_API_KEY` and a real label photo; say so rather
+than claim it.
+
+**Comparator set shipped.** Provisional (`provisional-comparators.ts`), not LH-013's real
+bundle — LH-013 had not merged into `main` as of this ticket's work. `main` was re-checked
+immediately before finishing; still not merged.
+
+**Rollback.** `git revert` this commit. `var/uploads/` is gitignored and holds no data worth
+preserving.
+
 ## TRO-463 / TRO-504 — LH-013: real field comparators (2026-08-11)
 
 **What changed.** This ticket builds the real field comparators under `src/server/comparators/`.

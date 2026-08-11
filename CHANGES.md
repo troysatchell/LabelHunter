@@ -4,6 +4,101 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-462 — LH-012: Validation Router core (2026-08-10)
+
+**What changed.** The Validation Router's decision logic (PRD §3.3, TH-R2, TH-R8, TH-R19)
+under `src/server/router/`. It answers one question: given what the Haiku extractor read
+and what the applicant filed, what does each field's verdict say, and what does the whole
+label say? It is deterministic TypeScript. It never calls a model.
+
+This ticket builds the router SHELL: confidence bands, the anti-hallucination overrides,
+the eight `ReviewReason` rules, their precedence, and the label-level rollup
+(`docs/checkpoints/cp1-cascade-router-prompts.md` §4-§5, the CP-1-approved design,
+implemented as written). It does not build the real field comparators — normalization,
+fuzzy brand/class matching, ABV parsing, net-contents parsing. That is LH-013 / TRO-463,
+blocked by this ticket. It does not build the warning comparator either — that is LH-020,
+its own CP-2-gated subsystem.
+
+- **`types.ts`** — the router's public shapes: `ApplicationRecord`, `FieldComparator` (the
+  interface LH-013 implements against), `WarningComparatorResult` (the contract LH-020
+  implements against), `PreprocessingSignal`, and the per-field output row (CP-1 §5.5's
+  exact columns).
+- **`confidence.ts`** — the three confidence bands (CP-1 §4.2) and the asymmetry rule
+  (§4.3): a low-confidence MATCH escalates only below 0.60; a low-confidence MISMATCH
+  escalates below 0.90; NEEDS_REVIEW always escalates. The two thresholds look similar but
+  answer different questions, so they are named separately
+  (`MATCH_ESCALATION_CEILING` / `MISMATCH_ESCALATION_CEILING`), not reused from each other.
+- **`overrides.ts`** — the three CP-1 §4.4 anti-hallucination checks: evidence present,
+  evidence supports the value at a boundary (not a substring), confidence is a real number
+  in range. Rejects, never clamps. `beverage_type` is exempted from the evidence-support
+  check only — its value is an inferred category, never verbatim in the label's evidence —
+  a known, ticketed exemption (TRO-502), commented at its call site in `index.ts`.
+- **`text-boundary.ts`** — the word-boundary text check the evidence-support override uses
+  for text fields. Explicitly not LH-013's real normalization pipeline (NFKC, apostrophe
+  folding, diacritic stripping) — a narrower, cheaper check for one question only.
+- **`provisional-numeric.ts`** — a minimal, clearly-labeled stand-in ABV and net-contents
+  parser, used by the overrides' numeric check and by the `AMBIGUOUS_ABV` /
+  `AMBIGUOUS_NET_CONTENTS` structural checks below. LH-013 replaces its callers with the
+  real, ttb.gov-cited grammar.
+- **`required-fields.ts`** — the required-field-by-beverage-type table, implemented exactly
+  as CP-1 §5.3 gives it, including the `alcohol_content` cells CP-1 marks **VERIFY** for
+  beer and wine. A `"verify"` cell stays a distinct value, not silently folded into
+  `"required"` — but routes as required today, the fail-safe reading.
+- **`field-state.ts`** — the field-shape-aware absence check. `government_warning` has no
+  `value` (it has `present` instead); a uniform `value === null` check would never fire for
+  it, and would silently pass a warning the router never examined.
+- **`label-blockers.ts`** — the two label-level blockers: `LOW_IMAGE_QUALITY` and
+  `CONFLICTING_EXTRACTION`.
+- **`field-resolution.ts`** — the field-specific `AMBIGUOUS_ABV` / `AMBIGUOUS_NET_CONTENTS`
+  structural checks (including the proof-arithmetic self-contradiction check — CP-1's own
+  named example, `"45% Alc./Vol. (100 Proof)"`), and the per-field verdict/reason resolution
+  for both the four comparator-driven fields and the government warning's contract.
+- **`precedence.ts`** — the exact CP-1 §5.2 rank order and the headline-reason picker.
+- **`rollup.ts`** — the CP-1 §5.4 label rollup: a label-level blocker outranks every field
+  verdict, checked first so it cannot be missed by a rollup that only reads field verdicts.
+- **`reason-text.ts`** — one line of UI English per row (PRD §3.3, TH-R20). Never a bare
+  confidence number.
+- **`index.ts`** — `routeLabel`, the module's one public entry point, wiring the above
+  together.
+- **`test-support.ts`** — placeholder comparators for this ticket's own tests only. Exact
+  match after a trim and casefold. Honestly named, never claimed as real judgment logic;
+  `STONE'S THROW` vs `Stone's Throw` would NOT match here — that is LH-013's job.
+
+**Load-bearing decisions.**
+- The word-boundary evidence check first used `\b`. `\b`'s boundary depends on the
+  character at the edge of the PATTERN itself, so a value ending in punctuation (the
+  government warning transcription ends in a period) put a non-word character on both
+  sides of the trailing `\b`, and the check never matched — even for the golden, correct
+  reading. TDD caught this: the first `index.test.ts` run failed a clean-fixture case with
+  `CONFLICTING_EXTRACTION` for the right reason. Fixed with lookaround
+  (`(?<![a-z0-9])...(?![a-z0-9])`), which checks the character OUTSIDE the match instead.
+- The asymmetry rule's two escalation cutoffs (0.60, 0.90) are implemented as fixed values
+  across every field, independent of the per-field trusted threshold (0.85, or 0.90 for the
+  warning transcription) — CP-1 §4.3 gives them as flat numbers, not a formula off the
+  trusted threshold. Named as separate constants so a future re-tune of one does not
+  silently move the other.
+- `MISSING_REQUIRED_FIELD` does not fire when `LOW_IMAGE_QUALITY` already fired for the
+  label — CP-1 §5.3's own carve-out, implemented literally rather than generalized into a
+  broader "the label blocker suppresses every field reason" rule the document does not
+  state that generally elsewhere.
+
+**Regression tests.** `src/server/router/*.test.ts` — 9 files, 105 cases, one file per
+concern (confidence bands, overrides, the required-field table, field-shape-aware absence,
+the two label blockers, field resolution, precedence, rollup, and an `index.test.ts`
+integration suite). Named cases include the proof-arithmetic self-contradiction example and
+the `beverage_type` / TRO-502 exemption, both cited by number in CP-1.
+
+**How to run it.** `pnpm test -- src/server/router` — 9 files, 105 cases. `pnpm typecheck`
+/ `pnpm lint` both clean. Full repo: `pnpm test` — 21 files, 219 cases.
+
+**Known limits.** The real field comparators (LH-013) and the warning comparator (LH-020)
+do not exist yet; this ticket routes on their contracts, not their output. The
+`alcohol_content` VERIFY cells for beer/wine and the ABV/net-contents tolerances are
+unverified regulatory placeholders, flagged in code, pending LH-013's ttb.gov citations.
+
+**Rollback.** `git revert` this commit; `src/server/router/*.ts` and `*.test.ts` are
+removed and `.gitkeep` returns.
+
 ## TRO-461 — PR review: local CodeRabbit triage, 3 findings fixed (2026-08-10)
 
 **What changed.** The local `scripts/factory/gate.sh` run captured 3 findings; all 3 were

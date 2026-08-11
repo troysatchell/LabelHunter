@@ -277,9 +277,20 @@ part of round 1 above. All three were real.
   sessions, already read this file successfully — the strongest evidence available that it
   exists and works.
 
-**Ledger.** Ten findings total recorded in `factory/review-findings.jsonl` across both PR and
-local sources — three `source: "pr"`, `pr: "13"`; seven `source: "local-cli"` across two
-follow-up rounds.
+**A third follow-up local pass found 1 more, in `measure.ts` itself.** Its module comment,
+and the `pipelineScope` string it writes into every future report, both still said "no
+Sonnet resolver (LH-014 not merged)" — stale, since the merge earlier in this entry. This
+ticket's own prose had already caught and fixed the same staleness in `CHANGES.md`; the code
+comment and the runtime string were the two spots that still needed the same update. Fixed:
+both now say LH-014 has merged to `main`, `route.ts` still never calls it inline, and Sonnet
+resolution (when it happens) runs asynchronously off the review queue, outside this request.
+The already-committed 20-run report is left as it was — its `pipelineScope` text was accurate
+for the conditions under which that measurement actually ran (LH-014 had not merged yet); only
+the code that describes *future* runs needed the correction.
+
+**Ledger.** Eleven findings total recorded in `factory/review-findings.jsonl` across both PR
+and local sources — three `source: "pr"`, `pr: "13"`; eight `source: "local-cli"` across
+three follow-up rounds.
 
 **How to run it.** `pnpm test` covers every fix in this entry (`percentile.test.ts`,
 `cleanup.test.ts`) — no live call, no real money. `pnpm latency:check --runs=1` smoke-tests

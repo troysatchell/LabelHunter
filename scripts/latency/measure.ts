@@ -28,21 +28,23 @@
  * counters still advance either way).
  *
  * **What is NOT in this measurement, and why.** The warning subsystem
- * (LH-020) and the Sonnet resolver (LH-014) have not merged as of this
- * ticket — see `route.ts`'s own file comment. This harness exercises
- * exactly what is live on `main` today: Haiku extraction plus the
- * deterministic router, never Sonnet (TH-R19 — the cascade is the
- * architecture; Sonnet only ever runs on an escalation, asynchronously, off
- * the review queue, never inside this request). Every run below is
- * therefore a "fast path" measurement by construction, not a mix of fast
- * path and Sonnet-resolved escalation. Because `route.ts` passes
+ * (LH-020) has not merged. The Sonnet resolver (LH-014, `src/server/
+ * resolver/`) has merged to `main`, but `route.ts` never calls it —
+ * confirmed with `git diff`, not assumed: `route.ts` is byte-identical
+ * before and after that merge. `handleVerifyRequest` never calls Sonnet
+ * inline, on any run, escalated or not (TH-R19 — the cascade is the
+ * architecture). Sonnet resolution, when it happens at all, runs
+ * asynchronously off the `review_queue` table, on its own schedule,
+ * outside this request and outside this script's timer. Every run below
+ * is therefore a "fast path" measurement by construction, not a mix of
+ * fast path and Sonnet-resolved escalation. Because `route.ts` passes
  * `warningResult: null` (honestly — LH-020 is not built), the government
  * warning field routes to `NEEDS_REVIEW` on every run that has one, which
  * usually rolls the label verdict up to `REVIEW`. This is expected, not a
  * bug: a `REVIEW` verdict here is still a same-request, synchronous answer
- * (PRD §3.8's "verdict or an explicit flag" clock) — it costs no extra
- * wall-clock time, because nothing asynchronous or Sonnet-side runs before
- * this script's timer stops.
+ * (PRD §3.8's "verdict or an explicit flag" clock). It costs no extra
+ * wall-clock time — nothing asynchronous, and nothing Sonnet-side, runs
+ * before this script's timer stops.
  *
  * **Failure handling.** A run that throws, or that the route answers with a
  * non-200 status, is recorded in the raw log with its own duration and
@@ -372,8 +374,10 @@ async function main(): Promise<void> {
       "Preprocess (sharp) -> Haiku extraction (claude-haiku-4-5, real API call) -> " +
       "deterministic Validation Router -> DB writes, via handleVerifyRequest in-process " +
       "(not a real HTTP round-trip). No OCR/warning-subsystem comparator (LH-020 not merged " +
-      "-- warningResult is always null) and no Sonnet resolver (LH-014 not merged) -- every " +
-      "run below is the fast path only; Sonnet never runs on the happy path (TH-R19).",
+      "-- warningResult is always null). LH-014's Sonnet resolver has merged to main, but " +
+      "route.ts never calls it inline -- every run below is the fast path only; Sonnet " +
+      "resolution, when it happens, runs asynchronously off the review queue, never inside " +
+      "this request (TH-R19).",
     machine: readMachineInfo(),
     requestedRuns: runs,
     successfulRuns: successful.length,

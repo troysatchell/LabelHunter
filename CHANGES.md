@@ -4,22 +4,63 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-497 — PR review round 4: local CodeRabbit pass, 4 fixed, 1 dismissed (2026-08-11)
+
+**What changed.** A fresh local CodeRabbit pass posted 5 findings against the round-3 fix
+commit. Four are real; this entry fixes all four. One restates round 2's already-deferred
+`Degradation.params` discriminated-union item. Dismissed again; no code change.
+
+Fixed:
+- `scripts/golden/build.ts:11` (minor): the header's determinism claim was unqualified. Fixed:
+  scoped to "one machine with one toolchain," and pointed at `render.ts`'s system-font
+  substitution known limitation.
+- `golden-set/README.md:31` (major): the LH-005 paragraph read as dense prose. Fixed: ASD-STE100
+  rewrite into short, one-fact sentences. Every fact stays — LH-005 ownership, the Gemini API
+  call, the image's current absence, the required `verified: true` sign-off, the loader's
+  schema-only check, and `images.test.ts`'s existence check.
+- `CHANGES.md:9` (major): the round-three summary combined several facts per sentence. Fixed:
+  ASD-STE100 rewrite into short, single-fact sentences. Every count and detail stays.
+- `src/lib/golden-set/loader.ts:244` (major): `checkDegradations` accepted a `glare` or
+  `low-light` entry after a `rotate` or `perspective` entry. `degrade.ts`'s
+  `assertMatchesOriginalCanvas` already refuses that same order at build time — a geometric
+  transform changes the canvas, so `LABEL_REGIONS`'s coordinates go stale. Fixed: the same
+  order check now runs at spec-validation time. New red-first tests cover a 180-degree rotate
+  followed by `glare` and by `low-light`, and a `perspective` entry followed by `glare`. The
+  committed manifest has no case that breaks the new rule — confirmed by
+  `loadGoldenSetManifest`'s own test, which loads and validates the real file.
+
+Dismissed:
+- `src/lib/golden-set/types.ts:130` (minor): replace `Degradation.params` with a discriminated
+  union keyed by `DegradationType`. Round 2 already deferred this same item as a bigger refactor
+  across `types.ts`, `loader.ts`, and `degrade.ts`'s dispatcher. Still true; no code change here.
+
+**Tests added this round.** `loader.test.ts`: three new rejection cases for the degradation
+order rule (rotate-then-glare, rotate-then-low-light, perspective-then-glare), and one new
+acceptance case (glare-then-rotate). Two pre-existing tests changed their fixture's
+degradation order to stay valid under the new rule; their assertions did not change.
+
+**How to run it.** `pnpm test`, `pnpm typecheck`, `pnpm lint`.
+
+**Rollback.** `git revert` this commit.
+
 ## TRO-497 — PR review round 3: GitHub PR #9, 11 fixed, 2 dismissed (2026-08-11)
 
-**What changed.** PR #9's CodeRabbit review (the tool running against the live GitHub diff,
-not the local round-1/round-2 passes) posted 13 comments. Eleven were real; this entry fixes
-all eleven. Two are dismissed: one restates a finding this entry already fixes under a
-different comment, one is a test refactor CodeRabbit's own severity tag calls "Low value."
+**What changed.** CodeRabbit reviewed PR #9's live GitHub diff, not the local round-1/round-2
+passes. That review posted 13 comments. Eleven were real; this entry fixes all eleven. Two
+are dismissed. One restates a finding this entry already fixes, under a different comment.
+CodeRabbit's own severity tag calls the other one "Low value" — it is a test refactor, not a
+bug.
 
 Fixed — documentation and ground truth:
-- `CHANGES.md:10` (minor): round 2's own header claimed "5 fixed, 3 deferred," but its
-  breakdown listed six real fixes bundled into five bullets, one stale finding, two deferred
-  findings, and one dismissed prose complaint mislabeled "deferred." The same mismatch existed
-  in round 1's own CodeRabbit-triage section three lines short of its claimed "3 deferred."
-  Fixed: both headers and their "Deferred" lists now match what each entry enumerates.
-- `CHANGES.md:220` (minor): the "How to run it" line "same spec in, same pixels out" made an
-  unqualified determinism claim. `render.ts`'s font stacks name system fonts, not files
-  committed to the repo — a fact this same changelog entry already states 30 lines earlier.
+- `CHANGES.md:10` (minor): round 2's own header claimed "5 fixed, 3 deferred." Its breakdown
+  listed something different: six real fixes bundled into five bullets, one stale finding, two
+  deferred findings, and one dismissed prose complaint mislabeled "deferred." Round 1's own
+  CodeRabbit-triage section had the same kind of mismatch — it fell three lines short of its
+  claimed "3 deferred." Fixed: both headers and their "Deferred" lists now match what each
+  entry enumerates.
+- `CHANGES.md:220` (minor): the "How to run it" line said "same spec in, same pixels out." That
+  is an unqualified determinism claim. `render.ts`'s font stacks name system fonts, not files
+  committed to the repo — this same changelog entry already states that fact 30 lines earlier.
   Fixed: the claim now says "on one machine" and points at the font-substitution caveat.
 - `golden-set/manifest.json:1165` (minor): case-20's `description` and `notes` named only the
   upside-down rotation. Its `degradations` list also applies an 18-sigma blur, and its `V9`

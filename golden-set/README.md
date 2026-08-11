@@ -28,14 +28,15 @@ The pipeline is the render-first hybrid design doc §2 lays out:
 - **`scripts/golden/build.ts`** — orchestrates render → degrade for every case, and writes
   the committed JPEG at its manifest path. Run it with `pnpm golden:build`.
 
-**Still not done:** the ~5 fully `ai-generated` "wild" labels design doc §5 describes. LH-005
-owns that work — the Gemini API call, and its own `verified: true` human sign-off. No case in
-this manifest currently has `provenance: "ai-generated"`. When LH-005 adds one, its image
-starts out absent, the same way every case here started before this ticket. LH-005 must land
-the image and set `verified: true` in the same manifest change — the loader already rejects a
-`verified: false` `ai-generated` case at load time, but only the schema shape, not whether the
-file actually exists; `scripts/golden/images.test.ts` checks that half, and it starts failing
-the moment an `ai-generated` case claims `verified: true` with no matching file.
+**Still not done:** design doc §5 describes about 5 fully `ai-generated` "wild" labels.
+LH-005 owns that work. LH-005 makes the Gemini API call and gets the human `verified: true`
+sign-off. No case in this manifest has `provenance: "ai-generated"` yet. When LH-005 adds
+one, its image starts out absent — the same way every case here started before this ticket.
+LH-005 must land the image and set `verified: true` in the same manifest change. The loader
+already rejects a `verified: false` `ai-generated` case at load time. But the loader checks
+only the schema shape, not whether the file actually exists. `scripts/golden/images.test.ts`
+checks that second part. It starts failing the moment an `ai-generated` case claims
+`verified: true` with no matching file.
 `scripts/golden/verify.ts` (LH-006: the consistency and coverage CI gate) is also still open.
 
 Every case's `verified` field stays `false`, even though its image is now real. `verified`

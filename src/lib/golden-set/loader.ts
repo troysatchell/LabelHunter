@@ -239,7 +239,12 @@ const DEGRADATION_PARAM_SHAPE: Record<
  * degradations. Checks that every entry's `params` object has the required
  * keys its `type` needs, that any optional key present has the right
  * type, and that no other, unrecognized key is present — a closed schema,
- * not just a required-keys check.
+ * not just a required-keys check. Also checks order: a `glare` or
+ * `low-light` entry cannot follow a `rotate` or `perspective` entry.
+ * `degrade.ts`'s `assertMatchesOriginalCanvas` refuses that same
+ * combination at build time. A rotate or perspective transform changes
+ * the canvas, so `LABEL_REGIONS`'s coordinates no longer point at the
+ * right pixels.
  */
 function checkDegradations(
   problems: string[],
@@ -250,6 +255,12 @@ function checkDegradations(
     problems.push(`${where}: field "degradations" must be an array, got ${JSON.stringify(raw)}`);
     return;
   }
+
+  // Tracks whether an earlier entry in this same list already applied a
+  // geometric transform (rotate or perspective). See the ordering note
+  // above this function.
+  let sawGeometricTransform = false;
+
   raw.forEach((entry, i) => {
     const w = `${where}.degradations[${i}]`;
     if (!isRecord(entry)) {
@@ -266,6 +277,16 @@ function checkDegradations(
     if (typeof type !== "string" || !(type in DEGRADATION_PARAM_SHAPE)) {
       return; // Already reported by the checkEnum call above.
     }
+
+    if ((type === "glare" || type === "low-light") && sawGeometricTransform) {
+      problems.push(
+        `${w}: "${type}" cannot follow a rotate or perspective entry — LABEL_REGIONS no longer matches the transformed image`,
+      );
+    }
+    if (type === "rotate" || type === "perspective") {
+      sawGeometricTransform = true;
+    }
+
     const shape = DEGRADATION_PARAM_SHAPE[type as keyof typeof DEGRADATION_PARAM_SHAPE];
     const params = entry.params;
 

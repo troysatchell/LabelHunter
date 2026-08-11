@@ -8,11 +8,14 @@
  * cases are LH-005's job; this script skips them and leaves their (still
  * absent) image files alone.
  *
- * Run: `pnpm golden:build`. Deterministic: the same committed
- * `golden-set/manifest.json` always produces the same output bytes, since
- * every step is a pure function of the case spec (render.ts's HTML) or
- * explicit recorded parameters (degrade.ts) — no randomness, no clock, no
- * network call.
+ * Run: `pnpm golden:build`. Deterministic on one machine with one
+ * toolchain: the same committed `golden-set/manifest.json` produces the
+ * same output bytes every run. Every step is a pure function — of the
+ * case spec (render.ts's HTML) or explicit recorded parameters
+ * (degrade.ts) — with no randomness, no clock, no network call.
+ * `render.ts`'s font stacks name system fonts, not files committed to
+ * the repo. A different OS can substitute different fonts and produce
+ * different pixels (see render.ts's KNOWN LIMITATION comment).
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";

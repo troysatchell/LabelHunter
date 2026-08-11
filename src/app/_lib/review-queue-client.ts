@@ -240,7 +240,12 @@ export async function submitDisposition(
     throw new ReviewQueueClientError("SERVICE", "LabelHunter could not record this decision. Try again.");
   }
 
-  if (!isRecordDispositionResponse(payload)) {
+  // The shape check alone does not confirm this response is even about the
+  // item just requested — a proxy, a cache, or a server bug could return a
+  // well-formed RecordDispositionResponse for a different id. Require the
+  // response's own id to match what was asked for (CodeRabbit finding,
+  // local review round 5).
+  if (!isRecordDispositionResponse(payload) || payload.id !== reviewQueueId) {
     throw new ReviewQueueClientError("SERVICE", "LabelHunter received an unexpected response. Try again.");
   }
   return payload;

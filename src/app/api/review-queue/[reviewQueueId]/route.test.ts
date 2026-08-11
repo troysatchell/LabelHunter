@@ -99,6 +99,26 @@ describe("PATCH /api/review-queue/:reviewQueueId", () => {
     expect(body.error.kind).toBe("VALIDATION");
   });
 
+  it("returns 400 VALIDATION on an id above Number.MAX_SAFE_INTEGER, without touching the database", async () => {
+    // Number.isInteger alone does not catch precision loss above
+    // MAX_SAFE_INTEGER — this digit string would round to a different,
+    // smaller integer and silently address the wrong row (CodeRabbit
+    // finding, local review round 5).
+    const untouchedDb = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error("the database must not be touched for an unsafe id");
+        },
+      },
+    ) as RecordDispositionRouteDeps["db"];
+
+    const response = await handleRecordDispositionRequest(patchRequest({ disposition: "APPROVED" }), "9007199254740993", { db: untouchedDb });
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as ReviewQueueErrorResponse;
+    expect(body.error.kind).toBe("VALIDATION");
+  });
+
   it("returns 404 NOT_FOUND for a nonexistent id", async () => {
     const response = await handleRecordDispositionRequest(patchRequest({ disposition: "APPROVED" }), "999999999");
     expect(response.status).toBe(404);

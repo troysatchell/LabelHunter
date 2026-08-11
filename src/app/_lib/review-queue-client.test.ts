@@ -165,6 +165,15 @@ describe("submitDisposition — designed error states", () => {
     await expect(submitDisposition(7, "APPROVED", { fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
   });
 
+  it("does not trust a 200 response for a different item than the one requested — local review round 5", async () => {
+    // A well-formed, valid-shaped response about the wrong id is exactly
+    // as unsafe to return as a malformed one.
+    const fetchImpl = vi.fn(
+      async () => new Response(JSON.stringify({ id: 99, disposition: "APPROVED", disposedAt: "2026-08-11T12:00:00.000Z" }), { status: 200 }),
+    );
+    await expect(submitDisposition(7, "APPROVED", { fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
+  });
+
   it("aborts and reports a timeout when the server never responds in time", async () => {
     const fetchImpl = vi.fn(
       (_url: string | URL | Request, init?: RequestInit) =>

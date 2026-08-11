@@ -47,8 +47,13 @@ export async function handleRecordDispositionRequest(
   rawId: string,
   deps: RecordDispositionRouteDeps = defaultDeps,
 ): Promise<Response> {
+  // `Number.isInteger` alone does not catch precision loss above
+  // `Number.MAX_SAFE_INTEGER` — a long enough digit string can round to a
+  // different, smaller integer and silently address the wrong row (same
+  // class this session's own verify/[verificationId]/page.tsx fix
+  // addressed; CodeRabbit finding, local review round 5).
   const id = Number(rawId);
-  if (!Number.isInteger(id) || id <= 0) {
+  if (!Number.isSafeInteger(id) || id <= 0) {
     return errorResponse(400, "VALIDATION", "LabelHunter could not read this review-queue item's ID.");
   }
 

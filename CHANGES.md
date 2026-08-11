@@ -4,17 +4,17 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
-## TRO-476 — PR #16 review round 2: 31 CodeRabbit findings, 28 fixed, 1 filed, 2 dismissed (2026-08-11)
+## TRO-476 — PR #16 review round 2: 34 CodeRabbit findings, 30 fixed, 1 filed, 3 dismissed (2026-08-11)
 
-**What changed.** CodeRabbit reviewed PR #16 five times. The GitHub PR review reported 11
-findings. The gate's local CLI capture then ran four more times, once against each new
-commit. Those four rounds reported 9, then 4, then 4, then 3 more findings. Five of those 20
-local findings were regressions in this round's own earlier fixes. The orchestrator checked
-every finding against the current code, not on trust. All 31 findings named a real issue or a
-legitimate duplicate. Twenty-eight are fixed here. One is real but out of this PR's scope; it
-is filed as TRO-507. Two are dismissed, with reasons stated below. `factory/review-findings.jsonl`
-is the authoritative count if this drifts again — CodeRabbit's own review of a commit that
-updates this count necessarily reviews a commit one count behind itself.
+**What changed.** CodeRabbit reviewed PR #16 six times. The GitHub PR review reported 11
+findings. The gate's local CLI capture then ran five more times, once against each new
+commit. Those five rounds reported 9, then 4, then 4, then 3, then 3 more findings. The
+orchestrator checked every finding against the current code, not on trust. All 34 findings
+named a real issue or a legitimate duplicate. Thirty are fixed here. One is real but out of
+this PR's scope; it is filed as TRO-507. Three are dismissed, with reasons stated below.
+`factory/review-findings.jsonl` is the final, authoritative count from here — CodeRabbit's
+own review of a commit that restates this count necessarily reviews a commit one count behind
+itself, so this paragraph stops chasing the exact number past this point.
 
 **Buttons stayed live after a conflict.** A 409 conflict left the Approve and Reject buttons
 enabled. A retry could only ever 409 again. TH-R3 asks for no hidden actions. A dead action
@@ -85,7 +85,15 @@ refresh fell through to the bare loading state and unmounted the list again. Bot
 keep the rows mounted.
 
 **The PATCH response's `id` field used a weaker check than the list response's items.** Both
-now require the same positive-integer shape the server route itself enforces.
+now require the same positive-integer shape the server route itself enforces. A shape check
+alone does not confirm a response is even about the item just requested — `submitDisposition`
+now also requires the response's own `id` to match the `reviewQueueId` that was sent.
+
+**The review-queue action route validated ids with `Number.isInteger`, not
+`Number.isSafeInteger`.** Same class this session's own
+`verify/[verificationId]/page.tsx` fix already addressed elsewhere: precision loss above
+`Number.MAX_SAFE_INTEGER` can round a long digit string to a different, smaller integer and
+silently address the wrong row. Now uses `isSafeInteger`.
 
 **Dismissed: `format-timestamp.ts`'s minute-level precision.** A reviewer suggested
 second-level precision for the "waiting since" timestamp. This is a triage cue for a human
@@ -96,7 +104,8 @@ purpose. Not changed.
 **Filed as TRO-507, not fixed here.** CodeRabbit tagged it a "Heavy lift." The list endpoint
 defaults to 100 rows. It has no pagination past that limit. CHANGES.md's own claim below
 ("returns every unresolved item") is corrected in place to state the current, accurate
-limit.
+limit. Two later local rounds re-flagged the same gap against later commits. Both dismissed
+as duplicates of TRO-507, not fixed a second or third time.
 
 **Tests.** `pnpm test -- src/app/_components/ReviewActions.test.tsx
 src/app/_components/ReviewQueueBrowser.test.tsx src/app/_lib/review-queue-client.test.ts

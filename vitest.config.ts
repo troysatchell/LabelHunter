@@ -3,6 +3,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
+    setupFiles: ["./vitest.setup.ts"],
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     // NOTE: the gate invokes `pnpm test -- --reporter=json --outputFile=<abs path>`.
     // Vitest resolves a relative --outputFile against this config's root (the repo

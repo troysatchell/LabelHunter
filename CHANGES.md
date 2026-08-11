@@ -189,6 +189,290 @@ a runnable command for every **verified** claim in the document, including the c
 byte comparison against PRD §3.4 and the golden-set case count.
 
 **Rollback.** `git revert` this commit. The document adds no code and nothing imports it.
+## TRO-465 — LH-013 comparator swap (2026-08-11)
+
+**What changed.** LH-013 (TRO-463) merged real field comparators to `main`
+(`src/server/comparators/`). This ticket's one swap point,
+`src/app/api/verify/route.ts`, now imports `productionComparators` from there instead of
+the provisional stand-in. `provisional-comparators.ts` and its test are deleted — nothing
+else in the repo imported them.
+
+**Behavioral change, honest.** `alcohol_content` and `net_contents` can now report a
+`MISMATCH` on a genuine numeric disagreement — the provisional stand-in never asserted
+`MISMATCH` for any field. `brand_name`/`class_type` still never do (CP-1 §5.3: a judgment
+call routes to REVIEW, never a silent FAIL — LH-013's own design, unchanged by this ticket).
+The label-level verdict a real disagreement now produces is still `REVIEW`, not `FAIL`: the
+government warning has no comparator yet (LH-020) and always needs review today, and REVIEW
+outranks FAIL in the rollup. `route.test.ts` updated: the STONE'S THROW case now asserts a
+real `MATCH` with a normalization note (TH-R8, previously untestable under the provisional
+stand-in's plain casefold); a new test asserts the ABV field-level `MISMATCH` this ticket
+could not previously produce. No test was weakened — every changed assertion states the real
+comparator's real behavior, verified by reading `src/server/comparators/*.ts` directly, not
+by trusting either side's prose.
+
+**How to run it.** `pnpm typecheck`, `pnpm lint`, `pnpm test` (400 tests), `pnpm build` — all
+green.
+
+**Rollback.** `git revert` this commit. The provisional comparator files it deletes are
+restored by the revert; no other ticket depends on them.
+
+## TRO-465 — PR review round 1: orchestrator triage, 9 fixed, 0 dismissed (2026-08-11)
+
+**What changed.** The worktree's captured CodeRabbit review (`.factory/coderabbit.json`, 9
+findings) was triaged against current code, not against the review text's own instructions.
+Every finding checked out as real and current — none was stale or a misread. All 9 fixed.
+
+Fixed, real:
+
+- `verify-client.ts` (critical): the default `fetchImpl` was a bare `fetch` reference. Some
+  engines throw "Illegal invocation" when `fetch` runs detached from its receiver. Fixed:
+  `globalThis.fetch.bind(globalThis)`. Added a test that stubs `globalThis.fetch` and confirms
+  the default path works with no injected `fetchImpl`.
+- `verify-client.ts` (major): `isVerifyErrorResponse` accepted any object with an `error` key,
+  with no check that `kind` was a real `VerifyErrorKind` or that `message` was a string. A
+  successful response was cast to `VerifySuccessResponse` with zero shape check. Fixed: `kind`
+  now checks against a new `VERIFY_ERROR_KINDS` array (`types.ts`), and a new
+  `isVerifySuccessResponse` guard checks `applicationId`, `verificationId`, `labelVerdict`
+  (against `LABEL_VERDICTS`), and `fields` before trusting the body. Either check failing now
+  throws the same designed `VerifyClientError("SERVICE", …)` instead of letting a malformed
+  body reach `ResultsChecklist` and crash it. Four new tests cover the paths this closes.
+- `ResultsChecklist.tsx` (major): its own `aria-live="polite"` wrapper mounts fresh, with its
+  content already inside, only once a result exists — a live region that appears with content
+  already in it is not guaranteed to be announced (WAI-ARIA). Fixed: `ResultsChecklist` no
+  longer sets `aria-live` itself; `VerifyForm.tsx` now renders it inside the one persistent
+  `aria-live="polite"` region that already existed for the loading message, present from the
+  form's first render.
+- `parse-request.test.ts` (trivial, ×2): added a test for the inclusive alcohol-content
+  boundaries (0 and 100 both parse) and a test for a missing `netContentsUnit` (same rejection
+  message as an unrecognized one).
+- `ResultsChecklist.test.tsx` (trivial): added a test for a `MISMATCH` row — the suite
+  previously only exercised `MATCH` and `NEEDS_REVIEW`.
+- `VerifyForm.tsx` (trivial): added a comment on the `FormData` build explaining why it must
+  run before `setPhase({ status: "loading" })` — every control disables on loading, and a
+  disabled control is excluded from `FormData` by the HTML forms spec itself.
+- `CHANGES.md` (minor, ×2): reworded the provisional-comparators bullet for precision
+  (`provisional-comparators.ts` defines the default bundle; `route.ts` is the call site that
+  passes it into `routeLabel`) and rewrote the styling/jsdom/how-to-run prose to ASD-STE100 —
+  shorter sentences, one instruction each, no hedging, no embedded test/file counts that go
+  stale on the next edit.
+
+Not raised by this review, confirmed unchanged: no finding asked for the real field
+comparators or the warning subsystem. The provisional stand-in and the `warningResult: null`
+wiring stay exactly as this ticket's original entry describes — settled design, not something
+this round touched. `main` still does not have LH-013 merged (re-checked before this round).
+
+**How to run it.** `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` — all green.
+
+**Rollback.** `git revert` this commit. Independent of the original TRO-465 commit below;
+reverting this one alone restores the pre-triage behavior without touching the rest of the
+ticket.
+
+## TRO-465 — LH-015: Verify screen + results checklist (2026-08-11)
+
+**What changed.** The single-label verify flow now runs end to end. It serves PRD §3.8, §5,
+and TH-R1, TH-R3, TH-R20.
+
+- `src/app/api/verify/route.ts` — a new `POST /api/verify` route. One request does the whole
+  fast path: preprocess the photo, run the Haiku extractor, route the result, persist
+  `applications`, `label_images`, `verifications`, `field_results`, and — on a REVIEW verdict —
+  `review_queue`. It returns per-field verdicts and the label verdict in the same response. It
+  never calls Sonnet. A REVIEW verdict returns immediately with an explicit "needs review —
+  {reason}" flag, matching PRD §3.8's latency contract; LH-014's resolver (a sibling ticket,
+  not yet merged) consumes the `review_queue` row later, on its own schedule.
+- `src/app/api/verify/parse-request.ts` — boundary validation for the multipart form: image
+  present, beverage type in the closed set, brand name and class/type non-blank, alcohol
+  content a number in 0–100 or blank, net contents a positive number with a recognized unit.
+  Every rejection carries a specific, plain-language message.
+- `src/app/api/verify/types.ts` — shapes shared between the route and the UI.
+- `src/server/router/provisional-comparators.ts` — **LH-013 (TRO-463) has not merged.** This
+  file defines the default `FieldComparators` bundle: exact text match after a trim and a
+  casefold, and the router's own provisional numeric parser for ABV and net contents. It never
+  returns `MISMATCH` on its own (PRD §3.3: a real disagreement routes to REVIEW, never a
+  silent FAIL). `route.ts` is the only production call site that passes a `FieldComparators`
+  value into `routeLabel` — it does so through `VerifyRouteDeps.comparators`, defaulted to
+  this bundle. Swap the one import in `route.ts` for LH-013's real bundle when it lands;
+  nothing else changes.
+- **The government warning has no comparator yet either** (LH-020, gated by CP-2, not yet
+  merged). `route.ts` passes `warningResult: null` to `routeLabel` — honestly, not a
+  fabricated match. `resolveGovernmentWarningField` (LH-012) already handles a `null` result
+  by routing to `NEEDS_REVIEW`. Until LH-020 lands, every label with a warning on it needs
+  review for that one field. Expected, not a bug in this ticket.
+- `src/server/storage/local-file-storage.ts` — writes the uploaded photo to `var/uploads/`
+  (gitignored) and returns the path `label_images.storage_path` stores. Prototype-appropriate,
+  not a durable store: Render's filesystem is ephemeral, so a redeploy can lose these files
+  while the database row survives. Documented in the file as a one-file swap point for a real
+  object store later.
+- `src/app/page.tsx` — replaces the scaffold placeholder with the Verify screen: upload
+  control, the five application fields plus the beverage-type selector, one Verify button.
+- `src/app/_components/VerifyForm.tsx`, `ResultsChecklist.tsx`, `ErrorPanel.tsx` —
+  the form, the results checklist (✓ / ✗ / ⚠ rows with evidence and the one-line reason from
+  `reason-text.ts`, never a bare confidence number), and the designed error panel (`role="alert"`,
+  not a toast) for every failure mode TH-R20 names.
+- `src/app/_lib/verify-client.ts` — the fetch wrapper. Classifies every failure into
+  `VerifyClientError` with a `kind`: a structured error body from the server, a non-2xx
+  response with none, a response this client cannot parse, a network failure, or a 45-second
+  client-side timeout (`AbortController`) for the case the server never answers.
+- `src/app/globals.css` — USWDS-influenced styling: navy and white, 18px base type, and
+  high-contrast focus rings. No purple-gradient AI slop. No emoji-driven design. Dark mode
+  follows `prefers-color-scheme`.
+
+**A jsdom finding, not a product bug.** `VerifyForm` reads the selected photo from the file
+input's own `.files` ref, not `new FormData(form).get("image")`. In this repo's jsdom test
+environment, a `FormData` built from a form element reconstructs its file entries with the
+right filename but `size: 0`. The reconstruction loses the underlying bytes. Reading the input
+directly avoids the problem.
+
+**How to run it.** Run `pnpm dev` and open `/`. Run
+`pnpm test -- src/app src/server/router/provisional-comparators.test.ts src/server/storage`
+for this ticket's own suites. Run `pnpm test` for the full suite; every test passes. Run
+`pnpm build`; it succeeds. A manual smoke test against `pnpm start` confirmed the page
+renders. The same test confirmed that `/api/verify` returns the correct JSON for a missing
+image and for an unreadable image, over a real HTTP request. The smoke test made no live
+Anthropic call.
+
+**What this ticket could not verify.** No live Haiku call, and no real photograph of a real
+label — every test mocks the Anthropic client (`makeMockMessage`, matching
+`src/server/extractor/index.test.ts`'s own pattern) or uses a synthetic sharp-generated JPEG.
+A true end-to-end run needs a real `ANTHROPIC_API_KEY` and a real label photo; say so rather
+than claim it.
+
+**Comparator set shipped.** Provisional (`provisional-comparators.ts`), not LH-013's real
+bundle — LH-013 had not merged into `main` as of this ticket's work. `main` was re-checked
+immediately before finishing; still not merged.
+
+**Rollback.** `git revert` this commit. `var/uploads/` is gitignored and holds no data worth
+preserving.
+
+## TRO-463 / TRO-504 — LH-013: real field comparators (2026-08-11)
+
+**What changed.** This ticket builds the real field comparators under `src/server/comparators/`.
+They replace the router's placeholder judgment logic. They serve TH-R8 and TH-R11.
+
+- `normalize.ts` — the fuzzy-match normalizer. Six steps: Unicode NFKC, casefold, apostrophe
+  folding, diacritic stripping, whitespace collapse, punctuation drop. Apostrophe folding runs
+  before NFKC, not after. NFKC decomposes the acute accent (´) into a space and a combining
+  mark. Folding first keeps that character from disappearing before the fold rule can see it.
+  A code comment explains the exception.
+- `similarity.ts` — normalized Levenshtein distance. It backs the brand/class fuzzy match.
+- `brand.ts` — the real `brand_name` / `class_type` comparator. TH-R8's named case: label
+  "STONE'S THROW" against application "Stone's Throw" now MATCHes, with a note. Similarity at
+  or above 0.95 MATCHes. Below 0.95, the field goes to NEEDS_REVIEW. It never returns MISMATCH.
+  A brand comparator is a judgment tool, not an exact one.
+- `abv.ts` — the real ABV grammar. It reads a percent, a proof statement, or both, in either
+  order. It checks proof against percent: 27 CFR 5.1 defines proof as twice the percent by
+  volume. It compares the label's percent against the application's declared percent.
+- `net-contents.ts` — the real net-contents grammar. It reads a value and a unit (mL, L, fl
+  oz), converts units, and compares the label's quantity against the application's.
+- `index.ts` — `productionComparators`, the one import site LH-015 (TRO-465) wires into
+  `routeLabel` in place of the router's placeholder set.
+
+**TRO-504's three deferred edge cases close here, not as patches to the code they name.**
+
+1. Combining marks did not stop `text-boundary.ts`'s evidence check from reading a combining
+   mark's position as a word boundary. An unaccented value could pass as evidence for a
+   different, accented word. `\p{M}` now joins `\p{L}\p{N}` in that check's lookaround.
+2. `text-boundary.ts`'s casefold used bare `toLowerCase()`. German ß did not fold to "ss", so
+   an all-caps label spelling and a mixed-case ß spelling of the same word did not match. Both
+   `text-boundary.ts` and the new fuzzy normalizer now fold ß (and ẞ) to "ss".
+3. The net-contents parser stopped at the first number in the text and gave up if that
+   number's unit did not match. `"90 Proof 750 mL"` returned no match instead of finding
+   `750 mL`. The real parser scans every number in the text and returns the first one a known
+   unit follows.
+
+**A regulatory VERIFY cell closes.** `required-fields.ts` marked beer's `alcohol_content` cell
+VERIFY. 27 CFR 7.65(a) states an alcohol content statement is optional on a malt beverage
+label, unless a state law prohibits or requires it. This system models the federal rule, not
+state law. The cell is now `not_required`, cited. Wine's cell stays VERIFY: 27 CFR 4.36(a)'s
+real rule is conditional on the wine's own ABV and its class/type wording. The required-field
+table has no way to express that condition without a larger schema change. The comment states
+what was verified and what still needs a larger fix.
+
+**Two numbers move from "fails safe, unverified" to "verified, and zero is correct."** TTB's
+ABV tolerance regulations govern the bottled product against its own label (27 CFR 5.65(b) for
+spirits, 27 CFR 4.36(b) for wine). This comparator checks a different thing: does the label's
+printed number match the application form's declared number. Zero tolerance is the right
+answer for that second question. It is not a stand-in for the first.
+
+**Wiring.** `field-resolution.ts` and `overrides.ts` import their numeric parsing from
+`../comparators/abv.ts` and `../comparators/net-contents.ts` now, not from
+`provisional-numeric.ts`. That file's docstring says LH-013 replaces its callers, not
+necessarily the file itself. Its only remaining caller is `test-support.ts`'s own placeholder
+fixtures, which belong to the already-merged LH-012 router-core ticket. The docstring is
+narrowed to say so.
+
+**A known gap, left open rather than silently fixed.** CP-1 §5.3 names three literal
+apostrophe variants to fold: the straight apostrophe, the backtick, and the acute accent. A
+label extracted by a real vision model may use a Unicode right single quotation mark (’,
+U+2019) as a stylized apostrophe instead. That character is not one of the three named
+variants, so it is not folded. Measured effect: "Stone’s Throw" against "Stone’s Throw" scores
+about 0.923 similarity. That is just under the 0.95 match threshold. The pair routes to
+NEEDS_REVIEW, not a clean MATCH. `docs/checkpoints/cp1-cascade-router-prompts.md` should decide
+whether to widen the rule. This ticket implements the rule as written, not a guess at its
+intent.
+
+**Six more fixes from this ticket's own CodeRabbit review round, applied before this commit.**
+Each one is a real gap, each has a named regression test, and each keeps the comparators pure
+functions with no new dependency.
+
+- `brand.ts`: two values that both normalize to an empty string (e.g. "..." against "---",
+  once punctuation is stripped) no longer score a false MATCH. Empty normalized text has
+  nothing left to judge, so it now routes to NEEDS_REVIEW like any other undecidable pair.
+- `abv.ts`: `compareAbv` now catches a self-contradictory label (CP-1's own named example, "45%
+  Alc./Vol. (100 Proof)") on its own, as a pure function — not only through the router's
+  separate structural check. It reports NEEDS_REVIEW even when the stated percent happens to
+  equal the application's.
+- `net-contents.ts`: `parseNetContents` now reads a comma-grouped thousands number
+  ("1,000 mL") as one value, and does not misread a comma-decimal (European-style "1,5") as a
+  US decimal.
+- `net-contents.ts`: `compareNetContents` now MATCHes two equal zero quantities. The tolerance
+  check divides by the application's quantity, defined as an infinite fraction when that
+  quantity is zero — correct when the label states something else, wrong when the label also
+  states zero and the two numbers actually agree.
+- `field-resolution.ts`: `checkAbvStructural`'s tolerance-vs-application check now reads a
+  proof-only label's canonical percent (27 CFR 5.1), not only a label that states a percent
+  directly. A proof-only reading used to skip this check entirely.
+- `overrides.ts`: the ABV evidence-support check now compares the value and the evidence on
+  the canonical percent scale, not axis-by-axis (percent-vs-percent, proof-vs-proof only). A
+  value stated as "45%" whose evidence states only "90 Proof" is the same reading and is now
+  recognized as such — this is the same bug class TRO-462's own `abvAlternatesConflict` fix
+  already closed for the alternates check, now closed here too.
+
+**Two required-fields.ts findings from that same review round, not adopted.** CodeRabbit
+suggested reverting beer's `alcohol_content` cell from `not_required` back to `verify`. This
+ticket verified the regulation directly (27 CFR 7.65(a), fetched and quoted in the code
+comment): a malt beverage label's alcohol content statement is optional under federal law.
+`not_required` is the cited, correct value, not a guess CodeRabbit's heuristic should override.
+
+**Three more fixes from PR #8's GitHub review, applied before this commit.** Each one has a
+named regression test.
+
+- `net-contents.ts`: `parseNetContents("1,5 L")` used to return `{ value: 5, unit: "l" }`
+  instead of failing. The comma-grouping fix above stopped it from misreading "1,5" as "1.5",
+  but it left the orphaned "5" behind as a fresh candidate. `NUMBER_PATTERN` now refuses to
+  read a bare number that sits directly after a comma, so a malformed comma-decimal rejects the
+  whole read instead of handing back a different, wrong quantity.
+- `field-resolution.ts`: `checkNetContentsStructural`'s alternates check now MATCHes two equal
+  zero quantities, the same zero-division bug already fixed in `compareNetContents`, present
+  here too.
+- `text-boundary.ts`: `normalizeForBoundaryMatch` now calls `.normalize("NFC")` first. A
+  precomposed accented letter and its canonically equivalent decomposed form (a base letter
+  plus a combining mark) used to normalize to different strings. They are the same text under
+  Unicode's own definition, and now they normalize the same way.
+
+**A note on running tests.** `pnpm test` and `pnpm test -- <path>` both read `DATABASE_URL`.
+Every worktree gets its own database (`scripts/factory/worktree.sh`); running tests with
+`DATABASE_URL` unset, or pointing at any database other than the current worktree's own, is
+this repo's own non-negotiable rule (`CLAUDE.md`) — test provisioning resets the target
+schema. `source .factory-env` before running either command below.
+
+**How to run it.** `pnpm test -- src/server/comparators src/server/router` runs the new and
+changed suites. `pnpm test` runs everything; 344 tests pass repo-wide. `pnpm typecheck` and
+`pnpm lint` are both clean.
+
+**Rollback.** `git revert` this commit. That one command is the whole procedure. The same
+commit changed `field-resolution.ts` and `overrides.ts`'s imports. It also added the module
+they import from. A revert restores the old imports and the old behavior together. Nothing is
+left to fix by hand.
 
 ## TRO-462 — PR review round 2: orchestrator triage, 2 fixed, 3 deferred (2026-08-10)
 

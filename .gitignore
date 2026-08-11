@@ -8,6 +8,10 @@
 .factory-env
 .env.local
 
+# Uploaded label images (TRO-465, src/server/storage/local-file-storage.ts) —
+# local-disk stand-in storage; never committed.
+var/uploads/
+
 # Node
 node_modules/
 

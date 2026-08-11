@@ -35,11 +35,18 @@ export function normalizeForBoundaryMatch(text: string): string {
  * character on both sides of that `\b` and it never matches, even for an
  * exact, legitimate reading. Lookaround checks the character OUTSIDE the
  * match instead, which is the actual question this override asks.
+ *
+ * The lookaround uses Unicode letter/number property escapes (`\p{L}`,
+ * `\p{N}`, with the `u` flag), not `[a-z0-9]` — an ASCII-only class would
+ * fail to exclude an accented letter (a brand like "José") from the
+ * boundary, either missing a real hallucination or rejecting a genuine
+ * read. This still is not diacritic folding (a genuinely accented and an
+ * unaccented spelling stay distinct) — that stays LH-013's job.
  */
 export function evidenceSupportsTextValue(value: string, evidence: string): boolean {
   const normalizedValue = normalizeForBoundaryMatch(value);
   if (normalizedValue.length === 0) return false;
   const normalizedEvidence = normalizeForBoundaryMatch(evidence);
-  const pattern = new RegExp(`(?<![a-z0-9])${escapeRegExp(normalizedValue)}(?![a-z0-9])`);
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(normalizedValue)}(?![\\p{L}\\p{N}])`, "u");
   return pattern.test(normalizedEvidence);
 }

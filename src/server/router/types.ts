@@ -102,20 +102,24 @@ export type FieldComparators = Record<ComparatorFieldKey, FieldComparator>;
  * The government-warning comparator's contract (CP-1 §5.3 "WARNING_MISMATCH").
  * The real comparator — VLM transcription + OCR, exact statutory comparison —
  * is LH-020's job, gated by CP-2, not yet cleared. This ticket accepts an
- * already-computed result in this shape and routes on it; it builds no
+ * already-computed result in this shape and routes on it. It builds no
  * warning-comparison logic of its own.
+ *
+ * A discriminated union, not one interface with an optional `reviewReason`.
+ * CP-1 §5.3's contract table always pairs a REVIEW outcome with a specific
+ * reason (`WARNING_MISMATCH`, `LOW_IMAGE_QUALITY`, or
+ * `MISSING_REQUIRED_FIELD`). Making `reviewReason` required on the
+ * `NEEDS_REVIEW` branch, and absent everywhere else, makes a REVIEW result
+ * with no stated reason a compile error for LH-020 to hit, not a silent
+ * default this router would otherwise have to guess.
  */
-export interface WarningComparatorResult {
-  verdict: FieldVerdict;
-  note?: string;
-  /**
-   * Required when `verdict` is `"NEEDS_REVIEW"`. CP-1 §5.3's contract table
-   * maps a REVIEW outcome to `WARNING_MISMATCH` (candidates disagree) or
-   * `LOW_IMAGE_QUALITY` (OCR confidence low / warning block cropped). The
-   * caller (LH-020) decides which; this router only routes on it.
-   */
-  reviewReason?: Extract<ReviewReason, "WARNING_MISMATCH" | "LOW_IMAGE_QUALITY" | "MISSING_REQUIRED_FIELD">;
-}
+export type WarningComparatorResult =
+  | { verdict: "MATCH" | "MISMATCH"; note?: string }
+  | {
+      verdict: "NEEDS_REVIEW";
+      reviewReason: Extract<ReviewReason, "WARNING_MISMATCH" | "LOW_IMAGE_QUALITY" | "MISSING_REQUIRED_FIELD">;
+      note?: string;
+    };
 
 /**
  * What LH-010's preprocessing stage found before the image reached the

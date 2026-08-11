@@ -24,6 +24,8 @@ import {
   normalizeProvisionalUnit,
   provisionalParseAbv,
   provisionalParseNetContents,
+  type ParsedAbv,
+  type ParsedNetContents,
 } from "./provisional-numeric";
 import type {
   ApplicationRecord,
@@ -63,6 +65,48 @@ export interface StructuralCheck {
   hit: boolean;
 }
 
+/** A tiny float-rounding allowance for "the same number, restated" — not a
+ * labeling tolerance (that is `ABV_TOLERANCE_BY_BEVERAGE_TYPE`, a distinct,
+ * regulatory concept). "45%" and "45.0%" parse to the identical number 45;
+ * this only absorbs parser float slop, not a real second reading. */
+const SAME_VALUE_EPSILON = 0.05;
+
+/**
+ * True when at least one alternate reading genuinely disagrees with the
+ * primary parsed value — CP-1 §5.3 says "states the alcohol content twice,
+ * in CONFLICTING ways" (emphasis CP-1's own), not "restates it at all". A
+ * label reading `"45%"` with an alternate of `"45.0%"` is the same number
+ * twice, not a conflict; a naive `alternates.length > 0` check would flag
+ * it anyway.
+ */
+function abvAlternatesConflict(parsed: ParsedAbv, alternates: readonly string[]): boolean {
+  return alternates.some((alternate) => {
+    const alternateParsed = provisionalParseAbv(alternate);
+    if (alternateParsed.percent === null && alternateParsed.proof === null) return true; // an unparsed "second reading" is still a conflict
+    const percentAgrees =
+      parsed.percent === null ||
+      alternateParsed.percent === null ||
+      Math.abs(parsed.percent - alternateParsed.percent) <= SAME_VALUE_EPSILON;
+    const proofAgrees =
+      parsed.proof === null || alternateParsed.proof === null || Math.abs(parsed.proof - alternateParsed.proof) <= SAME_VALUE_EPSILON;
+    return !(percentAgrees && proofAgrees);
+  });
+}
+
+/** Same reasoning as `abvAlternatesConflict`, for net contents: converts
+ * both readings to mL before comparing, so `"750 mL"` restated as `"0.75 L"`
+ * is not treated as a conflicting second reading either. */
+function netContentsAlternatesConflict(parsed: ParsedNetContents, alternates: readonly string[]): boolean {
+  const parsedMl = convertNetContentsToMl(parsed);
+  return alternates.some((alternate) => {
+    const alternateParsed = provisionalParseNetContents(alternate);
+    if (!alternateParsed) return true;
+    const alternateMl = convertNetContentsToMl(alternateParsed);
+    const fractionDiff = parsedMl === 0 ? Infinity : Math.abs(parsedMl - alternateMl) / parsedMl;
+    return fractionDiff > NET_CONTENTS_TOLERANCE_FRACTION;
+  });
+}
+
 /**
  * The `AMBIGUOUS_ABV` structural checks (CP-1 §5.3), independent of
  * confidence: does not parse, states two conflicting readings
@@ -82,7 +126,7 @@ export function checkAbvStructural(
 
   const parsed = provisionalParseAbv(extracted.value);
   if (parsed.percent === null && parsed.proof === null) return { hit: true };
-  if (extracted.alternates.length > 0) return { hit: true };
+  if (abvAlternatesConflict(parsed, extracted.alternates)) return { hit: true };
 
   if (parsed.percent !== null && parsed.proof !== null) {
     // US convention: proof is nominally twice the percent. CP-1 §5.3's own
@@ -114,7 +158,7 @@ export function checkNetContentsStructural(
   // not in the accepted set" as two bullets; this stand-in parser conflates
   // them (both return `null`) — a deliberate simplification LH-013 unwinds.
   if (!parsed) return { hit: true };
-  if (extracted.alternates.length > 0) return { hit: true };
+  if (netContentsAlternatesConflict(parsed, extracted.alternates)) return { hit: true };
 
   const applicationUnit = normalizeProvisionalUnit(application.netContentsUnit);
   if (applicationUnit === null) return { hit: false }; // Cannot compare; do not fabricate a finding.
@@ -219,9 +263,13 @@ export function resolveGovernmentWarningField(input: WarningFieldResolutionInput
     return { verdict: "NEEDS_REVIEW", reviewReason: "LOW_MODEL_CONFIDENCE" };
   }
 
-  const { verdict, reviewReason, note } = input.warningResult;
-  if (verdict !== "NEEDS_REVIEW") {
-    return { verdict, reviewReason: null, comparatorNote: note };
+  // Checked on `result` (a stable local), not a destructured `verdict`, so
+  // TypeScript narrows the discriminated union itself in each branch.
+  const result = input.warningResult;
+  if (result.verdict !== "NEEDS_REVIEW") {
+    return { verdict: result.verdict, reviewReason: null, comparatorNote: result.note };
   }
-  return { verdict: "NEEDS_REVIEW", reviewReason: reviewReason ?? "WARNING_MISMATCH", comparatorNote: note };
+  // `reviewReason` is required on this branch of `WarningComparatorResult` —
+  // no default to fall back to, and none needed.
+  return { verdict: "NEEDS_REVIEW", reviewReason: result.reviewReason, comparatorNote: result.note };
 }

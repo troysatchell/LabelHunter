@@ -14,7 +14,7 @@
  * Both are accepted here as contracts, not implemented here.
  */
 import type { ExtractedField, HaikuExtractionResult } from "../extractor/types";
-import { isValidConfidence } from "./confidence";
+import { isValidConfidence, TRUSTED_THRESHOLD_DEFAULT } from "./confidence";
 import type { FieldState } from "./field-state";
 import { isFieldAbsent } from "./field-state";
 import {
@@ -35,6 +35,7 @@ import { pickHeadlineReason } from "./precedence";
 import { type FieldRequirement, isFieldRequired, REQUIRED_FIELD_TABLE } from "./required-fields";
 import { buildFieldReasonText } from "./reason-text";
 import { rollupLabelVerdict } from "./rollup";
+import { normalizeForBoundaryMatch } from "./text-boundary";
 import type {
   ApplicationRecord,
   ComparatorFieldKey,
@@ -154,10 +155,18 @@ export function routeLabel(
   // --- CP-1 §5.3: the two label-level blockers ----------------------------
   const lowImageQuality = isLowImageQuality(extraction.image_quality, preprocessing, requiredFieldStates);
 
+  // `beverage_type.value` is a free-form string in the extractor's JSON
+  // schema (`schema.ts`'s "field" $def), not an enum the schema itself
+  // constrains — a casing or whitespace slip ("Spirits" vs "spirits") is
+  // untrusted extractor output, not a real disagreement, so both sides are
+  // normalized the same way as the evidence word-boundary check before
+  // comparing. `TRUSTED_THRESHOLD_DEFAULT` (not a separate 0.85 literal):
+  // CP-1 §5.3's own number for this rule is the Trusted-band floor — the
+  // same "confident enough to act on" question the band answers elsewhere.
   const beverageTypeDisagreesWithApplication =
     extraction.beverage_type.value !== null &&
-    extraction.beverage_type.value !== application.beverageType &&
-    extraction.beverage_type.confidence >= 0.85;
+    normalizeForBoundaryMatch(extraction.beverage_type.value) !== normalizeForBoundaryMatch(application.beverageType) &&
+    extraction.beverage_type.confidence >= TRUSTED_THRESHOLD_DEFAULT;
 
   const conflictingExtraction = isConflictingExtraction({
     fieldOverrideRejections: [

@@ -25,7 +25,16 @@ export function isLowImageQuality(
   if (imageQuality.legible === "no") return true;
 
   if (imageQuality.legible === "partial") {
-    const anyRequiredFieldUnusable = requiredFieldStates.some((state) => state.confidence < UNUSABLE_CEILING);
+    // Skip an override-rejected field here: `overrides.ts` zeroes a field's
+    // confidence to 0 when the rejection cause is an invalid confidence
+    // number (so the router never shows a garbage figure), and that
+    // synthetic 0 is not evidence the IMAGE was hard to read — it is
+    // evidence the extraction itself was broken, already counted toward
+    // `CONFLICTING_EXTRACTION`. Counting it again here would misattribute a
+    // broken-extraction problem to image quality.
+    const anyRequiredFieldUnusable = requiredFieldStates.some(
+      (state) => !state.overrideRejected && state.confidence < UNUSABLE_CEILING,
+    );
     if (anyRequiredFieldUnusable) return true;
   }
 

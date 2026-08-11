@@ -15,6 +15,7 @@
 import type { ExtractedField, ExtractedGovernmentWarning } from "../extractor/types";
 import { isValidConfidence } from "./confidence";
 import {
+  convertNetContentsToMl,
   provisionalParseAbv,
   provisionalParseNetContents,
   type ParsedAbv,
@@ -74,6 +75,12 @@ function numericEvidenceSupportsAbv(value: string, evidence: string): boolean {
   return percentSupported && proofSupported;
 }
 
+/** A small, absolute mL tolerance for comparing `value` against `evidence`
+ * on the SAME field — these should be near-identical (`value` is derived
+ * from `evidence`, not an independent second estimate), so this only
+ * absorbs float/rounding slop, not a real disagreement. */
+const NET_CONTENTS_EVIDENCE_TOLERANCE_ML = 0.5;
+
 function numericEvidenceSupportsNetContents(value: string, evidence: string): boolean {
   const valueParsed: ParsedNetContents | null = provisionalParseNetContents(value);
   if (!valueParsed) {
@@ -82,8 +89,13 @@ function numericEvidenceSupportsNetContents(value: string, evidence: string): bo
   }
   const evidenceParsed = provisionalParseNetContents(evidence);
   if (!evidenceParsed) return false;
-  if (valueParsed.unit !== evidenceParsed.unit) return false;
-  return Math.abs(valueParsed.value - evidenceParsed.value) <= 0.01;
+  // Convert both to mL before comparing — CP-1 §5.3 itself compares "the
+  // CONVERTED values" for a cross-unit reading, not the raw numbers. A
+  // value of "750 mL" and evidence of "0.75 L" describe the same quantity;
+  // requiring the unit STRINGS to match too would reject a genuine read.
+  const valueMl = convertNetContentsToMl(valueParsed);
+  const evidenceMl = convertNetContentsToMl(evidenceParsed);
+  return Math.abs(valueMl - evidenceMl) <= NET_CONTENTS_EVIDENCE_TOLERANCE_ML;
 }
 
 function evidenceSupportsValue(value: string, evidence: string, kind: EvidenceSupportKind): boolean {

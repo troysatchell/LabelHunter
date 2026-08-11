@@ -35,6 +35,16 @@ describe("checkAbvStructural — CP-1 §5.3 AMBIGUOUS_ABV, the named proof-arith
     expect(result.hit).toBe(true);
   });
 
+  it("does not fire when an 'alternate' merely restates the same number — CP-1 §5.3 says CONFLICTING, not repeated", () => {
+    const result = checkAbvStructural(abvField({ value: "45%", alternates: ["45.0%"] }), 0.9, 45, 0);
+    expect(result.hit).toBe(false);
+  });
+
+  it("still fires when an alternate does not parse at all — an unparsed 'second reading' is still a conflict", () => {
+    const result = checkAbvStructural(abvField({ alternates: ["illegible smudge"] }), 0.9, 45, 0);
+    expect(result.hit).toBe(true);
+  });
+
   it("fires when the label exceeds tolerance vs. the application AND confidence is below 0.90", () => {
     const result = checkAbvStructural(abvField({ value: "40% Alc./Vol." }), 0.5, 45, 0);
     expect(result.hit).toBe(true);
@@ -69,6 +79,12 @@ describe("checkNetContentsStructural — CP-1 §5.3 AMBIGUOUS_NET_CONTENTS", () 
   it("fires when the field states two conflicting readings", () => {
     const field: ExtractedField = { value: "750 mL", evidence: "750 mL", confidence: 0.9, alternates: ["1 L"] };
     expect(checkNetContentsStructural(field, 0.9, application).hit).toBe(true);
+  });
+
+  it("does not fire when an 'alternate' merely restates the same quantity in a different unit", () => {
+    // 750 mL and 0.75 L are the same quantity, not a conflicting second reading.
+    const field: ExtractedField = { value: "750 mL", evidence: "750 mL", confidence: 0.9, alternates: ["0.75 L"] };
+    expect(checkNetContentsStructural(field, 0.9, application).hit).toBe(false);
   });
 
   it("fires when a unit conversion disagrees by more than the tolerance, below the confidence ceiling", () => {
@@ -235,14 +251,20 @@ describe("resolveGovernmentWarningField — the WARNING_MISMATCH contract (CP-1 
     expect(resolution.reviewReason).toBe("LOW_IMAGE_QUALITY");
   });
 
-  it("defaults an unspecified REVIEW to WARNING_MISMATCH", () => {
+  it("passes through WARNING_MISMATCH when the comparator states it explicitly", () => {
     const resolution = resolveGovernmentWarningField({
       required: true,
       overrideRejected: false,
       absent: false,
       lowImageQuality: false,
-      warningResult: { verdict: "NEEDS_REVIEW" },
+      warningResult: { verdict: "NEEDS_REVIEW", reviewReason: "WARNING_MISMATCH" },
     });
     expect(resolution.reviewReason).toBe("WARNING_MISMATCH");
   });
+
+  // `WarningComparatorResult` is a discriminated union (types.ts):
+  // `reviewReason` is REQUIRED on the NEEDS_REVIEW branch and does not
+  // exist on the MATCH/MISMATCH branches. `{ verdict: "NEEDS_REVIEW" }`
+  // with no `reviewReason` is a compile error, not a runtime default to
+  // test — CP-1 §5.3's contract always names a reason for a REVIEW result.
 });

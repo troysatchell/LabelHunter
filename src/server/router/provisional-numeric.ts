@@ -58,19 +58,46 @@ export interface ParsedNetContents {
   unit: ProvisionalNetContentsUnit;
 }
 
+// Longest key first: a caller checks these in order and stops at the first
+// match, so a shorter alias that is also a PREFIX of a longer one (e.g.
+// "l" is a prefix of "liter") must be tried last, or "liter" would never
+// win.
+const UNIT_ALIAS_KEYS_LONGEST_FIRST = Object.keys(UNIT_ALIASES).sort((a, b) => b.length - a.length);
+
+/**
+ * Matches `normalizedBlob` against the known unit set at its START only —
+ * either the whole blob is a unit, or the unit is followed by a space (a
+ * word boundary). A plain "does this blob equal a unit" check breaks on
+ * real evidence, where the unit is rarely the last word on the line (e.g.
+ * `"750 mL Alcohol 45%"` — the earlier, open-ended capture in
+ * `provisionalParseNetContents` used to swallow "Alcohol" into the
+ * candidate unit text and then fail to match anything at all).
+ */
+function matchUnitAtStart(normalizedBlob: string): ProvisionalNetContentsUnit | null {
+  for (const key of UNIT_ALIAS_KEYS_LONGEST_FIRST) {
+    if (normalizedBlob === key || normalizedBlob.startsWith(`${key} `)) {
+      return UNIT_ALIASES[key];
+    }
+  }
+  return null;
+}
+
 /** Reads a number and a recognized unit out of free text, e.g.
  * `"750 mL"` -> `{ value: 750, unit: "ml" }`. Returns `null` when no number
- * is found, or the unit is outside the small stand-in set above. */
+ * is found, or the unit is outside the small stand-in set above. Text after
+ * the unit (e.g. a second field's reading, concatenated in the same
+ * evidence string) does not stop the match — only text after the number
+ * and before the unit does. */
 export function provisionalParseNetContents(text: string): ParsedNetContents | null {
   const match = text.match(/(\d+(?:\.\d+)?)\s*([a-zA-Z. ]+)/);
   if (!match) return null;
   const value = Number(match[1]);
-  const rawUnit = match[2]
+  const normalizedBlob = match[2]
     .toLowerCase()
     .replace(/\./g, "")
     .trim()
     .replace(/\s+/g, " ");
-  const unit = UNIT_ALIASES[rawUnit];
+  const unit = matchUnitAtStart(normalizedBlob);
   if (!unit) return null;
   return { value, unit };
 }

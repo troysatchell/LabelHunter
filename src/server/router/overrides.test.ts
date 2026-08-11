@@ -83,6 +83,35 @@ describe("applyFieldOverrides — rule 2: evidence supports value (numeric ABV) 
   });
 });
 
+describe("applyFieldOverrides — rule 2: evidence supports value (numeric net contents)", () => {
+  it("passes when the evidence's parsed value and unit match the value's", () => {
+    const outcome = applyFieldOverrides(field({ value: "750 mL", evidence: "750 mL" }), "numeric_net_contents");
+    expect(outcome.rejected).toBe(false);
+  });
+
+  it("does not reject a value and evidence stated in different, but equivalent, units", () => {
+    // CP-1 §5.3 compares the CONVERTED values, not the unit strings — "750
+    // mL" and "0.75 L" describe the same quantity. Requiring the unit text
+    // to match too would reject a genuinely well-evidenced field.
+    const outcome = applyFieldOverrides(field({ value: "750 mL", evidence: "0.75 L" }), "numeric_net_contents");
+    expect(outcome.rejected).toBe(false);
+  });
+
+  it("rejects evidence that supports a materially different quantity, even in a different unit", () => {
+    const outcome = applyFieldOverrides(field({ value: "750 mL", evidence: "1 L" }), "numeric_net_contents");
+    expect(outcome.rejected).toBe(true);
+    expect(outcome.violation).toBe("evidence_does_not_support_value");
+  });
+
+  it("does not stop at the unit when the evidence runs two fields' text together", () => {
+    const outcome = applyFieldOverrides(
+      field({ value: "750 mL", evidence: "750 mL Alcohol 45%" }),
+      "numeric_net_contents",
+    );
+    expect(outcome.rejected).toBe(false);
+  });
+});
+
 describe("applyFieldOverrides — rule 2 exemption for beverage_type (TRO-502)", () => {
   it("does not reject an inferred category whose value is never verbatim in the evidence", () => {
     // beverage_type's value ("spirits") is an inferred category, never

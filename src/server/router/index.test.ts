@@ -46,7 +46,9 @@ describe("routeLabel — TRO-502: beverage_type's exemption from override rule 2
       makePreprocessing(),
     );
     expect(result.labelVerdict).toBe("PASS");
-    expect(result.headlineReason).not.toBe("CONFLICTING_EXTRACTION");
+    // Stronger than "not CONFLICTING_EXTRACTION": PASS already implies no
+    // reason fired at all, label-level or field-level.
+    expect(result.headlineReason).toBeNull();
   });
 });
 
@@ -128,6 +130,67 @@ describe("routeLabel — WARNING_MISMATCH: the contract only, no warning logic b
     expect(warningRow?.verdict).toBe("NEEDS_REVIEW");
     expect(warningRow?.reviewReason).toBe("WARNING_MISMATCH");
     expect(warningRow?.reason).toBe("VLM and OCR transcriptions disagree.");
+  });
+});
+
+describe("routeLabel — beverage_type disagreement is checked after normalization", () => {
+  it("a casing or whitespace difference alone is not a real disagreement", () => {
+    // beverage_type.value is a free-form string in the extractor's JSON
+    // schema, not an enum the schema itself constrains — a model could
+    // return "Spirits" or " spirits " without violating the schema.
+    const extraction = makeExtraction({
+      beverage_type: { value: " Spirits ", evidence: "Straight Bourbon Whiskey", confidence: 0.95, alternates: [] },
+    });
+    const result = routeLabel(extraction, makeApplication({ beverageType: "spirits" }), placeholderComparators, CLEAN_WARNING_RESULT, makePreprocessing());
+    expect(result.labelVerdict).toBe("PASS");
+    expect(result.headlineReason).toBeNull();
+  });
+
+  it("a genuine disagreement at confident confidence still routes to CONFLICTING_EXTRACTION", () => {
+    const extraction = makeExtraction({
+      beverage_type: { value: "wine", evidence: "Straight Bourbon Whiskey", confidence: 0.95, alternates: [] },
+    });
+    const result = routeLabel(extraction, makeApplication({ beverageType: "spirits" }), placeholderComparators, CLEAN_WARNING_RESULT, makePreprocessing());
+    expect(result.labelVerdict).toBe("REVIEW");
+    expect(result.headlineReason).toBe("CONFLICTING_EXTRACTION");
+  });
+});
+
+describe("routeLabel — the application does not state an alcohol percent to compare", () => {
+  it("never falls back to a bare MATCH with nothing compared — it escalates instead (TH-R10)", () => {
+    const result = routeLabel(
+      makeExtraction(),
+      makeApplication({ alcoholContentPercent: undefined }),
+      placeholderComparators,
+      CLEAN_WARNING_RESULT,
+      makePreprocessing(),
+    );
+    const abvRow = result.fields.find((row) => row.field === "alcohol_content");
+    // No comparator ran (nothing to compare against), so this is not a
+    // confirmed match — asserting one would be a confident wrong verdict.
+    expect(abvRow?.verdict).toBe("NEEDS_REVIEW");
+    expect(abvRow?.reviewReason).toBe("AMBIGUOUS_ABV");
+    expect(abvRow?.applicationValue).toBe("(not filed on the application)");
+  });
+});
+
+describe("routeLabel — a required field absent under LOW_IMAGE_QUALITY (CP-1 §5.3's carve-out)", () => {
+  it("does not word the row as a match, even with reviewReason suppressed to null", () => {
+    const extraction = makeExtraction({
+      image_quality: { legible: "no", issues: ["blur"], confidence: 0.2 },
+      net_contents: { value: null, evidence: "", confidence: 0, alternates: [] },
+    });
+    const result = routeLabel(extraction, makeApplication(), placeholderComparators, CLEAN_WARNING_RESULT, makePreprocessing());
+
+    expect(result.labelVerdict).toBe("REVIEW");
+    expect(result.headlineReason).toBe("LOW_IMAGE_QUALITY");
+    const netRow = result.fields.find((row) => row.field === "net_contents");
+    expect(netRow?.verdict).toBe("NEEDS_REVIEW");
+    // MISSING_REQUIRED_FIELD is suppressed (CP-1 §5.3), so this field's own
+    // reviewReason is null — but the reason text must still say the field
+    // needs review, never "Matches the application."
+    expect(netRow?.reviewReason).toBeNull();
+    expect(netRow?.reason).toBe("This field needs a closer look.");
   });
 });
 

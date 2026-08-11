@@ -42,6 +42,15 @@ describe("isLowImageQuality — CP-1 §5.3", () => {
     expect(isLowImageQuality(imageQuality({ legible: "partial" }), preprocessing(), fields)).toBe(false);
   });
 
+  it("does not count an override-rejected field's synthetic 0 confidence toward 'partial'", () => {
+    // overrides.ts zeroes confidence on a confidence_invalid rejection so it
+    // is never displayed — that 0 is not evidence the IMAGE was hard to
+    // read, it is evidence the extraction was broken. CONFLICTING_EXTRACTION
+    // already counts it; LOW_IMAGE_QUALITY must not count it a second time.
+    const fields = [requiredField({ confidence: 0, overrideRejected: true })];
+    expect(isLowImageQuality(imageQuality({ legible: "partial" }), preprocessing(), fields)).toBe(false);
+  });
+
   it("fires when preprocessing rejected the image", () => {
     expect(isLowImageQuality(imageQuality(), preprocessing({ rejected: true }), [requiredField()])).toBe(true);
   });

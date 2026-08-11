@@ -37,7 +37,7 @@ const PASS_DETAIL: VerificationDetail = {
 describe("DetailView", () => {
   it("renders the label image with real pixel dimensions, for side-by-side display (PRD §5)", () => {
     render(<DetailView detail={PASS_DETAIL} />);
-    const img = screen.getByRole("img", { name: /label photo/i });
+    const img = screen.getByRole("img", { name: /label submitted/i });
     expect(img).toHaveAttribute("src", "/api/label-images/1");
     expect(img).toHaveAttribute("width", "1200");
     expect(img).toHaveAttribute("height", "1600");
@@ -98,8 +98,13 @@ describe("DetailView", () => {
   });
 
   it("shows a 'Resolved by Sonnet' annotation only when resolvedBySonnet is true", () => {
-    render(<DetailView detail={PASS_DETAIL} />);
+    // Unmount the first render before the second: two mounted trees at once
+    // would let `getByText` below match against whichever tree happens to
+    // hold the text, rather than proving THIS render is the one that
+    // changed (CodeRabbit finding, TRO-466 review round 1).
+    const { unmount } = render(<DetailView detail={PASS_DETAIL} />);
     expect(screen.queryByText("Resolved by Sonnet")).not.toBeInTheDocument();
+    unmount();
 
     render(<DetailView detail={{ ...PASS_DETAIL, resolvedBySonnet: true }} />);
     expect(screen.getByText("Resolved by Sonnet")).toBeInTheDocument();
@@ -116,6 +121,12 @@ describe("DetailView", () => {
       />,
     );
     expect(screen.getByText("Re-read the ABV line at higher zoom; matches the application.")).toBeInTheDocument();
+    // The test's own name promises "never a bare confidence number" — this
+    // asserts it, rather than relying on the fixture simply having no
+    // number to leak (CodeRabbit finding, TRO-466 review round 1). Matches
+    // the same regex this codebase already uses for the identical claim
+    // elsewhere (e.g. ResultsChecklist.test.tsx).
+    expect(document.body.textContent).not.toMatch(/\d+(\.\d+)?%/);
   });
 
   it("renders no resolver-note section when resolverNote is null", () => {

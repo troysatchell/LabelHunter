@@ -73,6 +73,9 @@ describe("GET /api/label-images/:labelImageId", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe(OUTPUT_MEDIA_TYPE);
+    // This is a compliance photo behind the app's own future access gate
+    // (PRD §8) — pinned private, never a shared/public cache.
+    expect(response.headers.get("cache-control")).toBe("private, max-age=3600");
     const body = Buffer.from(await response.arrayBuffer());
     expect(body.equals(bytes)).toBe(true);
   });

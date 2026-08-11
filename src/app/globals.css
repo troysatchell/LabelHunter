@@ -224,9 +224,13 @@ fieldset.field legend {
      the label photo and full comparison") as well as a `<button>`
      (`ErrorPanel.tsx`'s "Try again") — an `<a>` is underlined by default,
      a `<button>` never is, so this keeps both looking like the same
-     control. */
+     control. `display: inline-block` is explicit for the same reason,
+     rather than relying on a `<button>`'s own default box behavior: a
+     flex-item context blockifies either element anyway, but this class
+     should not depend on always being used inside one. */
   text-decoration: none;
   text-align: center;
+  display: inline-block;
 }
 
 /* ---- Status / loading ------------------------------------------------ */

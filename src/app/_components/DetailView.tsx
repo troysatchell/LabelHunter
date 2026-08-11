@@ -108,7 +108,12 @@ export function DetailView({ detail }: DetailViewProps) {
           src={detail.labelImage.url}
           width={detail.labelImage.width}
           height={detail.labelImage.height}
-          alt="The uploaded label photo"
+          // "The label submitted with this application", not "...photo" or
+          // "...image": a screen reader already announces this element as
+          // an image, so restating that in the alt text is redundant
+          // (CodeRabbit finding, TRO-466 review round 1) — describe the
+          // content, not the fact that it is a picture of it.
+          alt="The label submitted with this application"
         />
 
         <ul className="detail-field-list">

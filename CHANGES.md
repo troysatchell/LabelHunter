@@ -4,6 +4,165 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-466 — PR #15 review round 2: 3 findings, 1 fixed, 2 dismissed (2026-08-11)
+
+**Fixed.** `src/app/api/label-images/[labelImageId]/route.ts` treated any `readLabelImage`
+failure as a missing file (404). A permissions error or a disk I/O error is a different fact —
+the row and the file both exist, something else went wrong, and that is a server error, not a
+404. Fixed: checks `error.code === "ENOENT"` specifically; anything else now answers 500. One
+new regression test injects an `EACCES` error and confirms 500, not 404 — confirmed red first.
+
+**Dismissed.**
+- The "add auth" finding is an exact duplicate of round 1's already-dismissed finding on this
+  same route — no auth mechanism exists anywhere in this app yet; deferred to LH-061 (TRO-482).
+- A finding asked `vitest.setup.ts` (loads for every test file) to reject an unset
+  `DATABASE_URL` globally, before any test runs. Checked, not assumed: only 2 of 48
+  `*.test.ts(x)` files under `src/` reference `DATABASE_URL` at all — the rest are pure-function
+  and component tests with no database dependency. A global guard would break roughly 46
+  legitimate tests that have never needed one. The underlying concern (this repo's own
+  `DATABASE_URL` discipline) is real, but the right fix is a per-file or per-DB-helper guard,
+  not a blanket one — out of scope for a one-line change on this ticket.
+
+**How to run it.** `pnpm test -- "src/app/api/label-images"`, `pnpm typecheck`. Both ran clean.
+
+**Rollback.** `git revert` this commit. The `isMissingFileError`/`readFailed` helpers and the
+new test are additive; reverting restores the prior (over-broad 404) behavior.
+
+## TRO-466 — PR review round 1: local CodeRabbit pass, 7 fixed, 1 dismissed (2026-08-11)
+
+**What changed.** A local CodeRabbit pass against this branch posted 8 findings. Seven are
+real. This entry fixes all seven. One finding is dismissed below. This entry states the
+reason.
+
+Fixed:
+- `src/app/verify/[verificationId]/page.tsx` (a real correctness gap): the not-found
+  branches rendered a plain component. That answered HTTP 200, with "not found" wording in
+  the body. The words were honest; the status code was wrong. Fixed: call
+  `next/navigation`'s `notFound()` instead, backed by a new `not-found.tsx` in the same
+  route segment. Observed with a real `pnpm dev` run: `/verify/999999999` and
+  `/verify/not-a-number` both now answer 404, with the same plain-language message as
+  before.
+- `src/app/_components/DetailView.tsx` (minor, accessibility): the image's alt text said
+  "The uploaded label photo." A screen reader already announces the element as an image.
+  The word "photo" repeated that fact. Fixed: "The label submitted with this application."
+  It names the content, not the medium. Updated the matching test query.
+- `src/app/globals.css` (minor): `.secondary-button` had no explicit `display` rule. Fixed:
+  added `display: inline-block`. The class now works the same way inside or outside a flex
+  container.
+- `src/app/_components/DetailView.test.tsx` (trivial, test isolation): one test rendered the
+  component twice without unmounting the first tree. A later `getByText` call then searched
+  two mounted trees at once. Fixed: unmount between the two renders.
+- `src/app/_components/DetailView.test.tsx` (trivial, test honesty): a second test's own name
+  promised "never a bare confidence number." No line in that test asserted it. The claim held
+  only because that test's fixture had no number to leak. Fixed: added the same regex check
+  this codebase already uses for the identical claim elsewhere.
+- `src/app/api/label-images/[labelImageId]/route.test.ts` (trivial): added an explicit
+  `Cache-Control` assertion to the existing success-path test.
+- `src/server/verification-detail/get-verification-detail.test.ts` (trivial): expanded the
+  header comment. It now says `DATABASE_URL` must point at the worktree's own database
+  before this file runs.
+
+Dismissed:
+- `src/app/api/label-images/[labelImageId]/route.ts` (tagged major): "authenticate the
+  requester and verify ownership… using the existing application auth and ownership
+  mechanisms." No such mechanism exists anywhere in this app yet. Every route, including the
+  one that saves these same photos (`POST /api/verify`), is equally open today. Access
+  control is PRD §8 and LH-061 ("Key protection"), an Urgent ticket. LH-061 is already
+  scoped for a shared access code, per-IP and global rate limits, and its own
+  security-semantics escalation gate before merge. Bolting one-off auth onto a single GET
+  route now would leave every sibling route open. It would also preempt LH-061's real
+  design. It also falls under this factory's own stop condition for security-semantics
+  changes. Not fixed here. Flagged for LH-061 to own.
+
+**How to run it.** Point `DATABASE_URL` at this worktree's own database first — schema
+provisioning resets it. Then run `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`. All
+four ran clean after every fix above, in the same worktree.
+
+**Rollback.** `git revert` this commit. The Detail view (the entry below this one) still
+works without it — this round only tightens an error state's status code, a11y wording, one
+CSS rule, and three tests.
+
+## TRO-466 — LH-016: Detail view (2026-08-11)
+
+**What changed.** LabelHunter now has a Detail view (PRD §5). It shows the label photo next
+to every field's extracted value, the applicant's own value, a match badge, and the reason.
+The results checklist gained one new link to open it: "See the label photo and full
+comparison."
+
+The view lives at `/verify/:verificationId`. It reads straight from the database. It works
+right after a verify, and it works for a link revisited later. It never calls a model. It
+only shapes rows the verify route already saved — TH-R19: the cascade is the architecture.
+
+Three server pieces support it:
+- `src/server/verification-detail/` shapes one verification's full detail. Each field gets a
+  label value, an application value, evidence, a verdict, and a reason. The detail also
+  includes the label image's URL and pixel dimensions.
+- `src/app/api/label-images/[labelImageId]/route.ts` serves the saved label photo's bytes.
+- `src/server/storage/local-file-storage.ts` gained `readLabelImage`, the read-side twin of
+  the existing `saveLabelImage`.
+
+**The scope question, resolved with evidence.** The ticket asked what PRD §5's Detail view
+needs that the app does not carry yet.
+
+- The application's own value per field is already in the database, on the `applications`
+  table (`brand_name`, `class_type`, `alcohol_content_raw`, `net_contents_raw`). This view
+  reads those columns directly. It needs no migration.
+- The label image for side-by-side display was already in the database
+  (`label_images.storage_path`). No route served it before this ticket. The new image route
+  closes that gap.
+- A "Resolved by Sonnet" flag is already in the database, but only at the label level
+  (`verifications.resolution_path`). `field_results` has no per-field resolver column. This
+  view shows one label-level badge instead of a per-field annotation. A per-field annotation
+  would invent a fact the schema does not carry. This entry names that limit instead of
+  hiding it.
+- The warning's "expected vs. detected" diff has a limit: the government warning has no
+  per-application value to diff against. One fixed statutory standard applies to every label,
+  not an application-specific one (see `schema.ts`'s own comment on `applications`). Sourcing
+  and verifying that statutory text against ttb.gov is LH-020's own decision. CP-2 gates that
+  decision, and CP-2 has not run yet. This view shows the label's detected text and a plain
+  description of the legal standard, side by side. The verdict and reason shown come from a
+  check already computed upstream. It never computes its own text comparison. Standing rule
+  11 requires the real exact-compare result here, never a fuzzy re-derivation invented by
+  this view.
+
+**Tests added this ticket.** Every new module was written test-first (red for the right
+reason, then green):
+- `get-verification-detail.test.ts` — 13 cases: the not-found path, a clean PASS, the
+  "not filed on the application" fallback, resolved-by-Sonnet true and false, the resolver's
+  note read defensively against an untyped `jsonb` column, and the headline message for a
+  REVIEW verdict.
+- The label-image route's `route.test.ts` — 4 cases: a real byte round-trip, a 404 for an
+  unknown id, a 404 for a non-numeric id with no database query at all, and a 404 (never a
+  crash) for a database row whose file was lost from disk.
+- `DetailView.test.tsx` — 9 cases: the image tag's real dimensions, the shared verdict-banner
+  text, per-field match badges, the warning row's own column labels, the "Resolved by Sonnet"
+  badge, and the resolver's note, with an explicit check that its confidence number never
+  reaches the page.
+- `local-file-storage.test.ts` — 4 new cases for `readLabelImage`, including a
+  path-traversal check.
+- `ResultsChecklist.test.tsx` — 1 new case for the "See the label photo and full comparison"
+  link.
+
+**Observed, not only unit-tested.** A real `pnpm build` and a real `pnpm dev` run gave direct
+evidence, not only unit tests. A real POST to `/api/verify` made one live Haiku call. A real
+fetch of the returned `/verify/:id` link then showed the persisted headline message, an image
+tag with the right URL, and all five field rows. `/api/label-images/:id` returned a genuine
+JPEG matching the uploaded photo's exact pixel dimensions. A nonexistent id on both routes
+returned a designed 404, never a crash. Setting `resolution_path` to `EXTRACTOR_RESOLVER` by
+hand, and adding a resolver note, confirmed two things: the "Resolved by Sonnet" badge and the
+note text render on the page, and the note's confidence number does not render.
+
+**How to run it.** Point `DATABASE_URL` at this worktree's own database first — schema
+provisioning resets it. Then run `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`.
+
+**Rollback.** `git revert` this commit. The verify flow and the results checklist keep
+working without it: this ticket only adds a new view, linked from the checklist, and two new
+server modules. It changes no database table. It changes no existing route's request or
+response shape. The only visible change to an existing screen is the checklist's one new
+link.
+
+---
+
 ## TRO-505 — PR #14 review round 7: ledger dedup + 3 dismissed (2026-08-11)
 
 **Fixed.** Merging `main` (which had already independently merged the same upstream commit's

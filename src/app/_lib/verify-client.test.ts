@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { submitVerification, VerifyClientError, type VerifyFormValues } from "./verify-client";
 import type { VerifySuccessResponse } from "../api/verify/types";
 
@@ -42,6 +42,25 @@ describe("submitVerification — the happy path", () => {
   });
 });
 
+describe("submitVerification — the default fetchImpl (real production path)", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("falls back to globalThis.fetch, bound, when no fetchImpl is injected", async () => {
+    const stub = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify(SUCCESS_BODY), { status: 200 }));
+    globalThis.fetch = stub as unknown as typeof fetch;
+
+    const result = await submitVerification(values());
+
+    expect(result).toEqual(SUCCESS_BODY);
+    expect(stub).toHaveBeenCalledTimes(1);
+    expect(stub.mock.calls[0][0]).toBe("/api/verify");
+  });
+});
+
 describe("submitVerification — designed error states (TH-R20)", () => {
   it("classifies a non-2xx response with a structured error body", async () => {
     const fetchImpl = vi.fn(
@@ -58,6 +77,32 @@ describe("submitVerification — designed error states (TH-R20)", () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ nope: true }), { status: 500 }));
 
     await expect(submitVerification(values(), { fetchImpl })).rejects.toBeInstanceOf(VerifyClientError);
+    await expect(submitVerification(values(), { fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
+  });
+
+  it("does not trust an error body whose kind is outside VERIFY_ERROR_KINDS — falls back to SERVICE", async () => {
+    const fetchImpl = vi.fn(
+      async () => new Response(JSON.stringify({ error: { kind: "NOT_A_REAL_KIND", message: "anything" } }), { status: 422 }),
+    );
+
+    await expect(submitVerification(values(), { fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
+  });
+
+  it("does not blindly trust a 200 response missing the fields the checklist needs — SERVICE, not a crash", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ applicationId: 1, verificationId: 1 }), { status: 200 }));
+
+    await expect(submitVerification(values(), { fetchImpl })).rejects.toMatchObject({
+      kind: "SERVICE",
+      message: expect.stringMatching(/unexpected response/i),
+    });
+  });
+
+  it("does not trust a 200 response whose labelVerdict is outside the real set", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ ...SUCCESS_BODY, labelVerdict: "MAYBE" }), { status: 200 }),
+    );
+
     await expect(submitVerification(values(), { fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
   });
 

@@ -42,9 +42,19 @@ export interface ResultsChecklistProps {
   result: VerifySuccessResponse;
 }
 
+/**
+ * `aria-live` is deliberately NOT set on this component's own wrapper.
+ * A live region only reliably announces content it receives AFTER it is
+ * already in the DOM; a region that mounts with its content already
+ * inside it (exactly how this component appears — swapped in whole once
+ * `phase.status === "success"`) is not guaranteed to be announced. The
+ * caller (`VerifyForm.tsx`) owns one persistent `aria-live="polite"`
+ * region, present from the form's first render, and mounts this
+ * component inside it — see that file's comment.
+ */
 export function ResultsChecklist({ result }: ResultsChecklistProps) {
   return (
-    <div className="results" aria-live="polite">
+    <div className="results">
       <p className={`label-verdict-banner ${LABEL_BANNER_CLASS[result.labelVerdict]}`} data-testid="label-verdict-banner">
         {labelVerdictText(result)}
       </p>

@@ -62,8 +62,12 @@ export interface VerifySuccessResponse {
 
 /** Which designed error state (TH-R20) the UI shows. Each kind gets its own
  * copy and its own retry affordance — see
- * `src/app/_components/ErrorPanel.tsx`. */
-export type VerifyErrorKind = "VALIDATION" | "IMAGE" | "EXTRACTION" | "SERVICE";
+ * `src/app/_components/ErrorPanel.tsx`. The array is the source of truth;
+ * the type is derived from it — `src/app/_lib/verify-client.ts` uses the
+ * array at runtime to check a `kind` value from an HTTP response actually
+ * belongs to this set before trusting it. */
+export const VERIFY_ERROR_KINDS = ["VALIDATION", "IMAGE", "EXTRACTION", "SERVICE"] as const;
+export type VerifyErrorKind = (typeof VERIFY_ERROR_KINDS)[number];
 
 export interface VerifyErrorResponse {
   error: {

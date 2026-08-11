@@ -6,8 +6,8 @@
  * `submitVerification` itself), the same dependency-injection shape the
  * server side uses (`src/app/api/verify/route.ts`'s `VerifyRouteDeps`).
  */
-import type { BeverageType } from "../../lib/db/enums";
-import type { VerifyErrorKind, VerifyErrorResponse, VerifySuccessResponse } from "../api/verify/types";
+import { LABEL_VERDICTS, type BeverageType } from "../../lib/db/enums";
+import { VERIFY_ERROR_KINDS, type VerifyErrorKind, type VerifyErrorResponse, type VerifySuccessResponse } from "../api/verify/types";
 
 export class VerifyClientError extends Error {
   readonly kind: VerifyErrorKind;
@@ -56,12 +56,40 @@ export function buildVerifyFormData(values: VerifyFormValues): FormData {
   return formData;
 }
 
+/**
+ * True only when `payload` is a well-formed `VerifyErrorResponse` — `kind`
+ * is checked against `VERIFY_ERROR_KINDS`, the real set, not just "is a
+ * string", and `message` must be a string. A malformed or malicious body
+ * (a proxy, a CDN error page, a future server bug) must never hand this
+ * client's caller a `VerifyClientError` with a `kind` outside the union its
+ * type claims — `ErrorPanel.tsx`'s `Record<VerifyErrorKind, string>` title
+ * lookup would be undefined for anything else.
+ */
 function isVerifyErrorResponse(payload: unknown): payload is VerifyErrorResponse {
+  if (typeof payload !== "object" || payload === null || !("error" in payload)) return false;
+  const error = (payload as { error: unknown }).error;
+  if (typeof error !== "object" || error === null) return false;
+  const { kind, message } = error as { kind?: unknown; message?: unknown };
+  return typeof kind === "string" && (VERIFY_ERROR_KINDS as readonly string[]).includes(kind) && typeof message === "string";
+}
+
+/**
+ * True only when `payload` has the shape `ResultsChecklist.tsx` actually
+ * renders — a real `labelVerdict` and a `fields` array. Without this, a
+ * malformed 200 response would be cast blindly and crash the checklist
+ * component with a raw, unhandled TypeError instead of this ticket's own
+ * designed SERVICE state (TH-R20 — every failure mode gets a designed
+ * state, never a raw crash).
+ */
+function isVerifySuccessResponse(payload: unknown): payload is VerifySuccessResponse {
+  if (typeof payload !== "object" || payload === null) return false;
+  const body = payload as Partial<VerifySuccessResponse>;
   return (
-    typeof payload === "object" &&
-    payload !== null &&
-    "error" in payload &&
-    typeof (payload as { error: unknown }).error === "object"
+    typeof body.applicationId === "number" &&
+    typeof body.verificationId === "number" &&
+    typeof body.labelVerdict === "string" &&
+    (LABEL_VERDICTS as readonly string[]).includes(body.labelVerdict) &&
+    Array.isArray(body.fields)
   );
 }
 
@@ -76,7 +104,11 @@ export async function submitVerification(
   values: VerifyFormValues,
   options: SubmitVerificationOptions = {},
 ): Promise<VerifySuccessResponse> {
-  const fetchImpl = options.fetchImpl ?? fetch;
+  // `.bind(globalThis)`, not a bare `fetch` reference: some engines
+  // (historically WebKit/Safari) throw "TypeError: Illegal invocation"
+  // when `fetch` is called detached from its receiver. Binding costs
+  // nothing and this is the one code path every real user's browser runs.
+  const fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -111,5 +143,9 @@ export async function submitVerification(
     throw new VerifyClientError("SERVICE", "LabelHunter could not complete this request. Try again.");
   }
 
-  return payload as VerifySuccessResponse;
+  if (!isVerifySuccessResponse(payload)) {
+    throw new VerifyClientError("SERVICE", "LabelHunter received an unexpected response. Try again.");
+  }
+
+  return payload;
 }

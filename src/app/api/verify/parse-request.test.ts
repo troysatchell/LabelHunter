@@ -107,6 +107,13 @@ describe("parseVerifyFormData — rejections carry a specific, human-readable me
     });
   });
 
+  it("accepts the inclusive alcohol content boundaries, 0 and 100", () => {
+    for (const abv of ["0", "100"]) {
+      const result = parseVerifyFormData(baseFormData({ alcoholContentPercent: abv }));
+      expect(result.ok).toBe(true);
+    }
+  });
+
   it("rejects a missing, non-numeric, or non-positive net contents value", () => {
     const fd = baseFormData();
     fd.delete("netContentsValue");
@@ -126,6 +133,15 @@ describe("parseVerifyFormData — rejections carry a specific, human-readable me
 
   it("rejects a net contents unit outside the recognized set", () => {
     expect(parseVerifyFormData(baseFormData({ netContentsUnit: "gallons" }))).toEqual({
+      ok: false,
+      message: "Choose a net contents unit: mL, L, or fl oz.",
+    });
+  });
+
+  it("rejects a missing net contents unit with the same message as an unrecognized one", () => {
+    const fd = baseFormData();
+    fd.delete("netContentsUnit");
+    expect(parseVerifyFormData(fd)).toEqual({
       ok: false,
       message: "Choose a net contents unit: mL, L, or fl oz.",
     });

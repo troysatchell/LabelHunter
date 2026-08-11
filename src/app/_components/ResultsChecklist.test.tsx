@@ -70,4 +70,20 @@ describe("ResultsChecklist", () => {
     render(<ResultsChecklist result={{ ...PASS_RESULT, labelVerdict: "FAIL" }} />);
     expect(screen.getByTestId("label-verdict-banner")).toHaveTextContent("This label does not match the application.");
   });
+
+  it("renders a mismatch row with the mismatch status text and styling hook", () => {
+    render(
+      <ResultsChecklist
+        result={{
+          ...PASS_RESULT,
+          labelVerdict: "FAIL",
+          fields: [{ ...PASS_RESULT.fields[0], verdict: "MISMATCH", reason: "Does not match the application." }],
+        }}
+      />,
+    );
+    const row = screen.getByTestId("checklist-row-brand_name");
+    expect(row).toHaveTextContent("Does not match.");
+    expect(row).toHaveTextContent("Does not match the application.");
+    expect(row.className).toContain("checklist-row--mismatch");
+  });
 });

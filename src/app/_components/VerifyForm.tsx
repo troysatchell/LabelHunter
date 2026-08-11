@@ -52,6 +52,11 @@ export function VerifyForm({ submit = submitVerification }: VerifyFormProps) {
       return;
     }
 
+    // Build the FormData BEFORE `setPhase({ status: "loading" })` below, not
+    // after: every control sets `disabled={isLoading}`, and a disabled
+    // control is excluded from `new FormData(form)` entirely (the HTML
+    // forms spec, not a React quirk) — reversing this order would silently
+    // send blank values for every field.
     const formData = new FormData(form);
     const values: VerifyFormValues = {
       imageFile,
@@ -197,11 +202,20 @@ export function VerifyForm({ submit = submitVerification }: VerifyFormProps) {
         </button>
       </form>
 
-      <div aria-live="polite">{isLoading && <p className="status-banner">Checking the label…</p>}</div>
+      {/* One persistent aria-live region, present from this component's
+          first render, not a new one mounted per phase — a live region only
+          reliably announces content ADDED to it after it already exists in
+          the DOM (WAI-ARIA), so the loading text and the results checklist
+          both render inside this same div rather than each other mounting
+          their own. `ErrorPanel` does not need this: `role="alert"` is its
+          own live-region equivalent, specified to announce correctly even
+          when the whole element is inserted at once. */}
+      <div aria-live="polite">
+        {isLoading && <p className="status-banner">Checking the label…</p>}
+        {phase.status === "success" && <ResultsChecklist result={phase.result} />}
+      </div>
 
       {phase.status === "error" && <ErrorPanel kind={phase.kind} message={phase.message} onRetry={() => void runSubmit()} />}
-
-      {phase.status === "success" && <ResultsChecklist result={phase.result} />}
     </>
   );
 }

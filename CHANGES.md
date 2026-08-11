@@ -4,6 +4,57 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-465 — PR review round 1: orchestrator triage, 9 fixed, 0 dismissed (2026-08-11)
+
+**What changed.** The worktree's captured CodeRabbit review (`.factory/coderabbit.json`, 9
+findings) was triaged against current code, not against the review text's own instructions.
+Every finding checked out as real and current — none was stale or a misread. All 9 fixed.
+
+Fixed, real:
+
+- `verify-client.ts` (critical): the default `fetchImpl` was a bare `fetch` reference. Some
+  engines throw "Illegal invocation" when `fetch` runs detached from its receiver. Fixed:
+  `globalThis.fetch.bind(globalThis)`. Added a test that stubs `globalThis.fetch` and confirms
+  the default path works with no injected `fetchImpl`.
+- `verify-client.ts` (major): `isVerifyErrorResponse` accepted any object with an `error` key,
+  with no check that `kind` was a real `VerifyErrorKind` or that `message` was a string. A
+  successful response was cast to `VerifySuccessResponse` with zero shape check. Fixed: `kind`
+  now checks against a new `VERIFY_ERROR_KINDS` array (`types.ts`), and a new
+  `isVerifySuccessResponse` guard checks `applicationId`, `verificationId`, `labelVerdict`
+  (against `LABEL_VERDICTS`), and `fields` before trusting the body. Either check failing now
+  throws the same designed `VerifyClientError("SERVICE", …)` instead of letting a malformed
+  body reach `ResultsChecklist` and crash it. Four new tests cover the paths this closes.
+- `ResultsChecklist.tsx` (major): its own `aria-live="polite"` wrapper mounts fresh, with its
+  content already inside, only once a result exists — a live region that appears with content
+  already in it is not guaranteed to be announced (WAI-ARIA). Fixed: `ResultsChecklist` no
+  longer sets `aria-live` itself; `VerifyForm.tsx` now renders it inside the one persistent
+  `aria-live="polite"` region that already existed for the loading message, present from the
+  form's first render.
+- `parse-request.test.ts` (trivial, ×2): added a test for the inclusive alcohol-content
+  boundaries (0 and 100 both parse) and a test for a missing `netContentsUnit` (same rejection
+  message as an unrecognized one).
+- `ResultsChecklist.test.tsx` (trivial): added a test for a `MISMATCH` row — the suite
+  previously only exercised `MATCH` and `NEEDS_REVIEW`.
+- `VerifyForm.tsx` (trivial): added a comment on the `FormData` build explaining why it must
+  run before `setPhase({ status: "loading" })` — every control disables on loading, and a
+  disabled control is excluded from `FormData` by the HTML forms spec itself.
+- `CHANGES.md` (minor, ×2): reworded the provisional-comparators bullet for precision
+  (`provisional-comparators.ts` defines the default bundle; `route.ts` is the call site that
+  passes it into `routeLabel`) and rewrote the styling/jsdom/how-to-run prose to ASD-STE100 —
+  shorter sentences, one instruction each, no hedging, no embedded test/file counts that go
+  stale on the next edit.
+
+Not raised by this review, confirmed unchanged: no finding asked for the real field
+comparators or the warning subsystem. The provisional stand-in and the `warningResult: null`
+wiring stay exactly as this ticket's original entry describes — settled design, not something
+this round touched. `main` still does not have LH-013 merged (re-checked before this round).
+
+**How to run it.** `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` — all green.
+
+**Rollback.** `git revert` this commit. Independent of the original TRO-465 commit below;
+reverting this one alone restores the pre-triage behavior without touching the rest of the
+ticket.
+
 ## TRO-465 — LH-015: Verify screen + results checklist (2026-08-11)
 
 **What changed.** The single-label verify flow now runs end to end. It serves PRD §3.8, §5,
@@ -22,12 +73,13 @@ and TH-R1, TH-R3, TH-R20.
   Every rejection carries a specific, plain-language message.
 - `src/app/api/verify/types.ts` — shapes shared between the route and the UI.
 - `src/server/router/provisional-comparators.ts` — **LH-013 (TRO-463) has not merged.** This
-  is a minimal, clearly-labeled stand-in `FieldComparators` bundle: exact text match after a
-  trim and a casefold, and the router's own provisional numeric parser for ABV and net
-  contents. It never returns `MISMATCH` on its own (PRD §3.3: a real disagreement routes to
-  REVIEW, never a silent FAIL). It is the ONE place a `FieldComparators` value reaches
-  `routeLabel` in production code — swap this one import in `route.ts` for LH-013's real
-  bundle when it lands; nothing else changes.
+  file defines the default `FieldComparators` bundle: exact text match after a trim and a
+  casefold, and the router's own provisional numeric parser for ABV and net contents. It never
+  returns `MISMATCH` on its own (PRD §3.3: a real disagreement routes to REVIEW, never a
+  silent FAIL). `route.ts` is the only production call site that passes a `FieldComparators`
+  value into `routeLabel` — it does so through `VerifyRouteDeps.comparators`, defaulted to
+  this bundle. Swap the one import in `route.ts` for LH-013's real bundle when it lands;
+  nothing else changes.
 - **The government warning has no comparator yet either** (LH-020, gated by CP-2, not yet
   merged). `route.ts` passes `warningResult: null` to `routeLabel` — honestly, not a
   fabricated match. `resolveGovernmentWarningField` (LH-012) already handles a `null` result
@@ -48,19 +100,23 @@ and TH-R1, TH-R3, TH-R20.
   `VerifyClientError` with a `kind`: a structured error body from the server, a non-2xx
   response with none, a response this client cannot parse, a network failure, or a 45-second
   client-side timeout (`AbortController`) for the case the server never answers.
-- `src/app/globals.css` — USWDS-influenced styling: navy and white, 18px base type, high-
-  contrast focus rings, no purple-gradient AI slop, no emoji-driven design. Dark mode follows
-  `prefers-color-scheme` for users whose system asks for it.
+- `src/app/globals.css` — USWDS-influenced styling: navy and white, 18px base type, and
+  high-contrast focus rings. No purple-gradient AI slop. No emoji-driven design. Dark mode
+  follows `prefers-color-scheme`.
 
 **A jsdom finding, not a product bug.** `VerifyForm` reads the selected photo from the file
 input's own `.files` ref, not `new FormData(form).get("image")`. In this repo's jsdom test
 environment, a `FormData` built from a form element reconstructs its file entries with the
-right filename but `size: 0` — the underlying bytes are lost in that reconstruction. Reading
-the input directly sidesteps it and is arguably the more direct design regardless.
+right filename but `size: 0`. The reconstruction loses the underlying bytes. Reading the input
+directly avoids the problem.
 
-**How to run it.** `pnpm dev`, open `/`. `pnpm test -- src/app src/server/router/provisional-comparators.test.ts src/server/storage` for this ticket's own suites, or `pnpm test` for everything (309 tests, 31 files, all green). `pnpm build` succeeds; a manual smoke test against
-`pnpm start` confirmed the page renders and `/api/verify` returns the right JSON for a missing
-image and for an unreadable image, over a real HTTP request (no live Anthropic call).
+**How to run it.** Run `pnpm dev` and open `/`. Run
+`pnpm test -- src/app src/server/router/provisional-comparators.test.ts src/server/storage`
+for this ticket's own suites. Run `pnpm test` for the full suite; every test passes. Run
+`pnpm build`; it succeeds. A manual smoke test against `pnpm start` confirmed the page
+renders. The same test confirmed that `/api/verify` returns the correct JSON for a missing
+image and for an unreadable image, over a real HTTP request. The smoke test made no live
+Anthropic call.
 
 **What this ticket could not verify.** No live Haiku call, and no real photograph of a real
 label — every test mocks the Anthropic client (`makeMockMessage`, matching

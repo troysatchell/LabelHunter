@@ -13,9 +13,9 @@
  * same output bytes every run. Every step is a pure function — of the
  * case spec (render.ts's HTML) or explicit recorded parameters
  * (degrade.ts) — with no randomness, no clock, no network call.
- * `render.ts`'s font stacks name system fonts, not files committed to
- * the repo. A different OS can substitute different fonts and produce
- * different pixels (see render.ts's KNOWN LIMITATION comment).
+ * `render.ts`'s fonts are embedded `@font-face` `data:` URIs read from
+ * pinned npm packages (TRO-505), not system-font names. This build no
+ * longer depends on which fonts the running machine has installed.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";

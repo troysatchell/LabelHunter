@@ -151,11 +151,11 @@ that would actually run a batch (LH-041) do not exist yet. `src/worker/` is stil
 not latency-bound. A number extrapolated from the single-label figure above would not be a
 measurement. It would be a guess dressed as one. Deferred to LH-041.
 
-**Approximate real API spend.** This ticket's own work made 25 real Haiku calls in total. 20
-of those are the committed measurement. The other 5 are one-run plumbing smoke tests, run
-after each round of fixes to confirm the wiring still works end to end. PRD §4 estimates
-~$0.005 per label call. The running total is about $0.13, against the $25 build+eval spend
-cap.
+**Approximate real API spend.** This ticket's own work made 26 real Haiku calls in total. 20
+of those are the committed measurement. The other 6 are one-run plumbing smoke tests, run
+after each round of fixes that touched runtime behavior, to confirm the wiring still works
+end to end. PRD §4 estimates ~$0.005 per label call. The running total is about $0.13,
+against the $25 build+eval spend cap.
 
 **A note on running tests.** `pnpm test` reads `DATABASE_URL`. Every worktree gets its own
 database (`scripts/factory/worktree.sh`). Running tests with `DATABASE_URL` unset, or
@@ -297,12 +297,44 @@ of the fix two paragraphs above this one: 21 rows for TRO-471, 3 `source: "pr"` 
 this entry's round 1) and 18 `source: "local-cli"` (10 from the original entry's three
 rounds, 8 from this entry's three follow-up rounds).
 
+**A fourth follow-up local pass found 4 more — 1 fixed, 3 dismissed as a self-referential
+loop.** Also `.factory/coderabbit.json`, not GitHub.
+
+- **`scripts/latency/measure.ts` — a malformed 200 response body would have been reported as
+  a successful run.** `runOnce` cast the parsed body straight into the expected shape with a
+  bare `as`, never checking it. `route.ts`'s own type system rules this out today — every real
+  200 response it sends already matches the shape. That is not the same as this file checking
+  it. This repo's other boundaries (`parseVerifyFormData`, `parseExtractionResponse`) all
+  validate an untrusted value instead of assuming its shape; this one did not. Fixed:
+  extracted `scripts/latency/response.ts`'s `parseVerifySuccessBody`, a pure shape check with
+  no live call. A body missing `applicationId`, with a non-string `labelVerdict`, or with a
+  `headlineReason` that is neither `null` nor a string, now returns a failed run with a clear
+  error instead of `ok: true` and `undefined` fields baked into the committed evidence.
+  `response.test.ts` adds 11 cases. Confirmed red first: temporarily reinstated the bare cast,
+  watched 8 of the 11 assertions fail with the raw malformed object instead of `null`, then
+  restored the fix and confirmed all 11 pass.
+- **Dismissed, all three, as a self-referential loop:** three findings asking for the exact
+  ledger count above to be corrected again (to 22, then a fourth time to re-sync
+  `factory/review-findings.jsonl`'s own summary of itself). Recording any one of them adds
+  another row, which invalidates the number the finding just asked to fix — a loop with no
+  fixed point. The note above already explains this and points at a live `grep` command
+  instead of a number frozen at write time. Continuing to chase this specific class stops
+  here, by engineering judgment, not oversight: `factory/review-findings.jsonl` remains the
+  real, correct, live source of truth throughout, whatever number this prose last mentioned.
+
+**Ledger.** The response-validation fix recorded under `boundary-validation` (a category this
+ledger already uses several times over — see `report`'s recurrence view). The three
+self-referential loop findings recorded as `dismissed` under a new `meta-ledger-loop`
+category, named once, deliberately, rather than forced into an existing slug that does not
+fit — a category that should never need a second entry on any other ticket.
+
 **How to run it.** `pnpm test` covers every fix in this entry (`percentile.test.ts`,
-`cleanup.test.ts`) — no live call, no real money. `pnpm latency:check --runs=1` smoke-tests
-the wiring end to end with one real API call. This round ran that smoke test twice: once
-after wiring `cleanup.ts` in, once more after the follow-up local pass's `closePoolError` and
-`Pool` changes. The committed 20-run `results/single-label-verify.json` is unaffected by
-either — restored from git each time, same as every prior round.
+`cleanup.test.ts`, `response.test.ts`) — no live call, no real money. `pnpm latency:check
+--runs=1` smoke-tests the wiring end to end with one real API call. This entry ran that smoke
+test three times in total, once per round that touched runtime behavior: after wiring
+`cleanup.ts` in, after the `closePoolError`/`Pool` follow-up, and after this
+`parseVerifySuccessBody` follow-up. The committed 20-run `results/single-label-verify.json` is
+unaffected by any of them — restored from git each time.
 
 **Rollback.** `git revert` this commit. `scripts/latency/cleanup.ts` and `cleanup.test.ts` are
 new files with no other caller; deleting them and reverting `measure.ts`'s import and cleanup

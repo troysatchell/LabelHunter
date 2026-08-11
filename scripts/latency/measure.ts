@@ -73,6 +73,7 @@ import { saveLabelImage } from "../../src/server/storage/local-file-storage";
 import { parseArgs } from "./args";
 import { cleanupScratchDirAndPool } from "./cleanup";
 import { summarizeLatencies, type LatencySummary } from "./percentile";
+import { parseVerifySuccessBody } from "./response";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const RESULTS_PATH = path.resolve(REPO_ROOT, "scripts/latency/results/single-label-verify.json");
@@ -171,11 +172,21 @@ async function runOnce(
           : `HTTP ${response.status}`;
       return { index, durationMs, ok: false, httpStatus: response.status, error: message };
     }
-    const success = body as {
-      applicationId: number;
-      labelVerdict: string;
-      headlineReason: string | null;
-    };
+    // `route.ts`'s own type system guarantees this shape on every real 200
+    // response today, but a bare cast would still trust an untyped runtime
+    // value without checking it — the exact anti-pattern this repo's other
+    // boundaries (parseVerifyFormData, parseExtractionResponse) avoid.
+    // Validate rather than assume (standing rule 13).
+    const success = parseVerifySuccessBody(body);
+    if (!success) {
+      return {
+        index,
+        durationMs,
+        ok: false,
+        httpStatus: response.status,
+        error: "measure.ts: 200 response body did not match the expected VerifySuccessBody shape",
+      };
+    }
     return {
       index,
       durationMs,

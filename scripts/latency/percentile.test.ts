@@ -69,6 +69,15 @@ describe("percentile — nearest-rank, PRD §3.8's p50/p95", () => {
     expect(() => percentile([100, Infinity, 200], 50)).toThrow(RangeError);
     expect(() => percentile([100, -Infinity, 200], 95)).toThrow(RangeError);
   });
+
+  it("rejects a negative entry — a duration cannot be less than zero", () => {
+    expect(() => percentile([100, -1, 200], 50)).toThrow(RangeError);
+    expect(() => percentile([100, -1, 200], 50)).toThrow(/negative/);
+  });
+
+  it("accepts zero — an immediate, near-instant call is a real, valid duration", () => {
+    expect(percentile([0, 100, 200], 50)).toBe(100);
+  });
 });
 
 describe("summarizeLatencies — count/min/max/mean/p50/p95 from one function call", () => {
@@ -104,5 +113,10 @@ describe("summarizeLatencies — count/min/max/mean/p50/p95 from one function ca
   it("rejects a NaN or Infinity entry — a bad duration must fail loudly, not corrupt the report", () => {
     expect(() => summarizeLatencies([2000, NaN, 4000])).toThrow(RangeError);
     expect(() => summarizeLatencies([2000, Infinity, 4000])).toThrow(RangeError);
+  });
+
+  it("rejects a negative entry — a duration cannot be less than zero", () => {
+    expect(() => summarizeLatencies([2000, -1, 4000])).toThrow(RangeError);
+    expect(() => summarizeLatencies([2000, -1, 4000])).toThrow(/negative/);
   });
 });

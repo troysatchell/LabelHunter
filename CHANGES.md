@@ -195,16 +195,23 @@ suggested diff alone. All three named a real defect.
   measurements in one sentence.** The `percentile.ts` bullet was the named example. Split into
   single-fact sentences (see that bullet above, and the two triage bullets below it). No fact,
   count, or number changed.
-- **`scripts/latency/percentile.ts` — `percentile` and `summarizeLatencies` accepted a `NaN`
-  or `Infinity` entry.** `NaN` sorts unpredictably: `Array.prototype.sort`'s comparator itself
-  returns `NaN` for a `NaN` operand, and the spec treats that as "equal," so the entry does
-  not settle to either end of the sort. `Infinity` sorts fine but `JSON.stringify` writes it
-  as `null` in the committed report — a bad duration would silently disappear rather than
-  fail loudly. Fixed: both functions now reject any non-finite entry with a `RangeError`,
-  checked before any sort, min/max, or sum runs. `percentile.test.ts` adds direct cases for
-  `percentile` and `summarizeLatencies`, both for `NaN` and for `Infinity`. Confirmed red
-  first — the three new assertions failed with "expected function to throw an error, but it
-  didn't" before the guard existed.
+- **`scripts/latency/percentile.ts` — `percentile` and `summarizeLatencies` accepted a `NaN`,
+  `Infinity`, or negative entry.** Three separate facts, three separate risks. `NaN` sorts
+  unpredictably. `Array.prototype.sort`'s own comparator returns `NaN` for a `NaN` operand.
+  The spec treats that as "equal." The entry never settles to either end of the sort.
+  `Infinity` sorts fine on its own. `JSON.stringify` writes it as `null` in the committed
+  report, though — a bad duration would silently disappear rather than fail loudly. A negative
+  number is not a real duration at all: `performance.now()` is monotonic within one process,
+  so a legitimate elapsed-time measurement can never go below zero. Fixed: both functions
+  share one new `assertValidDurations` check. It runs before any sort, min/max, or sum. It
+  rejects any entry that is not finite, and separately rejects any entry below zero, each with
+  its own `RangeError` message. `percentile.test.ts` adds direct cases for `percentile` and
+  `summarizeLatencies`, covering `NaN`, `Infinity`, and a negative value. It also adds one
+  case confirming zero itself is accepted — a near-instant call is a real, valid duration, not
+  an edge case to reject. Confirmed red first, twice: once for the `NaN`/`Infinity` guard,
+  once more for the negative-value guard added in a follow-up local pass. Each time, the new
+  assertions failed with "expected function to throw an error, but it didn't" before its guard
+  existed.
 - **`scripts/latency/measure.ts` — a scratch-directory cleanup failure could lose the whole
   measurement.** The cleanup `finally` block ran `rm(scratchDir, ...)` then `pool.end()`. A
   prior fix (this ticket's second local round) nested those two calls so `pool.end()` always
@@ -249,8 +256,30 @@ part of round 1 above. All three were real.
   This is the same defect family recurring in a second file; the ledger records it under the
   existing `unhandled-error`/`resource-timeout` slugs rather than a new one.
 
-**Ledger.** All six findings recorded in `factory/review-findings.jsonl` — the first three
-`source: "pr"`, `pr: "13"`; the follow-up three `source: "local-cli"`.
+**A second follow-up local pass found 4 more — 3 fixed, 1 dismissed.** Also from
+`.factory/coderabbit.json`, not GitHub — a fifth local round.
+
+- **CHANGES.md — the `percentile.ts`/`summarizeLatencies` bullet above was still dense.**
+  Rewritten again, into short sentences (see that bullet). No fact or number changed.
+- **`scripts/latency/percentile.ts` — `percentile` and `summarizeLatencies` still accepted a
+  negative entry.** The `NaN`/`Infinity` guard above did not check for a negative number.
+  `performance.now()` is monotonic within one process, so a real elapsed-time measurement can
+  never be negative. Fixed: extracted the shared `assertValidDurations` check described above,
+  now rejecting a negative entry too. Two new `percentile.test.ts` cases (one per function)
+  confirmed red first, plus one case confirming zero itself still passes.
+- **Dismissed:** a claim that the default case, `case-01-clean-match-spirits`, has no
+  committed image for `measure.ts`'s `readFileSync` to read. Checked against the actual repo,
+  not assumed: `golden-set/images/case-01-clean-match-spirits.jpg` exists (43 KB, committed).
+  The finding likely confused the manifest's `verified: false` field with a missing file.
+  `loader.ts`'s own validation only requires `verified: true` for a `provenance:
+  "ai-generated"` case; this case's `provenance` is `"rendered"`, so that rule does not apply
+  to it at all. Six real runs against this exact default case, across this ticket's own
+  sessions, already read this file successfully — the strongest evidence available that it
+  exists and works.
+
+**Ledger.** Ten findings total recorded in `factory/review-findings.jsonl` across both PR and
+local sources — three `source: "pr"`, `pr: "13"`; seven `source: "local-cli"` across two
+follow-up rounds.
 
 **How to run it.** `pnpm test` covers every fix in this entry (`percentile.test.ts`,
 `cleanup.test.ts`) — no live call, no real money. `pnpm latency:check --runs=1` smoke-tests

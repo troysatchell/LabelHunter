@@ -10,6 +10,8 @@
  * both renders in that test — no network call, since the HTML is fully
  * inline and Chromium is already cached locally for `pnpm test:e2e`.
  */
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import sharp from "sharp";
 import { loadGoldenSetManifest } from "../../src/lib/golden-set/loader";
@@ -111,6 +113,59 @@ describe("buildLabelHtml", () => {
   });
 });
 
+describe("buildLabelHtml font embedding (TRO-505)", () => {
+  // Resolves and reads each @fontsource file itself, independently of
+  // render.ts's own `fontFileDataUri` helper. This catches a wrong subpath
+  // or a stale/truncated encoding in render.ts — it does not just repeat
+  // render.ts's own claim about itself back at it.
+  const fontRequire = createRequire(import.meta.url);
+
+  function expectedDataUri(packageSubpath: string): string {
+    const bytes = readFileSync(fontRequire.resolve(packageSubpath));
+    return `data:font/woff2;base64,${bytes.toString("base64")}`;
+  }
+
+  it("embeds each font family's real @fontsource file bytes as a base64 data URI", () => {
+    const html = buildLabelHtml(renderableCases[0]);
+
+    const expected: Record<string, string> = {
+      "Inter 400": expectedDataUri("@fontsource/inter/files/inter-latin-400-normal.woff2"),
+      "Inter 500": expectedDataUri("@fontsource/inter/files/inter-latin-500-normal.woff2"),
+      "Inter 700": expectedDataUri("@fontsource/inter/files/inter-latin-700-normal.woff2"),
+      "Dancing Script 700": expectedDataUri(
+        "@fontsource/dancing-script/files/dancing-script-latin-700-normal.woff2",
+      ),
+      "UnifrakturMaguntia 400": expectedDataUri(
+        "@fontsource/unifrakturmaguntia/files/unifrakturmaguntia-latin-400-normal.woff2",
+      ),
+    };
+
+    for (const [label, dataUri] of Object.entries(expected)) {
+      expect(
+        html.includes(dataUri),
+        `${label}: rendered HTML must embed this exact font file as a data URI`,
+      ).toBe(true);
+    }
+  });
+
+  it("never references a pre-TRO-505 system font (no OS font substitution to fall back to)", () => {
+    const html = buildLabelHtml(renderableCases[0]);
+    const preTro505SystemFonts = [
+      "Helvetica Neue",
+      "Brush Script MT",
+      "Apple Chancery",
+      "Snell Roundhand",
+      '"Blackletter"',
+    ];
+    for (const systemFont of preTro505SystemFonts) {
+      expect(
+        html.includes(systemFont),
+        `must not reference pre-TRO-505 system font ${systemFont}`,
+      ).toBe(false);
+    }
+  });
+});
+
 describe("renderLabelImage determinism", () => {
   let renderer: LabelRenderer;
 
@@ -174,6 +229,39 @@ describe("renderLabelImage determinism", () => {
       const secondRaw = await sharp(second).raw().toBuffer();
 
       expect(firstRaw.equals(secondRaw)).toBe(true);
+    },
+    60_000,
+  );
+
+  it(
+    "renders the two embedded-font odd-typography cases to identical decoded pixels across two independent browser instances (TRO-505)",
+    async () => {
+      // The determinism test above only exercises the base Inter @font-face
+      // path (case-01). These two cases are the ones that actually load the
+      // newly-vendored Dancing Script and UnifrakturMaguntia @font-face
+      // rules — the specific paths a font-substitution regression would hit
+      // first, and the ones the pre-TRO-505 KNOWN LIMITATION named directly.
+      const scriptCase = renderableCases.find(
+        (c) => c.caseId === "case-25-odd-typography-script-brand",
+      );
+      const blackletterCase = renderableCases.find(
+        (c) => c.caseId === "case-26-odd-typography-blackletter-class-type",
+      );
+      expect(scriptCase).toBeDefined();
+      expect(blackletterCase).toBeDefined();
+
+      for (const testCase of [scriptCase!, blackletterCase!]) {
+        const first = await renderLabelImage(testCase, renderer.page);
+        const second = await renderLabelImage(testCase); // launches its own browser
+
+        const firstRaw = await sharp(first).raw().toBuffer();
+        const secondRaw = await sharp(second).raw().toBuffer();
+
+        expect(
+          firstRaw.equals(secondRaw),
+          `${testCase.caseId}: must render identically across two independent browser instances`,
+        ).toBe(true);
+      }
     },
     60_000,
   );

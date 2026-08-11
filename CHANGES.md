@@ -4,6 +4,92 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-505 — golden renderer fonts: embedded, not system (2026-08-11)
+
+**What changed.** `scripts/golden/render.ts` used three system-font stacks: Helvetica/Arial,
+plus generic `cursive`/`fantasy` fallbacks for the two odd-typography cases. A different OS
+could substitute different fonts for those generic fallbacks. `render.ts`'s own KNOWN
+LIMITATION comment named this gap directly (TH-R17: this is a correctness gap, not cosmetic).
+Design doc §2 says fonts must be committed to the repo. This ticket closes that gap.
+
+Every font is now a pinned npm package. `render.ts` reads each font's real WOFF2 file and
+embeds it as a base64 `data:` URI inside a `@font-face` block. Chromium never asks the host OS
+for a font substitution. `pnpm-lock.yaml` pins the exact bytes, the same way it pins every
+other dependency.
+
+Fonts and licenses, each verified two ways: the package's own `package.json` `license` field,
+and the actual `LICENSE` file text each package ships (confirmed SIL Open Font License 1.1,
+not assumed from the metadata field alone):
+- **Inter**, OFL-1.1, via `@fontsource/inter` 5.3.0. The base sans-serif for brand, class/type,
+  content, and warning text. Weights 400, 500, 700.
+- **Dancing Script**, OFL-1.1, via `@fontsource/dancing-script` 5.3.0. The script-style "odd
+  typography" brand case (case-25). Weight 700.
+- **UnifrakturMaguntia**, OFL-1.1, via `@fontsource/unifrakturmaguntia` 5.3.0. The blackletter
+  "odd typography" class/type case (case-26). This is the exact font `render.ts` already named
+  as a *system*-font fallback before this ticket. It ships as its own installable, OFL-licensed
+  package — checked before looking for an alternative. Weight 400, its only static weight.
+
+Case-26's class/type now renders at font-weight 400, not the usual 500. UnifrakturMaguntia
+ships only one weight. Requesting weight 500 against a single-weight font would make Chromium
+synthesize a bold cut on its own — different glyph metrics, never requested on purpose.
+Rendering at the font's real weight keeps the glyph metrics exactly what the vendored file
+ships. All three packages are `devDependencies` — build-time tooling for `scripts/golden/`
+only, the same category as `@playwright/test` and `tsx`, never imported by the running app.
+
+**Re-rendered the golden set.** All 29 committed images, via `pnpm golden:build`. Total size:
+1,126,682 bytes (1100.3 KB), up from 1,104,318 bytes (1078.4 KB) before this ticket — real font
+metrics differ slightly from the OS's substituted ones, same JPEG quality (82, mozjpeg). Every
+image stays well under the ~500 KB-per-image target. `git diff --stat` against the previous
+commit confirms both totals directly, file by file.
+
+Spot-checked by eye: case-01 (clean baseline), case-14 (the `STONE'S THROW` apostrophe),
+case-17 (glare), case-20 (severe rotation plus blur), case-23 and case-24 (tiny warning text),
+and case-25 and case-26 (the two odd-typography cases). Text stays inside its `LABEL_REGIONS`
+box in every one. Nothing overflows or truncates. The blackletter and script faces render real
+glyphs, not placeholder boxes.
+
+**Determinism, verified on this machine.** Ran `pnpm golden:build` twice. Each run launches a
+fresh Chromium process (`createLabelRenderer` in `build.ts`'s `main`). All 29 output images
+were byte-identical across both runs, confirmed with `cmp` on every file, not just a file-count
+check. Not verified: cross-machine determinism. This sandbox is one machine. The honest claim
+is "no longer dependent on OS font substitution, by construction" — every font is now
+file-embedded, not system-referenced. "Verified cross-machine" would overstate what this
+ticket actually checked.
+
+**Tests.** `scripts/golden/render.test.ts` gained a `buildLabelHtml font embedding (TRO-505)`
+block, two tests:
+- Confirms the rendered HTML embeds each of the five real `@fontsource` files' exact bytes as
+  a base64 `data:` URI. The test reads those files itself, independently of `render.ts`'s own
+  `fontFileDataUri` helper, so a wrong path or a stale encoding in `render.ts` would still fail
+  it.
+- Confirms the rendered HTML never references any of the five pre-TRO-505 system-font names:
+  Helvetica Neue, Brush Script MT, Apple Chancery, Snell Roundhand, Blackletter.
+
+Both were confirmed red-first. Checked out the pre-TRO-505 `render.ts` from `HEAD`, ran both
+tests against it, restored the new file after. The embedding test failed on a missing Inter
+data URI. The no-system-font test failed on `"Helvetica Neue"` being present. Both failed for
+the reason this ticket claims to fix, not an import error or a typo.
+
+The existing Chromium determinism suite (`describe("renderLabelImage determinism", ...)`)
+gained a third case. Before this ticket, its two independent-browser-instance tests only
+exercised case-01 — plain Inter, the base path. The new test renders case-25 and case-26, the
+two cases that load the Dancing Script and UnifrakturMaguntia `@font-face` rules, across two
+independent browser instances each. Same result: byte-identical decoded pixels.
+
+**How to run it.** `pnpm golden:build` regenerates every image from the current manifest.
+`pnpm test -- scripts/golden` runs the renderer and degrader suites: 11 tests in
+`render.test.ts`, 21 in `degrade.test.ts`, all passing, `degrade.test.ts` unchanged by this
+ticket.
+
+**Rollback.** `git revert` this ticket's commit(s). Reverting restores the three system-font
+stacks and removes the three `@fontsource/*` devDependencies from `package.json`. Run `pnpm
+install` and then `pnpm golden:build` again after a revert — the 29 committed images are pixel
+data, not source, so they need a fresh render to match the reverted code.
+
+**Not done here (explicitly out of scope).** LH-006's planned CI smoke test — render one label
+headlessly, then run `verify.ts` — is not built by this ticket. This ticket only removes the
+font-determinism blocker LH-006 was waiting on. `verify.ts` itself is still LH-006's job.
+
 ## TRO-497 — PR review round 4: local CodeRabbit pass, 4 fixed, 1 dismissed (2026-08-11)
 
 **What changed.** A fresh local CodeRabbit pass posted 5 findings against the round-3 fix

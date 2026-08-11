@@ -69,6 +69,20 @@ describe("checkAbvStructural — CP-1 §5.3 AMBIGUOUS_ABV, the named proof-arith
     const result = checkAbvStructural(abvField({ value: null }), 0.9, 45, 0);
     expect(result.hit).toBe(false);
   });
+
+  it("fires the tolerance check on a PROOF-ONLY label too, not only a label that states a percent (CodeRabbit finding)", () => {
+    // "80 Proof" states no percent directly — 80 proof is 40% (27 CFR 5.1).
+    // The application declares 45%. Before this fix, the tolerance check
+    // only ran when `parsed.percent !== null`, so a proof-only reading
+    // silently skipped the application comparison entirely.
+    const result = checkAbvStructural(abvField({ value: "80 Proof" }), 0.5, 45, 0);
+    expect(result.hit).toBe(true);
+  });
+
+  it("does not fire the tolerance check on a proof-only label that agrees with the application", () => {
+    const result = checkAbvStructural(abvField({ value: "90 Proof" }), 0.5, 45, 0);
+    expect(result.hit).toBe(false);
+  });
 });
 
 describe("checkNetContentsStructural — CP-1 §5.3 AMBIGUOUS_NET_CONTENTS", () => {

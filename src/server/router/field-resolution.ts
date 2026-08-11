@@ -145,8 +145,14 @@ export function checkAbvStructural(
     if (Math.abs(parsed.proof - 2 * parsed.percent) > 0.1) return { hit: true };
   }
 
-  if (parsed.percent !== null && applicationAbvPercent !== undefined) {
-    const exceedsTolerance = Math.abs(parsed.percent - applicationAbvPercent) > tolerance;
+  // `abvAsPercent`, not `parsed.percent` directly — a proof-only label
+  // (e.g. "80 Proof", no "%" stated) has `parsed.percent === null` even
+  // though it states a perfectly comparable value once converted (27 CFR
+  // 5.1). Gating on `parsed.percent !== null` alone silently skipped this
+  // whole check for a proof-only reading (CodeRabbit finding).
+  const labelPercent = abvAsPercent(parsed);
+  if (labelPercent !== null && applicationAbvPercent !== undefined) {
+    const exceedsTolerance = Math.abs(labelPercent - applicationAbvPercent) > tolerance;
     if (exceedsTolerance && confidence < MISMATCH_ESCALATION_CEILING) return { hit: true };
   }
 

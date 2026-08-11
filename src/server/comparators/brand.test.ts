@@ -56,6 +56,15 @@ describe("compareBrandOrClass — CP-1 §5.3's threshold table", () => {
     expect(result.verdict).toBe("NEEDS_REVIEW");
   });
 
+  it("NEEDS_REVIEW when both values normalize to an empty string — not a false MATCH (CodeRabbit finding)", () => {
+    // "..." and "---" both reduce to "" once punctuation is dropped
+    // (normalize.ts step 6). Two empty strings score 1.0 similarity
+    // (similarity.ts treats "nothing to disagree about" as identical) —
+    // without this guard, two garbage/punctuation-only reads would MATCH.
+    const result = compareBrandOrClass(field("..."), "---", CONTEXT);
+    expect(result.verdict).toBe("NEEDS_REVIEW");
+  });
+
   it("never returns MISMATCH — brand/class equivalence is TH-R8's judgment regime, not TH-R9's exact one", () => {
     const cases: Array<[string, string]> = [
       ["Stone's Throw", "Stone's Throw"],

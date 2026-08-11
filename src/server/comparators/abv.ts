@@ -106,11 +106,26 @@ export function compareAbv(
     return { verdict: "NEEDS_REVIEW", note: "No label value to compare." };
   }
 
-  const labelPercent = abvAsPercent(parseAbv(extracted.value));
+  const parsed = parseAbv(extracted.value);
+  const labelPercent = abvAsPercent(parsed);
   const applicationPercent = typeof applicationValue === "number" ? applicationValue : null;
 
   if (labelPercent === null || applicationPercent === null) {
     return { verdict: "NEEDS_REVIEW", note: "Could not read an alcohol percent to compare." };
+  }
+
+  // CP-1 §5.3's own named case: a label stating BOTH a percent and a proof
+  // that disagree ("45% Alc./Vol. (100 Proof)") is self-contradictory on
+  // its own terms, independent of what the application declares. Checking
+  // this here — not only in the router's separate structural check
+  // (field-resolution.ts's checkAbvStructural) — keeps this comparator
+  // correct as a standalone pure function, not merely correct once wrapped
+  // by the router's own redundant check.
+  if (parsed.percent !== null && parsed.proof !== null && !proofMatchesPercent(parsed.percent, parsed.proof)) {
+    return {
+      verdict: "NEEDS_REVIEW",
+      note: `Label states ${parsed.percent}% ABV and ${parsed.proof} proof, which do not agree — proof should be twice the percent.`,
+    };
   }
 
   if (Math.abs(labelPercent - applicationPercent) <= ABV_COMPARE_EPSILON) {

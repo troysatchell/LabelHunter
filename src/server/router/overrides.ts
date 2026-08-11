@@ -12,7 +12,7 @@
  * extractor's own tests (LH-011) check its output is well-SHAPED; they do
  * not check it is well-EVIDENCED. That is this ticket's job.
  */
-import { parseAbv, type ParsedAbv } from "../comparators/abv";
+import { abvAsPercent, parseAbv, type ParsedAbv } from "../comparators/abv";
 import { convertNetContentsToMl, parseNetContents, type ParsedNetContents } from "../comparators/net-contents";
 import type { ExtractedField, ExtractedGovernmentWarning } from "../extractor/types";
 import { isValidConfidence } from "./confidence";
@@ -56,9 +56,24 @@ function numbersClose(a: number, b: number | null, epsilon = 0.01): boolean {
   return b !== null && Math.abs(a - b) <= epsilon;
 }
 
+/**
+ * `abvAsPercent`, not a per-axis (percent-vs-percent, proof-vs-proof)
+ * comparison. The value and the evidence do not have to state the SAME
+ * axis to agree — "45%" (value) and "90 Proof" (evidence) are the same
+ * reading on the canonical percent scale (27 CFR 5.1). A per-axis-only
+ * comparison (CodeRabbit finding; the same bug class TRO-462's own
+ * `abvAlternatesConflict` fixed for the alternates check) would compare
+ * `evidenceParsed.percent` — `null`, since the evidence states only proof —
+ * against the value's percent, and reject a genuinely well-evidenced
+ * reading. Catching a percent/proof SELF-contradiction within one field's
+ * own value is `checkAbvStructural` and `compareAbv`'s job, not this
+ * override's — this check only asks whether the evidence supports the
+ * value's canonical number, not whether the model's own two axes agree.
+ */
 function numericEvidenceSupportsAbv(value: string, evidence: string): boolean {
   const valueParsed: ParsedAbv = parseAbv(value);
-  if (valueParsed.percent === null && valueParsed.proof === null) {
+  const valuePercent = abvAsPercent(valueParsed);
+  if (valuePercent === null) {
     // The value itself does not parse under the ABV grammar.
     // `AMBIGUOUS_ABV` (field-resolution.ts) flags the parse failure on its
     // own; this override only checks for a hallucinated value, so it falls
@@ -66,9 +81,7 @@ function numericEvidenceSupportsAbv(value: string, evidence: string): boolean {
     return evidenceSupportsTextValue(value, evidence);
   }
   const evidenceParsed = parseAbv(evidence);
-  const percentSupported = valueParsed.percent === null || numbersClose(valueParsed.percent, evidenceParsed.percent);
-  const proofSupported = valueParsed.proof === null || numbersClose(valueParsed.proof, evidenceParsed.proof);
-  return percentSupported && proofSupported;
+  return numbersClose(valuePercent, abvAsPercent(evidenceParsed));
 }
 
 /** A small, absolute mL tolerance for comparing `value` against `evidence`

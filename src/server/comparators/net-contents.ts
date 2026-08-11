@@ -79,7 +79,14 @@ function normalizeUnitBlob(blob: string): string {
     .replace(/\s+/g, " ");
 }
 
-const NUMBER_PATTERN = /\d+(?:\.\d+)?/g;
+// A comma-grouped integer part (US convention: exactly 3 digits per group,
+// e.g. "1,000" or "12,345") with an optional plain decimal tail. This
+// deliberately does NOT accept a comma as a decimal separator: "1,5" has no
+// valid 3-digit group after the comma, so the grouping alternative fails to
+// consume it, and the plain `\d+` branch matches only "1" — a US label's
+// decimal point is always a period, never a comma, so a comma-decimal
+// (European convention) is not silently misread as a US decimal.
+const NUMBER_PATTERN = /\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?/g;
 
 /**
  * Reads a number and a recognized unit out of free text, e.g. `"750 mL"` ->
@@ -100,7 +107,7 @@ export function parseNetContents(text: string): ParsedNetContents | null {
     const trailingBlob = afterNumber.match(/^\s*([a-zA-Z. ]*)/)?.[1] ?? "";
     const unit = matchUnitAtStart(normalizeUnitBlob(trailingBlob));
     if (unit) {
-      return { value: Number(numberText), unit };
+      return { value: Number(numberText.replace(/,/g, "")), unit };
     }
   }
   return null;
@@ -150,7 +157,14 @@ export function compareNetContents(
 
   const labelMl = convertNetContentsToMl(labelParsed);
   const applicationMl = convertNetContentsToMl(applicationParsed);
-  const fractionDiff = applicationMl === 0 ? Infinity : Math.abs(labelMl - applicationMl) / applicationMl;
+  // Equal quantities always MATCH, checked before the fraction — dividing
+  // by `applicationMl` when it is 0 is defined as Infinity below so a REAL
+  // difference against a zero-stated application is never silently
+  // accepted, but that same Infinity would otherwise also fire when the
+  // label states 0 too, where there is no difference at all (CodeRabbit
+  // finding).
+  const fractionDiff =
+    labelMl === applicationMl ? 0 : applicationMl === 0 ? Infinity : Math.abs(labelMl - applicationMl) / applicationMl;
 
   if (fractionDiff <= NET_CONTENTS_COMPARE_TOLERANCE_FRACTION) {
     return { verdict: "MATCH" };

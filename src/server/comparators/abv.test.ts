@@ -110,6 +110,17 @@ describe("compareAbv — MATCH/MISMATCH against the application's declared perce
     expect(result.verdict).toBe("NEEDS_REVIEW");
   });
 
+  it("NEEDS_REVIEW for a self-contradictory label, even when its percent happens to equal the application's (CodeRabbit finding)", () => {
+    // CP-1 §5.3 AMBIGUOUS_ABV's own named case: "45% Alc./Vol. (100 Proof)"
+    // — 100 is not 2*45. compareAbv must catch this itself, as a pure
+    // function, rather than relying only on the router's separate
+    // structural check (field-resolution.ts's checkAbvStructural) to
+    // override a comparator that reported a clean MATCH.
+    const result = compareAbv(field("45% Alc./Vol. (100 Proof)"), 45, CONTEXT);
+    expect(result.verdict).toBe("NEEDS_REVIEW");
+    expect(result.note).toMatch(/proof/i);
+  });
+
   it("NEEDS_REVIEW when there is no label value, or no application value to compare", () => {
     expect(compareAbv(field(null), 45, CONTEXT).verdict).toBe("NEEDS_REVIEW");
     expect(compareAbv(field("45% Alc./Vol."), "not a number" as unknown as number, CONTEXT).verdict).toBe(

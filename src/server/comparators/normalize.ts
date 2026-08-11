@@ -33,10 +33,22 @@ function caseFold(text: string): string {
   return text.toLowerCase().replace(/[ßẞ]/g, "ss");
 }
 
-/** Step 3: the three variants CP-1 §5.3 names (straight apostrophe,
+/**
+ * Step 3: the three variants CP-1 §5.3 names (straight apostrophe,
  * backtick, acute accent) fold to the straight apostrophe. Implemented
  * exactly as quoted — not expanded to cover every Unicode apostrophe-like
- * character (see this ticket's final report for the gap this leaves). */
+ * character.
+ *
+ * Known, measured gap: U+2019 RIGHT SINGLE QUOTATION MARK ("Stone’s Throw",
+ * a stylized apostrophe a real vision-model extraction may emit) is NOT one
+ * of the three named variants, so it is not folded here — step 6 drops it
+ * as ordinary punctuation instead. Measured effect: `"Stone’s Throw"`
+ * against `"Stone's Throw"` scores ~0.923 similarity (`brand.ts`'s
+ * `similarity.ts`), just under the 0.95 MATCH threshold — this pair routes
+ * to NEEDS_REVIEW rather than a clean MATCH. See `normalize.test.ts`'s
+ * pinning test for this file's own record of the gap, and this ticket's
+ * final report for the open recommendation to CP-1's owner.
+ */
 function foldApostropheVariants(text: string): string {
   return text.replace(/[`´]/g, "'");
 }

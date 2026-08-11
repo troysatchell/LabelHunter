@@ -33,7 +33,22 @@ export function compareBrandOrClass(
 
   const labelText = extracted.value;
   const applicationText = String(applicationValue);
-  const score = similarity(normalizeForFuzzyMatch(labelText), normalizeForFuzzyMatch(applicationText));
+  const normalizedLabel = normalizeForFuzzyMatch(labelText);
+  const normalizedApplication = normalizeForFuzzyMatch(applicationText);
+
+  // `similarity("", "")` is 1 by definition (nothing to disagree about —
+  // see similarity.ts) — without this guard, two punctuation-only reads
+  // that both normalize to "" (e.g. "..." and "---") would score a false
+  // MATCH. An empty normalized value has nothing left to judge, so it goes
+  // to REVIEW like any other value this comparator cannot decide.
+  if (normalizedLabel.length === 0 || normalizedApplication.length === 0) {
+    return {
+      verdict: "NEEDS_REVIEW",
+      note: "The label or application text has no comparable content once formatting is stripped.",
+    };
+  }
+
+  const score = similarity(normalizedLabel, normalizedApplication);
 
   if (score >= BRAND_CLASS_MATCH_THRESHOLD) {
     if (labelText === applicationText) {

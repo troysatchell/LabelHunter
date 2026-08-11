@@ -67,3 +67,21 @@ describe("normalizeForFuzzyMatch — CP-1 §5.3's 6-step pipeline, in order", ()
     expect(normalizeForFuzzyMatch("Old , Tom")).toBe("old tom");
   });
 });
+
+describe("normalizeForFuzzyMatch — a known, documented gap: the typographic right single quote", () => {
+  it("does NOT fold U+2019 (’) — it is not one of CP-1 §5.3's three named apostrophe variants", () => {
+    // CP-1 names exactly three variants: the straight apostrophe, the
+    // backtick, and the acute accent. A real vision-model extraction may
+    // emit U+2019 RIGHT SINGLE QUOTATION MARK as a stylized apostrophe
+    // instead — implementing the quoted rule as written (lesson 15) means
+    // this character stays unfolded, not silently added to the fold set.
+    // This test pins the measured consequence rather than hiding it: the
+    // pair lands at ~0.923 similarity (see `brand.ts`'s 0.95 threshold),
+    // just below MATCH — a real gap, flagged in this ticket's final report,
+    // not fixed here without CP-1's own sign-off on widening the rule.
+    const withCurlyApostrophe = normalizeForFuzzyMatch("Stone’s Throw");
+    const withStraightApostrophe = normalizeForFuzzyMatch("Stone's Throw");
+    expect(withCurlyApostrophe).not.toBe(withStraightApostrophe);
+    expect(withCurlyApostrophe).toBe("stones throw"); // the curly mark is dropped as ordinary punctuation, not folded
+  });
+});

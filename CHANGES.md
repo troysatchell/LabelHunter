@@ -13,7 +13,7 @@ They replace the router's placeholder judgment logic. They serve TH-R8 and TH-R1
   folding, diacritic stripping, whitespace collapse, punctuation drop. Apostrophe folding runs
   before NFKC, not after. NFKC decomposes the acute accent (´) into a space and a combining
   mark. Folding first keeps that character from disappearing before the fold rule can see it.
-  A code comment states this exception and why.
+  A code comment explains the exception.
 - `similarity.ts` — normalized Levenshtein distance. It backs the brand/class fuzzy match.
 - `brand.ts` — the real `brand_name` / `class_type` comparator. TH-R8's named case: label
   "STONE'S THROW" against application "Stone's Throw" now MATCHes, with a note. Similarity at
@@ -66,16 +66,58 @@ narrowed to say so.
 apostrophe variants to fold: the straight apostrophe, the backtick, and the acute accent. A
 label extracted by a real vision model may use a Unicode right single quotation mark (’,
 U+2019) as a stylized apostrophe instead. That character is not one of the three named
-variants, so it is not folded. `docs/checkpoints/cp1-cascade-router-prompts.md` should decide
-whether to add it; this ticket implements the rule as written, not a guess at its intent.
+variants, so it is not folded. Measured effect: "Stone’s Throw" against "Stone's Throw" scores
+about 0.923 similarity, just under the 0.95 match threshold — it routes to NEEDS_REVIEW, not a
+clean MATCH. `docs/checkpoints/cp1-cascade-router-prompts.md` should decide whether to widen
+the rule; this ticket implements the rule as written, not a guess at its intent.
+
+**Six more fixes from this ticket's own CodeRabbit review round, applied before this commit.**
+Each one is a real gap, each has a named regression test, and each keeps the comparators pure
+functions with no new dependency.
+
+- `brand.ts`: two values that both normalize to an empty string (e.g. "..." against "---",
+  once punctuation is stripped) no longer score a false MATCH. Empty normalized text has
+  nothing left to judge, so it now routes to NEEDS_REVIEW like any other undecidable pair.
+- `abv.ts`: `compareAbv` now catches a self-contradictory label (CP-1's own named example, "45%
+  Alc./Vol. (100 Proof)") on its own, as a pure function — not only through the router's
+  separate structural check. It reports NEEDS_REVIEW even when the stated percent happens to
+  equal the application's.
+- `net-contents.ts`: `parseNetContents` now reads a comma-grouped thousands number
+  ("1,000 mL") as one value, and does not misread a comma-decimal (European-style "1,5") as a
+  US decimal.
+- `net-contents.ts`: `compareNetContents` now MATCHes two equal zero quantities. The tolerance
+  check divides by the application's quantity, defined as an infinite fraction when that
+  quantity is zero — correct when the label states something else, wrong when the label also
+  states zero and the two numbers actually agree.
+- `field-resolution.ts`: `checkAbvStructural`'s tolerance-vs-application check now reads a
+  proof-only label's canonical percent (27 CFR 5.1), not only a label that states a percent
+  directly. A proof-only reading used to skip this check entirely.
+- `overrides.ts`: the ABV evidence-support check now compares the value and the evidence on
+  the canonical percent scale, not axis-by-axis (percent-vs-percent, proof-vs-proof only). A
+  value stated as "45%" whose evidence states only "90 Proof" is the same reading and is now
+  recognized as such — this is the same bug class TRO-462's own `abvAlternatesConflict` fix
+  already closed for the alternates check, now closed here too.
+
+**Two required-fields.ts findings from that same review round, not adopted.** CodeRabbit
+suggested reverting beer's `alcohol_content` cell from `not_required` back to `verify`. This
+ticket verified the regulation directly (27 CFR 7.65(a), fetched and quoted in the code
+comment): a malt beverage label's alcohol content statement is optional under federal law.
+`not_required` is the cited, correct value, not a guess CodeRabbit's heuristic should override.
+
+**A note on running tests.** `pnpm test` and `pnpm test -- <path>` both read `DATABASE_URL`.
+Every worktree gets its own database (`scripts/factory/worktree.sh`); running tests with
+`DATABASE_URL` unset, or pointing at any database other than the current worktree's own, is
+this repo's own non-negotiable rule (`CLAUDE.md`) — test provisioning resets the target
+schema. `source .factory-env` before running either command below.
 
 **How to run it.** `pnpm test -- src/server/comparators src/server/router` runs the new and
-changed suites. `pnpm test` runs everything; 325 tests pass repo-wide. `pnpm typecheck` and
+changed suites. `pnpm test` runs everything; 340 tests pass repo-wide. `pnpm typecheck` and
 `pnpm lint` are both clean.
 
-**Rollback.** `git revert` this commit. `field-resolution.ts` and `overrides.ts` would need
-their imports pointed back at `provisional-numeric.ts` by hand, since that file's callers
-changed in this same commit — a plain revert restores that automatically.
+**Rollback.** `git revert` this commit. That one command is the whole procedure: the same
+commit changed `field-resolution.ts` and `overrides.ts`'s imports and added the module they
+now import from, so reverting it restores both the old imports and the old behavior together,
+with nothing left to fix by hand.
 
 ## TRO-462 — PR review round 2: orchestrator triage, 2 fixed, 3 deferred (2026-08-10)
 

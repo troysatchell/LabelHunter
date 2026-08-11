@@ -27,6 +27,18 @@ describe("parseNetContents — clean reads", () => {
     expect(parseNetContents("a lot")).toBeNull();
     expect(parseNetContents("12 lb")).toBeNull();
   });
+
+  it("reads a comma-grouped thousands number as one value (CodeRabbit finding)", () => {
+    expect(parseNetContents("1,000 mL")).toEqual({ value: 1000, unit: "ml" });
+    expect(parseNetContents("12,345 mL")).toEqual({ value: 12345, unit: "ml" });
+  });
+
+  it("does not misread a comma-DECIMAL (European-style) number as a US decimal", () => {
+    // "1,5" is not a valid thousands grouping (a group must be exactly 3
+    // digits) and is not this grammar's decimal separator (a period is) —
+    // it must not silently parse as 1.5.
+    expect(parseNetContents("1,5 L")).not.toEqual({ value: 1.5, unit: "l" });
+  });
 });
 
 describe("parseNetContents — TRO-504 item 3: scans past a leading number with no recognized unit", () => {
@@ -100,5 +112,13 @@ describe("compareNetContents — MATCH/MISMATCH against the application's declar
 
   it("NEEDS_REVIEW when there is no label value to compare", () => {
     expect(compareNetContents(field(null), "750 mL", CONTEXT).verdict).toBe("NEEDS_REVIEW");
+  });
+
+  it("MATCHes two equal zero quantities instead of dividing by zero into a false MISMATCH (CodeRabbit finding)", () => {
+    // The tolerance check divides by the APPLICATION quantity; when that is
+    // 0, the fraction is defined as Infinity so a real difference is never
+    // silently accepted — but that same Infinity wrongly fires even when
+    // the label ALSO states 0, where there is no difference at all.
+    expect(compareNetContents(field("0 mL"), "0 mL", CONTEXT).verdict).toBe("MATCH");
   });
 });

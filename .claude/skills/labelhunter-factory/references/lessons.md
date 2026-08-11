@@ -118,15 +118,17 @@ production run (they are paid-for, not speculative); rules 10+ will be LabelHunt
     label's text" as the trigger to use `\p{L}\p{N}` classes and `.normalize('NFC')` by default,
     not as something a reviewer points out after the fact.
 21. **A finding documented in `CHANGES.md` is not the same as a finding recorded in the ledger**
-    (orchestrator process, 2 tickets so far: TRO-471, TRO-505). Both agents ran `gate.sh`'s
-    local CodeRabbit capture several times as their own inner loop before a PR existed, fixed
-    real findings, and wrote a careful "Review triage" section into `CHANGES.md` — then never
-    ran `node scripts/factory/review-ledger.mjs record`, because nobody had told them to; the
-    brief only said "produce a `CHANGES.md` entry." Every agent brief that expects the agent to
-    run its own gate loop before a PR exists must say explicitly: record each local-cli finding
-    in the ledger *as you triage it*, the same command a PR-review triage would use, not only in
-    `CHANGES.md`. A prose paragraph is not queryable by `review-ledger.mjs report` and silently
-    drops out of the recurrence ladder.
+    (orchestrator process, 3 tickets: TRO-471, TRO-505, TRO-466 — all from one dispatch batch).
+    All three agents ran `gate.sh`'s local CodeRabbit capture several times as their own inner
+    loop before a PR existed, fixed real findings, and wrote a careful "Review triage" section
+    into `CHANGES.md` — then never ran `node scripts/factory/review-ledger.mjs record`, because
+    nobody had told them to; the brief only said "produce a `CHANGES.md` entry." Every agent
+    brief that expects the agent to run its own gate loop before a PR exists must say
+    explicitly: record each local-cli finding in the ledger *as you triage it*, the same command
+    a PR-review triage would use, not only in `CHANGES.md`. A prose paragraph is not queryable
+    by `review-ledger.mjs report` and silently drops out of the recurrence ladder. All three
+    were backfilled by the orchestrator this session — check for this gap on sight in any
+    ticket whose CHANGES.md names a "local CodeRabbit pass" the ledger doesn't also show.
 
 ## Log
 

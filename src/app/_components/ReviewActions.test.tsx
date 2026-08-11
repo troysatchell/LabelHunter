@@ -81,6 +81,22 @@ describe("ReviewActions — TH-R3, two large obvious buttons, no hidden actions"
     expect(screen.getByRole("button", { name: "Reject" })).toBeDisabled();
   });
 
+  it("on a 409 conflict with no conflictDisposition, still shows a terminal message and leaves the buttons disabled", async () => {
+    // The server's 409 body can omit `disposition` (review-queue-client.ts's
+    // own `isRecordDispositionConflictResponse` allows it); this case must
+    // not fall through to the generic, retryable error branch just because
+    // there is no specific decision to name (CodeRabbit finding, local
+    // review round 2).
+    const user = userEvent.setup();
+    const submit = vi.fn().mockRejectedValue(new ReviewQueueClientError("CONFLICT", "Already decided."));
+    render(<ReviewActions reviewQueueId={42} submit={submit} onResolved={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/already recorded a decision/i);
+    expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeDisabled();
+  });
+
   it("commits the success state before calling onResolved, so a failure in onResolved cannot be mistaken for a record failure", async () => {
     const user = userEvent.setup();
     const submit = vi.fn().mockResolvedValue(RECORDED);
@@ -99,5 +115,21 @@ describe("ReviewActions — TH-R3, two large obvious buttons, no hidden actions"
     await user.click(screen.getByRole("button", { name: "Approve" }));
     expect(onResolved).toHaveBeenCalledWith(RECORDED);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("logs, rather than throws, when onResolved itself fails — no unhandled rejection on the void-called act promise", async () => {
+    const user = userEvent.setup();
+    const submit = vi.fn().mockResolvedValue(RECORDED);
+    const onResolved = vi.fn(() => {
+      throw new Error("navigation failed");
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    render(<ReviewActions reviewQueueId={42} submit={submit} onResolved={onResolved} />);
+
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+
+    expect(await screen.findByText(/Recorded/)).toBeInTheDocument();
+    expect(consoleError).toHaveBeenCalledWith("onResolved threw after a successful review-queue decision", expect.any(Error));
+    consoleError.mockRestore();
   });
 });

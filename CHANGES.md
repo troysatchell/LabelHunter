@@ -4,54 +4,83 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
-## TRO-476 — PR #16 review round 2: 11 CodeRabbit findings, 10 fixed, 1 filed as TRO-507 (2026-08-11)
+## TRO-476 — PR #16 review round 2: 20 CodeRabbit findings, 19 fixed, 1 filed as TRO-507 (2026-08-11)
 
-**What changed.** CodeRabbit reviewed PR #16 against `main`. It reported 11 findings. The
-orchestrator checked each one against the current code, not on trust. All 11 named a real,
-narrow issue. Ten are fixed here. One is real but out of this PR's scope, filed as TRO-507.
+**What changed.** CodeRabbit reviewed PR #16 in two passes: the GitHub PR review (11
+findings), then the gate's own local CLI capture against the resulting commit (9 more,
+including 2 in this round's own fixes). The orchestrator checked every finding against the
+current code, not on trust. All 20 named a real, narrow issue. Nineteen are fixed here. One
+is real but out of this PR's scope. It is filed as TRO-507.
 
-Fixed:
-- `ReviewActions.tsx`: a 409 conflict left the Approve/Reject buttons enabled. A retry could
-  only ever 409 again — a dead action, the thing TH-R3's "no hidden actions" rule exists to
-  prevent. `onResolved` also ran inside the same `try` block as the network call, so a
-  failure in the caller's own callback (for example a failed `router.push`) was reported as
-  "could not record this decision," although the server had recorded it. Both fixed: a
-  conflict now disables the buttons for good, and `onResolved` runs only after the success
-  state is committed.
-- `ReviewQueueBrowser.tsx`: a manual refresh unmounted the whole list and lost the reviewer's
-  scroll position — the opposite of the "queue a reviewer can churn through smoothly" this
-  file's own comment names as the point of the control. A refresh now keeps the rows mounted
-  and shows "Refreshing…" on the button instead.
-- `review-queue-client.ts`: neither request had a timeout. A hung connection left the queue
-  in "loading" and the action buttons disabled indefinitely. Both requests now abort after
-  15s (`verify-client.ts`'s own established pattern, sized down: neither call here reaches a
-  model). Also: `createdAt`/`disposedAt` were checked as strings, not as parseable
-  timestamps — a malformed value would have rendered "Invalid Date UTC" silently. Both now
-  require `new Date(value)` to parse.
-- `review-queue/route.ts` and `review-queue/[reviewQueueId]/route.ts`: both routes discarded
-  the caught error before returning their 503. An operator seeing repeated 503s had no signal
-  to diagnose. Both now log the cause first (`console.error`, `db/index.ts`'s own existing
-  pattern — not `verify/route.ts`'s, which CodeRabbit named but which does not actually log).
-- `ReviewQueueList.tsx`: every row's link shared the accessible name "Review this item" — a
-  screen-reader user listing the page's links could not tell rows apart. The name now
-  includes the brand. The timestamp now sits inside a `<time dateTime=…>` element.
-- `ReviewActions.tsx`'s success banner had no live-region role, so a screen reader never
-  announced it. Added `role="status"`, matching the error panel's existing `role="alert"`.
-- Two trivial test gaps closed: a 409 response missing `disposition` had no test coverage;
-  a test titled "without touching the database" asserted only the response, not the claim in
-  its own name — it now injects a `db` that throws on any access.
-- `route.test.ts` and `[reviewQueueId]/route.test.ts` duplicated the same fixture and cleanup
-  helpers. Both now import them from a new `test-support.ts`.
+**Buttons stayed live after a conflict.** A 409 conflict left the Approve and Reject buttons
+enabled. A retry could only ever 409 again. TH-R3 asks for no hidden actions. A dead action
+is one kind of hidden action. A conflict now disables both buttons for good. The fix first
+missed one case: a 409 body with no specific `conflictDisposition` field still fell through
+to the retryable branch. The local CLI pass caught it. Every `CONFLICT` is terminal now,
+named decision or not.
 
-Filed as **TRO-507** (not fixed here — CodeRabbit tagged it a "Heavy lift"): the list endpoint
-defaults to 100 rows with no pagination, so a queue past that size silently hides the rest.
-CHANGES.md's own claim below ("returns every unresolved item") was corrected in place to
-state the current, accurate limit.
+**A callback failure could look like a record failure.** `onResolved` ran inside the same
+`try` block as the network call. A failure in the caller's own callback, for example a
+failed `router.push`, was reported as "could not record this decision." The server had
+already recorded it. `onResolved` now runs only after the success state is committed, and
+its own errors are caught and logged, not left to reject an unobserved promise.
+
+**A manual refresh unmounted the list.** The reviewer lost their scroll position on every
+refresh. This file's own comment names a queue a reviewer can churn through smoothly as the
+whole point of the control. A refresh now keeps the rows mounted. The button reads
+"Refreshing…" while the request is in flight.
+
+**Neither review-queue request had a timeout.** A hung connection left the queue loading and
+the action buttons disabled with no way out. Both requests now abort after 15 seconds. This
+matches `verify-client.ts`'s own pattern, sized down: neither call here reaches a model. The
+first version of this fix cleared the timer right after the fetch resolved, so a response
+whose body never finished parsing had no timeout protection at all. The timer now stays live
+through the body read too.
+
+**A malformed timestamp could render as "Invalid Date UTC."** `createdAt` and `disposedAt`
+were checked as strings, not as timestamps that parse. Both now require `new Date(value)` to
+succeed.
+
+**Wire IDs were checked as numbers, not as the server's own contract.** The server route
+rejects a zero, negative, or fractional id. The client accepted any number as a valid wire
+id. The client now requires the same positive-integer shape the server enforces.
+
+**The list query took no floor or ceiling on its own `limit` argument.** Nothing today calls
+it with anything but the default, so this is a boundary hardened before it is exercised, not
+a fix to an active bug. `listUnresolvedReviewQueue` now rejects a limit outside 1 through 100
+before it reaches `.limit()`.
+
+**Both review-queue routes discarded the caught error before their 503.** An operator seeing
+repeated 503 responses had no signal to diagnose. Both routes now log the cause first.
+`console.error` is `db/index.ts`'s own existing pattern. CodeRabbit named `verify/route.ts`
+instead; that file binds its caught error for type-checking, not for logging. It sets no
+precedent to follow.
+
+**Every row's link shared one accessible name.** A screen-reader user listing the page's
+links could not tell rows apart. The name now includes the brand. The timestamp now sits
+inside a `<time dateTime=…>` element.
+
+**The success banner had no live-region role.** A screen reader never announced it. Added
+`role="status"`, matching the error panel's existing `role="alert"`.
+
+**Three test gaps closed.** A 409 response missing `disposition` had no coverage. A test
+titled "without touching the database" asserted only the response, not the claim in its own
+name — it now injects a `db` that throws on any access. `ReviewQueueList.test.tsx` matched
+any link name loosely; it now requires the exact name and checks the `<time>` element's
+`dateTime` attribute.
+
+**`route.test.ts` and `[reviewQueueId]/route.test.ts` duplicated the same fixture and
+cleanup helpers.** Both now import them from a new `test-support.ts`.
+
+**Filed as TRO-507, not fixed here.** CodeRabbit tagged it a "Heavy lift." The list endpoint
+defaults to 100 rows. It has no pagination past that limit. CHANGES.md's own claim below
+("returns every unresolved item") is corrected in place to state the current, accurate
+limit.
 
 **Tests.** `pnpm test -- src/app/_components/ReviewActions.test.tsx
 src/app/_components/ReviewQueueBrowser.test.tsx src/app/_lib/review-queue-client.test.ts
-src/app/api/review-queue` — every fix above has a new or extended case that failed before
-the fix and passes after.
+src/app/api/review-queue src/server/review-queue` — every fix above has a new or extended
+case that failed before the fix and passes after.
 
 **How to run it.** Point `DATABASE_URL` at this worktree's own database first — schema
 provisioning resets it. `source .factory-env`, then `pnpm test`, `pnpm typecheck`, `pnpm

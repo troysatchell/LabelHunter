@@ -162,4 +162,32 @@ describe("submitDisposition — designed error states", () => {
       message: expect.stringMatching(/took too long/i),
     });
   });
+
+  it("still reports a timeout when the response resolves immediately but the body never finishes parsing", async () => {
+    // Clearing the timer right after `fetch()` resolves would leave a
+    // hanging `.json()` read with no timeout protection at all (CodeRabbit
+    // finding, local review round 2) — the timer must stay live through
+    // the body read too.
+    const fetchImpl = vi.fn(
+      (_url: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>((resolve) => {
+          resolve({
+            ok: true,
+            json: () =>
+              new Promise((_resolve, reject) => {
+                init?.signal?.addEventListener("abort", () => {
+                  const err = new Error("aborted");
+                  err.name = "AbortError";
+                  reject(err);
+                });
+              }),
+          } as Response);
+        }),
+    );
+
+    await expect(submitDisposition(7, "APPROVED", { fetchImpl, timeoutMs: 15 })).rejects.toMatchObject({
+      kind: "SERVICE",
+      message: expect.stringMatching(/took too long/i),
+    });
+  });
 });

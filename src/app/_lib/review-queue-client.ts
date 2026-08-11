@@ -67,13 +67,22 @@ function isParseableTimestamp(value: unknown): value is string {
  * proxy, a future API version) must never reach `ReviewQueueList.tsx` as
  * if it were a real item; standing rule 13 applies at this boundary the
  * same as at any other. */
+/** Positive integer — the same contract the server's own route validation
+ * requires (`route.ts`: `!Number.isInteger(id) || id <= 0` rejects a
+ * request). A wire id of 0, negative, or fractional is exactly as
+ * malformed here as it would be on the way in (CodeRabbit finding, local
+ * review round 2). */
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
 function isReviewQueueListItemWire(item: unknown): item is ReviewQueueListItemWire {
   if (typeof item !== "object" || item === null) return false;
   const row = item as Partial<ReviewQueueListItemWire>;
   return (
-    typeof row.id === "number" &&
-    typeof row.verificationId === "number" &&
-    typeof row.applicationId === "number" &&
+    isPositiveInteger(row.id) &&
+    isPositiveInteger(row.verificationId) &&
+    isPositiveInteger(row.applicationId) &&
     typeof row.reason === "string" &&
     (REVIEW_REASONS as readonly string[]).includes(row.reason) &&
     typeof row.reasonText === "string" &&
@@ -135,19 +144,27 @@ export async function fetchReviewQueue(options: ReviewQueueRequestOptions = {}):
   try {
     response = await fetchImpl("/api/review-queue", { signal: controller.signal });
   } catch {
+    clearTimeout(timeoutId);
     if (controller.signal.aborted) {
       throw new ReviewQueueClientError("SERVICE", "LabelHunter took too long to respond. Check your connection and try again.");
     }
     throw new ReviewQueueClientError("SERVICE", "LabelHunter could not reach the server. Check your connection and try again.");
-  } finally {
-    clearTimeout(timeoutId);
   }
 
+  // The timer stays live through the body read, not just the fetch: a
+  // response whose body never finishes streaming would otherwise hang
+  // forever once the timeout is cleared here (CodeRabbit finding, local
+  // review round 2).
   let payload: unknown;
   try {
     payload = await response.json();
   } catch {
+    if (controller.signal.aborted) {
+      throw new ReviewQueueClientError("SERVICE", "LabelHunter took too long to respond. Check your connection and try again.");
+    }
     throw new ReviewQueueClientError("SERVICE", "LabelHunter received an unexpected response. Try again.");
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   if (!response.ok) {
@@ -186,19 +203,25 @@ export async function submitDisposition(
       signal: controller.signal,
     });
   } catch {
+    clearTimeout(timeoutId);
     if (controller.signal.aborted) {
       throw new ReviewQueueClientError("SERVICE", "LabelHunter took too long to respond. Check your connection and try again.");
     }
     throw new ReviewQueueClientError("SERVICE", "LabelHunter could not reach the server. Check your connection and try again.");
-  } finally {
-    clearTimeout(timeoutId);
   }
 
+  // The timer stays live through the body read — see fetchReviewQueue's
+  // identical comment (CodeRabbit finding, local review round 2).
   let payload: unknown;
   try {
     payload = await response.json();
   } catch {
+    if (controller.signal.aborted) {
+      throw new ReviewQueueClientError("SERVICE", "LabelHunter took too long to respond. Check your connection and try again.");
+    }
     throw new ReviewQueueClientError("SERVICE", "LabelHunter received an unexpected response. Try again.");
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   if (!response.ok) {

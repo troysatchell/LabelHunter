@@ -32,8 +32,15 @@ describe("ReviewQueueList", () => {
     expect(row).toHaveTextContent("Straight Bourbon Whiskey");
     expect(row).toHaveTextContent("Aug 11, 2026, 2:03 PM UTC");
 
-    const link = screen.getByRole("link", { name: /review this item/i });
+    // Exact accessible name, not a generic match — every row otherwise
+    // shared the same name "Review this item", so a screen-reader user
+    // listing the page's links could not tell rows apart (CodeRabbit
+    // finding, local review round 2).
+    const link = screen.getByRole("link", { name: "Review this item: Old Tom Distillery" });
     expect(link).toHaveAttribute("href", "/review-queue/42");
+
+    const time = row.querySelector("time");
+    expect(time).toHaveAttribute("dateTime", "2026-08-11T14:03:00.000Z");
   });
 
   it("renders one row per item, in the order given — the caller (oldest-first API) decides order", () => {

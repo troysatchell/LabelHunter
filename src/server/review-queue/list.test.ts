@@ -173,4 +173,11 @@ describe("listUnresolvedReviewQueue — real database", () => {
       await cleanup(secondOldest.applicationId);
     }
   });
+
+  it.each([0, -1, 1.5, 101, Number.NaN])(
+    "rejects a limit of %s rather than passing it through to .limit() — CodeRabbit local review round 2",
+    async (limit) => {
+      await expect(listUnresolvedReviewQueue(db, limit)).rejects.toThrow(RangeError);
+    },
+  );
 });

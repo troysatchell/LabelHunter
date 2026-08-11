@@ -52,12 +52,17 @@ export function ReviewActions({ reviewQueueId, submit = submitDisposition, onRes
     try {
       result = await submit(reviewQueueId, disposition);
     } catch (error) {
-      if (error instanceof ReviewQueueClientError && error.kind === "CONFLICT" && error.conflictDisposition) {
-        setPhase({
-          status: "error",
-          message: `Someone already ${DISPOSITION_VERB[error.conflictDisposition]} this item. Your decision was not recorded.`,
-          retryable: false,
-        });
+      // Every CONFLICT is terminal, whether or not the body carried a
+      // specific conflictDisposition — the earlier check required
+      // `error.conflictDisposition` too, so a 409 body missing that field
+      // fell through to the generic, retryable branch below and re-enabled
+      // the buttons for an action that could still only ever 409 again
+      // (CodeRabbit finding, local review round 2).
+      if (error instanceof ReviewQueueClientError && error.kind === "CONFLICT") {
+        const message = error.conflictDisposition
+          ? `Someone already ${DISPOSITION_VERB[error.conflictDisposition]} this item. Your decision was not recorded.`
+          : "Someone already recorded a decision on this item. Your decision was not recorded.";
+        setPhase({ status: "error", message, retryable: false });
         return;
       }
       const message = error instanceof ReviewQueueClientError ? error.message : "LabelHunter could not record this decision. Try again.";
@@ -65,7 +70,16 @@ export function ReviewActions({ reviewQueueId, submit = submitDisposition, onRes
       return;
     }
     setPhase({ status: "success", disposition: result.disposition });
-    onResolved(result);
+    try {
+      onResolved(result);
+    } catch (error) {
+      // The decision is already recorded — a failure in the caller's own
+      // callback (e.g. a router.push navigation error) must not become an
+      // unhandled rejection on the promise this function returns (the
+      // click handler calls `act` with `void`, so nothing else observes
+      // it) (CodeRabbit finding, local review round 2).
+      console.error("onResolved threw after a successful review-queue decision", error);
+    }
   }
 
   return (

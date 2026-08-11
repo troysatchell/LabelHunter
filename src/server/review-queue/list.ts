@@ -50,6 +50,15 @@ export async function listUnresolvedReviewQueue(
   db: typeof defaultDb,
   limit: number = DEFAULT_LIST_LIMIT,
 ): Promise<ReviewQueueListItem[]> {
+  // A future caller passing a variable limit (not yet true today — the
+  // only call site uses the default) must not be able to pass zero, a
+  // negative number, or a value above the ceiling this module's own
+  // comment defends straight through to `.limit()` (standing rule 13:
+  // validate at the boundary; CodeRabbit finding, local review round 2).
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > DEFAULT_LIST_LIMIT) {
+    throw new RangeError(`limit must be an integer from 1 through ${DEFAULT_LIST_LIMIT}.`);
+  }
+
   const rows = await db
     .select({
       id: reviewQueue.id,

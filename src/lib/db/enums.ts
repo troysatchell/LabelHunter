@@ -110,3 +110,11 @@ export function toReviewReason(value: string): ReviewReason {
 export function toBeverageType(value: string): BeverageType {
   return assertEnumMember(BEVERAGE_TYPES, value, "toBeverageType");
 }
+
+/** Narrows a string to a `ReviewDisposition`, or throws. See
+ * `assertEnumMember`. The review-queue action endpoint (TRO-476) reads this
+ * from an HTTP JSON body — untrusted input needs the same boundary check
+ * `toReviewReason` already gives a model's own output. */
+export function toReviewDisposition(value: string): ReviewDisposition {
+  return assertEnumMember(REVIEW_DISPOSITIONS, value, "toReviewDisposition");
+}

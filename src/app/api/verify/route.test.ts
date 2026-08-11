@@ -10,7 +10,7 @@ import { applications, fieldResults, reviewQueue, verifications } from "../../..
 import { extractLabel } from "../../../server/extractor";
 import { makeMockMessage, WELL_FORMED_EXTRACTION_BODY } from "../../../server/extractor/test-support";
 import { preprocessImage } from "../../../server/preprocessing";
-import { PROVISIONAL_FIELD_COMPARATORS } from "../../../server/router/provisional-comparators";
+import { productionComparators } from "../../../server/comparators";
 import { saveLabelImage } from "../../../server/storage/local-file-storage";
 import { handleVerifyRequest, type VerifyRouteDeps } from "./route";
 import type { VerifyErrorResponse, VerifySuccessResponse } from "./types";
@@ -93,7 +93,7 @@ function makeDeps(overrides: Partial<VerifyRouteDeps> = {}): VerifyRouteDeps {
     preprocessImage,
     extractLabel,
     saveLabelImage: (bytes, originalFilename) => saveLabelImage(bytes, originalFilename, { baseDir: scratchDir }),
-    comparators: PROVISIONAL_FIELD_COMPARATORS,
+    comparators: productionComparators,
     ...overrides,
   };
 }
@@ -149,7 +149,7 @@ describe("POST /api/verify — happy path", () => {
     expect(queueRow.disposition).toBeNull();
   });
 
-  it("never reports a silent MISMATCH for a comparator-driven field under the provisional comparators — a real disagreement routes to REVIEW (PRD §3.3)", async () => {
+  it("brand_name never reports a silent MISMATCH — a real disagreement is a judgment call, routed to REVIEW (CP-1 §5.3, PRD §3.3)", async () => {
     const extraction = {
       ...WELL_FORMED_EXTRACTION_BODY,
       brand_name: { value: "Totally Different Brand", evidence: "TOTALLY DIFFERENT BRAND", confidence: 0.95, alternates: [] },
@@ -164,6 +164,42 @@ describe("POST /api/verify — happy path", () => {
     const brandRow = body.fields.find((row) => row.field === "brand_name");
     expect(brandRow?.verdict).toBe("NEEDS_REVIEW");
     expect(body.fields.some((row) => row.verdict === "MISMATCH")).toBe(false);
+  });
+
+  it("brand_name MATCHes a case/apostrophe-normalized read, with a note (TH-R8's named STONE'S THROW case, real comparators post-LH-013)", async () => {
+    const extraction = {
+      ...WELL_FORMED_EXTRACTION_BODY,
+      brand_name: { value: "STONE'S THROW", evidence: "STONE'S THROW", confidence: 0.95, alternates: [] },
+    };
+    const deps = makeDeps({ anthropicClient: clientReturning(extraction) });
+    const response = await post(await buildFormData({ brandName: "Stone's Throw" }), deps);
+
+    const body = (await response.json()) as VerifySuccessResponse;
+    createdApplicationIds.push(body.applicationId);
+
+    const brandRow = body.fields.find((row) => row.field === "brand_name");
+    expect(brandRow?.verdict).toBe("MATCH");
+    expect(brandRow?.reason).toMatch(/normalized/i);
+  });
+
+  it("alcohol_content DOES report a MISMATCH on a genuine numeric disagreement — real comparators (LH-013), unlike this ticket's earlier provisional stand-in", async () => {
+    const extraction = {
+      ...WELL_FORMED_EXTRACTION_BODY,
+      alcohol_content: { value: "40% Alc./Vol.", evidence: "40% Alc./Vol.", confidence: 0.95, alternates: [] },
+    };
+    const deps = makeDeps({ anthropicClient: clientReturning(extraction) });
+    // Application still declares 45% (buildFormData's default) — a real disagreement.
+    const response = await post(await buildFormData(), deps);
+
+    const body = (await response.json()) as VerifySuccessResponse;
+    createdApplicationIds.push(body.applicationId);
+
+    const abvRow = body.fields.find((row) => row.field === "alcohol_content");
+    expect(abvRow?.verdict).toBe("MISMATCH");
+    // The label-level verdict still isn't a clean FAIL: the government
+    // warning has no comparator yet (LH-020) and always needs review today
+    // (see route.ts's file comment) — REVIEW outranks FAIL in the rollup.
+    expect(body.labelVerdict).toBe("REVIEW");
   });
 
   it("a missing required field outranks the warning gap as the headline reason", async () => {

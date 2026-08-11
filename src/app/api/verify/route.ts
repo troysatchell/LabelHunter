@@ -16,13 +16,17 @@
  * yet merged) calls it, asynchronously, off the `review_queue` row this
  * route writes.
  *
- * **Comparators.** LH-013 (TRO-463, the real field comparators — fuzzy
- * brand/class matching, real ABV and net-contents parsing) has not merged
- * as of this ticket. `PROVISIONAL_FIELD_COMPARATORS`
- * (`../../../server/router/provisional-comparators.ts`) is a minimal,
- * clearly-labeled stand-in — the ONE place a `FieldComparators` value
- * reaches `routeLabel` in this route. Swap that one import for LH-013's
- * real bundle when it lands; nothing else here changes.
+ * **Comparators.** LH-013 (TRO-463) merged: `productionComparators`
+ * (`../../../server/comparators`) — fuzzy brand/class matching (normalized
+ * similarity, TH-R8's STONE'S THROW case), and real ABV/net-contents
+ * parsing — is wired in below. `brand_name`/`class_type` still never
+ * assert `MISMATCH` (CP-1 §5.3: distance beyond threshold routes to
+ * REVIEW, a judgment call, never a silent FAIL); `alcohol_content` and
+ * `net_contents` now DO assert `MISMATCH` on a genuine numeric
+ * disagreement (LH-013's own design, not this ticket's). This is the ONE
+ * place a `FieldComparators` value reaches `routeLabel` in this route —
+ * this ticket's earlier provisional stand-in (`provisional-comparators.ts`)
+ * is deleted, superseded by this import.
  *
  * **Government warning.** LH-020 (the warning subsystem, gated by CP-2)
  * has not merged either. This route passes `warningResult: null` to
@@ -53,7 +57,7 @@ import {
   type PreprocessedImage,
 } from "../../../server/preprocessing";
 import { routeLabel, type ApplicationRecord, type FieldComparators, type RouterFieldKey } from "../../../server/router";
-import { PROVISIONAL_FIELD_COMPARATORS } from "../../../server/router/provisional-comparators";
+import { productionComparators } from "../../../server/comparators";
 import { buildFieldReasonText } from "../../../server/router/reason-text";
 import { saveLabelImage as defaultSaveLabelImage, type SavedLabelImage } from "../../../server/storage/local-file-storage";
 import { parseVerifyFormData } from "./parse-request";
@@ -93,7 +97,7 @@ const defaultDeps: VerifyRouteDeps = {
   preprocessImage: defaultPreprocessImage,
   extractLabel: defaultExtractLabel,
   saveLabelImage: defaultSaveLabelImage,
-  comparators: PROVISIONAL_FIELD_COMPARATORS,
+  comparators: productionComparators,
 };
 
 function errorResponse(status: number, kind: VerifyErrorKind, message: string): NextResponse<VerifyErrorResponse> {

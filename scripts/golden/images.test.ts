@@ -33,15 +33,21 @@ describe("golden-set committed images", () => {
     }
   });
 
-  it("never expects an image for an ai-generated case (LH-005's job, none exist yet)", () => {
+  it("keeps every ai-generated case's verified flag consistent with whether its image exists", () => {
+    // No ai-generated case exists in the manifest yet (LH-005's job) — this
+    // loop is a no-op today. It still runs both directions of the check so
+    // it starts failing loudly, not silently, the moment LH-005 adds one:
+    // a verified case must have a real image, and an imageless case must
+    // not be verified. Per the loader (src/lib/golden-set/loader.ts), the
+    // eval harness may only use a verified ai-generated case.
     const aiGenerated = manifest.cases.filter((c) => c.provenance === "ai-generated");
-    // No ai-generated case exists in the manifest yet. This test still runs
-    // the scoping logic so it starts failing loudly, not silently, the
-    // moment LH-005 adds one without an image.
     for (const c of aiGenerated) {
-      const fullPath = join(REPO_ROOT, c.imagePath);
-      if (!existsSync(fullPath)) {
-        expect(c.verified, `${c.caseId}: unverified ai-generated case with no image is expected`).toBe(false);
+      const hasImage = existsSync(join(REPO_ROOT, c.imagePath));
+      if (c.verified) {
+        expect(hasImage, `${c.caseId}: verified ai-generated case must have a real image`).toBe(true);
+      }
+      if (!hasImage) {
+        expect(c.verified, `${c.caseId}: an ai-generated case with no image must not be verified`).toBe(false);
       }
     }
   });

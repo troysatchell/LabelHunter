@@ -79,10 +79,14 @@ describe("buildLabelHtml", () => {
     const noAbv = renderableCases.find((c) => !c.label.abvPresent);
     expect(noAbv, "expected at least one case with abvPresent: false").toBeDefined();
     const html = buildLabelHtml(noAbv!);
-    // No case's abvText is set when abvPresent is false (loader enforces this),
-    // so the only direct check available is that the case's own (empty)
-    // abvText produces no stray "line" div for it — net contents still renders.
-    expect(html.includes(noAbv!.label.netContentsText)).toBe(true);
+
+    // A stray empty ABV "line" div would pass a plain .includes() check on
+    // netContentsText, so count the .line divs directly: exactly one,
+    // holding net contents, proves the ABV line was skipped rather than
+    // rendered empty.
+    const lines = html.match(/<div class="line">[\s\S]*?<\/div>/g) ?? [];
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain(noAbv!.label.netContentsText);
   });
 
   it("HTML-escapes unsafe characters in label text instead of injecting them raw", () => {

@@ -122,6 +122,18 @@ describe("applyPerspective", () => {
     const base = await makeSyntheticLabel();
     await expect(applyPerspective(base, { shear: NaN })).rejects.toThrow(RangeError);
   });
+
+  it("rejects a shear magnitude beyond the bound, in either direction", async () => {
+    const base = await makeSyntheticLabel();
+    await expect(applyPerspective(base, { shear: 3.5 })).rejects.toThrow(RangeError);
+    await expect(applyPerspective(base, { shear: -3.5 })).rejects.toThrow(RangeError);
+  });
+
+  it("accepts a shear exactly at the bound", async () => {
+    const base = await makeSyntheticLabel();
+    await expect(applyPerspective(base, { shear: 3 })).resolves.toBeInstanceOf(Buffer);
+    await expect(applyPerspective(base, { shear: -3 })).resolves.toBeInstanceOf(Buffer);
+  });
 });
 
 describe("applyGlare", () => {

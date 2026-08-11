@@ -12,30 +12,30 @@ and what the Validation Router should decide. Later tickets use it two ways:
 ## Images: rendered and degraded (LH-004, TRO-497)
 
 `golden-set/images/` now holds a real, committed JPEG for every `rendered` and
-`rendered+degraded` case — 29 of 29. Total size: about 1.08 MB, largest file 46.7 KB, all well
-under the ~500 KB per-image target.
+`rendered+degraded` case. That is 29 of 29 cases. Total size: about 1.08 MB. Largest file:
+46.7 KB. Every image stays well under the ~500 KB per-image target.
 
 The pipeline is the render-first hybrid design doc §2 lays out:
 
-- **`scripts/golden/render.ts`** — an HTML/CSS→PNG renderer (Playwright's bundled Chromium,
-  already a repo dependency for `pnpm test:e2e`). Draws each case's `label` fields — brand,
-  class/type, ABV line, net contents, government warning — with no paraphrasing: whatever
-  string the spec carries is the string on the image, byte for byte. No image model is ever
-  trusted with the warning text (design doc §1's core rule).
+- **`scripts/golden/render.ts`** — an HTML/CSS→PNG renderer. It uses Playwright's bundled
+  Chromium, already a repo dependency for `pnpm test:e2e`. It draws each case's `label`
+  fields — brand, class/type, ABV line, net contents, government warning — with no
+  paraphrasing. Whatever string the spec carries is the string on the image, byte for byte.
+  No image model is ever trusted with the warning text (design doc §1's core rule).
 - **`scripts/golden/degrade.ts`** — sharp transforms (rotate, perspective, glare, low light,
-  blur) deriving an imperfect-photo variant from a clean rendered base. Ground truth carries
-  over unchanged; only the photo condition changes.
-- **`scripts/golden/build.ts`** — orchestrates render → degrade for every case, writes the
-  committed JPEG at its manifest path. Run it with `pnpm golden:build`.
+  blur) that derive an imperfect-photo variant from a clean rendered base. Ground truth
+  carries over unchanged. Only the photo condition changes.
+- **`scripts/golden/build.ts`** — orchestrates render → degrade for every case, and writes
+  the committed JPEG at its manifest path. Run it with `pnpm golden:build`.
 
-**Still not done:** the ~5 fully `ai-generated` "wild" labels design doc §5 describes (LH-005,
-Gemini API, its own `verified: true` human sign-off) — no case in this manifest currently has
-`provenance: "ai-generated"`; when LH-005 adds one, its image starts out absent, same as every
-case here did before this ticket. `scripts/golden/verify.ts` (LH-006: consistency + coverage
-CI gate) is also still open.
+**Still not done:** the ~5 fully `ai-generated` "wild" labels design doc §5 describes. LH-005
+owns that work — the Gemini API call, and its own `verified: true` human sign-off. No case in
+this manifest currently has `provenance: "ai-generated"`. When LH-005 adds one, its image
+starts out absent, the same way every case here started before this ticket.
+`scripts/golden/verify.ts` (LH-006: the consistency and coverage CI gate) is also still open.
 
-Every case's `verified` field stays `false` even though its image is now real — `verified`
-records a **human** sign-off (design doc §3), and that is CP-2's review, not this ticket's.
+Every case's `verified` field stays `false`, even though its image is now real. `verified`
+records a **human** sign-off (design doc §3). That is CP-2's review, not this ticket's.
 Rendering a spec's exact text mechanically is not the same claim as a person confirming the
 image looks right.
 

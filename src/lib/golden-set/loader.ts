@@ -200,11 +200,33 @@ function checkVectors(
 }
 
 /**
+ * Required parameter keys and their primitive type per `DegradationType`,
+ * matching what `scripts/golden/degrade.ts`'s `apply*` functions actually
+ * read. This is a shape check only (present, right primitive type) — the
+ * real range checks (opacity in (0,1], sigma in [0.3, 1000], and so on)
+ * stay in `degrade.ts`, the schema of record for a transform's own limits.
+ * A manifest that names a key with the wrong type is still a mistake worth
+ * catching here, before `build.ts` ever calls sharp.
+ */
+const DEGRADATION_PARAM_SHAPE: Record<
+  (typeof DEGRADATION_TYPES)[number],
+  Record<string, "number" | "string">
+> = {
+  rotate: { angleDegrees: "number" },
+  blur: { sigma: "number" },
+  perspective: { shear: "number" },
+  glare: { region: "string" },
+  "low-light": { region: "string", brightnessFactor: "number" },
+};
+
+/**
  * Validates the optional `degradations` list (TRO-497 / LH-004, design doc
  * §3). Absent or an empty array are both fine — most cases carry no
- * degradations. `params` is checked only for being an object; each
- * `DegradationType` takes different parameter names, and `degrade.ts` is
- * the schema of record for those, not this loader.
+ * degradations. Checks that every entry's `params` object has the keys its
+ * `type` requires, with the right primitive type. Deliberately does not
+ * check numeric ranges or `region` names — `degrade.ts` is the schema of
+ * record for those, and duplicating its exact limits here would let the
+ * two drift out of sync.
  */
 function checkDegradations(
   problems: string[],
@@ -224,6 +246,21 @@ function checkDegradations(
     checkEnum(problems, w, entry, "type", DEGRADATION_TYPES);
     if (!("params" in entry) || !isRecord(entry.params)) {
       problems.push(`${w}: field "params" must be an object`);
+      return;
+    }
+
+    const type = entry.type;
+    if (typeof type !== "string" || !(type in DEGRADATION_PARAM_SHAPE)) {
+      return; // Already reported by the checkEnum call above.
+    }
+    const shape = DEGRADATION_PARAM_SHAPE[type as keyof typeof DEGRADATION_PARAM_SHAPE];
+    for (const [key, expectedType] of Object.entries(shape)) {
+      const value = entry.params[key];
+      if (typeof value !== expectedType) {
+        problems.push(
+          `${w}.params: "${type}" requires "${key}" to be a ${expectedType}, got ${JSON.stringify(value)}`,
+        );
+      }
     }
   });
 }
@@ -454,6 +491,21 @@ function checkCase(problems: string[], index: number, raw: unknown): void {
 
   if ("degradations" in raw && raw.degradations !== undefined) {
     checkDegradations(problems, caseLabel, raw.degradations);
+    // A non-empty degradations list only makes sense on a case that admits
+    // to being degraded. A "rendered" (clean) or "ai-generated" case
+    // claiming a rotate/glare/etc. history is self-contradictory — one or
+    // the other field is wrong, and this catches it at manifest-load time
+    // instead of at whatever point later code trusts one field over the
+    // other.
+    if (
+      Array.isArray(raw.degradations) &&
+      raw.degradations.length > 0 &&
+      raw.provenance !== "rendered+degraded"
+    ) {
+      problems.push(
+        `${caseLabel}: "degradations" is non-empty but provenance is ${JSON.stringify(raw.provenance)} — only "rendered+degraded" cases may carry degradations`,
+      );
+    }
   }
 
   checkOptionalField(problems, caseLabel, raw, "notes", isNonEmptyString, "a non-empty string");

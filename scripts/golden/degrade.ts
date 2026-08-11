@@ -103,11 +103,25 @@ export async function applyBlur(
  * case currently uses this transform; it is implemented and unit-tested as
  * a capability per design doc §4, ready for the next case that needs it.
  */
+/**
+ * Bound on `shear`'s magnitude. A shear this large already skews a label
+ * far past anything a real camera angle produces; sharp's `.affine()` has
+ * no upper limit of its own, and an unbounded shear on a wide canvas would
+ * silently balloon the output width toward `.affine()`'s internal limits —
+ * rule 13's "in-bounds" half, not just "finite".
+ */
+const MAX_SHEAR_MAGNITUDE = 3;
+
 export async function applyPerspective(
   image: Buffer,
   params: { readonly shear: unknown },
 ): Promise<Buffer> {
   const shear = assertFiniteNumber("shear", params.shear);
+  if (Math.abs(shear) > MAX_SHEAR_MAGNITUDE) {
+    throw new RangeError(
+      `degrade: "shear" must be in [-${MAX_SHEAR_MAGNITUDE}, ${MAX_SHEAR_MAGNITUDE}], got ${shear}`,
+    );
+  }
   return sharp(image)
     .affine([1, shear, 0, 1], { background: "#ffffff" })
     .toBuffer();

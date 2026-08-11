@@ -81,6 +81,13 @@ const PROVENANCE_VALUES: readonly GoldenSetProvenance[] = [
 const RUBRIC_VECTORS: readonly RubricVector[] = [
   "V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10",
 ];
+const DEGRADATION_TYPES = [
+  "rotate",
+  "perspective",
+  "glare",
+  "low-light",
+  "blur",
+] as const;
 const EXPECTED_FIELD_KEYS = [
   "brandName",
   "classType",
@@ -190,6 +197,35 @@ function checkVectors(
       );
     }
   }
+}
+
+/**
+ * Validates the optional `degradations` list (TRO-497 / LH-004, design doc
+ * §3). Absent or an empty array are both fine — most cases carry no
+ * degradations. `params` is checked only for being an object; each
+ * `DegradationType` takes different parameter names, and `degrade.ts` is
+ * the schema of record for those, not this loader.
+ */
+function checkDegradations(
+  problems: string[],
+  where: string,
+  raw: unknown,
+): void {
+  if (!Array.isArray(raw)) {
+    problems.push(`${where}: field "degradations" must be an array, got ${JSON.stringify(raw)}`);
+    return;
+  }
+  raw.forEach((entry, i) => {
+    const w = `${where}.degradations[${i}]`;
+    if (!isRecord(entry)) {
+      problems.push(`${w}: must be an object`);
+      return;
+    }
+    checkEnum(problems, w, entry, "type", DEGRADATION_TYPES);
+    if (!("params" in entry) || !isRecord(entry.params)) {
+      problems.push(`${w}: field "params" must be an object`);
+    }
+  });
 }
 
 function checkApplication(problems: string[], where: string, raw: unknown): void {
@@ -414,6 +450,10 @@ function checkCase(problems: string[], index: number, raw: unknown): void {
     checkExpected(problems, caseLabel, raw.expected);
   } else {
     problems.push(`${caseLabel}: missing required field "expected"`);
+  }
+
+  if ("degradations" in raw && raw.degradations !== undefined) {
+    checkDegradations(problems, caseLabel, raw.degradations);
   }
 
   checkOptionalField(problems, caseLabel, raw, "notes", isNonEmptyString, "a non-empty string");

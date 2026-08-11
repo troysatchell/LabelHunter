@@ -17,7 +17,8 @@
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:seed": "tsx src/lib/db/seed.ts"
+    "db:seed": "tsx src/lib/db/seed.ts",
+    "golden:build": "tsx scripts/golden/build.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",

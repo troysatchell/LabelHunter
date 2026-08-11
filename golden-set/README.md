@@ -9,28 +9,35 @@ and what the Validation Router should decide. Later tickets use it two ways:
 - **Demo set**: seeds the deployed instance so evaluators can try the app without uploading
   their own labels (PRD §7).
 
-## Known gap: no images yet
+## Images: rendered and degraded (LH-004, TRO-497)
 
-**This ticket ships the ground-truth data, the pairing convention, and the ai-generated /
-verified provenance rules. It does not yet ship the label images or the renderer that
-produces them.** `golden-set/images/` is empty. Every `imagePath` in `manifest.json` points
-at a file that does not exist yet.
+`golden-set/images/` now holds a real, committed JPEG for every `rendered` and
+`rendered+degraded` case — 29 of 29. Total size: about 1.08 MB, largest file 46.7 KB, all well
+under the ~500 KB per-image target.
 
-The image-generation approach is now decided (2026-08-10, approved with Troy):
-`docs/superpowers/specs/2026-08-10-golden-label-image-gen-design.md` — a render-first hybrid.
-An HTML/CSS→PNG renderer (`scripts/golden/render.ts`, Playwright, committed fonts) produces
-exact-text label images for every case in this manifest (`provenance: "rendered"` or
-`"rendered+degraded"`); Gemini/Imagen is used only for realism at the edges — backdrops and a
-handful of fully AI-generated "wild" labels (`provenance: "ai-generated"`, requiring
-`verified: true` before the eval harness may use them — see the loader's validation). That
-renderer, plus the degradation pass and the Imagen step, are **not built yet** — they are
-tracked as their own tickets (LH-004 degradation, LH-005 Imagen, LH-006 verify gate + CI
-smoke), all downstream of this one. This ticket's job was the spec schema and the 29 cases;
-producing pixels is the next ticket's job.
+The pipeline is the render-first hybrid design doc §2 lays out:
 
-Writing placeholder files with a `.jpg` extension would be worse than leaving the directory
-empty — a placeholder passes a file-existence check while being useless for extraction
-testing, which hides the gap instead of naming it.
+- **`scripts/golden/render.ts`** — an HTML/CSS→PNG renderer (Playwright's bundled Chromium,
+  already a repo dependency for `pnpm test:e2e`). Draws each case's `label` fields — brand,
+  class/type, ABV line, net contents, government warning — with no paraphrasing: whatever
+  string the spec carries is the string on the image, byte for byte. No image model is ever
+  trusted with the warning text (design doc §1's core rule).
+- **`scripts/golden/degrade.ts`** — sharp transforms (rotate, perspective, glare, low light,
+  blur) deriving an imperfect-photo variant from a clean rendered base. Ground truth carries
+  over unchanged; only the photo condition changes.
+- **`scripts/golden/build.ts`** — orchestrates render → degrade for every case, writes the
+  committed JPEG at its manifest path. Run it with `pnpm golden:build`.
+
+**Still not done:** the ~5 fully `ai-generated` "wild" labels design doc §5 describes (LH-005,
+Gemini API, its own `verified: true` human sign-off) — no case in this manifest currently has
+`provenance: "ai-generated"`; when LH-005 adds one, its image starts out absent, same as every
+case here did before this ticket. `scripts/golden/verify.ts` (LH-006: consistency + coverage
+CI gate) is also still open.
+
+Every case's `verified` field stays `false` even though its image is now real — `verified`
+records a **human** sign-off (design doc §3), and that is CP-2's review, not this ticket's.
+Rendering a spec's exact text mechanically is not the same claim as a person confirming the
+image looks right.
 
 **Known rubric-vector gap (`audit/rubric.md` Appendix A):** every case is tagged with the
 vectors it provides evidence for (`vectors` field). Two vectors currently have **no** covering
@@ -44,18 +51,19 @@ silently drift — closing V7 means adding a case, not editing the test's exclus
 
 `manifest.json` holds one JSON object: `{ "version": "1.0.0", "cases": [...] }`. Each entry
 in `cases` is a `GoldenSetCase` — the TypeScript type is the schema of record, at
-`src/lib/golden-set/types.ts`. A case has five parts:
+`src/lib/golden-set/types.ts`. A case has these parts:
 
 | Field | What it holds |
 |---|---|
 | `caseId`, `description`, `category`, `beverageType` | Identity: a unique ID, a one-line summary, which of the 12 required test categories the case belongs to, and beer/wine/spirits. |
-| `imagePath` | Where the label image lives (see naming convention below). Not yet a real file — see "Known gap" above. |
-| `provenance` | How the (not-yet-existing) image will be produced: `rendered`, `rendered+degraded`, or `ai-generated`. Design doc §2/§5. |
-| `verified` | `true` only once a real image exists and a human confirmed it matches its spec. Required `true` for any `ai-generated` case before the eval harness may use it — enforced by the loader, not just documentation. Every case here is `false`; no images exist yet. |
+| `imagePath` | Where the label image lives (see naming convention below). A real committed file for every `rendered` / `rendered+degraded` case (LH-004); still absent for a future `ai-generated` case until LH-005 adds one. |
+| `provenance` | How the image was (or will be) produced: `rendered`, `rendered+degraded`, or `ai-generated`. Design doc §2/§5. |
+| `verified` | `true` only once a real image exists and a **human** has confirmed it matches its spec — CP-2's job, not this ticket's. Required `true` for any `ai-generated` case before the eval harness may use it — enforced by the loader, not just documentation. Every case here is still `false`. |
 | `vectors` | Which `audit/rubric.md` completion vectors (V1–V10) this case is evidence for. May be empty. See the known-gap note above for V7/V10. |
 | `application` | The five example fields as filed on the application (PRD §2, §5, TH-R11). |
 | `label` | The same fields as a careful human reader sees them on the label, plus warning-specific detail (`governmentWarningPrefixAllCaps`, presence flags). |
 | `expected` | The Validation Router's expected output: a verdict + one-line reason per field, a label-level verdict, and — only when the label-level verdict is `REVIEW` — the `ReviewReason` that routes the label to the Sonnet resolver (PRD §3.3). |
+| `degradations` | (LH-004) The `degrade.ts` transforms applied to a `rendered+degraded` case's clean base, in order, with their exact parameters — present only when the case's imperfection is a photo condition (glare, rotation, low light), absent for a render-time print choice (tiny text, an unusual font) or a clean `rendered` case. |
 
 `src/lib/golden-set/loader.ts` reads and checks this shape. Run its tests with
 `pnpm test -- src/lib/golden-set`.
@@ -69,9 +77,10 @@ golden-set/images/<caseId>.<jpg|jpeg|png>
 ```
 
 Example: case `case-14-case-variant-brand-stones-throw` pairs with
-`golden-set/images/case-14-case-variant-brand-stones-throw.jpg`. The loader checks this
-convention (`validateManifest` in `loader.ts`) even though the file itself doesn't exist yet
-— when someone drops the real image in at that exact path, no manifest edit is needed.
+`golden-set/images/case-14-case-variant-brand-stones-throw.jpg` — now a real file. The loader
+checks this convention (`validateManifest` in `loader.ts`) independently of whether the file
+exists; `scripts/golden/build.ts` is what makes the naming convention true for every
+`rendered` / `rendered+degraded` case.
 
 This mirrors the batch-upload pairing rule in PRD §3.5: deterministic pairing by filename,
 never by upload order or a separate lookup table.

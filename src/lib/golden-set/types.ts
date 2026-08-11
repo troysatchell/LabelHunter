@@ -11,9 +11,10 @@
  * value/evidence/confidence) and §3.3 (field verdict MATCH/MISMATCH/
  * NEEDS_REVIEW, label verdict PASS/FAIL/REVIEW, the `ReviewReason` enum).
  *
- * KNOWN GAP: `imagePath` in every committed case points at a file that does
- * not exist yet. See `golden-set/README.md` for the naming convention and
- * why the images are out of scope for this ticket.
+ * `imagePath` resolves to a real committed file for every `rendered` /
+ * `rendered+degraded` case (TRO-497 / LH-004). A future `ai-generated` case
+ * (LH-005, none exist yet) starts imageless until that ticket adds one. See
+ * `golden-set/README.md` for the naming convention.
  */
 
 /** The three beverage types the app supports (PRD §2, §5). */
@@ -127,6 +128,32 @@ export interface GoldenExpectedResult {
 export type GoldenSetProvenance = "rendered" | "rendered+degraded" | "ai-generated";
 
 /**
+ * The five transforms `scripts/golden/degrade.ts` can apply to a clean
+ * rendered base (design doc §4, TRO-497 / LH-004). A tiny-print or
+ * unusual-font case is a render-time choice, not one of these — see that
+ * script's comments.
+ */
+export type DegradationType =
+  | "rotate"
+  | "perspective"
+  | "glare"
+  | "low-light"
+  | "blur";
+
+/**
+ * One transform applied to a case's clean rendered base, with the exact
+ * parameters `degrade.ts` used — recorded here so the degraded image is
+ * reproducible from the spec alone (design doc §3's `degradations` field).
+ * `params` values are deliberately loose (`number | string`) because each
+ * `DegradationType` takes a different parameter shape; `degrade.ts` is the
+ * schema of record for what each type expects.
+ */
+export interface Degradation {
+  type: DegradationType;
+  params: Record<string, number | string>;
+}
+
+/**
  * A rubric completion vector this case provides evidence for
  * (`audit/rubric.md`, Appendix A: V1–V10). A case may cover zero, one, or
  * several. `V7` and `V10` are not yet covered by any case in this manifest —
@@ -149,12 +176,14 @@ export interface GoldenSetCase {
   beverageType: BeverageType;
   /**
    * Path to the label image, relative to the repo root, e.g.
-   * "golden-set/images/case-14-case-variant-brand-stones-throw.jpg".
-   * NOT a real file yet — see `golden-set/README.md`. The loader checks the
-   * naming convention, never that the file exists.
+   * "golden-set/images/case-14-case-variant-brand-stones-throw.jpg". A real
+   * committed file for every `rendered` / `rendered+degraded` case
+   * (TRO-497 / LH-004); see `golden-set/README.md`. The loader checks the
+   * naming convention, never that the file exists — that check lives in
+   * `scripts/golden/images.test.ts`, scoped to non-`ai-generated` cases.
    */
   imagePath: string;
-  /** How the (not-yet-existing) image will be produced. */
+  /** How the image was (or, for a future ai-generated case, will be) produced. */
   provenance: GoldenSetProvenance;
   /**
    * `true` only once a real image exists AND a human has confirmed it
@@ -170,6 +199,15 @@ export interface GoldenSetCase {
   application: GoldenApplicationFields;
   label: GoldenLabelFields;
   expected: GoldenExpectedResult;
+  /**
+   * The `degrade.ts` transforms applied to this case's clean rendered base,
+   * in application order. Present only on a `provenance: "rendered+degraded"`
+   * case whose imperfection is a photo condition (glare, rotation, low
+   * light) rather than a render-time print choice (tiny text, an unusual
+   * font) — see `scripts/golden/degrade.ts`'s module comment. Absent or
+   * empty otherwise.
+   */
+  degradations?: Degradation[];
   /** Optional context: why this case is shaped the way it is, notes for whoever generates the image. */
   notes?: string;
 }

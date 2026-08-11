@@ -4,6 +4,111 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-497 — LH-004: golden-set degradation pass, plus the renderer LH-003 deferred (2026-08-11)
+
+**Scope note.** This ticket's stated job was the degradation pass. LH-003 (TRO-458, Done)
+shipped the spec schema, the manifest, and the loader — but not `render.ts`, and its own
+CHANGES.md entry says so directly: "the renderer itself... `golden-set/images/` is still
+empty." A degradation pass needs a clean base image to degrade. No clean bases existed. The
+orchestrator approved building the renderer here too, as a prerequisite of this ticket on this
+branch, not a separate ticket. Both pieces are below.
+
+**What changed.** `golden-set/images/` now holds a real, committed JPEG for every case whose
+`provenance` is `rendered` or `rendered+degraded` — 29 of 29, all that currently exist in the
+manifest. Total size 1,104,318 bytes (1078 KB), largest single file 46,719 bytes (case-19),
+smallest 9,365 bytes (case-20) — every image well under the ticket's ~500 KB target. No
+`ai-generated` case exists in the manifest yet (that provenance is LH-005's job); this ticket
+leaves that path imageless and covered by a scoped test, per plan.
+
+- **`scripts/golden/render.ts`** — the renderer. `buildLabelHtml` is a pure function: given a
+  case's `label` ground truth, it builds an HTML/CSS document with the brand, class/type, ABV
+  line, net contents, and government warning drawn verbatim — whatever string the spec
+  carries is the string in the HTML, byte for byte (design doc §1's core rule: no image model
+  is ever trusted with the warning text). `renderLabelImage` screenshots that HTML with
+  Playwright's bundled Chromium (already a repo dependency for `pnpm test:e2e` — no new
+  dependency, and no network call, since the HTML is fully inline). `LABEL_REGIONS` names four
+  pixel rectangles (`brand`, `front`, `content`, `warning`) that `degrade.ts` targets by name.
+  Two categories bake their "imperfection" into the render itself rather than a post-process
+  transform — tiny warning text (case-23/24) and an unusual brand/class-type font
+  (case-25/26) — because both are print choices, not photo conditions; `CASE_STYLE_OVERRIDES`
+  (`render.ts:105`) is keyed by exact `caseId`, never a substring match.
+- **`scripts/golden/degrade.ts`** — five transforms per design doc §4: `applyRotate`,
+  `applyBlur`, `applyPerspective`, `applyGlare`, `applyLowLight`, plus `applyDegradation`, the
+  one dispatcher `build.ts` calls, which reads a manifest case's `degradations` list so that
+  list is always the single source of truth for what happened to a case's pixels. Every
+  numeric/region parameter is validated before it reaches sharp (CLAUDE.md rule 13 — finite,
+  in-range, a real region name) — `degrade.test.ts`'s "rejects ..." tests are red-first against
+  that validation, not just "some error was thrown." `applyPerspective` approximates a
+  keystone camera angle with a 2D affine shear; sharp has no true 4-corner projective warp, and
+  a real one needs a per-pixel remap this repo has no dependency for — not worth adding one for
+  a synthetic test fixture. No committed case currently uses it; it is implemented and
+  unit-tested as a design-doc-§4 capability, ready for the next case that needs it.
+- **`scripts/golden/build.ts`** — orchestrates render → degrade → JPEG-encode (mozjpeg,
+  quality 82) → write, for every non-`ai-generated` case. Run with `pnpm golden:build`.
+- **`golden-set/manifest.json`** — six cases (glare ×2, rotation ×2, low-light ×2) gained a
+  `degradations` entry recording the exact parameters `build.ts` used: case-17 glare on the
+  `brand` region; case-18 glare on `warning`; case-19 a mild, correctable 15° rotation;
+  case-20 a 180° rotation **plus** an 18-sigma blur (rubric V9's "blurry/unreadable," not
+  rotation alone — added deliberately for stronger V9 evidence, faithful to the case's own
+  note that no field should read confidently); case-21 low light on `front`; case-22 low light
+  on `warning`. Cases 23–26 (tiny text, odd typography) and every clean `rendered` case carry
+  no `degradations` — their imperfection, if any, is render-time, not a `degrade.ts` transform.
+- **`src/lib/golden-set/types.ts`, `loader.ts`** — added `DegradationType` and `Degradation`
+  (design doc §3's `degradations` field, never implemented by LH-003) and the loader's
+  matching optional-field validation, with new `loader.test.ts` cases covering both the accept
+  and reject paths. The manifest's shape changed; the loader still accepts it — "loader stays
+  green," per this ticket's brief.
+- **`vitest.config.ts`** — widened `include` to also match `scripts/**/*.test.ts`, so this
+  ticket's tests run inside `pnpm test`, the one unit vitest run, not a separate suite.
+- **`package.json`** — added the `golden:build` script.
+- **`golden-set/README.md`** — replaced the "no images yet" section with what now exists (the
+  three-script pipeline, sizes) and what still doesn't (LH-005's `ai-generated` wild labels,
+  LH-006's `verify.ts`). Left `verified: false` on every case alone: `verified` records a
+  **human** sign-off (design doc §3), and CP-2 review is where that happens — not this ticket.
+
+**A real tool quirk found while writing tests, not a `degrade.ts` bug.** Chaining
+`sharp(image).extract(region).stats()` in one pipeline (sharp 0.35.3 / vips 8.18.3, this
+machine) silently returns whole-image statistics, ignoring the extract — confirmed with a
+minimal repro: a 100×100 white canvas with one 10×10 black corner, where `.extract().stats()`
+reported the *same* mean for the black corner, a white corner, and the full image.
+Materializing the extract into its own buffer first (`.extract(region).toBuffer()`, then
+`sharp(thatBuffer).stats()`) gives the correct, expected numbers. `degrade.ts` itself never
+calls `.stats()` — it chains `.extract()` straight into `.modulate()`/`.composite()` and
+`.toBuffer()`, which materializes correctly regardless — so this was a test-helper bug, not a
+production one. `degrade.test.ts`'s `meanBrightness` helper documents the finding and the fix.
+
+**Tests (all in `pnpm test`, red-first where a fix followed).**
+- `scripts/golden/render.test.ts` — `buildLabelHtml`'s exact-warning-text guarantee, checked
+  byte-compared (`.includes()`) against every rendered case's literal spec text; the same for
+  brand/class-type text; the warning `<div>` is empty when `governmentWarningPresent` is
+  false; HTML-escaping is scoped to `&`/`<`/`>` only (a first draft escaped `'`/`"` too, which
+  broke a literal-substring check against case-14's `STONE'S THROW` — fixed by narrowing the
+  escape to the three characters that are actually structural in a text-content context, never
+  a quoted attribute here); a Playwright-backed determinism test renders the same case twice
+  and compares **decoded raw pixels** (not just PNG bytes) for exact equality.
+- `scripts/golden/degrade.test.ts` — each transform's effect (rotation expands the canvas and
+  changes pixels; blur measurably lowers stdev; glare brightens its target region only; low
+  light darkens its target region only; perspective changes shape) plus the boundary-rejection
+  tests described above; the dispatcher routes every known type and rejects an unknown one.
+- `scripts/golden/images.test.ts` — every non-`ai-generated` case's `imagePath` resolves to a
+  real, non-empty, well-under-500KB file; the six degraded cases' `degradations` entries match
+  exactly what's described above; every tiny-text/odd-typography/clean case carries none.
+- `src/lib/golden-set/loader.test.ts` — two new cases for the `degradations` schema addition
+  (accepts a well-formed list, rejects an unknown transform type or a missing `params` object).
+
+**How to run it.** `pnpm golden:build` regenerates every image from the current manifest and
+code (deterministic: same spec in, same pixels out — proven by the render-determinism test).
+`pnpm test` runs everything above. `pnpm typecheck` / `pnpm lint` / `pnpm build` all pass.
+
+**Rollback.** `git revert` this ticket's commit(s). Reverting removes `scripts/golden/`, the 29
+committed images, the `degradations` manifest entries and schema addition, and the
+`vitest.config.ts`/`package.json` wiring. No other ticket's code depends on any of it yet —
+LH-005 (Imagen) and LH-006 (verify gate) are both still open and unblocked either way.
+
+**Not done here (explicitly out of scope).** `scripts/golden/verify.ts` (LH-006) and
+`scripts/golden/imagen.ts` (LH-005) — neither written nor called. No code in this ticket
+performs a network call.
+
 ## TRO-462 — PR review round 2: orchestrator triage, 2 fixed, 3 deferred (2026-08-10)
 
 **What changed.** The orchestrator's independent gate run found 5 more CodeRabbit findings

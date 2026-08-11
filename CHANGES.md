@@ -4,6 +4,46 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-467 — PR review round 2: 8 findings, 7 fixed, 1 dismissed (2026-08-11)
+
+**Still does not clear CP-2.** The gate's second review pass found 8 more findings against the
+corrected document. Seven were real.
+
+Four were internal inconsistencies the round-1 edits introduced or left behind. Two passages
+said capitalization is checked at "three named positions" and then listed four words. §5.4's
+distance table said "the other 25 cases with a warning" when 29 total minus 2 missing-warning
+cases minus 4 listed cases is **23**. Q8 still described the ladder with three outcome classes
+and overlapping rate bands, while §8.4 had been corrected to four classes and disjoint bands.
+And the original CP-2 entry below still credited NFKC as passing the normalization test.
+
+Two were real gaps. §7.1 promised that a disagreement between the derived capitalization and the
+model's `prefix_casing` produces REVIEW, but §6.1's mapping table had no row for it — a promise
+with no branch behind it. And Appendix B's verification commands could not fail: they printed
+`match: True`/`False` and exited 0 either way, and the TTB-page check carried a **second
+hard-coded copy of the statutory string**, which is precisely the drift risk this document exists
+to remove. Both scripts now derive the expected text from the S1 fetch, check all six of TTB's
+checklist items rather than one, and exit non-zero on any mismatch. Both were extracted from the
+document and executed as written before this commit.
+
+One was prose style: §5's opening used a figurative "gets attacked in the interview". Rewritten
+literally, per the repo's ASD-STE100 rule.
+
+**One dismissed, for the second time.** *"De-hyphenation must require line-geometry evidence"*
+(raised as major in round 1, escalated to critical in round 2, with no new argument). Dismissed
+on two grounds, and §5.2 now states the first as a proof rather than an assertion: for the rule
+to produce a false PASS, some candidate would have to de-hyphenate to the canonical string
+without being a hyphenated wrap — but the rule only deletes a hyphen that a newline follows, and
+the canonical string contains no hyphen, so every such candidate is canonical with a wrap hyphen
+inserted. No such candidate exists. The worst case is a severity downgrade from FAIL to REVIEW,
+which still puts the label in front of a person. Second: the proposed mechanism needs character
+bounding boxes, which the OCR channel can supply and the vision channel cannot, so adopting it
+would make the two channels disagree by construction on every hyphenated label.
+
+**How to run it.** Nothing to build or test. Appendix B's S3–S5 and S6–S7 scripts are now
+runnable checks — `bash` them; they exit non-zero if a source has changed.
+
+**Rollback.** `git revert` this commit.
+
 ## TRO-467 — PR review triage: 15 CodeRabbit findings, 14 fixed, 1 dismissed (2026-08-11)
 
 **This entry still does not clear CP-2.** It corrects the checkpoint document. CP-2 stays
@@ -102,8 +142,11 @@ checkpoint, and a "defend it" Q&A (TH-R9, TH-R10, TH-R7, TH-R12, TH-R15, TH-R21,
   neither. The document names both and drafts the limitation wording.
 - **Normalization is the load-bearing section**, and it turns on one sentence: a normalization
   rule is legitimate only when it cannot change what a human reader sees on the label.
-  Whitespace runs, line breaks, line-end hyphenation, invisible characters, and NFKC
-  compatibility forms all pass that test and are normalized. Quote folding, diacritic
+  Whitespace runs, line breaks, line-end hyphenation, invisible characters, Unicode NFC
+  canonical forms, and an explicit list of space characters all pass that test and are
+  normalized. (This bullet said NFKC when the document first shipped; NFKC folds *visibly*
+  different compatibility forms and therefore fails the test — corrected in the review round
+  above.) Quote folding, diacritic
   stripping, and punctuation dropping all fail it and are deliberately absent — even though
   all three appear in the brand-name normalizer, where equivalence rather than exactness is
   the requirement. The statutory string contains no apostrophe, no quotation mark, and no

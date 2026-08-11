@@ -212,7 +212,7 @@ made.
 `GOVERNMENT WARNING`, **and separately** the initial capitals of `Surgeon` and `General`. Section
 5.4 originally recommended a fully case-insensitive body comparison. That recommendation would
 have accepted `surgeon general` in lower case — a deviation TTB's own specialist is instructed to
-look for. **Section 5.4 now checks capitalization at three named positions and nowhere else**, and
+look for. **Section 5.4 now checks capitalization at four named positions and nowhere else**, and
 every one of the three now carries a citation rather than an opinion.
 
 **2. Every checkbox maps onto something LabelHunter does or explicitly does not do.**
@@ -291,7 +291,7 @@ four to six physical lines. A camera, a vision model, and an OCR engine each add
 breaks, padding, and hyphenation. None of that was printed by the label's designer. Comparing
 raw bytes would fail every real label, including perfectly compliant ones.
 
-**It does not mean case-insensitive everywhere.** Capitalization is checked at three named
+**It does not mean case-insensitive everywhere.** Capitalization is checked at four named
 positions — `GOVERNMENT`, `WARNING`, `Surgeon`, `General` — because TTB checks exactly those
 (§2.5, §2.6). Code checks them separately, and hard. Section 5.4 explains why the rest of the
 body is treated differently, and open question 1 asks you to confirm that choice.
@@ -502,24 +502,25 @@ a wrong PASS delays a catch, a wrong FAIL accuses a compliant producer of a fede
 
 ## 5. Normalization — the load-bearing decision
 
-This is the section that gets attacked in the interview, so it is the section with the most
-reasoning per line.
+A reviewer will question this section more than any other, because it decides what "exact" means.
+So this section gives more reasoning per rule than the rest of the document.
 
 ### 5.1 The principle, in one sentence
 
 > **Normalize the transport, never the text.**
 
-A photograph and an OCR engine both add artifacts the printer never printed. Those artifacts get
-removed. Anything a human reader can see on the label survives untouched.
+A photograph and an OCR engine both add characters the printer never printed. The rules remove
+those characters. Anything a human reader can see on the label stays unchanged.
 
-That gives a test any proposed rule must pass:
+That gives a test every proposed rule must pass:
 
 > **A normalization rule is legitimate only when it cannot change what a human reader sees.**
 
-Collapsing a run of spaces passes the test — nobody reading the label sees the difference between
-one space and three. Folding a curly apostrophe to a straight one fails it — a reader can see
-which one is printed. Dropping punctuation fails it badly. Every rule below is sorted by that
-test, and the sort is the defence.
+Collapsing a run of spaces passes the test. A reader does not see the difference between one space
+and three. Folding a curly apostrophe to a straight one fails the test. A reader sees which one is
+printed. Dropping punctuation fails it badly. Section 5.2 lists the rules that pass. Section 5.3
+lists the rules that fail. The fixed order in §5.2 is part of the rule set, not a presentation
+choice — two of the rules only work in that order.
 
 ### 5.2 The rules that apply, in this fixed order
 
@@ -555,16 +556,25 @@ a reader can see, so it deserves the extra paragraph. The safety argument is the
 string's own content: **it contains no hyphen** (§2.2, verified). A label that really prints a
 hyphen has already deviated from the statute, and joining across it produces a string that still
 differs from canonical — `birth-\ndefects` becomes `birthdefects`, which is not `birth defects`.
-So the rule cannot turn a deviant label into a PASS. What it can do is shrink the difference: a
-printed hyphen may land inside §5.5's near-miss band and report as REVIEW rather than FAIL. That
-is a downgrade in severity, never a false PASS, and REVIEW still puts the label in front of a
-person.
+State the argument as a proof, because it is one, and because a reviewer will press on this rule.
+For de-hyphenation to produce a false PASS, some candidate `C` must satisfy
+`dehyphenate(C) === canonical` while `C` itself is not a hyphenated wrap. But `dehyphenate` only
+deletes a `-` that a newline follows. So any such `C` is canonical with one or more `-\n` pairs
+inserted. Every insertion point sits inside a canonical word, because canonical contains no
+hyphen. A hyphen inserted inside a word at a line break **is** a hyphenated wrap. So no such `C`
+exists.
 
-The stricter version of this rule — fire only when the hyphen sits at the right margin — needs
-character bounding boxes. The OCR channel can supply them with `blocks: true`; the vision channel
-returns text with no geometry at all. A rule that only one channel can apply would make the two
-channels disagree by construction, so this document does not adopt it. LH-020 may revisit it if
-the golden set shows hyphenation is common.
+What the rule can do is shrink a difference: a printed hyphen may land inside §5.5's near-miss
+band and report as REVIEW rather than FAIL. That is a downgrade in severity, never a false PASS,
+and REVIEW still puts the label in front of a person.
+
+**Why the stricter version is not adopted.** A reviewer proposed firing the rule only when line
+geometry proves the hyphen sits at the right margin. That needs character bounding boxes. The OCR
+channel can supply them with `blocks: true`. The vision channel returns text with no geometry at
+all. A rule that only one channel can apply would make the two channels disagree by construction
+on every hyphenated label, which converts a solved case into a REVIEW. The proof above already
+bounds the risk to a severity downgrade, so the stricter rule buys nothing and costs throughput.
+LH-020 may revisit it if the golden set shows hyphenation is common.
 
 ### 5.3 The rules that are deliberately absent
 
@@ -623,7 +633,7 @@ golden set's own ground-truth strings, not a model run (Appendix B):
 | case-09 — whole statement title case | prefix and body both title case | 50 | **0** |
 | case-10 — clause (1) reworded | genuine wording deviation | 38 | 38 |
 | case-11 — clause (2) reworded | genuine wording deviation | 24 | 24 |
-| the other 25 cases with a warning | nothing | 0 | 0 |
+| the other 23 cases with warning text | nothing | 0 | 0 |
 
 Two conclusions come straight off that table.
 
@@ -695,6 +705,7 @@ names the exact branch it returns.
 | `Surgeon` or `General` printed without its initial capital | `{ verdict: "MISMATCH", note }` | **FAIL** | "Surgeon General must print with capital letters." |
 | Near miss, distance 1–2 | `{ verdict: "NEEDS_REVIEW", reviewReason: "WARNING_MISMATCH" }` | REVIEW | "Government Warning differs by a single character — needs a closer look." |
 | Channels disagree | `{ verdict: "NEEDS_REVIEW", reviewReason: "WARNING_MISMATCH" }` | REVIEW | "Government Warning could not be read consistently." |
+| Derived capitalization disagrees with the model's `prefix_casing` (§7.1) | `{ verdict: "NEEDS_REVIEW", reviewReason: "WARNING_MISMATCH" }` | REVIEW | "Government Warning could not be read consistently." |
 | OCR confidence low, or the crop is clipped, or single channel below 0.90 | `{ verdict: "NEEDS_REVIEW", reviewReason: "LOW_IMAGE_QUALITY" }` | REVIEW | "Government Warning is not clear enough in this image." |
 | Warning absent entirely | `{ verdict: "NEEDS_REVIEW", reviewReason: "MISSING_REQUIRED_FIELD" }` | REVIEW | "No Government Warning found on this label." |
 
@@ -1255,20 +1266,26 @@ list precisely because it is a judgment call, not a solved problem.
 
 **Q8. How does the ladder decide to upgrade the model, with evidence?**
 
-By segmenting the warning outcomes into three classes and watching exactly one of them.
+By segmenting every warning outcome into four classes and watching exactly one of them. The four
+classes partition the results — every check lands in one, and the counts sum to the number of
+checks — so the rate has a denominator anyone can audit.
 
-A **true mismatch** is the tool working. It never triggers an upgrade, no matter how frequent —
-that distinction matters, because a naive "warning failure rate" metric would trigger an upgrade
-every time we tested against a batch of genuinely bad labels.
+A **clean pass** is the tool working. A **true mismatch** is also the tool working, and it never
+triggers an upgrade, no matter how frequent. That distinction matters: a naive "warning failure
+rate" would trigger an upgrade every time we tested against a batch of genuinely bad labels.
 
-A **resolution-suspect** outcome is `LOW_IMAGE_QUALITY`, or the two channels disagreeing. That rate
-is the signal.
+A **not found** outcome — no warning in the photograph — is a labelling question, not a resolution
+question. It is reported beside the rate, never inside it. No model upgrade finds a warning that
+is not in the image.
 
-Then the rungs, in order. Below 10% we change nothing. Between 10 and 25% we fix the crop pipeline
-— detection, DPI, framing — and re-measure before touching the model. Above 25% and persistent
-after that fix, the warning crop alone goes to Sonnet while Haiku keeps the other four fields. Only
-if that fails too do we move the whole extractor, and that rung requires re-running the latency and
-cost benchmarks before we accept it.
+A **resolution-suspect** outcome is `LOW_IMAGE_QUALITY`, the two channels disagreeing, or a
+near-miss inside the band. That rate is the signal.
+
+Then the rungs, in order. At 10% or below we change nothing. Above 10% and up to 25% we fix the
+crop pipeline — detection, DPI, framing — and re-measure before touching the model. Above 25% and
+persistent after that fix, the warning crop alone goes to Sonnet while Haiku keeps the other four
+fields. Only if that fails too do we move the whole extractor, and that rung requires re-running
+the latency and cost benchmarks before we accept it.
 
 The ordering encodes a belief worth stating out loud: a bad crop looks exactly like a bad model,
 and it is an order of magnitude cheaper to fix. Spending a model upgrade on a cropping bug is the
@@ -1573,38 +1590,64 @@ The `<EXTRACT>` element holds two `<P>` elements — statement (1) and statement
 curl -sS "https://www.ecfr.gov/api/versioner/v1/full/2026-07-06/title-27.xml?part=16"
 ```
 
-**S3–S5 — ttb.gov corroboration.** All three carry a byte-identical statement. Fetch each page and
-compare its rendered text against the eCFR string:
+**S3–S5 — ttb.gov corroboration.** All three carry a byte-identical statement. The script derives
+the expected text from S1 rather than repeating a second hard-coded copy — two copies of a
+statutory string in one appendix is the drift risk this whole document exists to remove. It exits
+non-zero on any mismatch, so it is usable as a check and not only as a demonstration.
 
 ```bash
+set -euo pipefail
+CANON=$(curl -sS "https://www.ecfr.gov/api/versioner/v1/full/2026-07-06/title-27.xml?part=16&section=16.21" \
+  | python3 -c 'import sys,re,html
+ex=re.search(r"<EXTRACT>(.*?)</EXTRACT>",sys.stdin.read(),re.S).group(1)
+print(" ".join(html.unescape(re.sub(r"<[^>]+>","",p)).strip()
+      for p in re.findall(r"<P>(.*?)</P>",ex,re.S)))')
 for U in \
  "https://www.ttb.gov/regulated-commodities/beverage-alcohol/distilled-spirits/ds-labeling-home/ds-health-warning" \
  "https://www.ttb.gov/regulated-commodities/beverage-alcohol/beer/labeling/malt-beverage-health-warning" \
  "https://www.ttb.gov/regulated-commodities/beverage-alcohol/wine/labeling-wine/wine-labeling-health-warning-statement"
 do
-  curl -sS -L -A "Mozilla/5.0" "$U" | python3 -c '
-import sys,re,html
-CANON=("GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink "
- "alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption "
- "of alcoholic beverages impairs your ability to drive a car or operate machinery, and may "
- "cause health problems.")
+  curl -sS -L -A "Mozilla/5.0" "$U" | CANON="$CANON" python3 -c '
+import sys,re,os,html
+canon=os.environ["CANON"]
 s=re.sub(r"<(script|style)[^>]*>.*?</\1>"," ",sys.stdin.read(),flags=re.S|re.I)
 t=re.sub(r"\s+"," ",html.unescape(re.sub(r"<[^>]+>"," ",s))).strip()
 i=t.find("GOVERNMENT WARNING")
-print("match:", t[i:i+len(CANON)]==CANON)'
+if i<0 or t[i:i+len(canon)]!=canon: sys.exit("MISMATCH")
+print("match")'
 done
+echo "S3-S5 OK"
 ```
 
-**S6, S7 — TTB's Checklist of Mandatory Label Information** (§2.6). Needs `pdftotext`.
+**S6, S7 — TTB's Checklist of Mandatory Label Information** (§2.6). Needs `pdftotext`. This checks
+all six of the warning's checkboxes, not only the `Surgeon` row, and exits non-zero if any is
+absent — §2.6's table claims all six, so all six get verified.
 
 ```bash
+set -euo pipefail
 curl -sS -L -A "Mozilla/5.0" "https://www.ttb.gov/media/66695/download" -o ds-checklist.pdf
 curl -sS -L -A "Mozilla/5.0" \
   "https://www.ttb.gov/system/files/images/wine-label/wine-labeling-checklist.pdf" -o wine-checklist.pdf
-for F in ds-checklist.pdf wine-checklist.pdf; do pdftotext -layout "$F" - | grep -n "Surgeon"; done
+for F in ds-checklist.pdf wine-checklist.pdf; do
+  pdftotext -layout "$F" - | tr -s ' \n' '  ' | python3 -c '
+import sys
+t=sys.stdin.read()
+items=["Is the statement on the label?",
+       "Does it match the exact wording and punctuation?",
+       "in capital",
+       "Are the “S” in Surgeon and “G” in General capitalized?",
+       "Does it appear as one statement?",
+       "Is it separate and apart from other information"]
+missing=[i for i in items if i not in t]
+if missing: sys.exit("MISSING: "+repr(missing))
+print("all 6 checklist items present")'
+done
+echo "S6-S7 OK"
 ```
 
-Both print: `☐ Are the “S” in Surgeon and “G” in General capitalized?`
+Both PDFs print `all 6 checklist items present`. The third item is matched on the fragment
+`in capital` because the PDF's fixed-width layout wraps "in capital letters and bold type" across
+two columns.
 
 **S8 — TTB 2022 Boot Camp for Brewers, "Keg Label Common Mistakes"** (§2.6).
 

@@ -1,0 +1,376 @@
+{
+  "mode": "compare",
+  "commit": "cbc7088985cd919b44edc748fc425b95e8af5b08",
+  "dirty": false,
+  "dirty_paths": [],
+  "date": "2026-08-11T21:51:53Z",
+  "config_hash": "b11cf94e71464ca3c5a98783875a56dd2b5f14513a42574f00d4ec07ac52a532",
+  "ticket_mapping": {
+    "status": "OK",
+    "provider": "linear",
+    "team": "Troysatchell",
+    "scope": "All 39 issues in Linear project 'LabelHunter' (team Troysatchell spans 4 projects — PlugForge, FleetGraph, ShipShape Audit Remediation, LabelHunter; project scope confirmed 2026-08-10, unchanged, config's tickets.project is non-null so Phase 0's scope re-check did not need to re-run). Pulled via list_issues(project='LabelHunter', includeArchived=true, limit=250); hasNextPage=false confirms full coverage."
+  },
+  "requirements": [
+    {
+      "id": "TH-R1",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-461", "TRO-464", "TRO-465", "TRO-502"],
+      "evidence": [
+        { "file": "src/app/api/verify/route.ts", "line": 166, "note": "routeLabel(extraction, application, deps.comparators, ...) — real pipeline wiring, not a stub" },
+        { "file": "src/app/_components/VerifyForm.tsx", "line": 200, "note": "single <button type=\"submit\"> — the form's only action; submits via submitVerification() (../_lib/verify-client), which calls POST /api/verify per route.ts's own citations above" },
+        { "file": "src/app/api/verify/route.test.ts", "line": 107, "note": "\"routes a well-formed submission, returns a checklist, and persists every table\" — real DB round-trip, mocked Anthropic call" }
+      ],
+      "verification": {
+        "command": "pnpm test (this sweep, DATABASE_URL=labelhunter_audit_sweep)",
+        "result_excerpt": "Test Files  59 passed (59)\n     Tests  681 passed (681)\n  Duration  3.17s"
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "Upgraded from baseline MISSING and this morning's PARTIAL: VerifyForm -> route.ts -> routeLabel -> DB -> ResultsChecklist/DetailView is now a complete, tested loop. Evidence is an automated integration test with a mocked Anthropic call, not a live manual browser click-through this sweep (no dev server booted) — see Coverage and limitations."
+    },
+    {
+      "id": "TH-R2",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-471", "TRO-462"],
+      "evidence": [
+        { "file": "scripts/latency/results/single-label-verify.json", "line": 30, "note": "p50: 4232ms (target 5000ms)" },
+        { "file": "scripts/latency/results/single-label-verify.json", "line": 31, "note": "p95: 4763ms" }
+      ],
+      "verification": {
+        "command": "pnpm latency:check (tsx scripts/latency/measure.ts) — NOT re-run this sweep; citing the existing captured artifact",
+        "result_excerpt": "requestedRuns 20, successfulRuns 20, failedRuns 0; summaryMs { p50: 4232, p95: 4763 }; budget.p50TargetMs 5000 — target met"
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "Real 20-run measurement, target met. IMPORTANT CAVEAT: measuredAt 2026-08-11T17:45:48Z, which predates TRO-464 (LH-014 Sonnet resolver, Done ~18:29 same day). The file's own pipelineScope note says this run had no resolver and no warning comparator -- fast path only. All 20 runs landed on verdict REVIEW / LOW_MODEL_CONFIDENCE, so this number has never been measured against the current cascade including a live Sonnet escalation. Not re-run this sweep to avoid an unrequested live Anthropic API spend (see Coverage and limitations) -- recommend a fresh run before relying on this figure for submission."
+    },
+    {
+      "id": "TH-R3",
+      "verdict": "IMPLEMENTED-UNVERIFIED",
+      "tickets": ["TRO-465", "TRO-466", "TRO-475", "TRO-480"],
+      "evidence": [
+        { "file": "src/app/page.tsx", "line": 1, "note": "\"One obvious primary flow, replacing the scaffold placeholder\" -- real single-form home page, not a placeholder" },
+        { "file": "src/app/_components/VerifyForm.tsx", "line": 95, "note": "every field carries a <label htmlFor=...>; one <button type=\"submit\"> at line 200, no secondary navigation" }
+      ],
+      "verification": null,
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "Upgraded from MISSING (baseline and this morning both found page.tsx \"still placeholder\"). Code-level heuristic review supports the 73-year-old benchmark (single form, labeled fields, one primary action, disabled-while-loading), but this sweep did not boot a dev server or click through the flow live -- no browser-based UX walkthrough performed. LH-054 (TRO-480, UX polish pass) is still Backlog."
+    },
+    {
+      "id": "TH-R4",
+      "verdict": "PARTIAL",
+      "tickets": ["TRO-473", "TRO-474", "TRO-475", "TRO-472", "TRO-506"],
+      "evidence": [
+        { "file": "src/lib/db/schema.ts", "line": 75, "note": "batchJobs table (PRD §3.5) -- schema exists, no upload/worker/UI consumes it yet" },
+        { "file": "src/worker/.gitkeep", "line": 1, "note": "placeholder only -- no worker pool implementation" }
+      ],
+      "verification": null,
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": "LH-040/041/042 (TRO-473/474/475) implement CSV+image batch input, the worker pool, and progress/summary UI. All three are Backlog behind CP-3 (TRO-472, still Backlog, unchanged). TRO-506 (resolver duplicate-check TOCTOU, review-flagged) is a correctness fix inside LH-041's future scope, not a separate wave. No small change closes this -- it is a full wave, correctly held back by design, not oversight.",
+      "notes": "Unchanged tier since baseline (schema-only presence has read PARTIAL both times, per baseline's own precedent, not a downgrade)."
+    },
+    {
+      "id": "TH-R5",
+      "verdict": "IMPLEMENTED-UNVERIFIED",
+      "tickets": [],
+      "evidence": [
+        { "file": "docs/PRD.md", "line": 46, "note": "\"No COLA integration (TH-R5). No sensitive data (TH-R6).\" -- explicit scope statement, names both requirement IDs" },
+        { "file": "src/lib/db/schema.ts", "line": 146, "note": "applications table has no COLA/registry reference columns" }
+      ],
+      "verification": null,
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "grep -rn \"COLA\" src/ (this sweep): 1 match, src/server/router/required-fields.ts:21, a doc comment naming the federal rule -- no integration code. Satisfied by omission -- correctly unticketed (no ticket should exist for deliberately not building something). Re-confirmed clean with a fresh grep this sweep. Verdict is IMPLEMENTED-UNVERIFIED rather than VERIFIED because \"no integration exists\" is a static absence check, not a green behavioral command in the verify-tier sense; this matches baseline's and this morning's classification."
+    },
+    {
+      "id": "TH-R6",
+      "verdict": "PARTIAL",
+      "tickets": ["TRO-457", "TRO-482", "TRO-484"],
+      "evidence": [
+        { "file": "docs/PRD.md", "line": 46, "note": "\"No sensitive data (TH-R6). No auth/user accounts -- a single shared access code protects the deployment (§8).\"" },
+        { "file": "src/lib/db/schema.ts", "line": 146, "note": "applications table stores only label/application fields (brand, class, ABV, net contents, warning) -- no PII columns" },
+        { "file": ".gitignore", "line": 8, "note": ".factory-env excluded" },
+        { "file": ".gitignore", "line": 9, "note": ".env.local excluded" }
+      ],
+      "verification": null,
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": "Two small, independent pieces: (a) LH-063/README (TRO-484) states the data-handling posture in the words TH-R6 asks for; (b) LH-061/Key protection (TRO-482) adds the access-code gate PRD §8 already designs -- this is the same access-control gap this session's PR #15 CodeRabbit review correctly deferred to LH-061 rather than a one-off route fix. Neither is large; both are already ticketed and Backlog.",
+      "notes": "grep -rnE \"sk-ant-[a-zA-Z0-9]{20,}|AIza[a-zA-Z0-9_-]{30,}\" across .ts/.tsx/.md/.json/.yaml (this sweep): 0 matches. Unchanged tier. Evidence strengthened (fresh secret-pattern scan added this sweep; still no dedicated scanner tool run)."
+    },
+    {
+      "id": "TH-R7",
+      "verdict": "MISSING",
+      "tickets": ["TRO-478", "TRO-485"],
+      "evidence": [],
+      "verification": null,
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": "No small change closes this -- it needs an explicit section (likely in approach.md, LH-064/TRO-485) naming every outbound dependency (Anthropic API; Google Gemini API, dev-time only, for golden-set generation) and stating what happens when each is unreachable. The failure-mode code already exists (SERVICE error state, TH-R20's route.test.ts:262 covers transport-level failure) -- this gap is the missing documentation, not missing behavior.",
+      "notes": "Unchanged since baseline. grep across docs/PRD.md for network/firewall/outbound/endpoint language returned nothing beyond one line naming Anthropic API key provisioning (PRD.md:334) -- no degradation-behavior documentation."
+    },
+    {
+      "id": "TH-R8",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-462", "TRO-463", "TRO-504"],
+      "evidence": [
+        { "file": "src/server/comparators/brand.test.ts", "line": 24, "note": "\"MATCHES 'STONE'S THROW' (label) against 'Stone's Throw' (application), with a note\" -- the brief's own named case, at unit level" },
+        { "file": "src/app/api/verify/route.test.ts", "line": 169, "note": "same case re-asserted at the full route/integration level, real comparators post-LH-013" },
+        { "file": "src/server/comparators/normalize.test.ts", "line": 21, "note": "casefold normalization: normalizeForFuzzyMatch(\"STONE'S THROW\") === normalizeForFuzzyMatch(\"Stone's Throw\")" }
+      ],
+      "verification": {
+        "command": "pnpm test (this sweep)",
+        "result_excerpt": "Test Files  59 passed (59)\n     Tests  681 passed (681)"
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "Upgraded from MISSING (baseline) / PARTIAL (this morning, \"comparators still placeholders\"). LH-013 (TRO-463) and edge-case follow-up LH-013b (TRO-504) are both Done -- the flagship case now passes at both unit and integration level in the green suite."
+    },
+    {
+      "id": "TH-R9",
+      "verdict": "MISSING",
+      "tickets": ["TRO-468", "TRO-469"],
+      "evidence": [
+        { "file": "src/server/router/index.ts", "line": 236, "note": "\"The government warning: contract only (LH-020, gated by CP-2)\" -- router's own comment confirms no real comparator wired" },
+        { "file": "src/app/api/verify/route.ts", "line": 166, "note": "routeLabel(..., null, {...}) -- warningResult is passed as a literal null on every live request" },
+        { "file": "docs/checkpoints/cp2-warning-subsystem.md", "line": 1, "note": "CP-2 walkthrough prep material exists (new since baseline) but is prep, not the comparator itself" }
+      ],
+      "verification": null,
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": "Ships when CP-2 (TRO-467) clears and LH-020 (TRO-468, Backlog) lands the real word-for-word comparator. The router's warningResult parameter and the Detail view's \"Detected on the label\" / \"What TTB requires\" column framing (src/app/_components/DetailView.tsx) are already built to receive it. This is the single largest remaining code gap against a headline, explicitly-quoted brief requirement (\"It has to be exact. Like, word-for-word...\").",
+      "notes": "Code-level verdict unchanged (MISSING) since baseline. Process movement since this morning: TRO-467 (LH-CP2 walkthrough) moved Backlog -> In Progress; still not Done. Treated as an orphan ticket (process checkpoint, not itself an implementation), consistent with baseline/this-morning's categorization -- see Orphan tickets."
+    },
+    {
+      "id": "TH-R10",
+      "verdict": "PARTIAL",
+      "tickets": ["TRO-460", "TRO-477", "TRO-497"],
+      "evidence": [
+        { "file": "src/server/preprocessing/pipeline.ts", "line": 73, "note": "export async function preprocessImage(...) -- real preprocessing entry point" },
+        { "file": "src/server/preprocessing/errors.ts", "line": 24, "note": "export class FileTooLargeError -- one of the designed, typed preprocessing error states" },
+        { "file": "src/server/router/label-blockers.ts", "line": 20, "note": "export function isLowImageQuality(...) -- real low-quality-image detection feeding the router" },
+        { "file": "golden-set/README.md", "line": 14, "note": "\"golden-set/images/ now holds a real, committed JPEG for every rendered and rendered+degraded case. That is 29 of 29 cases.\"" }
+      ],
+      "verification": null,
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": "Small: wire one of the already-committed degraded golden-set images (glare/blur/low-light/rotate variants) through the real extraction+router path in a test, asserting a graceful low-confidence or \"unreadable\" outcome. scripts/golden/images.test.ts currently only checks that image files exist for every manifest case -- it does not exercise them against the router.",
+      "notes": "Evidence substantially strengthened since this morning: 29 real degraded images now committed (0 at last sweep), up from schema/code-only evidence. Verdict tier unchanged (PARTIAL) because no automated test yet feeds a degraded image through the full pipeline to prove the graceful-degradation behavior end-to-end -- image presence is coverage-checked, not behaviorally exercised."
+    },
+    {
+      "id": "TH-R11",
+      "verdict": "PARTIAL",
+      "tickets": ["TRO-461", "TRO-463", "TRO-504"],
+      "evidence": [
+        { "file": "golden-set/manifest.json", "line": 5, "note": "case-01-clean-match-spirits -- the Old Tom Distillery reference case, all five fields present" },
+        { "file": "src/app/api/verify/route.test.ts", "line": 107, "note": "mocked round-trip covers all five router fields" },
+        { "file": "scripts/latency/results/single-label-verify.json", "line": 22, "note": "verdictCounts.REVIEW: 20 -- the only REAL (non-mocked) extraction run against this exact case, and every one needed review" }
+      ],
+      "verification": null,
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": "The gap is confidence, not code: mocked round-trip tests already pass cleanly. Re-running the latency harness (or an equivalent live smoke test) against the current cascade -- including the now-merged Sonnet resolver, which the last live run predates -- would show whether real extraction now clears the flagship case, or whether prompt/router calibration needs a pass.",
+      "notes": "Upgraded from MISSING. Important honesty note: the ONLY real-model evidence available (the latency harness, 20 live Haiku calls against this exact reference image) shows the live pipeline has never yet produced a clean PASS on its own flagship case -- every real run landed on REVIEW / LOW_MODEL_CONFIDENCE. That run predates the Sonnet resolver's merge, so it is not evidence the resolver can't clean this up; it is evidence no one has checked yet. Kept at PARTIAL rather than VERIFIED specifically because of this."
+    },
+    {
+      "id": "TH-R12",
+      "verdict": "PARTIAL",
+      "tickets": ["TRO-458", "TRO-497", "TRO-498", "TRO-499", "TRO-469", "TRO-479", "TRO-505"],
+      "evidence": [
+        { "file": "golden-set/README.md", "line": 14, "note": "\"29 of 29 cases\" rendered + degraded, real committed JPEGs, ~1.08MB total" },
+        { "file": "golden-set/manifest.json", "line": 2, "note": "\"version\": \"1.0.0\" -- manifest schema, real case data" }
+      ],
+      "verification": null,
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": "LH-005 (TRO-498, Backlog) adds the ~5 AI-generated \"wild\" labels the design doc calls for; LH-006 (TRO-499, Backlog) adds the CI consistency/coverage gate (scripts/golden/verify.ts, not yet written). Neither blocks the other; both are independently scoped and already ticketed.",
+      "notes": "Massive strengthening since this morning (0 images -> 29 images), tier unchanged only because the two remaining sub-obligations (wild labels, CI gate) are still both open. TRO-505 (font-determinism fix, Done) is folded in here -- it was a correctness fix to the renderer these 29 images depend on."
+    },
+    {
+      "id": "TH-R13",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-456"],
+      "evidence": [
+        { "file": "package.json", "line": 2, "note": "\"name\": \"labelhunter\" -- buildable Next.js project; pnpm install/build/test all green from a disposable worktree this sweep" }
+      ],
+      "verification": {
+        "command": "gh repo view troysatchell/LabelHunter --json isPrivate,url ; pnpm install ; pnpm build",
+        "result_excerpt": "isPrivate:false; pnpm install exit 0 (fresh, no cached node_modules); next build: Compiled successfully, 6 routes generated"
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "Unchanged tier (VERIFIED at baseline and this morning too), but evidence is now stronger: this sweep ran a genuinely fresh pnpm install in a brand-new worktree (git worktree add --detach at origin/main's tip), closing the caveat this morning's report flagged (\"buildable from a literal fresh clone remains unproven\")."
+    },
+    {
+      "id": "TH-R14",
+      "verdict": "MISSING",
+      "tickets": ["TRO-484"],
+      "evidence": [],
+      "verification": null,
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": "LH-063/README (TRO-484, Backlog) -- a single file. The smallest real gap in this whole matrix.",
+      "notes": "Unchanged since baseline. No README.md at repo root, confirmed via directory listing this sweep."
+    },
+    {
+      "id": "TH-R15",
+      "verdict": "MISSING",
+      "tickets": ["TRO-485"],
+      "evidence": [],
+      "verification": null,
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": "LH-064/approach.md (TRO-485, Backlog). docs/PRD.md:241-242 already names its required contents (approach, tools, assumptions, trade-offs & limitations, bold-detection limitation, cascade benchmark results) -- writing the file is the only remaining step; the outline already exists.",
+      "notes": "Unchanged since baseline. No docs/approach.md exists, confirmed via directory listing this sweep."
+    },
+    {
+      "id": "TH-R16",
+      "verdict": "MISSING",
+      "tickets": ["TRO-481", "TRO-483"],
+      "evidence": [],
+      "verification": null,
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": "LH-060/Render deploy (TRO-481, Backlog) -- a deployment/ops step, not a code gap. verify_urls.app in the audit config stays null until this lands; once it does, TH-R1's core flow can be re-verified live against the deployed URL instead of only locally.",
+      "notes": "Unchanged since baseline."
+    },
+    {
+      "id": "TH-R17",
+      "verdict": "PARTIAL",
+      "tickets": ["TRO-469", "TRO-470", "TRO-486", "TRO-499"],
+      "evidence": [
+        { "file": "src/app/api/verify/route.test.ts", "line": 107, "note": "core single-label loop passes end to end (TH-R1)" },
+        { "file": "src/server/comparators/brand.test.ts", "line": 24, "note": "judgment-based matching works (TH-R8)" }
+      ],
+      "verification": null,
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": "Follows TH-R1/TH-R11/TH-R8 upward, but \"completely\" stays out of reach while TH-R9 (warning, MISSING) and TH-R4 (batch, PARTIAL) remain open -- no independent scope beyond what those two rows already name. LH-030 (TRO-470, eval harness) and LH-006 (TRO-499, golden verify gate) would add automated completeness scoring but are both still Backlog.",
+      "notes": "Upgraded from MISSING, following its constituent rows' upgrades."
+    },
+    {
+      "id": "TH-R18",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-456"],
+      "evidence": [
+        { "file": ".github/workflows/ci.yml", "line": 1, "note": "CI workflow present" }
+      ],
+      "verification": {
+        "command": "pnpm typecheck && pnpm lint && pnpm test && pnpm build (this sweep, disposable worktree)",
+        "result_excerpt": "typecheck exit 0; lint 0 errors/1 pre-existing accepted warning (@next/next/no-img-element on DetailView.tsx, documented in-line as deliberate); test 681/681 passed (59 files); build: Compiled successfully, 6 routes"
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "Unchanged tier. Suite grew from 249 (this morning) to 681 tests, all green, zero regressions."
+    },
+    {
+      "id": "TH-R19",
+      "verdict": "PARTIAL",
+      "tickets": ["TRO-456", "TRO-462", "TRO-470"],
+      "evidence": [
+        { "file": "docs/PRD.md", "line": 33, "note": "\"5. Persistence + human review queue (differentiator, TH-R22)\" -- architecture choices named and cross-referenced to their rubric line" },
+        { "file": "src/server/extractor/prompt.ts", "line": 4, "note": "\"CP-1-approved verbatim... Troy reviewed and approved this exact wording\" -- a defended, checkpoint-gated technical choice, not an unreviewed default" }
+      ],
+      "verification": null,
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": "Approach.md (shared gap with TH-R15) is where \"defended in docs\" becomes one complete, dedicated artifact instead of choices scattered across PRD.md -- no separate code change needed.",
+      "notes": "Unchanged tier."
+    },
+    {
+      "id": "TH-R20",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-465", "TRO-466", "TRO-473", "TRO-475", "TRO-478", "TRO-479"],
+      "evidence": [
+        { "file": "src/app/_components/ErrorPanel.tsx", "line": 12, "note": "ERROR_TITLE taxonomy: VALIDATION / IMAGE / EXTRACTION / SERVICE, each its own plain-English on-page panel, role=\"alert\"" },
+        { "file": "src/app/api/verify/route.test.ts", "line": 223, "note": "malformed input -> 400 VALIDATION, no live call attempted" },
+        { "file": "src/app/api/verify/route.test.ts", "line": 235, "note": "unreadable image -> 422 IMAGE, preprocessing's own human-readable message" },
+        { "file": "src/app/api/verify/route.test.ts", "line": 248, "note": "extraction failure -> 502 EXTRACTION, honest \"could not read the label\" state" },
+        { "file": "src/app/api/verify/route.test.ts", "line": 262, "note": "transport failure (network down/timeout) -> 503 SERVICE" },
+        { "file": "src/app/api/verify/route.test.ts", "line": 291, "note": "database failure after successful extraction -> designed SERVICE state, not a raw 500" }
+      ],
+      "verification": {
+        "command": "pnpm test (this sweep)",
+        "result_excerpt": "describe(\"POST /api/verify — designed error states (TH-R20)\") — all cases passing within the 681/681 green run"
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "Upgraded from MISSING (baseline) via \"no UI yet\" (this morning) to VERIFIED. Every failure mode TH-R20 names (bad image, API failure, timeout, malformed input) now has a dedicated, tested designed state. The UX-heuristic half of this rubric line overlaps TH-R3, which stays IMPLEMENTED-UNVERIFIED for the reason given there (no live click-through this sweep) -- this row's VERIFIED status rests on the error-handling half specifically, which is fully automated and green."
+    },
+    {
+      "id": "TH-R21",
+      "verdict": "PARTIAL",
+      "tickets": ["TRO-486"],
+      "evidence": [
+        { "file": "factory/tickets.md", "line": 8, "note": "ticket source of truth, cross-references TH-R IDs (38 TH-R mentions across 241 lines, confirmed this sweep)" },
+        { "file": "CLAUDE.md", "line": 17, "note": "\"audit/requirements/inventory.md — TH-R1..R23, the graded requirements. Every ticket cites the TH-R IDs it advances\" -- the traceability discipline stated as policy" }
+      ],
+      "verification": null,
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": "Ships incrementally as each Backlog row above closes. TRO-486 (LH-065) exists specifically to re-run this sweep and close the gaps it finds -- no separate scope beyond keeping that ticket alive and re-sweeping periodically.",
+      "notes": "Unchanged tier. Evidence deliberately excludes audit/requirements/* itself per report-format.md (\"the audit's own output directory never is [citable]\")."
+    },
+    {
+      "id": "TH-R22",
+      "verdict": "IMPLEMENTED-UNVERIFIED",
+      "tickets": ["TRO-457", "TRO-464", "TRO-476"],
+      "evidence": [
+        { "file": "docs/PRD.md", "line": 33, "note": "\"Persistence + human review queue (differentiator, TH-R22)\" -- explicit docs callout naming this requirement by ID" },
+        { "file": "src/server/resolver/index.ts", "line": 2, "note": "\"The Sonnet resolver (LH-014 / TRO-464, PRD §3.1/§3.3, CP-1 §6)\" -- real, tested resolver + review-queue insertion (LH-014, Done)" }
+      ],
+      "verification": null,
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "Upgraded from MISSING. The backend differentiator (confidence-based triage, Sonnet resolver, review queue) is real and tested; PRD.md now explicitly calls it out by requirement ID, matching this row's acceptance evidence (\"Docs/demo call out the differentiator(s)\") precisely. Not VERIFIED because a docs callout is a file:line trace, not a behavioral/verify-command check. The visible demo surface -- LH-050/TRO-476's review-queue UI -- is still an open PR (#16, not merged into this sweep's commit), so the differentiator is not yet demoable end to end."
+    },
+    {
+      "id": "TH-R23",
+      "verdict": "PARTIAL",
+      "tickets": ["TRO-485"],
+      "evidence": [
+        { "file": "docs/PRD.md", "line": 241, "note": "\"docs/approach.md: approach, tools used, assumptions log, trade-offs & limitations (TH-R15, TH-R23)\" -- planned but not yet written" }
+      ],
+      "verification": null,
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": "The prioritization half is already satisfied -- CP-2 and CP-3 correctly hold TH-R9/TH-R4 stretch work behind the core loop rather than letting it ship half-built (CLAUDE.md's own \"three unskippable human checkpoints\" policy). The written half is the same approach.md gap as TH-R15/TH-R19 -- one document closes three rows at once.",
+      "notes": "Unchanged tier."
+    }
+  ],
+  "orphan_tickets": [
+    { "ticket": "TRO-459", "title": "LH-CP1 · ⛔ CHECKPOINT 1: cascade router + prompts walkthrough", "note": "Done, cleared 2026-08-10 — process checkpoint, not itself a TH-R implementation" },
+    { "ticket": "TRO-467", "title": "LH-CP2 · ⛔ CHECKPOINT 2: warning subsystem walkthrough", "note": "In Progress (moved from Backlog since this morning) — now the sole blocker for TH-R9/LH-020" },
+    { "ticket": "TRO-472", "title": "LH-CP3 · ⛔ CHECKPOINT 3: batch queue walkthrough", "note": "Backlog, unchanged — the sole blocker for Wave 3 / TH-R4" },
+    { "ticket": "TRO-487", "title": "LH-070 · ⛔ Final submission gate", "note": "Backlog, Troy-only, expected" }
+  ],
+  "needs_ruling": [],
+  "commands_run": [
+    { "command": "shasum -a 256 '<TH source docx>'", "result": "matches audit/requirements.config.yaml's recorded hash — inventory current, compare mode valid", "bears_on": [], "note": "doc-currency check, not requirement-specific" },
+    { "command": "pnpm install", "result": "exit 0 — fresh install, no pre-existing node_modules (disposable worktree)", "bears_on": ["TH-R13"], "note": "closes the fresh-clone caveat this morning's report left open" },
+    { "command": "pnpm db:migrate", "result": "exit 0 — migrations applied successfully", "bears_on": [], "note": "ran against a throwaway database created for this sweep, dropped after (see Coverage and limitations)" },
+    { "command": "pnpm typecheck", "result": "exit 0", "bears_on": ["TH-R13", "TH-R18"], "note": null },
+    { "command": "pnpm lint", "result": "exit 0 — 0 errors, 1 pre-existing accepted warning", "bears_on": ["TH-R13", "TH-R18"], "note": "@next/next/no-img-element on DetailView.tsx, documented in-line as a deliberate choice" },
+    { "command": "pnpm test", "result": "exit 0 — 59 files, 681/681 tests passed", "bears_on": ["TH-R1", "TH-R8", "TH-R13", "TH-R18", "TH-R20"], "note": "ran against the same throwaway database as db:migrate" },
+    { "command": "pnpm build", "result": "exit 0 — 6 routes (/, /_not-found, /api/health, /api/label-images/[labelImageId], /api/verify, /verify/[verificationId])", "bears_on": ["TH-R13", "TH-R18"], "note": null },
+    { "command": "pnpm test:e2e", "result": "NOT RUN", "bears_on": [], "note": "boots a real dev server; the repo's only spec covers /api/health, which bears on no row (same as baseline and this morning)" },
+    { "command": "pnpm latency:check (tsx scripts/latency/measure.ts)", "result": "NOT RUN", "bears_on": ["TH-R2", "TH-R11"], "note": "would make real, paid Anthropic API calls — reused the existing dated artifact instead rather than spend without being asked; see TH-R2/TH-R11 notes for why a re-run is recommended" },
+    { "command": "gh repo view troysatchell/LabelHunter --json isPrivate,url", "result": "isPrivate:false, PUBLIC", "bears_on": ["TH-R13"], "note": null },
+    { "command": "grep -rn \"COLA\" --include='*.ts' --include='*.tsx' src/", "result": "1 match, a doc comment naming the federal rule — no integration code", "bears_on": ["TH-R5"], "note": null },
+    { "command": "grep -rnE \"sk-ant-[a-zA-Z0-9]{20,}|AIza[a-zA-Z0-9_-]{30,}\" (secret-pattern scan)", "result": "0 matches", "bears_on": ["TH-R6"], "note": "not a dedicated secret-scanning tool; a manual pattern check" },
+    { "command": "find golden-set -iname '*.jpg' -o -iname '*.png' | wc -l", "result": "29", "bears_on": ["TH-R12"], "note": "matches golden-set/README.md's own \"29 of 29 cases\" claim" }
+  ],
+  "baselineRef": "matrix.baseline.json"
+}

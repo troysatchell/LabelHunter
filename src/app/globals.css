@@ -220,6 +220,17 @@ fieldset.field legend {
   background: var(--color-bg);
   color: var(--color-primary);
   cursor: pointer;
+  /* TRO-466: this class now styles a link (`ResultsChecklist.tsx`'s "See
+     the label photo and full comparison") as well as a `<button>`
+     (`ErrorPanel.tsx`'s "Try again") — an `<a>` is underlined by default,
+     a `<button>` never is, so this keeps both looking like the same
+     control. `display: inline-block` is explicit for the same reason,
+     rather than relying on a `<button>`'s own default box behavior: a
+     flex-item context blockifies either element anyway, but this class
+     should not depend on always being used inside one. */
+  text-decoration: none;
+  text-align: center;
+  display: inline-block;
 }
 
 /* ---- Status / loading ------------------------------------------------ */
@@ -567,4 +578,133 @@ fieldset.field legend {
 .reject-button:disabled {
   opacity: 0.65;
   cursor: not-allowed;
+}
+
+/* ---- Detail view (TRO-466, PRD §5 — label image + full comparison) --- */
+
+.detail-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.resolved-by-sonnet {
+  border: 2px solid var(--color-border);
+  border-radius: 0.3rem;
+  background: var(--color-bg-alt);
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.resolved-by-sonnet__badge {
+  margin: 0;
+  font-weight: 700;
+}
+
+.detail-view__layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.detail-view__image {
+  flex: 1 1 18rem;
+  max-width: 100%;
+  height: auto;
+  border: 2px solid var(--color-border);
+  border-radius: 0.3rem;
+}
+
+.detail-field-list {
+  flex: 2 1 22rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.detail-field {
+  border: 2px solid var(--color-border);
+  border-radius: 0.3rem;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.detail-field--match {
+  border-color: var(--color-match);
+  background: var(--color-match-bg);
+}
+
+.detail-field--mismatch {
+  border-color: var(--color-mismatch);
+  background: var(--color-mismatch-bg);
+}
+
+.detail-field--needs_review {
+  border-color: var(--color-review);
+  background: var(--color-review-bg);
+}
+
+.detail-field__header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.detail-field__icon {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.detail-field--match .detail-field__icon {
+  color: var(--color-match);
+}
+
+.detail-field--mismatch .detail-field__icon {
+  color: var(--color-mismatch);
+}
+
+.detail-field--needs_review .detail-field__icon {
+  color: var(--color-review);
+}
+
+.detail-field__name {
+  font-weight: 700;
+}
+
+.detail-field__compare {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.detail-field__value {
+  flex: 1 1 10rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.detail-field__value-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.detail-field__value-text {
+  font-size: 1rem;
+}
+
+.detail-field__reason {
+  margin: 0;
+  font-size: 0.95rem;
 }

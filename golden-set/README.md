@@ -39,7 +39,7 @@ exists.
 **Still not done — the realistic-corpus track.** A newer design,
 `docs/superpowers/specs/2026-08-11-realistic-corpus-gemini-design.md`, supersedes the rest of the
 original §5 scope: Gemini generates realistic bottle photographs — steady, motion-blur, or camera-shake — from real
-reference photos. The renderer composites its exact-text label onto each photo. This removes the
+reference photos. `build.ts` composites the renderer's exact-text label onto each photo. This removes the
 warning-text transcription risk that `ai-generated` cases carry. The tooling exists, tested against synthetic fixtures
 (`scripts/golden/{imagenPrompt,blankRegionDetector,compositeBackdrop,imagen}.ts`).
 `assets/golden/references/` is still empty — no case in this manifest has

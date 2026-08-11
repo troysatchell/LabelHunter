@@ -68,6 +68,25 @@ production run (they are paid-for, not speculative); rules 10+ will be LabelHunt
     six commits behind, missing the two tickets it depends on, and had to be torn down
     (`git worktree remove --force` + `git branch -D`) and re-provisioned.
 
+15. **Re-read the exact CP-1/PRD rule text for the field you're implementing before writing
+    the comparison, not from memory of having read it earlier in the same session**
+    (`correctness` crossed 3 tickets — TRO-459, TRO-460, TRO-462 — the ladder's mechanical-
+    check line, but the 8 findings underneath it are NOT one shared bug shape: a substring-
+    vs-word-boundary gap, NaN propagation, an alpha-channel default, an un-normalized
+    "alternates differ" check, a greedy regex, a missing unit conversion CP-1 §5.3 states
+    explicitly, and an ASCII-only character class. One grep-style gate check cannot catch
+    six different root causes, and inventing one anyway would be manufactured confidence, not
+    a real check — see CLAUDE.md on that. What they share instead: each is a place the
+    implementation approximated an algorithm CP-1 already specified precisely (unit
+    conversion, conflict-after-parsing, Unicode word boundaries). No mechanical gate check
+    added; the fix is discipline, not tooling — when a ticket brief quotes a CP-1 rule,
+    implement the quoted rule, not a plausible-sounding paraphrase of it.
+16. **CHANGES.md prose gets CodeRabbit's ASD-STE100 pass on nearly every PR** (`prose-style`,
+    2 tickets: TRO-461, TRO-462). Every entry ships nested parentheticals on the first draft.
+    Write CHANGES.md entries as short, standalone sentences from the start — subject, verb,
+    one idea per sentence — per CLAUDE.md's own writing-style section. Don't wait for review
+    to catch it.
+
 ## Log
 
 *Append dated entries as the factory learns. One line each, with the ticket that taught it.*

@@ -24,6 +24,11 @@ after.
   Declined again for the same reason: retracting a verified fact to placate a reviewer that
   keeps re-raising it is not correcting an error.
 
+**How to run it.** `node scripts/factory/review-ledger.mjs report` — confirms no ticket now
+shows a duplicate-line count mismatch.
+
+**Rollback.** `git revert` this commit. The 3 deduped lines re-duplicate; no other file changes.
+
 ## TRO-505 — golden renderer fonts: embedded, not system (2026-08-11)
 
 **What changed.** `scripts/golden/render.ts` used three system-font stacks: Helvetica/Arial,

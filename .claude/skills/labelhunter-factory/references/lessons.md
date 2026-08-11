@@ -153,6 +153,23 @@ production run (they are paid-for, not speculative); rules 10+ will be LabelHunt
   not match what was actually tested. Brief wording alone had already stated this rule twice
   (agent-contract.md's "confirm git status --short is clean," this file's TRO-456 entry) and
   it still recurred — the mechanical check is the fix now, not a third restatement.
+- 2026-08-11 (TRO-497) — **Never chain `gate.sh` into push/merge in one shell command, and
+  never filter its output through `grep` for control flow.** The orchestrator piped the gate
+  through `grep -E "^===|FAIL"`; grep exits 0 when it FINDS the failure lines, so a failing
+  gate let the chain continue and PR #9 merged on a red gate. Outcome survived only because
+  the failure was environmental (below) and CI's clean-room run was green. Rule: run the gate
+  as its own command, branch on ITS exit code, and only then push/merge in a separate step.
+- 2026-08-11 (TRO-497) — **After merging `main` into a ticket branch, run `pnpm install`
+  before gating.** The merge brought LH-015's new devDependencies in package.json; the
+  worktree's node_modules predated them, so the gate failed with 37 phantom TS errors that
+  looked like a broken merge. A gate verdict from a node_modules that doesn't match the
+  branch's lockfile is not evidence in either direction.
+- 2026-08-11 (TRO-467) — **Linear's GitHub automation auto-completes an issue when a PR
+  attached to it merges — even with no `Closes` line.** Merging CP-2's walkthrough-material PR
+  flipped the CHECKPOINT ticket itself to Done, which a later session could read as the
+  checkpoint being cleared. After merging any PR attached to a checkpoint ticket, re-read the
+  ticket's state and revert an automation-driven Done; only Troy's explicit acknowledgment
+  completes a checkpoint ticket.
 - 2026-08-10 (Wave 0 retro) — **The orchestrator's own scorecard discipline slipped once
   dispatched agents started running their own gate loops.** TRO-456 and TRO-459 have a
   scorecard row for every attempt, as the loop requires. TRO-457 and TRO-458 do not — both had

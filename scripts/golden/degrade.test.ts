@@ -24,6 +24,7 @@ import {
   applyRotate,
 } from "./degrade";
 import { CANVAS_HEIGHT, CANVAS_WIDTH, LABEL_REGIONS } from "./render";
+import type { Degradation } from "../../src/lib/golden-set/types";
 
 function toExtract(region: { x: number; y: number; width: number; height: number }) {
   return { left: region.x, top: region.y, width: region.width, height: region.height };
@@ -238,5 +239,29 @@ describe("applyDegradation dispatcher", () => {
     const base = await makeSyntheticLabel();
     // @ts-expect-error -- intentionally invalid type for the red-first test
     await expect(applyDegradation(base, { type: "sepia", params: {} })).rejects.toThrow(RangeError);
+  });
+
+  it("produces byte-identical output for the same input and params, every type", async () => {
+    // build.ts's own module doc claims every step, including this
+    // dispatcher, is a pure function of its input bytes and params — "no
+    // randomness, no clock, no network." `applyGlare` is the one transform
+    // most likely to break that claim: it rasterizes an SVG through librsvg
+    // and runs a Gaussian filter, either of which could in principle vary
+    // run to run. This test proves the claim for every type, not just
+    // asserts a non-empty buffer.
+    const base = await makeSyntheticLabel();
+    const cases: Degradation[] = [
+      { type: "rotate", params: { angleDegrees: 15 } },
+      { type: "blur", params: { sigma: 18 } },
+      { type: "perspective", params: { shear: 0.15 } },
+      { type: "glare", params: { region: "brand", angleDegrees: 25, opacity: 0.85 } },
+      { type: "low-light", params: { region: "warning", brightnessFactor: 0.3 } },
+    ];
+
+    for (const degradation of cases) {
+      const first = await applyDegradation(base, degradation);
+      const second = await applyDegradation(base, degradation);
+      expect(first.equals(second), `${degradation.type} must be deterministic`).toBe(true);
+    }
   });
 });

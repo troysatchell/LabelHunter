@@ -78,6 +78,29 @@ export const LABEL_REGIONS: Record<
 };
 
 /**
+ * `.classType` and the two `.divider` positions, derived from
+ * `LABEL_REGIONS` plus a named visual gap, instead of separate literals.
+ * Before this, the CSS below repeated `LABEL_REGIONS`' numbers by hand —
+ * nothing enforced that a future edit to `LABEL_REGIONS` would move these
+ * in step. `degrade.ts` crops by `LABEL_REGIONS`; a drift here would move
+ * the painted pixels without moving the crop, so a region-targeted glare or
+ * low-light would land on the wrong content with no error, the same class
+ * of bug `assertMatchesOriginalCanvas` guards against in `degrade.ts`. The
+ * gap constants reproduce today's literals exactly (210 / 90 / 310 / 500);
+ * `render.test.ts`'s determinism test proves this rebuild is pixel-for-
+ * pixel identical to before.
+ */
+const CLASS_TYPE_GAP_PX = 10;
+const CLASS_TYPE_TOP = LABEL_REGIONS.brand.y + LABEL_REGIONS.brand.height + CLASS_TYPE_GAP_PX;
+const CLASS_TYPE_HEIGHT =
+  LABEL_REGIONS.front.y + LABEL_REGIONS.front.height - CLASS_TYPE_TOP;
+const CONTENT_DIVIDER_GAP_PX = 10;
+const CONTENT_DIVIDER_TOP =
+  LABEL_REGIONS.front.y + LABEL_REGIONS.front.height + CONTENT_DIVIDER_GAP_PX;
+const WARNING_DIVIDER_GAP_PX = 20;
+const WARNING_DIVIDER_TOP = LABEL_REGIONS.warning.y - WARNING_DIVIDER_GAP_PX;
+
+/**
  * Escapes text for HTML *text content* only — `&`, `<`, `>`. Every
  * interpolation in `buildLabelHtml` lands inside a `<div>`'s text content,
  * never inside a quoted attribute, so `"` and `'` need no escaping here.
@@ -190,10 +213,10 @@ export function buildLabelHtml(renderCase: RenderableCase): string {
   }
   .classType {
     position: absolute;
-    left: 60px;
-    top: 210px;
-    width: 880px;
-    height: 90px;
+    left: ${LABEL_REGIONS.front.x}px;
+    top: ${CLASS_TYPE_TOP}px;
+    width: ${LABEL_REGIONS.front.width}px;
+    height: ${CLASS_TYPE_HEIGHT}px;
     display: flex;
     align-items: center;
     font-family: ${style.classTypeFontFamily};
@@ -203,8 +226,8 @@ export function buildLabelHtml(renderCase: RenderableCase): string {
   }
   .divider {
     position: absolute;
-    left: 60px;
-    width: 880px;
+    left: ${LABEL_REGIONS.front.x}px;
+    width: ${LABEL_REGIONS.front.width}px;
     height: 2px;
     background: #cccccc;
   }
@@ -239,12 +262,12 @@ export function buildLabelHtml(renderCase: RenderableCase): string {
   <div class="canvas">
     <div class="brand">${escapeHtml(label.brandName)}</div>
     <div class="classType">${escapeHtml(label.classType)}</div>
-    <div class="divider" style="top: 310px;"></div>
+    <div class="divider" style="top: ${CONTENT_DIVIDER_TOP}px;"></div>
     <div class="content">
       ${abvLine}
       ${netContentsLine}
     </div>
-    <div class="divider" style="top: 500px;"></div>
+    <div class="divider" style="top: ${WARNING_DIVIDER_TOP}px;"></div>
     <div class="warning">${warningHtml}</div>
   </div>
 </body>

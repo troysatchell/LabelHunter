@@ -33,7 +33,7 @@ owns that work — the Gemini API call, and its own `verified: true` human sign-
 this manifest currently has `provenance: "ai-generated"`. When LH-005 adds one, its image
 starts out absent, the same way every case here started before this ticket. LH-005 must land
 the image and set `verified: true` in the same manifest change — the loader already rejects a
-`verified: true` `ai-generated` case at load time, but only the schema shape, not whether the
+`verified: false` `ai-generated` case at load time, but only the schema shape, not whether the
 file actually exists; `scripts/golden/images.test.ts` checks that half, and it starts failing
 the moment an `ai-generated` case claims `verified: true` with no matching file.
 `scripts/golden/verify.ts` (LH-006: the consistency and coverage CI gate) is also still open.
@@ -67,7 +67,7 @@ in `cases` is a `GoldenSetCase` — the TypeScript type is the schema of record,
 | `application` | The five example fields as filed on the application (PRD §2, §5, TH-R11). |
 | `label` | The same fields as a careful human reader sees them on the label, plus warning-specific detail (`governmentWarningPrefixAllCaps`, presence flags). |
 | `expected` | The Validation Router's expected output: a verdict + one-line reason per field, a label-level verdict, and — only when the label-level verdict is `REVIEW` — the `ReviewReason` that routes the label to the Sonnet resolver (PRD §3.3). |
-| `degradations` | (LH-004) The `degrade.ts` transforms applied to a `rendered+degraded` case's clean base, in order, with their exact parameters — present only when the case's imperfection is a photo condition (glare, rotation, low light), absent for a render-time print choice (tiny text, an unusual font) or a clean `rendered` case. |
+| `degradations` | (LH-004) The `degrade.ts` transforms applied to a `rendered+degraded` case's clean base, in order, with their exact parameters — present only when the case's imperfection is a photo condition (glare, rotation, low light, blur, perspective — the five types `DegradationType` supports), absent for a render-time print choice (tiny text, an unusual font) or a clean `rendered` case. |
 
 `src/lib/golden-set/loader.ts` reads and checks this shape. Run its tests with
 `pnpm test -- src/lib/golden-set`.
@@ -79,6 +79,12 @@ An image's filename, without the extension, must equal its case's `caseId`:
 ```
 golden-set/images/<caseId>.<jpg|jpeg|png>
 ```
+
+The loader accepts all three extensions for any case. In practice, a `rendered` or
+`rendered+degraded` case must use `.jpg` or `.jpeg` — `scripts/golden/build.ts` always encodes
+to JPEG (mozjpeg), so a `.png` path on one of these cases would hold JPEG bytes under a PNG
+name. `.png` stays available for a future `ai-generated` case (LH-005), whose image comes
+straight from Imagen rather than through `build.ts`'s JPEG encode step.
 
 Example: case `case-14-case-variant-brand-stones-throw` pairs with
 `golden-set/images/case-14-case-variant-brand-stones-throw.jpg` — now a real file. The loader

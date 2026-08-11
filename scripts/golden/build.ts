@@ -71,7 +71,15 @@ async function buildCase(
     image = await applyDegradation(image, degradation);
   }
 
+  // Flattens any alpha onto white before the JPEG encode, matching
+  // pipeline.ts's own reasoning for its `.flatten()` calls. sharp's JPEG
+  // encoder composites alpha over black by default. Today every source
+  // pixel is already opaque (render.ts paints an opaque white body;
+  // applyRotate/applyPerspective fill new corners with white), so this is a
+  // no-op — defense in depth against a future transform that introduces a
+  // transparent pixel, not a response to a bug in the current pipeline.
   const jpeg = await sharp(image)
+    .flatten({ background: "#ffffff" })
     .jpeg({ quality: JPEG_QUALITY, mozjpeg: true })
     .toBuffer();
 

@@ -4,10 +4,99 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
-## TRO-497 — PR review round 2: 5 fixed, 3 deferred (2026-08-11)
+## TRO-497 — PR review round 3: GitHub PR #9, 11 fixed, 2 dismissed (2026-08-11)
+
+**What changed.** PR #9's CodeRabbit review (the tool running against the live GitHub diff,
+not the local round-1/round-2 passes) posted 13 comments. Eleven were real; this entry fixes
+all eleven. Two are dismissed: one restates a finding this entry already fixes under a
+different comment, one is a test refactor CodeRabbit's own severity tag calls "Low value."
+
+Fixed — documentation and ground truth:
+- `CHANGES.md:10` (minor): round 2's own header claimed "5 fixed, 3 deferred," but its
+  breakdown listed six real fixes bundled into five bullets, one stale finding, two deferred
+  findings, and one dismissed prose complaint mislabeled "deferred." The same mismatch existed
+  in round 1's own CodeRabbit-triage section three lines short of its claimed "3 deferred."
+  Fixed: both headers and their "Deferred" lists now match what each entry enumerates.
+- `CHANGES.md:220` (minor): the "How to run it" line "same spec in, same pixels out" made an
+  unqualified determinism claim. `render.ts`'s font stacks name system fonts, not files
+  committed to the repo — a fact this same changelog entry already states 30 lines earlier.
+  Fixed: the claim now says "on one machine" and points at the font-substitution caveat.
+- `golden-set/manifest.json:1165` (minor): case-20's `description` and `notes` named only the
+  upside-down rotation. Its `degradations` list also applies an 18-sigma blur, and its `V9`
+  vector maps to "blurry/unreadable" specifically because of that blur. Fixed: both fields now
+  name the blur.
+- `golden-set/README.md:38` (major): the LH-005 section said the loader "rejects a
+  `verified: true` `ai-generated` case" — backwards. `loader.ts` line 494 rejects
+  `verified !== true`; it requires `true`, not rejects it. Fixed: swapped `true` for `false`.
+- `golden-set/README.md:70` (minor): the `degradations` field's parenthetical named three of
+  the five `DegradationType` values (glare, rotation, low light), reading as if `blur` and
+  `perspective` were unsupported. Fixed: named all five.
+- `golden-set/README.md:87` (minor): the naming convention permitted `.png` for any case, but
+  `build.ts` always JPEG-encodes a `rendered`/`rendered+degraded` case — a `.png` path there
+  would hold JPEG bytes under a PNG name, undetected. Fixed: scoped `.png` to a future
+  `ai-generated` case (LH-005), whose image comes straight from Imagen, not `build.ts`'s encode
+  step.
+- `scripts/golden/images.test.ts:8` (minor): the file header claimed its tests confirm a
+  degraded case's `degradations` entry "matches what `degrade.ts` actually applied when
+  `build.ts` produced the committed image." The tests compare the manifest against hardcoded
+  literals; none reads the committed image bytes or calls `degrade.ts`. Fixed: the header now
+  states what the tests check, and names the real gap — a manifest edit without a
+  `pnpm golden:build` rerun goes uncaught here.
+
+Fixed — code:
+- `scripts/golden/build.ts:76` (trivial): the JPEG encode had no explicit `.flatten()` call.
+  sharp's JPEG encoder composites alpha over black by default; the pipeline avoids that today
+  only because `render.ts` paints an opaque white body and `applyRotate`/`applyPerspective` fill
+  new corners white — an invariant spanning three files, enforced nowhere. Fixed: added
+  `.flatten({ background: "#ffffff" })` before the JPEG encode, the same call `pipeline.ts` uses
+  for the same reason. A no-op on today's fully opaque images — confirmed by rebuild: all 29
+  committed images stayed byte-identical.
+- `scripts/golden/render.ts:203` (minor): `.classType` and both `.divider` elements hardcoded
+  pixel positions (`210`, `90`, `310`, `500`) that must stay in sync with `LABEL_REGIONS` by
+  hand. `degrade.ts` crops by `LABEL_REGIONS`; a future edit to one side without the other would
+  move painted pixels without moving the crop — the same silent-wrong-pixels risk round 2's
+  `assertMatchesOriginalCanvas` fix closed for `applyGlare`/`applyLowLight`. Fixed: the four
+  literals now derive from `LABEL_REGIONS` plus three named gap constants
+  (`CLASS_TYPE_GAP_PX`, `CONTENT_DIVIDER_GAP_PX`, `WARNING_DIVIDER_GAP_PX`), reproducing today's
+  exact values. Confirmed by rebuild: byte-identical to before.
+- `scripts/golden/degrade.test.ts:235` (trivial): no test asserted `applyDegradation`'s
+  documented determinism claim — that the same input and params always produce the same output
+  bytes. `applyGlare` rasterizes an SVG through librsvg, the transform most likely to vary.
+  Fixed: a new test calls each of the five types twice on the same input and asserts byte
+  equality.
+- `scripts/golden/render.test.ts:142` (trivial): the one determinism test reused a single
+  `renderer.page` for both renders, proving determinism only within one Chromium process.
+  `pnpm golden:build` launches a fresh browser every run (`createLabelRenderer` in `build.ts`'s
+  `main`). Fixed: a second test renders the same case from an independent
+  `createLabelRenderer()` call and compares decoded pixels.
+
+Dismissed:
+- `scripts/golden/render.test.ts:1` — a rollup comment restating the same two gaps
+  `degrade.test.ts:235` and `render.test.ts:142` already name individually (both fixed above).
+  Duplicate, not a separate finding.
+- `src/lib/golden-set/loader.test.ts:267` — extract six tests' repeated throw/catch block into a
+  shared helper. CodeRabbit's own severity tag on this finding is "Low value." No correctness or
+  coverage gap; skipped to avoid churn against six passing tests — CLAUDE.md's simplicity rule
+  governs prose Claude writes, not restructuring code "for its own sake."
+
+**Tests added this round.** `degrade.test.ts`: one new case, byte-equality for all five
+degradation types called twice. `render.test.ts`: one new case, decoded-pixel equality across
+two independent `createLabelRenderer()` calls.
+
+**How to run it.** `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`. Rebuilt with
+`pnpm golden:build` after the `build.ts`/`render.ts` changes — all 29 committed images matched
+their prior byte counts exactly (1,104,318 bytes total), confirming no rendered pixel changed.
+
+**Rollback.** `git revert` this commit. The pipeline works without it; these are documentation
+corrections and hardening, not new features.
+
+## TRO-497 — PR review round 2: 6 fixed, 2 deferred (2026-08-11)
 
 **What changed.** A second gate run triggered a fresh CodeRabbit pass against round 1's fix
-commit. It found 10 findings. Five were real. This entry fixes those five.
+commit. It found 10 findings. Six were real defects. The five bullets below fix all six — one
+bullet fixes two findings in the same file. One finding restated work round 1 already did:
+stale, no action needed. Two findings are real but deferred, not fixed here. One finding is
+addressed by explanation below, not by a code change — it is neither a fix nor a deferral.
 
 - `degrade.ts` (major): `applyGlare` and `applyLowLight` trusted `LABEL_REGIONS`'s fixed
   coordinates. Those coordinates are only correct against the original, unrotated canvas. A
@@ -53,11 +142,11 @@ Two findings are deferred, not fixed here:
   is a real task, and rushing a font choice risks a license problem worse than the gap it
   closes.
 
-A third CodeRabbit finding argued this changelog entry (round 1's) was still too dense.
-Round 1 already applied one real ASD-STE100 pass (see that entry's own note). This round adds
-five more short, single-fact paragraphs rather than a second full rewrite of round 1's text —
-further compressing already-compressed technical detail risks losing precision for its own
-sake, which CLAUDE.md's writing-style section warns against directly.
+**Dismissed, not deferred.** A tenth finding argued this changelog entry (round 1's) was still
+too dense. Round 1 already applied one real ASD-STE100 pass (see that entry's own note). This
+round adds five more short, single-fact paragraphs rather than a second full rewrite of round
+1's text — further compressing already-compressed technical detail risks losing precision for
+its own sake, which CLAUDE.md's writing-style section warns against directly.
 
 **Tests added this round.** `degrade.test.ts`: two new "rejects an already-transformed image"
 cases (glare, low-light). `loader.test.ts`: four new cases for the closed degradation-params
@@ -154,7 +243,11 @@ itself never calls `.stats()`. It chains `.extract()` straight into
 this was a test-helper bug, not a production one. `degrade.test.ts`'s `meanBrightness` helper
 documents the finding and the fix.
 
-**CodeRabbit review triage (10 findings — 5 fixed, 2 already correct by design, 3 deferred).**
+**CodeRabbit review triage.** Round 1's local CodeRabbit pass raised 10 findings against the
+initial commit. Five were real defects, fixed below. One was already correct by design. One is
+deferred. Two more are STE100 prose critiques resolved by an in-place rewrite, not by a
+deferral — see the note after the deferred item.
+
 Fixed:
 - `loader.ts` (major): `checkDegradations` checked that `params` was an object but never that
   it held the right keys. Fixed: a `DEGRADATION_PARAM_SHAPE` table checks each transform's
@@ -186,8 +279,10 @@ Deferred (filed as follow-up work, not fixed here — real but larger than this 
   validation added above closes the practical gap (a manifest with a missing or wrong-typed
   param now fails to load); the type-level version is a bigger refactor across `types.ts`,
   `loader.ts`, and `degrade.ts`'s dispatcher, better done as its own change.
-- Two STE100 prose findings against this entry's own first draft and against
-  `golden-set/README.md`'s new section — addressed directly, in place, rather than filed.
+
+Resolved by explanation, not deferred: two STE100 prose findings against this entry's own
+first draft and against `golden-set/README.md`'s new section were addressed directly, in
+place, rather than filed as follow-up work.
 
 **Tests (all in `pnpm test`, red-first where a fix followed).**
 - `scripts/golden/render.test.ts` — `buildLabelHtml`'s exact-warning-text guarantee, checked
@@ -216,9 +311,11 @@ Deferred (filed as follow-up work, not fixed here — real but larger than this 
   and a non-empty list on a case that isn't `rendered+degraded`.
 
 **How to run it.** `pnpm golden:build` regenerates every image from the current manifest and
-code. This is deterministic: same spec in, same pixels out — proven by the render-determinism
-test. `pnpm test` runs everything above. `pnpm typecheck` / `pnpm lint` / `pnpm build` all
-pass.
+code. This is deterministic on one machine: same spec in, same pixels out on that machine —
+proven by the render-determinism test. Cross-machine determinism is not verified. `render.ts`'s
+font stacks name system fonts (see the "Deferred" note above), so a different OS could
+substitute a different font and produce different pixels. `pnpm test` runs everything above.
+`pnpm typecheck` / `pnpm lint` / `pnpm build` all pass.
 
 **Rollback.** `git revert` this ticket's commit(s). Reverting removes `scripts/golden/`, the
 29 committed images, the `degradations` manifest entries and schema addition, and the

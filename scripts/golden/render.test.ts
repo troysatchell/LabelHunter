@@ -152,4 +152,29 @@ describe("renderLabelImage determinism", () => {
     },
     30_000,
   );
+
+  it(
+    "renders the same case to identical decoded pixels across two independent browser instances",
+    async () => {
+      // The test above reuses one `renderer.page` for both renders, so it
+      // only proves determinism within a single Chromium process. `pnpm
+      // golden:build` launches a fresh browser every run
+      // (`createLabelRenderer` in `build.ts`'s `main`), so the guarantee
+      // that actually matters is determinism across separate browser
+      // instances, not just across two calls on one page.
+      const testCase = renderableCases.find(
+        (c) => c.caseId === "case-01-clean-match-spirits",
+      );
+      expect(testCase).toBeDefined();
+
+      const first = await renderLabelImage(testCase!, renderer.page);
+      const second = await renderLabelImage(testCase!); // launches its own browser
+
+      const firstRaw = await sharp(first).raw().toBuffer();
+      const secondRaw = await sharp(second).raw().toBuffer();
+
+      expect(firstRaw.equals(secondRaw)).toBe(true);
+    },
+    60_000,
+  );
 });

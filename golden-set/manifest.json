@@ -1107,7 +1107,7 @@
     },
     {
       "caseId": "case-20-rotation-severe-upside-down",
-      "description": "Label photographed upside down; the tool cannot reliably read any field.",
+      "description": "Label photographed upside down and out of focus; the tool cannot reliably read any field.",
       "category": "rotation",
       "beverageType": "spirits",
       "imagePath": "golden-set/images/case-20-rotation-severe-upside-down.jpg",
@@ -1158,7 +1158,7 @@
           }
         }
       },
-      "notes": "Same label content as case-19, shot upside down instead of mildly rotated \u2014 proves graceful degradation instead of a confident wrong verdict (TH-R10).",
+      "notes": "Same label content as case-19, shot upside down and out of focus instead of mildly rotated \u2014 proves graceful degradation instead of a confident wrong verdict (TH-R10). The blur is what carries vector V9.",
       "degradations": [
         { "type": "rotate", "params": { "angleDegrees": 180 } },
         { "type": "blur", "params": { "sigma": 18 } }

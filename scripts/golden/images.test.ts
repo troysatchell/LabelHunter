@@ -2,9 +2,12 @@
  * Golden-set end-state assertions (TRO-497 / LH-004): every `rendered` /
  * `rendered+degraded` case's `imagePath` now resolves to a real committed
  * file, scoped so a future `ai-generated` case (LH-005, none exist yet)
- * never fails this check, and every degraded case's `degradations` entry
- * matches what `degrade.ts` actually applied when `build.ts` produced the
- * committed image.
+ * never fails this check, and every degraded case records the exact
+ * `degradations` entry this ticket specified. These metadata assertions pin
+ * the manifest values against hardcoded literals in this file; they never
+ * read the committed image bytes and never call `degrade.ts`, so they do
+ * not by themselves prove a committed image matches its manifest entry — a
+ * manifest edit without a `pnpm golden:build` rerun is not caught here.
  */
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";

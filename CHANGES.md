@@ -144,10 +144,11 @@ empty `.gitkeep`, and CP-3 is not acknowledged. PRD §3.8 is explicit that batch
 throughput-bound, not latency-bound. A number extrapolated from the single-label figure above
 would not be a measurement. It would be a guess dressed as one. Deferred to LH-041.
 
-**Approximate real API spend.** 22 real Haiku calls total from this ticket's own work: 2
-plumbing smoke-test runs (one before the 20-run measurement, one after the `args.ts` refactor
-below) plus the 20-run measurement itself. PRD §4's own estimate is ~$0.005/label for the
-extractor — about $0.11, against the $25 build+eval spend cap.
+**Approximate real API spend.** 23 real Haiku calls total from this ticket's own work: 3
+plumbing smoke-test runs (one before the 20-run measurement, one after the `args.ts` refactor,
+one after the `cleanupFailures` fix — all in the review-triage bullets above) plus the 20-run
+measurement itself. PRD §4's own estimate is ~$0.005/label for the extractor — about $0.12,
+against the $25 build+eval spend cap.
 
 **A note on running tests.** `pnpm test` reads `DATABASE_URL`. Every worktree gets its own
 database (`scripts/factory/worktree.sh`); running tests with `DATABASE_URL` unset, or

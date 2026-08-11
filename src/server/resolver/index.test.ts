@@ -11,13 +11,19 @@ function fakeClient(create: (params: Anthropic.MessageCreateParamsNonStreaming) 
   return { messages: { create: vi.fn(create) } } as unknown as Anthropic;
 }
 
-/** Fakes just the Drizzle surface `insertReviewQueueEntry` uses. */
-function fakeDb(nextId = 42) {
+/** Fakes just the Drizzle surface `insertReviewQueueEntry` and
+ * `findExistingReviewQueueEntry` use. `existingRow` defaults to `undefined`
+ * — "no review_queue row exists yet for this verification" — so every
+ * existing test in this file exercises the pre-flight lookup's "not found"
+ * path without having to know about it. */
+function fakeDb(nextId = 42, existingRow?: { id: number; resolverOutput: unknown }) {
   const values = vi.fn().mockReturnValue({
     returning: vi.fn().mockResolvedValue([{ id: nextId }]),
   });
   const insert = vi.fn().mockReturnValue({ values });
-  return { db: { insert } as unknown as ResolverDb, insert, values };
+  const findFirst = vi.fn().mockResolvedValue(existingRow);
+  const db = { insert, query: { reviewQueue: { findFirst } } } as unknown as ResolverDb;
+  return { db, insert, values, findFirst };
 }
 
 describe("resolveEscalatedLabel — never on the happy path (TH-R19)", () => {
@@ -95,6 +101,61 @@ describe("resolveEscalatedLabel — malformed response propagates, no queue inse
     const { db, insert } = fakeDb();
     await expect(resolveEscalatedLabel(makeResolverInput(), { client, db })).rejects.toThrow();
     expect(insert).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveEscalatedLabel — duplicate verificationId never pays for a second Sonnet call", () => {
+  it("returns the existing row's resolution without calling the model, when one already exists", async () => {
+    const client = fakeClient(async () => makeMockMessage(JSON.stringify(WELL_FORMED_RESOLVER_BODY)));
+    const existingResolution = {
+      outcome: "resolved" as const,
+      fields: [
+        {
+          kind: "judged" as const,
+          field: "brand_name" as const,
+          disposition: "RESOLVED_MATCH" as const,
+          correctedValue: "Stone's Throw",
+          evidence: "STONE'S THROW",
+          reason: "Already resolved on an earlier call.",
+          confidence: 0.9,
+        },
+      ],
+    };
+    const { db, insert, findFirst } = fakeDb(99, { id: 5, resolverOutput: existingResolution });
+    const input = makeResolverInput();
+
+    const result = await resolveEscalatedLabel(input, { client, db });
+
+    expect(findFirst).toHaveBeenCalledTimes(1);
+    expect(client.messages.create).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+    expect(result.reviewQueueId).toBe(5);
+    expect(result.outcome).toBe("resolved");
+    expect(result.fields).toEqual(existingResolution.fields);
+  });
+
+  it("proceeds normally — calls the model and inserts — when no row exists yet", async () => {
+    const client = fakeClient(async () => makeMockMessage(JSON.stringify(WELL_FORMED_RESOLVER_BODY)));
+    const { db, insert, findFirst } = fakeDb(7);
+    const input = makeResolverInput();
+
+    const result = await resolveEscalatedLabel(input, { client, db });
+
+    expect(findFirst).toHaveBeenCalledTimes(1);
+    expect(client.messages.create).toHaveBeenCalledTimes(1);
+    expect(insert).toHaveBeenCalledTimes(1);
+    expect(result.reviewQueueId).toBe(7);
+  });
+
+  it("throws rather than silently reusing or re-running the model, when the existing row's shape is unrecognized", async () => {
+    const client = fakeClient(async () => makeMockMessage(JSON.stringify(WELL_FORMED_RESOLVER_BODY)));
+    // db:seed.ts's own ad hoc shape, predating this ticket — no outcome/fields.
+    const legacyShape = { resolvedAbvPercent: 13.5, note: "...", confidence: 0.93 };
+    const { db } = fakeDb(99, { id: 5, resolverOutput: legacyShape });
+    const input = makeResolverInput();
+
+    await expect(resolveEscalatedLabel(input, { client, db })).rejects.toThrow(/unrecognized shape|does not match/);
+    expect(client.messages.create).not.toHaveBeenCalled();
   });
 });
 

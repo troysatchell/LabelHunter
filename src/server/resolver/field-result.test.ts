@@ -54,12 +54,23 @@ describe("toJudgedFieldResultRow — the discriminated-union legality (../router
   it("never constructs the illegal state resolvedBy: 'sonnet' with reviewReason: null", () => {
     // Every branch above threads a real ReviewReason through — there is no
     // code path in this function that can produce resolvedBy: "sonnet"
-    // without one, matching FieldResultRow's discriminated union.
+    // without one, matching FieldResultRow's discriminated union. Asserted
+    // unconditionally per disposition (not "if resolvedBy isn't null, then
+    // check reviewReason") — a conditional assertion silently checks
+    // nothing on the branch where the condition is false, and NEEDS_HUMAN
+    // is exactly that branch: `resolvedBy` is null there, so a guarded
+    // assertion would never run the reviewReason check for it at all.
+    const expectedResolvedBy = {
+      RESOLVED_MATCH: "sonnet",
+      RESOLVED_MISMATCH: "sonnet",
+      NEEDS_HUMAN: null,
+    } as const;
     for (const disposition of ["RESOLVED_MATCH", "RESOLVED_MISMATCH", "NEEDS_HUMAN"] as const) {
       const row = toJudgedFieldResultRow(judgedResolution({ disposition }), "AMBIGUOUS_BRAND", "x");
-      if (row.resolvedBy !== null) {
-        expect(row.reviewReason).not.toBeNull();
-      }
+      expect(row.resolvedBy).toBe(expectedResolvedBy[disposition]);
+      // reviewReason is preserved on every branch, resolved or not — a
+      // field waiting on a human must not lose the reason it is waiting.
+      expect(row.reviewReason).toBe("AMBIGUOUS_BRAND");
     }
   });
 

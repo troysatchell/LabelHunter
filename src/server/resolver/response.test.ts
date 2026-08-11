@@ -178,6 +178,57 @@ describe("deriveResolvedFields — the judges-only-brand/class rule (CP-1 §6.5)
     expect(() => deriveResolvedFields(raw, flagged)).toThrow(/2 response entries.*alcohol_content/);
   });
 
+  it("throws when a judged field is RESOLVED_MATCH but corrected_value is null — a decided judgment with no reading behind it", () => {
+    const raw: RawResolverResponse = {
+      overall: "RESOLVED",
+      fields: [
+        { field: "brand_name", disposition: "RESOLVED_MATCH", corrected_value: null, evidence: "x", reason: "x", confidence: 0.9 },
+      ],
+    };
+    const flagged = [{ field: "brand_name" as const, reviewReason: "AMBIGUOUS_BRAND" as const, trigger: "t" }];
+    expect(() => deriveResolvedFields(raw, flagged)).toThrow(/brand_name.*disposition is RESOLVED_MATCH but corrected_value is null/);
+  });
+
+  it("throws when a judged field is RESOLVED_MISMATCH but corrected_value is null", () => {
+    const raw: RawResolverResponse = {
+      overall: "RESOLVED",
+      fields: [
+        { field: "class_type", disposition: "RESOLVED_MISMATCH", corrected_value: null, evidence: "x", reason: "x", confidence: 0.9 },
+      ],
+    };
+    const flagged = [{ field: "class_type" as const, reviewReason: "AMBIGUOUS_BRAND" as const, trigger: "t" }];
+    expect(() => deriveResolvedFields(raw, flagged)).toThrow(/class_type.*disposition is RESOLVED_MISMATCH but corrected_value is null/);
+  });
+
+  it("does NOT throw when a judged field is NEEDS_HUMAN with a null corrected_value — that combination is legitimate", () => {
+    const raw: RawResolverResponse = {
+      overall: "NEEDS_HUMAN",
+      fields: [
+        { field: "brand_name", disposition: "NEEDS_HUMAN", corrected_value: null, evidence: "x", reason: "Cannot read this.", confidence: 0.2 },
+      ],
+    };
+    const flagged = [{ field: "brand_name" as const, reviewReason: "AMBIGUOUS_BRAND" as const, trigger: "t" }];
+    expect(() => deriveResolvedFields(raw, flagged)).not.toThrow();
+  });
+
+  it("throws when a correction field's disposition is decided (not NEEDS_HUMAN) but corrected_value is null", () => {
+    const raw: RawResolverResponse = {
+      overall: "RESOLVED",
+      fields: [
+        {
+          field: "alcohol_content",
+          disposition: "RESOLVED_MATCH", // discarded by the judges-only rule, but still a "decided" signal
+          corrected_value: null,
+          evidence: "x",
+          reason: "x",
+          confidence: 0.9,
+        },
+      ],
+    };
+    const flagged = [{ field: "alcohol_content" as const, reviewReason: "AMBIGUOUS_ABV" as const, trigger: "t" }];
+    expect(() => deriveResolvedFields(raw, flagged)).toThrow(/alcohol_content.*disposition is RESOLVED_MATCH but corrected_value is null/);
+  });
+
   it("ignores a response entry for a field that was not flagged — rule 6, 'do not change a field that is not flagged'", () => {
     const raw: RawResolverResponse = {
       overall: "RESOLVED",

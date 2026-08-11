@@ -15,8 +15,8 @@
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "../../lib/db";
-import { applications, labelImages, verifications } from "../../lib/db/schema";
-import { insertReviewQueueEntry } from "./queue";
+import { applications, labelImages, reviewQueue, verifications } from "../../lib/db/schema";
+import { findExistingReviewQueueEntry, insertReviewQueueEntry } from "./queue";
 import type { ResolverResolution } from "./types";
 
 async function makeVerificationFixture() {
@@ -135,6 +135,55 @@ describe("insertReviewQueueEntry — real database", () => {
       await expect(
         insertReviewQueueEntry({ verificationId, reason: "AMBIGUOUS_ABV", resolverOutput: SAMPLE_RESOLUTION }),
       ).rejects.toThrow();
+    } finally {
+      await cleanup(applicationId);
+    }
+  });
+});
+
+describe("findExistingReviewQueueEntry — real database", () => {
+  it("returns null when no row exists yet for this verification", async () => {
+    const { applicationId, verificationId } = await makeVerificationFixture();
+    try {
+      expect(await findExistingReviewQueueEntry(verificationId)).toBeNull();
+    } finally {
+      await cleanup(applicationId);
+    }
+  });
+
+  it("finds the row insertReviewQueueEntry just wrote — the round trip a duplicate call relies on", async () => {
+    const { applicationId, verificationId } = await makeVerificationFixture();
+    try {
+      const { id } = await insertReviewQueueEntry({
+        verificationId,
+        reason: "AMBIGUOUS_BRAND",
+        resolverOutput: SAMPLE_RESOLUTION,
+      });
+
+      const found = await findExistingReviewQueueEntry(verificationId);
+      expect(found).not.toBeNull();
+      expect(found?.id).toBe(id);
+      expect(found?.resolverOutput).toEqual(SAMPLE_RESOLUTION);
+    } finally {
+      await cleanup(applicationId);
+    }
+  });
+
+  it("throws on a row whose resolverOutput does not match ResolverResolution's shape — e.g. db:seed's own legacy fixture", async () => {
+    const { applicationId, verificationId } = await makeVerificationFixture();
+    try {
+      // Written directly, bypassing insertReviewQueueEntry's typed
+      // ResolverResolution param — this is exactly what db:seed.ts's own
+      // ad hoc `{ resolvedAbvPercent, note, confidence }` shape looks like
+      // from findExistingReviewQueueEntry's point of view: real data in the
+      // table, but not this module's shape.
+      await db.insert(reviewQueue).values({
+        verificationId,
+        reason: "AMBIGUOUS_ABV",
+        resolverOutput: { resolvedAbvPercent: 13.5, note: "legacy fixture shape", confidence: 0.93 },
+      });
+
+      await expect(findExistingReviewQueueEntry(verificationId)).rejects.toThrow(/does not match/);
     } finally {
       await cleanup(applicationId);
     }

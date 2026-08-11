@@ -100,4 +100,83 @@ describe("assertUntrustedInputWithinBounds", () => {
     };
     expect(() => assertUntrustedInputWithinBounds(input)).not.toThrow();
   });
+
+  describe("every serialized ApplicationRecord field is checked, not just brandName/classType", () => {
+    it("rejects an implausibly long beverageType", () => {
+      const input = baseInput();
+      // beverageType is typed as a closed enum, but this validator treats it
+      // as untrusted data anyway — the cast simulates a value that reached
+      // here without going through toBeverageType (../../lib/db/enums.ts).
+      input.application = makeResolverApplication({ beverageType: "A".repeat(SHORT_FIELD_MAX_LENGTH + 1) as never });
+      expect(() => assertUntrustedInputWithinBounds(input)).toThrow(/application\.beverageType/);
+    });
+
+    it("rejects an implausibly long netContentsUnit", () => {
+      const input = baseInput();
+      input.application = makeResolverApplication({ netContentsUnit: "m".repeat(SHORT_FIELD_MAX_LENGTH + 1) });
+      expect(() => assertUntrustedInputWithinBounds(input)).toThrow(/application\.netContentsUnit/);
+    });
+
+    it("rejects a non-finite alcoholContentPercent (NaN)", () => {
+      const input = baseInput();
+      input.application = makeResolverApplication({ alcoholContentPercent: Number.NaN });
+      expect(() => assertUntrustedInputWithinBounds(input)).toThrow(/application\.alcoholContentPercent.*finite number/);
+    });
+
+    it("rejects a non-finite alcoholContentPercent (Infinity) — JSON.stringify silently turns this into null otherwise", () => {
+      const input = baseInput();
+      input.application = makeResolverApplication({ alcoholContentPercent: Number.POSITIVE_INFINITY });
+      expect(() => assertUntrustedInputWithinBounds(input)).toThrow(/application\.alcoholContentPercent/);
+    });
+
+    it("accepts an absent alcoholContentPercent — it is a legitimately optional field", () => {
+      const input = baseInput();
+      input.application = { ...makeResolverApplication(), alcoholContentPercent: undefined };
+      expect(() => assertUntrustedInputWithinBounds(input)).not.toThrow();
+    });
+
+    it("rejects a non-finite netContentsValue — this field is required, never legitimately absent", () => {
+      const input = baseInput();
+      input.application = makeResolverApplication({ netContentsValue: Number.NaN });
+      expect(() => assertUntrustedInputWithinBounds(input)).toThrow(/application\.netContentsValue.*finite number/);
+    });
+  });
+
+  describe("runtime type checks — the declared TypeScript type is not trusted at this boundary", () => {
+    it("rejects a string field that is actually a number at runtime, not just wrong-length", () => {
+      const input = baseInput();
+      input.extraction = {
+        ...input.extraction,
+        brand_name: { value: 12345 as unknown as string, evidence: "x", confidence: 0.9, alternates: [] },
+      };
+      expect(() => assertUntrustedInputWithinBounds(input)).toThrow(/extraction\.brand_name\.value.*expected a string or null/);
+    });
+
+    it("rejects a string field that is actually an object at runtime, without throwing an uncontrolled TypeError", () => {
+      const input = baseInput();
+      input.extraction = {
+        ...input.extraction,
+        class_type: { value: { nested: "object" } as unknown as string, evidence: "x", confidence: 0.9, alternates: [] },
+      };
+      expect(() => assertUntrustedInputWithinBounds(input)).toThrow(/extraction\.class_type\.value.*expected a string or null/);
+    });
+
+    it("rejects an alternates array that is actually a string at runtime", () => {
+      const input = baseInput();
+      input.extraction = {
+        ...input.extraction,
+        net_contents: { value: "750 mL", evidence: "750 mL", confidence: 0.9, alternates: "not-an-array" as unknown as string[] },
+      };
+      expect(() => assertUntrustedInputWithinBounds(input)).toThrow(/extraction\.net_contents\.alternates.*expected an array/);
+    });
+
+    it("rejects an alternates entry that is not a string, without throwing an uncontrolled TypeError", () => {
+      const input = baseInput();
+      input.extraction = {
+        ...input.extraction,
+        alcohol_content: { value: "45%", evidence: "45%", confidence: 0.9, alternates: [42 as unknown as string] },
+      };
+      expect(() => assertUntrustedInputWithinBounds(input)).toThrow(/extraction\.alcohol_content\.alternates\[0\].*expected a string or null/);
+    });
+  });
 });

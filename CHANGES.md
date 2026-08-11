@@ -4,14 +4,75 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-464 — PR review round 1: orchestrator triage, 6 fixed, 2 test-only (2026-08-11)
+
+**What changed.** The orchestrator's independent gate run kept 8 CodeRabbit findings
+from this worktree's earlier capture. Each finding was checked against the current
+code, not applied on trust. Six named real defects. All six are fixed here, each
+with a new regression test, each confirmed red-first.
+
+- **`index.ts`/`queue.ts` (trivial, real).** A duplicate call for one verification
+  paid for a second Sonnet call before the review-queue unique constraint ever
+  caught the duplicate. `findExistingReviewQueueEntry` now runs before the model
+  call. A row that already exists is returned as-is. The model is never called
+  twice for one verification. A row whose `resolverOutput` does not match this
+  module's shape (`db:seed.ts`'s own older fixture, for example) raises a clear
+  error instead of a silent guess.
+- **`input-validation.ts` (major, real, two findings).** The length check covered
+  only `brandName` and `classType`. It now covers every `ApplicationRecord` field
+  that reaches the prompt: `beverageType`, `netContentsUnit`, and the two numeric
+  fields (`alcoholContentPercent`, `netContentsValue`), which are now checked for
+  finiteness — `JSON.stringify` silently turns `NaN`/`Infinity` into `null`, with
+  no error. Separately, `checkLength` and `checkAlternates` trusted the declared
+  TypeScript type at a boundary where CLAUDE.md's own rule says not to. A
+  non-string value crashed with an uncontrolled `TypeError` instead of a clean,
+  named `ResolverInputError`. Both functions now check the real runtime type first.
+- **`response.ts` (minor, real).** A judged field (`brand_name`/`class_type`) could
+  carry `disposition: "RESOLVED_MATCH"` with `corrected_value: null` — a decided
+  verdict with no reading behind it. `deriveResolvedFields` now rejects a decided
+  disposition (`RESOLVED_MATCH`/`RESOLVED_MISMATCH`, or a correction field once
+  `NEEDS_HUMAN` is ruled out) that carries no `corrected_value`.
+- **`field-result.test.ts` (major, real).** One test's assertion sat inside an `if`
+  guard. The `NEEDS_HUMAN` branch, where the guard was false, asserted nothing at
+  all. The guard is gone. Every disposition now asserts an exact expected
+  `resolvedBy` value.
+- **`injection.test.ts` (trivial, real, test-only).** `extractionReadingBlock`
+  sliced the built prompt text without checking that its marker `indexOf` calls
+  found anything. A missing marker would have sliced from the wrong position
+  instead of failing loudly. It now throws a clear error when either marker is
+  missing.
+
+**Dismissed: none.** Every finding named a real gap in the current code — none
+misread it, and none contradicted a settled design.
+
+**CHANGES.md prose (2 findings).** The original entry's "What changed" and "Tests"
+paragraphs ran long, compound sentences. Both are rewritten in short, one-meaning
+sentences, active voice — ASD-STE100, CLAUDE.md's standing rule, not optional style
+for this repo.
+
+**Red-first, confirmed.** Every one of the six code fixes was checked against the
+pre-fix version (restored from git for `index.ts`/`input-validation.ts`; reverted
+inline for `response.ts`) before being restored. Each fix's new tests failed for
+the right reason against the un-fixed code: the dedupe tests found the model called
+with no pre-flight lookup at all; the input-validation tests found nine failures,
+including an uncontrolled `values.forEach is not a function` `TypeError` on a
+non-array `alternates`; the response.ts tests found three failures where a
+self-contradictory decided-but-empty answer passed silently.
+
+**How to run it.** `pnpm test -- src/server/resolver` — 11 files, 91 cases (up from
+71). `pnpm typecheck` / `pnpm lint` clean.
+
+**Rollback.** `git revert` this commit. The original TRO-464 commit stands on its
+own; this round only tightens it.
+
 ## TRO-464 — LH-014: Sonnet resolver + review-queue insertion (2026-08-11)
 
-**What changed.** The Sonnet resolver (PRD §3.1/§3.3, TH-R1, TH-R22) under
-`src/server/resolver/`. It answers a narrow question for the fields the Validation
-Router (LH-012/LH-013) could not decide: what should the verdict be? It never runs on
-a label the router passed — `resolveEscalatedLabel` refuses at runtime when
-`labelVerdict !== "REVIEW"`, not just by convention (TH-R19). The design is CP-1 §6,
-Troy-approved; this ticket implements it as written.
+**What changed.** This ticket adds the Sonnet resolver under `src/server/resolver/`.
+It serves PRD §3.1, PRD §3.3, TH-R1, and TH-R22. The resolver answers one question
+for each field the Validation Router (LH-012/LH-013) could not decide: what should
+the verdict be? The resolver never runs on a label the router passed. `resolveEscalatedLabel`
+refuses at runtime when `labelVerdict !== "REVIEW"` (TH-R19). The design comes from
+CP-1 §6. Troy approved that design. This ticket implements it as written.
 
 - **`prompt.ts`** — `SYSTEM_PROMPT`, the CP-1-approved bytes (§6.2) copied verbatim.
 - **`schema.ts`** — `RESOLVER_JSON_SCHEMA`, the CP-1-approved output schema (§6.4),
@@ -76,22 +137,31 @@ Troy-approved; this ticket implements it as written.
   result — a second, runtime layer of TH-R19 enforcement, independent of whichever
   pipeline ticket ends up calling this function.
 
-**Tests.** `pnpm test -- src/server/resolver` — 11 files, 71 cases. Covers: the
-attack-string serialization (byte-exact, from a real `node -e` run), input-length
-rejection, the resolver request shape (model, no temperature, effort, image-before-
-text), the judges-only-brand/class rule, review-queue insertion against this
-worktree's real database (`queue.test.ts`, via `.factory-env`'s `DATABASE_URL` — a
-unique-constraint violation on a second insert for one verification is asserted,
-not just the happy path), the discriminated-union legality of `FieldResultRow`
-(`field-result.test.ts`, plus a compile-time proof in `types.test.ts` via
-`@ts-expect-error`), never-on-the-happy-path (both a runtime guard and a mocked-
-client assertion that Sonnet is never called for a non-REVIEW result), and a
-dedicated prompt-injection oracle (`injection.test.ts`) matching CP-1 §6.3's own
-oracle exactly: the targeted field's disposition is unaffected by a sibling field's
-injection payload, tested at both the request-building layer (byte-identical
-serialized sibling data) and the response-parsing layer (byte-identical derived
-correction for `government_warning` whether or not `brand_name`'s entry carries the
-payload).
+**Tests.** `pnpm test -- src/server/resolver` runs 11 files and 91 cases.
+
+- The attack-string serialization is byte-exact. A real `node -e` run checked it.
+- Input-length rejection covers every serialized `ApplicationRecord` field, not just
+  `brandName` and `classType`.
+- Runtime type checks reject a non-string or non-array untrusted value. They do not
+  just check length.
+- The resolver request shape is checked: the model, no `temperature`, the `effort`
+  setting, and image-before-text ordering.
+- The judges-only-brand/class rule is checked, including a decided disposition with
+  no `corrected_value`.
+- Review-queue insertion runs against this worktree's real database (`queue.test.ts`,
+  via `.factory-env`'s `DATABASE_URL`). A second insert for one verification hits the
+  unique constraint. This is not just the happy path.
+- A duplicate call for one verification does not call the model twice.
+  `findExistingReviewQueueEntry` is checked against the real database and with a
+  mocked client.
+- `FieldResultRow`'s discriminated-union legality is checked in `field-result.test.ts`.
+  `types.test.ts` adds a compile-time proof through `@ts-expect-error`.
+- Never-on-the-happy-path is checked twice: a runtime guard, and a mocked-client
+  assertion that Sonnet is never called for a non-REVIEW result.
+- A dedicated prompt-injection oracle (`injection.test.ts`) matches CP-1 §6.3's own
+  oracle. A sibling field's injection payload does not change the targeted field's
+  disposition. This is checked at the request-building layer and the
+  response-parsing layer.
 
 **Red-first, confirmed.** Two regressions were deliberately reintroduced and
 confirmed to fail the right tests before being reverted: (1) reverting

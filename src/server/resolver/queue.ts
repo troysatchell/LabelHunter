@@ -40,6 +40,12 @@ export type ResolverDb = typeof defaultDb;
  * index — a second call for the same `verificationId` throws, and this
  * function does not catch or paper over that; a pipeline calling it twice
  * for one verification is a real bug the constraint is there to catch.
+ *
+ * This function alone does not prevent the WASTE a duplicate call causes —
+ * by the time an insert here fails, a second, real-money Sonnet call has
+ * already happened. `findExistingReviewQueueEntry` below is the check that
+ * runs BEFORE the model call, in `index.ts`, precisely to avoid paying for
+ * that call at all on a retry.
  */
 export async function insertReviewQueueEntry(
   params: InsertReviewQueueEntryParams,
@@ -54,4 +60,57 @@ export async function insertReviewQueueEntry(
     })
     .returning({ id: reviewQueue.id });
   return row;
+}
+
+export interface ExistingReviewQueueEntry {
+  id: number;
+  resolverOutput: ResolverResolution;
+}
+
+/**
+ * Narrows an unknown jsonb value to `ResolverResolution` — a shallow but
+ * decisive check. It exists to tell this module's own shape apart from
+ * `db:seed.ts`'s own hand-written `resolverOutput` fixture, which predates
+ * this ticket and uses a different ad hoc shape (`{ resolvedAbvPercent,
+ * note, confidence }`, no `outcome`/`fields`) — that fixture correctly
+ * fails this check rather than being silently misread as a real resolution.
+ */
+function isResolverResolution(value: unknown): value is ResolverResolution {
+  if (typeof value !== "object" || value === null) return false;
+  const obj = value as Record<string, unknown>;
+  return (obj.outcome === "resolved" || obj.outcome === "needs-human") && Array.isArray(obj.fields);
+}
+
+/**
+ * Looks up an existing `review_queue` row for a verification, if one
+ * exists. `resolveEscalatedLabel` (`index.ts`) calls this BEFORE calling
+ * the model — the review-queue unique index already guarantees at most one
+ * row per verification, but by the time an insert hits that constraint, a
+ * second Sonnet call has already been paid for. A duplicate call for one
+ * verification is exactly the shape of an at-least-once retry (a caller
+ * bug today, and a completely ordinary event once the future batch worker's
+ * own retry/backoff exists, CP-1 §9 open question 6) — checking first turns
+ * a wasted real-money call into a free, correct no-op.
+ *
+ * Throws when a row exists but its `resolverOutput` does not match this
+ * module's `ResolverResolution` shape, rather than silently trusting or
+ * silently ignoring data it cannot interpret (this repo's "reject, never
+ * clamp/guess" boundary rule — CLAUDE.md lesson 13).
+ */
+export async function findExistingReviewQueueEntry(
+  verificationId: number,
+  db: ResolverDb = defaultDb,
+): Promise<ExistingReviewQueueEntry | null> {
+  const existing = await db.query.reviewQueue.findFirst({
+    where: (rq, { eq }) => eq(rq.verificationId, verificationId),
+  });
+  if (!existing) return null;
+  if (!isResolverResolution(existing.resolverOutput)) {
+    throw new Error(
+      `findExistingReviewQueueEntry: verification ${verificationId} already has a review_queue row ` +
+        `(id ${existing.id}) whose resolverOutput does not match this module's ResolverResolution shape ` +
+        "— refusing to reuse it or to silently re-run the model behind the unique constraint's back.",
+    );
+  }
+  return { id: existing.id, resolverOutput: existing.resolverOutput };
 }

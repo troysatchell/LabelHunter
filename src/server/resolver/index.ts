@@ -20,7 +20,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { buildResolverRequestParams } from "./request";
 import { parseResolverResponse } from "./response";
-import { insertReviewQueueEntry, type ResolverDb } from "./queue";
+import { findExistingReviewQueueEntry, insertReviewQueueEntry, type ResolverDb } from "./queue";
 import type { ResolverInput, ResolverResult } from "./types";
 
 /**
@@ -101,6 +101,15 @@ export async function resolveEscalatedLabel(
     throw new Error("resolveEscalatedLabel: router result has labelVerdict REVIEW but no headlineReason.");
   }
 
+  // A duplicate call for one verification (a caller retry, two workers
+  // racing) must not pay for a second Sonnet call just to fail on the
+  // review_queue unique constraint at insert time — check first (queue.ts's
+  // `findExistingReviewQueueEntry` doc comment has the full reasoning).
+  const existing = await findExistingReviewQueueEntry(input.verificationId, options.db);
+  if (existing) {
+    return { ...existing.resolverOutput, reviewQueueId: existing.id };
+  }
+
   const client = options.client ?? getDefaultResolverClient();
   const params = buildResolverRequestParams(input);
   const message = await client.messages.create(params);
@@ -136,8 +145,8 @@ export {
   deriveResolvedFields,
 } from "./response";
 export { toJudgedFieldResultRow } from "./field-result";
-export { insertReviewQueueEntry } from "./queue";
-export type { ResolverDb, InsertReviewQueueEntryParams } from "./queue";
+export { findExistingReviewQueueEntry, insertReviewQueueEntry } from "./queue";
+export type { ExistingReviewQueueEntry, InsertReviewQueueEntryParams, ResolverDb } from "./queue";
 export type {
   ApplicationRecord,
   CorrectionFieldResolution,

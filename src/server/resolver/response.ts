@@ -173,6 +173,24 @@ export function deriveResolvedFields(raw: RawResolverResponse, flaggedFields: Fl
       continue;
     }
     const entry = matches[0];
+    const decided = entry.disposition !== "NEEDS_HUMAN";
+
+    // A decided answer (RESOLVED_MATCH/RESOLVED_MISMATCH, or a correction
+    // field's disposition once NEEDS_HUMAN is ruled out) with no
+    // corrected_value is self-contradictory — the model said it settled the
+    // field but did not say what it read. This is the resolver's own
+    // version of the extractor's evidence-must-support-value check (CP-1
+    // §4.4): a decided verdict with no reading behind it is exactly the
+    // "confident invention" shape that check exists to catch, so it is
+    // rejected the same way — a validation problem, not a MATCH/correction
+    // built on nothing.
+    if (decided && entry.corrected_value === null) {
+      problems.push(
+        `${flagged.field}: disposition is ${entry.disposition} but corrected_value is null — ` +
+          "a decided answer must carry the reading it was decided from",
+      );
+      continue;
+    }
 
     if (isJudgedField(flagged.field)) {
       fields.push({
@@ -196,7 +214,7 @@ export function deriveResolvedFields(raw: RawResolverResponse, flaggedFields: Fl
       fields.push({
         kind: "correction",
         field: flagged.field,
-        needsHuman: entry.disposition === "NEEDS_HUMAN",
+        needsHuman: !decided,
         correctedValue: entry.corrected_value,
         evidence: entry.evidence,
         reason: entry.reason,

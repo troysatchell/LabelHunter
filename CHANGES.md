@@ -4,6 +4,26 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-505 — PR #14 review round 7: ledger dedup + 3 dismissed (2026-08-11)
+
+**Fixed.** Merging `main` (which had already independently merged the same upstream commit's
+TRO-464 ledger entries via an earlier round on this ticket) duplicated 3 lines in
+`factory/review-findings.jsonl`. Deduped; verified line count and JSON validity before and
+after.
+
+**Dismissed.**
+- A finding asked the system-font check in `render.test.ts` to scope to just the `<style>`
+  block instead of the whole rendered HTML, guarding against a label whose own text happens to
+  contain a font name. Checked, not assumed: grepped every golden-set spec directly — none
+  contains any of the 6 checked strings as content. The two checks are equivalent against real
+  data today; not worth the added regex-extraction complexity for a case this repo's own data
+  rules out.
+- Two findings (one in the ledger, one in `CHANGES.md`) are the 5th recurrence of the
+  `DATABASE_URL`-unset claim, already addressed identically in rounds 3, 4, and 6. The claim is
+  true, verified twice by actually running the affected tests with `DATABASE_URL` unset.
+  Declined again for the same reason: retracting a verified fact to placate a reviewer that
+  keeps re-raising it is not correcting an error.
+
 ## TRO-505 — golden renderer fonts: embedded, not system (2026-08-11)
 
 **What changed.** `scripts/golden/render.ts` used three system-font stacks: Helvetica/Arial,

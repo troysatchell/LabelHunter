@@ -86,6 +86,37 @@ production run (they are paid-for, not speculative); rules 10+ will be LabelHunt
     Write CHANGES.md entries as short, standalone sentences from the start — subject, verb,
     one idea per sentence — per CLAUDE.md's own writing-style section. Don't wait for review
     to catch it.
+17. **Re-read your own doc's earlier claims before appending a new round** (`doc-consistency`,
+    2 tickets: TRO-459, TRO-497 — 7 findings on one CP-1 doc alone). A count, a scope
+    limitation, or an accepted/rejected decision written in round 1 routinely goes stale or
+    self-contradicts once round 2's fix changes the very thing round 1 described (a "clamp vs
+    reject" contradiction stated three different ways in one doc; a determinism claim left
+    unqualified 30 lines from the caveat that qualifies it). Before writing a new paragraph,
+    grep the doc for the words you're about to contradict.
+18. **Any string that ever passed through the label image, the applicant's form, or a model's
+    own prior output is adversarial input, in every prompt it reaches — not just the first one
+    reviewed** (`prompt-injection`, 2 tickets: TRO-459, TRO-464). CP-1's walkthrough established
+    the `serializeUntrusted` / `UNTRUSTED_DATA`-block convention for the extractor prompt; the
+    identical gap then recurred in a completely different file (the resolver's
+    `user-message.ts` interpolated `FieldResultRow.reason` and `FlaggedField.trigger` raw).
+    When you write ANY new prompt-building function, ask whether an interpolated value could
+    ever carry applicant- or extractor-sourced text — if yes, it needs the same treatment,
+    regardless of which file or ticket first established the pattern.
+19. **A field whose validity depends on another field's value needs a discriminated union, not
+    an object with independently-optional fields** (`type-safety`, 2 tickets: TRO-462, TRO-497).
+    `reviewReason` is only meaningful when `verdict` is `NEEDS_REVIEW`; `resolvedBy` is only
+    meaningful when a field was actually escalated — modeling these as plain optional/nullable
+    properties let TS compile combinations the logic never intends (`NEEDS_REVIEW` with no
+    reason; `resolvedBy: sonnet` with `reviewReason: null`). Encode the dependency in the type
+    so the invalid combination fails to compile, instead of relying on a runtime check to catch
+    it after review does.
+20. **Text-matching and word-boundary logic must be Unicode-aware from the first draft**
+    (`i18n`, 2 tickets: TRO-462, TRO-463, both on `text-boundary.ts`). `[a-z0-9]` character
+    classes miss accented letters (Añejo); `.toLowerCase()` is not true Unicode case-folding
+    (misses German ß); comparing precomposed vs. canonically-equivalent decomposed spellings
+    without `.normalize('NFC')` first makes identical text fail to match. Treat "this touches a
+    label's text" as the trigger to use `\p{L}\p{N}` classes and `.normalize('NFC')` by default,
+    not as something a reviewer points out after the fact.
 
 ## Log
 
@@ -181,3 +212,12 @@ production run (they are paid-for, not speculative); rules 10+ will be LabelHunt
   gate runs than the orchestrator initiated, backfill scorecard rows from `.factory/gate-result.json`
   history (or at minimum one row summarizing the total attempts) before treating the ticket as
   closed — don't let the record be thinner than the work.
+- 2026-08-11 — **`review-ledger.mjs report` had not actually been run "before each wave" as
+  instructed; by the time it was, four categories had already crossed the 2-ticket brief-rule
+  line (rules 17–20 above, this run) and FIVE had crossed the 3-ticket gate-check line without
+  a mechanical check ever getting added: `test-coverage` (13 findings/4 tickets), `docs` (9/3),
+  `boundary-validation` (12/3), `prose-style` (11/6) — plus `correctness` (27/7), which rule 15
+  already declined to gate-check on the record (six unrelated root causes, no shared pattern to
+  grep for). The other four have no such recorded reason for staying ungated — they are an open
+  item, not a closed one. Run the report before every wave, the way the skill actually says to;
+  a threshold crossed and not acted on is the same failure as never measuring it.

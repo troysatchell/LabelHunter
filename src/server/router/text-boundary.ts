@@ -18,16 +18,34 @@ function escapeRegExp(text: string): string {
 }
 
 /**
- * Casefold and collapse whitespace. Deliberately does not strip diacritics
- * (an accented and unaccented spelling stay distinct — see the file
- * comment). It DOES fold German ß to "ss" (TRO-504 item 2): `toLowerCase()`
- * alone leaves ß untouched, so a value read as "STRASSE" (German's all-caps
+ * NFC-composes, casefolds, and collapses whitespace. Deliberately does not
+ * strip diacritics (an accented and unaccented spelling stay distinct — see
+ * the file comment).
+ *
+ * The NFC step (PR #8 review) is NOT diacritic folding — it does not merge
+ * an accented and an unaccented spelling. It merges two ENCODINGS of the
+ * SAME accented spelling: a precomposed letter (one codepoint, e.g. U+00E9
+ * for "é") and its canonically equivalent decomposed form (a base letter
+ * plus a separate combining mark, e.g. U+0065 + U+0301). Unicode defines
+ * these as the identical text; without this call, `"José"` (precomposed)
+ * and `"José"` (decomposed) produced DIFFERENT normalized strings and
+ * could not word-boundary-match each other, even though both spell the
+ * identical word — verified directly:
+ * `"é".normalize("NFC") === "é"` is `true`. This runs before
+ * `\p{M}` ever matters (below): NFC composes away most combining-mark
+ * sequences that have a precomposed equivalent, but not all Unicode
+ * sequences do, so the `\p{M}` lookaround stays necessary for the residual
+ * cases NFC does not merge (TRO-504 item 1).
+ *
+ * It DOES fold German ß to "ss" (TRO-504 item 2): `toLowerCase()` alone
+ * leaves ß untouched, so a value read as "STRASSE" (German's all-caps
  * convention has traditionally had no uppercase ß) would not word-boundary-
  * match evidence spelled "Straße" without this. This is a targeted, single-
  * character-class fix, not general Unicode case folding.
  */
 export function normalizeForBoundaryMatch(text: string): string {
   return text
+    .normalize("NFC")
     .toLowerCase()
     .replace(/[ßẞ]/g, "ss")
     .trim()

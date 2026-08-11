@@ -33,11 +33,15 @@ describe("parseNetContents — clean reads", () => {
     expect(parseNetContents("12,345 mL")).toEqual({ value: 12345, unit: "ml" });
   });
 
-  it("does not misread a comma-DECIMAL (European-style) number as a US decimal", () => {
+  it("rejects a comma-DECIMAL (European-style) number outright, rather than silently reinterpreting it (PR #8 review)", () => {
     // "1,5" is not a valid thousands grouping (a group must be exactly 3
-    // digits) and is not this grammar's decimal separator (a period is) —
-    // it must not silently parse as 1.5.
-    expect(parseNetContents("1,5 L")).not.toEqual({ value: 1.5, unit: "l" });
+    // digits) and is not this grammar's decimal separator (a period is).
+    // An earlier fix only stopped it from parsing as 1.5 — it left the
+    // orphaned "5" behind as a FRESH candidate, so "1,5 L" silently parsed
+    // as a real but WRONG quantity, "5 L", instead of failing to parse at
+    // all. A malformed number must reject the whole read, not hand back a
+    // different valid-looking answer (TH-R10: uncertain beats wrong).
+    expect(parseNetContents("1,5 L")).toBeNull();
   });
 });
 

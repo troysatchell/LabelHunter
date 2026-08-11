@@ -81,12 +81,21 @@ function normalizeUnitBlob(blob: string): string {
 
 // A comma-grouped integer part (US convention: exactly 3 digits per group,
 // e.g. "1,000" or "12,345") with an optional plain decimal tail. This
-// deliberately does NOT accept a comma as a decimal separator: "1,5" has no
-// valid 3-digit group after the comma, so the grouping alternative fails to
-// consume it, and the plain `\d+` branch matches only "1" — a US label's
-// decimal point is always a period, never a comma, so a comma-decimal
-// (European convention) is not silently misread as a US decimal.
-const NUMBER_PATTERN = /\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?/g;
+// deliberately does NOT accept a comma as a decimal separator — a US
+// label's decimal point is always a period, never a comma.
+//
+// The second alternative carries a negative lookbehind, `(?<!,)`: a bare
+// `\d+` match must not be directly preceded by a comma. Without it, "1,5"
+// (a malformed comma-decimal, not a valid 3-digit group) fails the first
+// alternative, and the plain second alternative matches only "1" at that
+// position — but `matchAll`'s scan then continues past the comma and finds
+// "5" as a SEPARATE, fresh candidate, so "1,5 L" silently parsed as the
+// real but WRONG quantity "5 L" instead of failing to parse (PR #8 review,
+// verified: `parseNetContents("1,5 L")` returned `{ value: 5, unit: "l" }`
+// before this fix). The lookbehind stops "5" from ever being read as its
+// own candidate when a comma sits directly before it — the orphaned tail
+// of a rejected comma-group must not become a new, different answer.
+const NUMBER_PATTERN = /\d{1,3}(?:,\d{3})+(?:\.\d+)?|(?<!,)\d+(?:\.\d+)?/g;
 
 /**
  * Reads a number and a recognized unit out of free text, e.g. `"750 mL"` ->

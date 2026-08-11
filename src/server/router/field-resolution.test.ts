@@ -105,6 +105,18 @@ describe("checkNetContentsStructural — CP-1 §5.3 AMBIGUOUS_NET_CONTENTS", () 
     expect(checkNetContentsStructural(field, 0.9, application).hit).toBe(true);
   });
 
+  it("does not fire when the primary reading and an alternate both state an equal ZERO quantity (PR #8 review)", () => {
+    // The tolerance fraction divides by the PRIMARY reading's mL value;
+    // when that is 0, the fraction is defined as Infinity so a real
+    // difference against a zero primary is never silently accepted — but
+    // that same Infinity wrongly fired even when the alternate ALSO states
+    // 0, where the two readings agree exactly. Same bug class already
+    // fixed in `../comparators/net-contents.ts`'s `compareNetContents`.
+    const zeroApplication = { netContentsValue: 0, netContentsUnit: "mL" };
+    const field: ExtractedField = { value: "0 mL", evidence: "0 mL", confidence: 0.9, alternates: ["0 mL"] };
+    expect(checkNetContentsStructural(field, 0.9, zeroApplication).hit).toBe(false);
+  });
+
   it("does not fire when an 'alternate' merely restates the same quantity in a different unit", () => {
     // 750 mL and 0.75 L are the same quantity, not a conflicting second reading.
     const field: ExtractedField = { value: "750 mL", evidence: "750 mL", confidence: 0.9, alternates: ["0.75 L"] };

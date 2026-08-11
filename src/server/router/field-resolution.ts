@@ -113,7 +113,15 @@ function netContentsAlternatesConflict(parsed: ParsedNetContents, alternates: re
     const alternateParsed = parseNetContents(alternate);
     if (!alternateParsed) return true;
     const alternateMl = convertNetContentsToMl(alternateParsed);
-    const fractionDiff = parsedMl === 0 ? Infinity : Math.abs(parsedMl - alternateMl) / parsedMl;
+    // Equal readings never conflict, checked before the fraction — dividing
+    // by `parsedMl` when it is 0 is defined as Infinity below so a REAL
+    // second reading is never silently accepted, but that same Infinity
+    // would otherwise also fire when the alternate states the identical
+    // zero quantity, where the two readings agree exactly (PR #8 review;
+    // same bug class already fixed in `../comparators/net-contents.ts`'s
+    // `compareNetContents`).
+    const fractionDiff =
+      parsedMl === alternateMl ? 0 : parsedMl === 0 ? Infinity : Math.abs(parsedMl - alternateMl) / parsedMl;
     return fractionDiff > NET_CONTENTS_TOLERANCE_FRACTION;
   });
 }

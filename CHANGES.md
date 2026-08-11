@@ -49,11 +49,10 @@ table has no way to express that condition without a larger schema change. The c
 what was verified and what still needs a larger fix.
 
 **Two numbers move from "fails safe, unverified" to "verified, and zero is correct."** TTB's
-ABV tolerance regulations (27 CFR 5.65(b) for spirits, 27 CFR 4.36(b) for wine) govern how far
-the bottled product may deviate from its own label. That is a different question from whether
-the label's printed number matches the application form's declared number, which is what this
-comparator checks. Zero tolerance is the right answer for the second question, not a stand-in
-for the first.
+ABV tolerance regulations govern the bottled product against its own label (27 CFR 5.65(b) for
+spirits, 27 CFR 4.36(b) for wine). This comparator checks a different thing: does the label's
+printed number match the application form's declared number. Zero tolerance is the right
+answer for that second question. It is not a stand-in for the first.
 
 **Wiring.** `field-resolution.ts` and `overrides.ts` import their numeric parsing from
 `../comparators/abv.ts` and `../comparators/net-contents.ts` now, not from
@@ -66,10 +65,11 @@ narrowed to say so.
 apostrophe variants to fold: the straight apostrophe, the backtick, and the acute accent. A
 label extracted by a real vision model may use a Unicode right single quotation mark (’,
 U+2019) as a stylized apostrophe instead. That character is not one of the three named
-variants, so it is not folded. Measured effect: "Stone’s Throw" against "Stone's Throw" scores
-about 0.923 similarity, just under the 0.95 match threshold — it routes to NEEDS_REVIEW, not a
-clean MATCH. `docs/checkpoints/cp1-cascade-router-prompts.md` should decide whether to widen
-the rule; this ticket implements the rule as written, not a guess at its intent.
+variants, so it is not folded. Measured effect: "Stone’s Throw" against "Stone’s Throw" scores
+about 0.923 similarity. That is just under the 0.95 match threshold. The pair routes to
+NEEDS_REVIEW, not a clean MATCH. `docs/checkpoints/cp1-cascade-router-prompts.md` should decide
+whether to widen the rule. This ticket implements the rule as written, not a guess at its
+intent.
 
 **Six more fixes from this ticket's own CodeRabbit review round, applied before this commit.**
 Each one is a real gap, each has a named regression test, and each keeps the comparators pure
@@ -104,6 +104,22 @@ ticket verified the regulation directly (27 CFR 7.65(a), fetched and quoted in t
 comment): a malt beverage label's alcohol content statement is optional under federal law.
 `not_required` is the cited, correct value, not a guess CodeRabbit's heuristic should override.
 
+**Three more fixes from PR #8's GitHub review, applied before this commit.** Each one has a
+named regression test.
+
+- `net-contents.ts`: `parseNetContents("1,5 L")` used to return `{ value: 5, unit: "l" }`
+  instead of failing. The comma-grouping fix above stopped it from misreading "1,5" as "1.5",
+  but it left the orphaned "5" behind as a fresh candidate. `NUMBER_PATTERN` now refuses to
+  read a bare number that sits directly after a comma, so a malformed comma-decimal rejects the
+  whole read instead of handing back a different, wrong quantity.
+- `field-resolution.ts`: `checkNetContentsStructural`'s alternates check now MATCHes two equal
+  zero quantities, the same zero-division bug already fixed in `compareNetContents`, present
+  here too.
+- `text-boundary.ts`: `normalizeForBoundaryMatch` now calls `.normalize("NFC")` first. A
+  precomposed accented letter and its canonically equivalent decomposed form (a base letter
+  plus a combining mark) used to normalize to different strings. They are the same text under
+  Unicode's own definition, and now they normalize the same way.
+
 **A note on running tests.** `pnpm test` and `pnpm test -- <path>` both read `DATABASE_URL`.
 Every worktree gets its own database (`scripts/factory/worktree.sh`); running tests with
 `DATABASE_URL` unset, or pointing at any database other than the current worktree's own, is
@@ -111,13 +127,13 @@ this repo's own non-negotiable rule (`CLAUDE.md`) — test provisioning resets t
 schema. `source .factory-env` before running either command below.
 
 **How to run it.** `pnpm test -- src/server/comparators src/server/router` runs the new and
-changed suites. `pnpm test` runs everything; 340 tests pass repo-wide. `pnpm typecheck` and
+changed suites. `pnpm test` runs everything; 344 tests pass repo-wide. `pnpm typecheck` and
 `pnpm lint` are both clean.
 
-**Rollback.** `git revert` this commit. That one command is the whole procedure: the same
-commit changed `field-resolution.ts` and `overrides.ts`'s imports and added the module they
-now import from, so reverting it restores both the old imports and the old behavior together,
-with nothing left to fix by hand.
+**Rollback.** `git revert` this commit. That one command is the whole procedure. The same
+commit changed `field-resolution.ts` and `overrides.ts`'s imports. It also added the module
+they import from. A revert restores the old imports and the old behavior together. Nothing is
+left to fix by hand.
 
 ## TRO-462 — PR review round 2: orchestrator triage, 2 fixed, 3 deferred (2026-08-10)
 

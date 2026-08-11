@@ -65,57 +65,17 @@ import { extractLabel, HAIKU_EXTRACTOR_MODEL } from "../../src/server/extractor"
 import { preprocessImage } from "../../src/server/preprocessing";
 import { productionComparators } from "../../src/server/comparators";
 import { saveLabelImage } from "../../src/server/storage/local-file-storage";
+import { parseArgs } from "./args";
 import { summarizeLatencies, type LatencySummary } from "./percentile";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const RESULTS_PATH = path.resolve(REPO_ROOT, "scripts/latency/results/single-label-verify.json");
-
-/** The golden-set case this harness measures by default — the TH-R11
- * reference example (`golden-set/manifest.json`'s own note): a clean
- * spirits label with every field matching, no glare/rotation/degradation.
- * The realistic "fast path" image PRD §3.8 budgets against, not a
- * deliberately hard judgment case. */
-const DEFAULT_CASE_ID = "case-01-clean-match-spirits";
-const DEFAULT_RUNS = 20;
 
 const EXTENSION_TO_MEDIA_TYPE: Record<string, string> = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
   png: "image/png",
 };
-
-interface CliArgs {
-  runs: number;
-  caseId: string;
-}
-
-function parseArgs(argv: readonly string[]): CliArgs {
-  let runs = DEFAULT_RUNS;
-  let caseId = DEFAULT_CASE_ID;
-  // `pnpm run latency:check -- --runs=5` forwards the literal `--` token
-  // into argv (npm strips it, pnpm does not — the same quirk
-  // `scripts/run-tests.cjs` works around for `pnpm test`). Skip it rather
-  // than reject it, so both `pnpm latency:check --runs=5` and
-  // `pnpm latency:check -- --runs=5` work.
-  for (const arg of argv) {
-    if (arg === "--") continue;
-    const runsMatch = /^--runs=(\d+)$/.exec(arg);
-    if (runsMatch) {
-      runs = Number(runsMatch[1]);
-      continue;
-    }
-    const caseMatch = /^--case=(.+)$/.exec(arg);
-    if (caseMatch) {
-      caseId = caseMatch[1];
-      continue;
-    }
-    throw new Error(`measure.ts: unrecognized argument "${arg}" (expected --runs=<n> or --case=<caseId>)`);
-  }
-  if (!Number.isInteger(runs) || runs < 1) {
-    throw new Error(`measure.ts: --runs must be a positive integer, got ${runs}`);
-  }
-  return { runs, caseId };
-}
 
 function findCase(caseId: string): GoldenSetCase {
   const manifest = loadGoldenSetManifest();

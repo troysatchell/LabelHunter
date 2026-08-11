@@ -8,33 +8,51 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
 **What changed.** A latency harness for the single-label verify flow (TH-R2, PRD §3.8, §6).
 
-- `scripts/latency/percentile.ts` — pure percentile math: `percentile(valuesMs, p)` (nearest-
-  rank method: sort ascending, `rank = ceil(p/100 * n)`) and `summarizeLatencies(valuesMs)`
-  (count/min/max/mean/p50/p95 in one pass). No clock, no network, no I/O. Written before
-  `measure.ts` — TDD, PRD §6.
-- `scripts/latency/percentile.test.ts` — 12 unit tests against synthetic millisecond arrays:
-  known nearest-rank values on 10- and 20-sample arrays, empty-array and out-of-range-`p`
-  guards (`RangeError`, never a silent `NaN`), shuffled-input order-independence, no mutation
-  of the input array. Runs inside `pnpm test` — the `scripts/**/*.test.ts` glob already
-  covers it (`vitest.config.ts`). No live call, no real money.
+- `scripts/latency/percentile.ts` — pure percentile math. `percentile(valuesMs, p)` uses the
+  nearest-rank method: sort ascending, then `rank = ceil(p/100 * n)`. `summarizeLatencies
+  (valuesMs)` returns count/min/max/mean/p50/p95 in one pass. Neither function touches a
+  clock, a network, or disk. Written before `measure.ts`, TDD-style (PRD §6).
+- `scripts/latency/percentile.test.ts` — 12 unit tests against synthetic millisecond arrays.
+  Covers known nearest-rank values on 10- and 20-sample arrays. Covers the empty-array and
+  out-of-range-`p` guards: both throw `RangeError`, never return a silent `NaN`. Covers
+  shuffled-input order independence and confirms the input array is never mutated. Runs
+  inside `pnpm test` — the `scripts/**/*.test.ts` glob in `vitest.config.ts` already covers
+  it. No live call, no real money.
+- `scripts/latency/args.ts` — pure CLI argument parsing, split out from `measure.ts` so a test
+  can import it without triggering a real API call. `parseArgs` reads `--runs=<n>` and
+  `--case=<caseId>`, defaulting to 20 runs against `case-01-clean-match-spirits`. It enforces
+  a hard `MAX_RUNS` ceiling of 50: every run spends real money on one live Haiku call, so a
+  typo like `--runs=2000` must fail loudly, not spend real API money by accident. Raising the
+  cap takes a deliberate code edit, not a CLI flag.
+- `scripts/latency/args.test.ts` — 11 unit tests: defaults, each flag alone and both together,
+  the literal `--` token pnpm forwards (`scripts/run-tests.cjs` works around the same quirk
+  for `pnpm test`), an unrecognized argument, a non-integer or zero `--runs`, and the
+  `MAX_RUNS` ceiling (accepted at the limit, rejected one above it, with the offending value
+  named in the error). No live call, no real money.
 - `scripts/latency/measure.ts` — the harness itself. Run: `pnpm latency:check` (optionally
   `pnpm latency:check --runs=20 --case=<caseId>`). **Costs real money.** Each run makes one
-  real, live `claude-haiku-4-5` call. It never mocks the call — TH-R2 exists to produce an
+  real, live `claude-haiku-4-5` call. It never mocks the call: TH-R2 exists to produce an
   honest number, and a mocked client would answer a different question. It calls
   `handleVerifyRequest`, the exact function `route.ts`'s `POST` calls. It passes a real
   `Request` through the real preprocessing pipeline, the real extractor, and the real
-  Validation Router, and it times wall-clock from that request to the rendered response body.
-  It deletes every application row it creates afterward (cascades to that row's label image,
-  verification, field results, and review-queue row). Uploaded images land in a scratch temp
-  directory, never the real `var/uploads/`. A run that throws, or that gets a non-200 status,
-  stays in the log with its own duration, but it does not count toward p50/p95 — a failure is
-  neither a verdict nor a flag, so it is not a latency sample for TH-R2's clock.
+  Validation Router. It times wall-clock from that request to the rendered response body. It
+  deletes every application row it creates afterward — this cascades to that row's label
+  image, verification, field results, and review-queue row. Uploaded images land in a scratch
+  temp directory, never the real `var/uploads/`. A run that throws, or that gets a non-200
+  status, stays in the log with its own duration. It does not count toward p50/p95: a failure
+  is neither a verdict nor a flag, so it is not a latency sample for TH-R2's clock.
 - `scripts/latency/results/single-label-verify.json` — the committed measurement (below). The
   next `pnpm latency:check` run overwrites it. The filename stays stable on purpose: a later
   ticket (a stats page) can read it without knowing today's date. The file's own `measuredAt`
   field carries the date instead.
 - `package.json` — added the `latency:check` script, matching `factory/config.yaml`'s
   planned `commands.latencyCheck` name.
+
+**Local CodeRabbit triage (2 findings, both fixed).** `scripts/factory/gate.sh`'s review
+step ran before any PR existed and found two real issues, both fixed in this same entry: this
+CHANGES.md entry read as too dense in three spots (fixed above and below, shorter sentences
+throughout); `measure.ts`'s `--runs` had no upper bound, so a typo could spend real API money
+at scale (fixed by the `MAX_RUNS` cap in `args.ts`, with its own regression test).
 
 **The measured numbers (observed, not derived, not fabricated).** 20 runs, case
 `case-01-clean-match-spirits` (the golden set's own "TH-R11 reference example": a clean
@@ -82,14 +100,16 @@ empty `.gitkeep`, and CP-3 is not acknowledged. PRD §3.8 is explicit that batch
 throughput-bound, not latency-bound. A number extrapolated from the single-label figure above
 would not be a measurement. It would be a guess dressed as one. Deferred to LH-041.
 
-**Approximate real API spend.** 21 real Haiku calls total from this ticket's own work (1
-plumbing smoke-test run + the 20-run measurement). PRD §4's own estimate is ~$0.005/label for
-the extractor — about $0.10, against the $25 build+eval spend cap.
+**Approximate real API spend.** 22 real Haiku calls total from this ticket's own work: 2
+plumbing smoke-test runs (one before the 20-run measurement, one after the `args.ts` refactor
+below) plus the 20-run measurement itself. PRD §4's own estimate is ~$0.005/label for the
+extractor — about $0.11, against the $25 build+eval spend cap.
 
 **How to run it.** `source .factory-env` (or otherwise set `ANTHROPIC_API_KEY` and
 `DATABASE_URL`), then `pnpm latency:check`. Defaults to 20 runs against
-`case-01-clean-match-spirits`; override with `--runs=<n>` and `--case=<caseId>`. `pnpm test`
-runs the math unit tests (`percentile.test.ts`) — free, no live call.
+`case-01-clean-match-spirits`. Override with `--runs=<n>` and `--case=<caseId>`. `pnpm test`
+runs the math and argument-parsing unit tests (`percentile.test.ts`, `args.test.ts`) — free,
+no live call.
 
 **What this ticket could not verify.**
 

@@ -4,6 +4,76 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-467 — LH-CP2: ⛔ CHECKPOINT 2 walkthrough material (2026-08-11)
+
+**This entry does not clear a checkpoint.** It adds the material Troy reads *at* the
+checkpoint. CP-2 stays blocking until Troy runs the walkthrough and gives explicit
+acknowledgment. Until then, LH-020 and LH-021 do not start.
+
+**What changed.** One new document: `docs/checkpoints/cp2-warning-subsystem.md`. No product
+code, no `src/` change, no golden-set change. It covers everything PRD §10 requires CP-2 to
+cover — canonical text sourcing, the OCR choice, normalization, the exact compare, caps and
+bold handling, and the limitation wording — plus the golden-set review PRD §12 assigns to this
+checkpoint, and a "defend it" Q&A (TH-R9, TH-R10, TH-R7, TH-R12, TH-R15, TH-R21, TH-R23).
+
+- **The canonical text is now verified, not assumed.** PRD §3.4 carried the statutory string
+  with a note beside it: "verify verbatim against ttb.gov during implementation — a ticket,
+  not an assumption." This is that task, and it is done. The statement was retrieved live on
+  2026-08-11 from the eCFR API for 27 CFR 16.21 (title 27, issue date 2026-07-06) and
+  cross-checked against three ttb.gov pages — malt beverage, wine, and distilled spirits. All
+  four sources carry a byte-identical string. **The PRD's copy is exactly right:** 283
+  characters, pure ASCII, SHA-256 `35e1f5d39ee341ac7c114f8159956cb0cc1981b94e4ffeee194ff5060bf99fbc`,
+  no discrepancy in wording, punctuation, casing, or whitespace. Every command is in the
+  document's Appendix B.
+- **Two findings the verification turned up.** The CFR renders the statement as two
+  paragraphs, not one string, so the joined form is a documented design decision rather than
+  something inherited. And the caps rule lives in 27 CFR 16.22(a)(2), not 16.21 — a sentence
+  that carries **two** bold rules, not one: the first two words must print in bold, and the
+  remainder may not. The extractor schema has a single `formatting.bold` flag and checks
+  neither. The document names both and drafts the limitation wording.
+- **Normalization is the load-bearing section**, and it turns on one sentence: a normalization
+  rule is legitimate only when it cannot change what a human reader sees on the label.
+  Whitespace runs, line breaks, line-end hyphenation, invisible characters, and NFKC
+  compatibility forms all pass that test and are normalized. Quote folding, diacritic
+  stripping, and punctuation dropping all fail it and are deliberately absent — even though
+  all three appear in the brand-name normalizer, where equivalence rather than exactness is
+  the requirement. The statutory string contains no apostrophe, no quotation mark, and no
+  non-ASCII character, so those rules could only ever make a deviant label look compliant.
+- **Case gets split, and the arithmetic proves it must be.** The two-word prefix compares
+  case-sensitively, because 16.22(a)(2) regulates it. The body compares case-insensitively,
+  because no regulation states it. Computed over the golden set's own ground-truth strings,
+  the title-case cases (case-08, case-09) sit at edit distance **0** once case is folded — the
+  separate caps check is the only thing that catches them, and rubric gate G4 depends on it.
+  Genuine rewordings sit at distance 24 and 38, which is what sizes the proposed near-miss
+  band at 1–2.
+- **Every verdict maps onto a real `WarningComparatorResult` branch**, and the document names
+  the two `ReviewReason` values the union cannot return: `CONFLICTING_EXTRACTION` (PRD §3.7
+  uses it for channel disagreement) and `LOW_MODEL_CONFIDENCE` (golden cases 23 and 24 expect
+  it). Recommendation: leave the type alone and fix the two golden entries.
+- **The tesseract.js choice is verified, and it carries a hazard.** Version 7.0.0, Apache-2.0,
+  pure JS plus a WASM core with no native dependencies — that is the Render argument. But
+  unless `langPath` is set, it downloads language data from a public CDN **at runtime**, which
+  would break TH-R7's constrained-network requirement and PRD §3.8's latency budget together.
+  Found by reading the package source, not by hitting it. LH-020 must commit
+  `eng.traineddata`, set `langPath`, and test that it stays set.
+- **A real conflict between PRD §3.8 and one crop-detection option.** A model-reported bounding
+  box cannot arrive before the model call finishes, so it cannot satisfy §3.8's "OCR runs
+  concurrently with the Haiku call". The document recommends classical detection instead, with
+  a band-search fallback and a single-channel final fallback.
+- **The golden-set review CP-2 owns.** 29 cases, 12 warning-relevant, **zero images** —
+  `golden-set/images/` holds only `.gitkeep`. CP-2 can sign off on the specifications and
+  cannot sign off on the pixels. Four findings are raised for the walkthrough to settle.
+- **Ten open questions**, each with a recommendation and the cost of choosing wrong. Every
+  threshold is marked **proposed** and every unmeasured figure says "not measured", CP-1 style.
+  A fifth claim label, **verified**, was added for retrieved statutory text — it is a stronger
+  claim than "derived" and weaker than "measured on our own system".
+
+**How to run it.** Nothing to run. Read `docs/checkpoints/cp2-warning-subsystem.md` — about 45
+minutes — and work the Appendix A checklist during the walkthrough. The canonical-text claim is
+independently checkable: run Appendix B's two `curl` commands and compare the result to §2.2.
+
+**Rollback.** `git revert` this commit. The document adds no code and nothing imports it.
+
 ## TRO-462 — PR review round 2: orchestrator triage, 2 fixed, 3 deferred (2026-08-10)
 
 **What changed.** The orchestrator's independent gate run found 5 more CodeRabbit findings

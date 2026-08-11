@@ -31,8 +31,12 @@ export function ReviewQueueList({ items }: ReviewQueueListProps) {
           </p>
           {/* Every row's link otherwise shares the name "Review this item" —
               a screen-reader user listing the page's links has no way to
-              tell rows apart (CodeRabbit finding, PR #16 review round 2). */}
-          <Link href={`/review-queue/${item.id}`} className="secondary-button" aria-label={`Review this item: ${item.brandName}`}>
+              tell rows apart (CodeRabbit finding, PR #16 review round 2).
+              The brand name alone does not guarantee uniqueness — two
+              applications can share one brand — so the stable item id
+              anchors the name too (CodeRabbit finding, local review
+              round 9). */}
+          <Link href={`/review-queue/${item.id}`} className="secondary-button" aria-label={`Review this item: ${item.brandName} (#${item.id})`}>
             Review this item
           </Link>
         </li>

@@ -36,7 +36,7 @@ describe("ReviewQueueList", () => {
     // shared the same name "Review this item", so a screen-reader user
     // listing the page's links could not tell rows apart (CodeRabbit
     // finding, local review round 2).
-    const link = screen.getByRole("link", { name: "Review this item: Old Tom Distillery" });
+    const link = screen.getByRole("link", { name: "Review this item: Old Tom Distillery (#42)" });
     expect(link).toHaveAttribute("href", "/review-queue/42");
 
     const time = row.querySelector("time");

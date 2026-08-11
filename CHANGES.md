@@ -4,6 +4,73 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-497 — PR review round 2: 5 fixed, 3 deferred (2026-08-11)
+
+**What changed.** A second gate run triggered a fresh CodeRabbit pass against round 1's fix
+commit. It found 10 findings. Five were real. This entry fixes those five.
+
+- `degrade.ts` (major): `applyGlare` and `applyLowLight` trusted `LABEL_REGIONS`'s fixed
+  coordinates. Those coordinates are only correct against the original, unrotated canvas. A
+  degradations list that ran a geometric transform (`rotate`, `perspective`) before a
+  region-targeted one (`glare`, `low-light`) would silently glare or dim the wrong pixels. No
+  committed case does this today, but a future one could. Fixed: `assertMatchesOriginalCanvas`
+  checks the input image's real decoded size before either function runs, and throws a clear
+  `RangeError` on a mismatch instead of silently misplacing the effect. New tests: apply each
+  function to an already-rotated image, confirm it throws.
+- `loader.ts` (major): `DEGRADATION_PARAM_SHAPE` checked only each type's required params. It
+  never checked glare's optional `angleDegrees`/`opacity` when present, and never rejected a
+  param a transform does not use at all — for example, a `rotate` entry that also carried a
+  stray `sigma`. Fixed: the shape table now has a `required` and an `optional` part per type,
+  every optional key is type-checked when present, and any key outside both sets fails
+  validation. New tests for all three cases.
+- `build.ts` (major): `imagePath` came straight from the manifest into `join(REPO_ROOT, ...)`.
+  The loader already checks `imagePath` starts with the literal string
+  `"golden-set/images/"`, but that is a string-prefix check — it would not catch a value like
+  `"golden-set/images/../../etc/passwd"`, which starts with that same prefix as plain text.
+  Fixed: `resolveImagePath` resolves the real path and confirms it stays inside
+  `golden-set/images/` before any write. The manifest is a committed, reviewed file, not
+  runtime input, so this is defense in depth, not a response to an active threat.
+- `images.test.ts` (minor): the existence check confirmed a file was present and non-empty,
+  never that it decoded as an actual JPEG. Fixed: a new test decodes every committed image
+  with sharp and asserts `metadata.format === "jpeg"`.
+- `golden-set/README.md` (minor + major): "May be empty." lost its subject — changed to "The
+  list may be empty." The LH-005 section did not say an `ai-generated` case's image and its
+  `verified: true` flag must land in the same manifest change — added that sentence, and named
+  which test starts failing if they don't (`images.test.ts`).
+
+One finding restated "commit the missing image assets" — already done in round 1's commit;
+stale against the current tree, no action needed.
+
+Two findings are deferred, not fixed here:
+- Replacing `Degradation.params: Record<string, number | string>` with a discriminated union
+  keyed by `DegradationType`. The shape validation added in round 1, tightened further above,
+  already closes the practical gap. The type-level version is a bigger refactor across
+  `types.ts`, `loader.ts`, and `degrade.ts`'s dispatcher — better as its own change.
+- `render.ts`'s font stacks name system fonts, not fonts committed to the repo, which design
+  doc §2 calls for. Documented as a known limitation directly in `render.ts`'s module comment,
+  with the exact practical consequence (same-machine determinism holds; cross-machine font
+  substitution could differ). Not fixed here — sourcing and license-checking real font files
+  is a real task, and rushing a font choice risks a license problem worse than the gap it
+  closes.
+
+A third CodeRabbit finding argued this changelog entry (round 1's) was still too dense.
+Round 1 already applied one real ASD-STE100 pass (see that entry's own note). This round adds
+five more short, single-fact paragraphs rather than a second full rewrite of round 1's text —
+further compressing already-compressed technical detail risks losing precision for its own
+sake, which CLAUDE.md's writing-style section warns against directly.
+
+**Tests added this round.** `degrade.test.ts`: two new "rejects an already-transformed image"
+cases (glare, low-light). `loader.test.ts`: four new cases for the closed degradation-params
+schema (accepts glare's optional params when well-typed, rejects a wrong-typed optional param,
+rejects an unrecognized param). `images.test.ts`: one new case for the decoded-JPEG check.
+
+**How to run it.** Same as round 1: `pnpm golden:build`, `pnpm test`, `pnpm typecheck`,
+`pnpm lint`, `pnpm build`. Re-ran `pnpm golden:build` after these fixes — every image's byte
+count matched round 1's exactly, confirming the fixes changed no rendered pixel.
+
+**Rollback.** `git revert` this commit. Round 1's pipeline still works without it; these are
+hardening fixes, not new features.
+
 ## TRO-497 — LH-004: golden-set degradation pass, plus the renderer LH-003 deferred (2026-08-11)
 
 **Scope note.** This ticket's stated job was the degradation pass. LH-003 (TRO-458, Done)

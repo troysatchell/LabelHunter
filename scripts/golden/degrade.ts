@@ -63,6 +63,27 @@ function regionFor(name: RegionName): PixelRegion {
 }
 
 /**
+ * A region-targeted transform (`applyGlare`, `applyLowLight`) trusts
+ * `LABEL_REGIONS`'s coordinates, which are only valid against the
+ * original, unrotated `CANVAS_WIDTH` x `CANVAS_HEIGHT` canvas. Chaining a
+ * geometric transform first (`applyRotate`, `applyPerspective`) changes the
+ * canvas size and moves every pixel, so a region name would silently land
+ * on the wrong content instead of failing. No committed case combines them
+ * today, but this check turns a future silent-wrong-pixels bug into a
+ * loud, explicit one — CLAUDE.md rule 13's "check explicitly."
+ */
+async function assertMatchesOriginalCanvas(image: Buffer): Promise<void> {
+  const metadata = await sharp(image).metadata();
+  if (metadata.width !== CANVAS_WIDTH || metadata.height !== CANVAS_HEIGHT) {
+    throw new RangeError(
+      `degrade: a region-targeted transform requires an image at the original ` +
+        `${CANVAS_WIDTH}x${CANVAS_HEIGHT} canvas size, got ${metadata.width}x${metadata.height} — ` +
+        `LABEL_REGIONS coordinates are only valid before any geometric transform (rotate/perspective) has run`,
+    );
+  }
+}
+
+/**
  * Rotates the whole image by `angleDegrees` (positive is clockwise). The
  * canvas expands to fit the rotated content; new corners fill with white,
  * matching the label's own background — never sharp's black default (the
@@ -144,6 +165,7 @@ export async function applyGlare(
     readonly opacity?: unknown;
   },
 ): Promise<Buffer> {
+  await assertMatchesOriginalCanvas(image);
   const region = regionFor(assertRegionName(params.region));
   const angleDegrees = assertFiniteNumber(
     "angleDegrees",
@@ -195,6 +217,7 @@ export async function applyLowLight(
     readonly brightnessFactor: unknown;
   },
 ): Promise<Buffer> {
+  await assertMatchesOriginalCanvas(image);
   const region = regionFor(assertRegionName(params.region));
   const brightnessFactor = assertFiniteNumber(
     "brightnessFactor",

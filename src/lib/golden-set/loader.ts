@@ -199,34 +199,47 @@ function checkVectors(
   }
 }
 
+type ParamType = "number" | "string";
+
+/** A `DegradationType`'s required and optional `params` keys, with each key's primitive type. */
+interface DegradationParamShape {
+  readonly required: Record<string, ParamType>;
+  readonly optional?: Record<string, ParamType>;
+}
+
 /**
- * Required parameter keys and their primitive type per `DegradationType`,
- * matching what `scripts/golden/degrade.ts`'s `apply*` functions actually
- * read. This is a shape check only (present, right primitive type) — the
+ * Required and optional parameter keys, and their primitive type, per
+ * `DegradationType` — matching what `scripts/golden/degrade.ts`'s `apply*`
+ * functions actually read (its `params.angleDegrees ?? 25` style defaults
+ * are exactly the `optional` keys below). This is a shape check only
+ * (present-if-required, right primitive type, no unrecognized key) — the
  * real range checks (opacity in (0,1], sigma in [0.3, 1000], and so on)
  * stay in `degrade.ts`, the schema of record for a transform's own limits.
- * A manifest that names a key with the wrong type is still a mistake worth
- * catching here, before `build.ts` ever calls sharp.
+ * A manifest that names a key with the wrong type, or a key a transform
+ * does not read at all, is still a mistake worth catching here, before
+ * `build.ts` ever calls sharp.
  */
 const DEGRADATION_PARAM_SHAPE: Record<
   (typeof DEGRADATION_TYPES)[number],
-  Record<string, "number" | "string">
+  DegradationParamShape
 > = {
-  rotate: { angleDegrees: "number" },
-  blur: { sigma: "number" },
-  perspective: { shear: "number" },
-  glare: { region: "string" },
-  "low-light": { region: "string", brightnessFactor: "number" },
+  rotate: { required: { angleDegrees: "number" } },
+  blur: { required: { sigma: "number" } },
+  perspective: { required: { shear: "number" } },
+  glare: {
+    required: { region: "string" },
+    optional: { angleDegrees: "number", opacity: "number" },
+  },
+  "low-light": { required: { region: "string", brightnessFactor: "number" } },
 };
 
 /**
  * Validates the optional `degradations` list (TRO-497 / LH-004, design doc
  * §3). Absent or an empty array are both fine — most cases carry no
- * degradations. Checks that every entry's `params` object has the keys its
- * `type` requires, with the right primitive type. Deliberately does not
- * check numeric ranges or `region` names — `degrade.ts` is the schema of
- * record for those, and duplicating its exact limits here would let the
- * two drift out of sync.
+ * degradations. Checks that every entry's `params` object has the required
+ * keys its `type` needs, that any optional key present has the right
+ * type, and that no other, unrecognized key is present — a closed schema,
+ * not just a required-keys check.
  */
 function checkDegradations(
   problems: string[],
@@ -254,12 +267,29 @@ function checkDegradations(
       return; // Already reported by the checkEnum call above.
     }
     const shape = DEGRADATION_PARAM_SHAPE[type as keyof typeof DEGRADATION_PARAM_SHAPE];
-    for (const [key, expectedType] of Object.entries(shape)) {
-      const value = entry.params[key];
-      if (typeof value !== expectedType) {
+    const params = entry.params;
+
+    for (const [key, expectedType] of Object.entries(shape.required)) {
+      if (typeof params[key] !== expectedType) {
         problems.push(
-          `${w}.params: "${type}" requires "${key}" to be a ${expectedType}, got ${JSON.stringify(value)}`,
+          `${w}.params: "${type}" requires "${key}" to be a ${expectedType}, got ${JSON.stringify(params[key])}`,
         );
+      }
+    }
+    for (const [key, expectedType] of Object.entries(shape.optional ?? {})) {
+      if (key in params && typeof params[key] !== expectedType) {
+        problems.push(
+          `${w}.params: "${type}"'s optional "${key}" must be a ${expectedType} when present, got ${JSON.stringify(params[key])}`,
+        );
+      }
+    }
+    const allowedKeys = new Set([
+      ...Object.keys(shape.required),
+      ...Object.keys(shape.optional ?? {}),
+    ]);
+    for (const key of Object.keys(params)) {
+      if (!allowedKeys.has(key)) {
+        problems.push(`${w}.params: "${type}" does not accept a "${key}" param`);
       }
     }
   });

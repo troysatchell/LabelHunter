@@ -15,7 +15,7 @@
  * network call.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { loadGoldenSetManifest } from "../../src/lib/golden-set/loader";
@@ -24,6 +24,29 @@ import { applyDegradation } from "./degrade";
 import { createLabelRenderer, renderLabelImage, type LabelRenderer } from "./render";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
+const IMAGES_DIR = resolve(REPO_ROOT, "golden-set/images");
+
+/**
+ * Resolves `imagePath` and confirms it lands inside `golden-set/images/`.
+ * The loader already checks `imagePath` is a string starting with
+ * `"golden-set/images/"` (`loader.ts`'s `checkCase`), but that is a string
+ * prefix check — it would not catch a crafted value like
+ * `"golden-set/images/../../etc/passwd"`, which also starts with that
+ * prefix as plain text. This resolves the real path and checks it stays
+ * inside the directory before any write. `golden-set/manifest.json` is a
+ * committed, reviewed file, not runtime input, so this is defense in
+ * depth, not a response to an active threat — cheap enough to add anyway.
+ */
+function resolveImagePath(imagePath: string): string {
+  const resolved = resolve(REPO_ROOT, imagePath);
+  const rel = relative(IMAGES_DIR, resolved);
+  if (rel.startsWith("..") || rel === "") {
+    throw new RangeError(
+      `build: imagePath "${imagePath}" resolves outside golden-set/images/ — refusing to write`,
+    );
+  }
+  return resolved;
+}
 
 /**
  * mozjpeg at this quality keeps every rendered label (large flat areas,
@@ -52,7 +75,7 @@ async function buildCase(
     .jpeg({ quality: JPEG_QUALITY, mozjpeg: true })
     .toBuffer();
 
-  const outPath = join(REPO_ROOT, caseSpec.imagePath);
+  const outPath = resolveImagePath(caseSpec.imagePath);
   mkdirSync(dirname(outPath), { recursive: true });
   writeFileSync(outPath, jpeg);
 

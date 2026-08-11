@@ -15,6 +15,17 @@
  * government warning paragraph for free; a hand-rolled SVG line-breaker
  * would not. No network call: the HTML is fully inline, with no remote
  * fonts or images.
+ *
+ * KNOWN LIMITATION: font stacks below name system fonts (Helvetica/Arial,
+ * plus generic `cursive`/`fantasy` fallbacks for the two odd-typography
+ * cases), not fonts committed to the repo. Design doc §2 says "Fonts are
+ * committed to the repo" — this renderer does not do that yet. Practical
+ * effect: `pnpm golden:build` is deterministic on one machine (proven by
+ * `render.test.ts`'s determinism test — same content, same browser, same
+ * OS font substitution, same pixels every run), but re-running it on a
+ * different OS could pick different font-substitution results. Committing
+ * real font files and wiring `@font-face` would close this gap; deferred
+ * here rather than picking a font quickly without checking its license.
  */
 import { chromium, type Page } from "@playwright/test";
 import type { GoldenSetCase } from "../../src/lib/golden-set/types";

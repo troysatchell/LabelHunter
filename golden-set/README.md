@@ -31,7 +31,11 @@ The pipeline is the render-first hybrid design doc §2 lays out:
 **Still not done:** the ~5 fully `ai-generated` "wild" labels design doc §5 describes. LH-005
 owns that work — the Gemini API call, and its own `verified: true` human sign-off. No case in
 this manifest currently has `provenance: "ai-generated"`. When LH-005 adds one, its image
-starts out absent, the same way every case here started before this ticket.
+starts out absent, the same way every case here started before this ticket. LH-005 must land
+the image and set `verified: true` in the same manifest change — the loader already rejects a
+`verified: true` `ai-generated` case at load time, but only the schema shape, not whether the
+file actually exists; `scripts/golden/images.test.ts` checks that half, and it starts failing
+the moment an `ai-generated` case claims `verified: true` with no matching file.
 `scripts/golden/verify.ts` (LH-006: the consistency and coverage CI gate) is also still open.
 
 Every case's `verified` field stays `false`, even though its image is now real. `verified`
@@ -59,7 +63,7 @@ in `cases` is a `GoldenSetCase` — the TypeScript type is the schema of record,
 | `imagePath` | Where the label image lives (see naming convention below). A real committed file for every `rendered` / `rendered+degraded` case (LH-004); still absent for a future `ai-generated` case until LH-005 adds one. |
 | `provenance` | How the image was (or will be) produced: `rendered`, `rendered+degraded`, or `ai-generated`. Design doc §2/§5. |
 | `verified` | `true` only once a real image exists and a **human** has confirmed it matches its spec — CP-2's job, not this ticket's. Required `true` for any `ai-generated` case before the eval harness may use it — enforced by the loader, not just documentation. Every case here is still `false`. |
-| `vectors` | Which `audit/rubric.md` completion vectors (V1–V10) this case is evidence for. May be empty. See the known-gap note above for V7/V10. |
+| `vectors` | Which `audit/rubric.md` completion vectors (V1–V10) this case is evidence for. The list may be empty. See the known-gap note above for V7/V10. |
 | `application` | The five example fields as filed on the application (PRD §2, §5, TH-R11). |
 | `label` | The same fields as a careful human reader sees them on the label, plus warning-specific detail (`governmentWarningPrefixAllCaps`, presence flags). |
 | `expected` | The Validation Router's expected output: a verdict + one-line reason per field, a label-level verdict, and — only when the label-level verdict is `REVIEW` — the `ReviewReason` that routes the label to the Sonnet resolver (PRD §3.3). |

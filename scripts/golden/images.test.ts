@@ -9,6 +9,7 @@
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { loadGoldenSetManifest } from "../../src/lib/golden-set/loader";
 
@@ -49,6 +50,19 @@ describe("golden-set committed images", () => {
       if (!hasImage) {
         expect(c.verified, `${c.caseId}: an ai-generated case with no image must not be verified`).toBe(false);
       }
+    }
+  });
+
+  it("decodes every committed image as an actual JPEG, not just a file with a .jpg name", async () => {
+    const renderable = manifest.cases.filter((c) => c.provenance !== "ai-generated");
+    for (const c of renderable) {
+      const fullPath = join(REPO_ROOT, c.imagePath);
+      if (!existsSync(fullPath)) continue; // covered by the existence test above
+      // sharp's `.metadata()` decodes the file's real header — this catches
+      // a build.ts regression that writes, say, a raw PNG buffer to a
+      // ".jpg" path, which the existence/size checks above would miss.
+      const metadata = await sharp(fullPath).metadata();
+      expect(metadata.format, `${c.caseId}: expected JPEG, got ${metadata.format}`).toBe("jpeg");
     }
   });
 

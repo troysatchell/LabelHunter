@@ -160,6 +160,12 @@ describe("applyGlare", () => {
     await expect(applyGlare(base, { region: "brand", opacity: 0 })).rejects.toThrow(RangeError);
     await expect(applyGlare(base, { region: "brand", opacity: 1.5 })).rejects.toThrow(RangeError);
   });
+
+  it("rejects an image that isn't at the original canvas size (e.g. already rotated)", async () => {
+    const base = await makeSyntheticLabel();
+    const rotated = await applyRotate(base, { angleDegrees: 15 });
+    await expect(applyGlare(rotated, { region: "brand" })).rejects.toThrow(RangeError);
+  });
 });
 
 describe("applyLowLight", () => {
@@ -183,6 +189,14 @@ describe("applyLowLight", () => {
     ).rejects.toThrow(RangeError);
     await expect(
       applyLowLight(base, { region: "warning", brightnessFactor: 1.2 }),
+    ).rejects.toThrow(RangeError);
+  });
+
+  it("rejects an image that isn't at the original canvas size (e.g. already rotated)", async () => {
+    const base = await makeSyntheticLabel();
+    const rotated = await applyRotate(base, { angleDegrees: 15 });
+    await expect(
+      applyLowLight(rotated, { region: "warning", brightnessFactor: 0.3 }),
     ).rejects.toThrow(RangeError);
   });
 

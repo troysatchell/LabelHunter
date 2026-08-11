@@ -50,6 +50,12 @@ function expectedColumnLabel(field: VerificationFieldDetail["field"]): string {
 }
 
 function FieldRow({ row }: { row: VerificationFieldDetail }) {
+  // The warning's own transcription is nulled by the router when its §4.4
+  // override rejects it (bad confidence, evidence mismatch) even when real
+  // text was detected — `evidence` stays populated in that case, so it is
+  // the field that must render here, not `labelValue` (CodeRabbit finding,
+  // TRO-466 review round 2).
+  const displayedLabelValue = row.field === "government_warning" ? row.evidence : row.labelValue;
   return (
     <li className={`detail-field ${VERDICT_FIELD_CLASS[row.verdict]}`} data-testid={`detail-field-${row.field}`}>
       <div className="detail-field__header">
@@ -62,7 +68,7 @@ function FieldRow({ row }: { row: VerificationFieldDetail }) {
       <div className="detail-field__compare">
         <div className="detail-field__value">
           <span className="detail-field__value-label">{detectedColumnLabel(row.field)}</span>
-          <span className="detail-field__value-text">{row.evidence ? row.evidence : "Not found on the label."}</span>
+          <span className="detail-field__value-text">{displayedLabelValue || "Not found on the label."}</span>
         </div>
         <div className="detail-field__value">
           <span className="detail-field__value-label">{expectedColumnLabel(row.field)}</span>

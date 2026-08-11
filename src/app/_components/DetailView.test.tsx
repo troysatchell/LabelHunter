@@ -19,7 +19,7 @@ const PASS_DETAIL: VerificationDetail = {
       verdict: "MATCH",
       labelValue: "Old Tom Distillery",
       evidence: "OLD TOM DISTILLERY",
-      applicationValue: "Old Tom Distillery",
+      applicationValue: "Olde Tom Distillery",
       reason: "Matches the application.",
     },
     {
@@ -67,7 +67,13 @@ describe("DetailView", () => {
     render(<DetailView detail={PASS_DETAIL} />);
     const row = screen.getByTestId("detail-field-brand_name");
     expect(row).toHaveTextContent("Brand name");
+    // Asserts the label-side column renders `labelValue` ("Old Tom
+    // Distillery"), not `evidence` ("OLD TOM DISTILLERY") — the fixture's
+    // `applicationValue` used to duplicate `labelValue`, so this assertion
+    // passed even when the buggy code rendered `evidence` instead
+    // (CodeRabbit finding, TRO-466 review round 2).
     expect(row).toHaveTextContent("Old Tom Distillery");
+    expect(row).not.toHaveTextContent("OLD TOM DISTILLERY");
     expect(row).toHaveTextContent("Matches the application.");
     expect(row.className).toContain("detail-field--match");
     // Never a bare confidence percentage anywhere (TH-R20, standing rule 12).

@@ -13,7 +13,9 @@ import { handleGetLabelImage, type LabelImageRouteDeps } from "./route";
 // saved image lands in a per-test scratch directory (deleted in
 // `afterEach`), matching src/app/api/verify/route.test.ts's own pattern.
 // This DOES use the real worktree Postgres database to look up a real
-// label_images row, since that lookup is this route's whole job.
+// label_images row, since that lookup is this route's whole job. Run this
+// file only with DATABASE_URL pointed at the worktree's own database:
+// provisioning resets that database's schema.
 
 let scratchDir: string;
 const createdApplicationIds: number[] = [];

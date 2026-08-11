@@ -29,9 +29,19 @@ export default async function VerificationDetailPage({
   params: Promise<{ verificationId: string }>;
 }) {
   const { verificationId: verificationIdRaw } = await params;
-  const verificationId = Number(verificationIdRaw);
 
-  if (!Number.isInteger(verificationId) || verificationId <= 0) {
+  // `Number()` alone accepts hex ("0x5"), exponent notation ("1e2"), signs,
+  // and decimals, and `Number.isInteger` does not catch precision loss
+  // above `Number.MAX_SAFE_INTEGER` — a long enough digit string can round
+  // to a different, smaller integer and silently query the wrong row
+  // (CodeRabbit finding, TRO-466 review round 2). Reject anything that is
+  // not already canonical decimal digits before converting.
+  if (!/^\d+$/.test(verificationIdRaw)) {
+    notFound();
+  }
+
+  const verificationId = Number(verificationIdRaw);
+  if (!Number.isSafeInteger(verificationId) || verificationId <= 0) {
     notFound();
   }
 

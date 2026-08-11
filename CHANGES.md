@@ -74,8 +74,9 @@ Dismissed:
   design. It also falls under this factory's own stop condition for security-semantics
   changes. Not fixed here. Flagged for LH-061 to own.
 
-**How to run it.** `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`. All four ran
-clean after every fix above, in the same worktree.
+**How to run it.** Point `DATABASE_URL` at this worktree's own database first — schema
+provisioning resets it. Then run `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`. All
+four ran clean after every fix above, in the same worktree.
 
 **Rollback.** `git revert` this commit. The Detail view (the entry below this one) still
 works without it — this round only tightens an error state's status code, a11y wording, one
@@ -151,7 +152,8 @@ returned a designed 404, never a crash. Setting `resolution_path` to `EXTRACTOR_
 hand, and adding a resolver note, confirmed two things: the "Resolved by Sonnet" badge and the
 note text render on the page, and the note's confidence number does not render.
 
-**How to run it.** `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`.
+**How to run it.** Point `DATABASE_URL` at this worktree's own database first — schema
+provisioning resets it. Then run `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`.
 
 **Rollback.** `git revert` this commit. The verify flow and the results checklist keep
 working without it: this ticket only adds a new view, linked from the checklist, and two new

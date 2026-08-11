@@ -1,15 +1,17 @@
 /**
- * PROVISIONAL numeric parsing for the alcohol-content and net-contents
- * fields (CP-1 §4.4 rule 2, §5.3 `AMBIGUOUS_ABV` / `AMBIGUOUS_NET_CONTENTS`).
+ * SUPERSEDED. LH-013 (TRO-463) replaced this file's production callers with
+ * the real grammar: `../comparators/abv.ts` (ABV parsing, ABV<->proof
+ * arithmetic, cited against 27 CFR 5.1) and `../comparators/net-contents.ts`
+ * (net-contents parsing, closing TRO-504 item 3's multi-candidate scan).
+ * `field-resolution.ts` and `overrides.ts` both import from those modules
+ * now, not from here.
  *
- * This is NOT the real parsing grammar. LH-013 (TRO-463) owns full
- * numeric-grammar-aware ABV parsing, ABV<->proof arithmetic, and net-
- * contents parsing against TTB's standards of fill, cited against ttb.gov.
- * TRO-462's brief allows a minimal stand-in here so the router can run its
- * own structural checks (self-contradiction, tolerance) without waiting on
- * LH-013 — every function below is a deliberately narrow regex reader, not
- * a grammar. LH-013 replaces this file's callers, not necessarily this file
- * itself; do not extend it into real parsing logic.
+ * The only remaining caller is `test-support.ts`'s `placeholderComparators`
+ * — LH-012's (TRO-462) own router-level integration fixtures, deliberately
+ * naive on purpose (see that file's docstring). This file stays only to
+ * back that one placeholder; do not add a new production caller, and do not
+ * extend it into real parsing logic. It is not itself part of the exact-
+ * compare government-warning path.
  */
 
 const PERCENT_PATTERN = /(\d+(?:\.\d+)?)\s*%/;

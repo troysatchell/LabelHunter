@@ -89,11 +89,11 @@ now require the same positive-integer shape the server route itself enforces. A 
 alone does not confirm a response is even about the item just requested — `submitDisposition`
 now also requires the response's own `id` to match the `reviewQueueId` that was sent.
 
-**The review-queue action route validated ids with `Number.isInteger`, not
-`Number.isSafeInteger`.** Same class this session's own
-`verify/[verificationId]/page.tsx` fix already addressed elsewhere: precision loss above
-`Number.MAX_SAFE_INTEGER` can round a long digit string to a different, smaller integer and
-silently address the wrong row. Now uses `isSafeInteger`.
+**The review-queue action route and detail page both validated ids with `Number.isInteger`,
+not `Number.isSafeInteger`.** Same class this session's own `verify/[verificationId]/page.tsx`
+fix already addressed elsewhere: precision loss above `Number.MAX_SAFE_INTEGER` can round a
+long digit string to a different, smaller integer and silently address the wrong row. Both
+now use `isSafeInteger`.
 
 **Dismissed: `format-timestamp.ts`'s minute-level precision.** A reviewer suggested
 second-level precision for the "waiting since" timestamp. This is a triage cue for a human

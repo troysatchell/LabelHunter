@@ -16,10 +16,16 @@ import { getReviewQueueItem } from "../../../server/review-queue";
 import { ReviewItemWorkspace } from "../../_components/ReviewItemWorkspace";
 
 export default async function ReviewQueueItemPage({ params }: { params: Promise<{ reviewQueueId: string }> }) {
+  // `Number.isInteger` alone does not catch precision loss above
+  // `Number.MAX_SAFE_INTEGER` — a long enough digit string can round to a
+  // different, smaller integer and silently address the wrong row (same
+  // class as this session's verify/[verificationId]/page.tsx and
+  // review-queue/[reviewQueueId]/route.ts fixes; CodeRabbit finding,
+  // local review round 6).
   const { reviewQueueId: reviewQueueIdRaw } = await params;
   const reviewQueueId = Number(reviewQueueIdRaw);
 
-  if (!Number.isInteger(reviewQueueId) || reviewQueueId <= 0) {
+  if (!Number.isSafeInteger(reviewQueueId) || reviewQueueId <= 0) {
     notFound();
   }
 

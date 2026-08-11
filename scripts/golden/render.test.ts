@@ -155,6 +155,7 @@ describe("buildLabelHtml font embedding (TRO-505)", () => {
     // rendered HTML. CodeRabbit caught this narrowing on this ticket.
     const preTro505SystemFonts = [
       "Helvetica Neue",
+      "Arial",
       "Brush Script MT",
       "Apple Chancery",
       "Snell Roundhand",

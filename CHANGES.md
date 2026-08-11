@@ -109,8 +109,8 @@ stacks and removes the three `@fontsource/*` devDependencies from `package.json`
 install` and then `pnpm golden:build` again after a revert. The 29 committed images are pixel
 data, not source. They need a fresh render to match the reverted code.
 
-**Review triage.** Four local CodeRabbit rounds against this ticket's own commits, five real
-findings fixed, one dismissed:
+**Review triage.** Five local CodeRabbit rounds against this ticket's own commits, seven real
+findings fixed, four dismissed:
 - Round 1 (major, `CHANGES.md`): the entry's font and license bullets were sentence
   fragments — no explicit subject or verb. A full ASD-STE100 rewrite fixed this. Every fact
   stayed; every sentence gained a subject and a verb.
@@ -148,6 +148,30 @@ findings fixed, one dismissed:
   same paragraph risks introducing a new defect for undefined benefit — round 1's fix
   introduced round 2's finding, and round 2's fix left round 3's finding. This entry stops
   chasing paraphrase-level suggestions at this point.
+- Round 5, after merging `main` (minor, `scripts/golden/render.test.ts`): the same
+  pre-TRO-505-system-font test named `"Helvetica Neue"` but not `"Arial"`, the other real font
+  in the old `BASE_FONT_STACK`. Fixed: `"Arial"` joined the checked list. Confirmed no case's
+  label text contains that word first, so the new check cannot false-positive on real content.
+- Round 5, dismissed (major, `CHANGES.md`): a finding claimed the 29 regenerated golden images
+  were not committed. Checked, not assumed: `git diff --stat main...HEAD -- golden-set/images/`
+  lists all 29 files, matching the totals this entry already documents. The images are
+  committed and are part of this branch's diff against `main`.
+- Round 5, dismissed (major, `package.json`): a finding asked `pnpm-lock.yaml` to be
+  regenerated to match the new `@fontsource/*` entries. Checked, not assumed: `pnpm install
+  --frozen-lockfile` — the exact check a real frozen-lockfile install or CI run performs —
+  passed cleanly. The lockfile already matches the manifest.
+- Round 5, dismissed (major, `scripts/golden/render.ts`): a finding asked `BASE_FONT_STACK` to
+  drop its `sans-serif` fallback and asked for a runtime check that fails before the
+  screenshot when a font is unavailable. `Inter` is the base font itself — there is no
+  more-embedded family left to fall back to, so removing the word `sans-serif` changes
+  nothing: an unstyled browser default behaves the same way an explicit generic keyword does.
+  This is already stated directly in `render.ts`'s own comment on `BASE_FONT_STACK`. A real
+  runtime font-load check (`document.fonts` in the page context) is a new capability, not a
+  one-line fix, and no committed case has ever shown a font-load failure to guard against —
+  a base64 `data:` URI has no network round-trip to race. Worth a ticket if a real failure is
+  ever observed; not invented speculatively here. The finding's narrower, valid half — no
+  stack should fall back to generic `cursive`/`fantasy` — was already covered by round 2's
+  test.
 
 **Not done here (explicitly out of scope).** LH-006 plans a CI smoke test: render one label
 headlessly, then run `verify.ts`. TRO-505 does not build that test. TRO-505 only removes the

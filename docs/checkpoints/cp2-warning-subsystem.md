@@ -58,8 +58,8 @@ task. It is done.
 
 ### 2.1 What we retrieved, and from where
 
-**Retrieval date: 2026-08-11.** All five retrievals succeeded. Appendix B holds the exact
-commands.
+**Retrieval date: 2026-08-11.** All eight retrievals succeeded. Appendix B holds a runnable command
+for every one of them, plus the byte comparison and the case count.
 
 | # | Source | What it gave | Result |
 |---|---|---|---|
@@ -68,10 +68,14 @@ commands.
 | S3 | ttb.gov — distilled spirits health warning page | The same statement, plus TTB's plain-English format rules | **verified**, identical to S1 |
 | S4 | ttb.gov — malt beverage health warning page | The same statement | **verified**, identical to S1 |
 | S5 | ttb.gov — wine health warning page | The same statement | **verified**, identical to S1 |
+| S6 | ttb.gov — *Checklist of Mandatory Label Information*, distilled spirits (PDF) | TTB's own six-item checklist for the warning | **verified** — see §2.6 |
+| S7 | ttb.gov — *Checklist of Mandatory Label Information*, wine (PDF) | The same six items | **verified**, identical to S6 |
+| S8 | ttb.gov — *2022 Boot Camp for Brewers: Labeling* (PDF) | "Keg Label Common Mistakes", naming the `Surgeon General` capitalization error | **verified** — see §2.6 |
 
-eCFR is the source of record. The three ttb.gov pages are corroboration, and they matter for a
-different reason: the brief's stakeholders are TTB agents, so the string the agency publishes to
-its own regulated industry is the string they will expect to see quoted back.
+eCFR is the source of record for the text. The ttb.gov sources are corroboration, and they matter
+for a different reason: the brief's stakeholders are TTB agents, so the string and the checks the
+agency publishes to its own regulated industry are what they will expect to see quoted back. S6–S8
+did more than corroborate — they changed a design decision (§2.6, §5.4).
 
 ### 2.2 The statement, verbatim
 
@@ -174,19 +178,94 @@ because that needs the label's physical dimensions and a photograph does not sup
 the gap precisely — we know the threshold, we cannot measure the quantity — is a better answer
 than "type size is out of scope."
 
-### 2.6 What we could not verify
+### 2.6 TTB's own checklist — the best find of this ticket
+
+PRD §5 describes the results screen as "Jenny's paper checklist, digitized". **TTB publishes that
+checklist.** Its *Checklist of Mandatory Label Information* exists for wine and for distilled
+spirits, and both give the health warning statement the same six checkboxes (**verified**, S6 and
+S7 in Appendix B):
+
+```text
+Health Warning Statement                       ☐ Is the statement on the label?
+Statement must appear      27 CFR Part 16      ☐ Does it match the exact wording and punctuation?
+exactly as prescribed in                       ☐ Are the words "GOVERNMENT WARNING" in capital
+the regulations.                                 letters and bold type?
+                                               ☐ Are the “S” in Surgeon and “G” in General
+                                                 capitalized?
+                                               ☐ Does it appear as one statement?
+                                               ☐ Is it separate and apart from other information
+                                                 on the label?
+```
+
+TTB's *2022 Boot Camp for Brewers* repeats the fourth item as a **named common mistake**
+(**verified**, S8):
+
+```text
+The Government Health Warning is not compliant. The S and G in Surgeon General must be
+capitalized. Also, a comma must appear after General and machinery.
+```
+
+Three things follow, and the fourth checkbox changes a design decision this document had already
+made.
+
+**1. The capitalization rule is not only about the prefix.** TTB checks the capitals of
+`GOVERNMENT WARNING`, **and separately** the initial capitals of `Surgeon` and `General`. Section
+5.4 originally recommended a fully case-insensitive body comparison. That recommendation would
+have accepted `surgeon general` in lower case — a deviation TTB's own specialist is instructed to
+look for. **Section 5.4 now checks capitalization at three named positions and nowhere else**, and
+every one of the three now carries a citation rather than an opinion.
+
+**2. Every checkbox maps onto something LabelHunter does or explicitly does not do.**
+
+| TTB checkbox | LabelHunter | Where |
+|---|---|---|
+| Is the statement on the label? | **Yes** — `MISSING_REQUIRED_FIELD` branch | §6.1 |
+| Does it match the exact wording and punctuation? | **Yes** — the exact compare | §5 |
+| Are `GOVERNMENT WARNING` in capital letters…? | **Yes** — deterministic capitalization check | §7.1 |
+| …and bold type? | **No** — advisory signal only | §7.2 |
+| Are the `S` in Surgeon and `G` in General capitalized? | **Yes** — same check, two more positions | §5.4, §7.1 |
+| Does it appear as one statement? | **No** — not checked. See below | §12 |
+| Is it separate and apart from other information? | **No** — spatial, not checked | §12 |
+
+"Does it appear as one statement?" is the checkbox behind the "continuous statement" wording in
+§2.4. LabelHunter cannot check it, because §5's normalization removes line breaks before the
+comparison and therefore cannot tell one wrapped statement from two separated ones. That is a
+real limitation created by a rule we need for a different reason, and naming it is better than
+letting the join rule imply coverage. The OCR channel could in principle detect it from block
+geometry; that is a v2 note, not a prototype promise.
+
+**3. The comma finding corroborates the exact compare.** The boot camp names a missing comma after
+`General` as a real non-compliance. Our punctuation rule (§5.3) already refuses to normalize
+commas, so that case produces a distance-1 difference. Under §5.5's near-miss band it reports as
+REVIEW rather than FAIL — which is the correct outcome for a single character, and it is now a
+case we know TTB sees in the field rather than one we invented.
+
+### 2.7 What we could not verify
 
 - **Whether TTB accepts any variation in practice.** The regulation states one statement. Our
-  comparator treats it as the only acceptable one. Whether a TTB specialist would in fact reject
-  a label over a missing comma is an enforcement question, not a text question, and no public
-  source settles it. **not measured.**
+  comparator treats it as the only acceptable one. §2.6's checklist shows what a specialist is
+  told to check; it does not show what gets waived. That remains an enforcement question, and no
+  public source settles it. **not measured.**
+- **Whether a malt beverage checklist exists with the same six items.** We found the wine and
+  distilled spirits checklists and the brewers boot camp deck. We did not find a malt beverage
+  equivalent of the checklist PDF. The boot camp deck covers the same rule, so the rule is not in
+  doubt — the document's completeness is. **NOT VERIFIED.**
 - **The "continuous statement" / "continuous paragraph" wording.** It appears on ttb.gov, not in
   the CFR, and TTB's own pages disagree on which noun to use. We use it only as support for the
   join rule (§2.4), never as a rule.
 - **Whether the 2026-07-06 issue of title 27 is the operative text on the submission date.**
-  eCFR reports title 27 as up to date through 2026-08-07. LH-020 re-runs the Appendix B command
-  and asserts the constant against the retrieved fixture, so a change to the regulation breaks a
-  test rather than passing silently. See §9.3.
+  eCFR reports title 27 as up to date through 2026-08-07. Two different checks are needed here,
+  and only one of them is a CI test:
+  - **A deterministic test, in CI.** The constant must equal the text in the committed eCFR
+    fixture. This catches the constant drifting. It cannot catch the regulation changing, because
+    the fixture does not change either.
+  - **A live drift check, manual or scheduled — not a CI gate.** Re-run Appendix B's S1 command
+    and compare its output to the fixture. A difference reports a possible regulatory change for a
+    human to read. Making this a CI gate would make the build depend on a government website's
+    uptime, which is the wrong trade for a prototype.
+
+  Neither mechanism exists yet. Both are LH-020's, and until LH-020 lands, this document claims
+  no automatic protection against a change to the regulation. See §9.3.
 
 ---
 
@@ -212,8 +291,9 @@ four to six physical lines. A camera, a vision model, and an OCR engine each add
 breaks, padding, and hyphenation. None of that was printed by the label's designer. Comparing
 raw bytes would fail every real label, including perfectly compliant ones.
 
-**It does not mean case-insensitive everywhere.** The capitalization of the first two words is a
-regulated property (§2.5). Code checks it separately, and hard. Section 5.4 explains why the
+**It does not mean case-insensitive everywhere.** Capitalization is checked at three named
+positions — `GOVERNMENT`, `WARNING`, `Surgeon`, `General` — because TTB checks exactly those
+(§2.5, §2.6). Code checks them separately, and hard. Section 5.4 explains why the rest of the
 body is treated differently, and open question 1 asks you to confirm that choice.
 
 **It does not mean a model judges similarity.** The model transcribes. Code compares. That
@@ -225,20 +305,24 @@ split is the whole argument (§10, Q1).
 compareWarning(candidate):
 
   1. raw        = candidate transcription, exactly as the reader returned it
-  2. prefixOK   = checkPrefixCaps(raw)                  # §7.1, reads RAW text
-  3. normalized = normalizeTransport(raw)               # §5.2, rules 1-5
-  4. compared   = foldCase(normalized)                  # §5.4, body only
+  2. normalized = normalizeTransport(raw)               # §5.2, rules 1-6. PRESERVES CASE
+  3. capsOK     = checkCapitalPositions(normalized)     # §7.1, case-preserving input
+  4. compared   = foldCase(normalized)                  # §5.4
   5. canonical  = foldCase(normalizeTransport(CANONICAL))
   6. distance   = 0 if compared === canonical else levenshtein(compared, canonical)
-  7. verdict from §6's table, using prefixOK and distance
+  7. verdict from §6's table, using capsOK and distance
 ```
 
-Two ordering constraints are load-bearing, and a reviewer should check them:
+Three ordering constraints are load-bearing, and a reviewer should check them:
 
-1. **The caps check runs on the raw text, before any case folding.** Fold case first and Jenny's
-   catch disappears. Section 5.4 shows the arithmetic that proves it.
+1. **The caps check runs before case folding, and after transport normalization.** Fold case
+   first and Jenny's catch disappears — §5.4 shows the arithmetic that proves it. Skip transport
+   normalization first and an invisible zero-width character inside `GOVERNMENT` produces a false
+   caps failure. Transport normalization never touches case (§5.2), so running it first is safe.
 2. **De-hyphenation runs before line breaks collapse to spaces.** Once the newline is a space,
    `bever- ages` is indistinguishable from a label that really printed a hyphen there.
+3. **Normalization runs identically on both sides.** The canonical string goes through the same
+   function as the candidate. A normalizer applied to only one side is not a comparison.
 
 ---
 
@@ -315,11 +399,22 @@ requirements at once. TH-R7 is the constrained-network lesson from the failed ve
 firewalled evaluator would see the OCR channel silently die. And PRD §3.8's latency budget has no
 room for a CDN round trip on the first label of a batch.
 
-> **Implementation requirement for LH-020, not optional.** Commit `eng.traineddata` to the repo.
-> Set `langPath` to that local directory and `cachePath` to a writable path. Add a test that
-> fails when `langPath` is unset. The dependency then appears in the README's outbound-dependency
-> list (TH-R7, rubric D2) as "none at runtime", which is a true statement only because we made
-> it true.
+> **Implementation requirement for LH-020, not optional.** None of this exists yet — every line
+> below is a requirement on a ticket that has not started, not a description of current behaviour.
+>
+> 1. Commit the language data to the repo, at the **exact filename the library builds**. The
+>    loader reads `` `${langPath}/${lang}.traineddata${gzip ? '.gz' : ''}` `` (**verified** from
+>    `src/worker-script/index.js`, Appendix B). So either commit `eng.traineddata.gz` and pass
+>    `gzip: true`, or commit `eng.traineddata` and pass `gzip: false`. A mismatched pair produces
+>    a file-not-found at first use, which then falls back toward the network path — the exact
+>    failure this requirement exists to prevent.
+> 2. Set `langPath` to that directory and `cachePath` to a writable path.
+> 3. Add a **startup test with the network disabled** that asserts recognition succeeds and no
+>    outbound request is attempted. A test that only asserts `langPath !== undefined` would pass
+>    while the filename contract in point 1 is wrong.
+>
+> Only after those land does the dependency appear in the README's outbound-dependency list
+> (TH-R7, rubric D2) as "none at runtime" — a claim that is true only because we made it true.
 
 **What OCR is given.** The warning crop, at near-native resolution (§8.3), greyscaled, as raw
 pixels. Not the full label (§10, Q3). Page segmentation should be set to a single-block mode
@@ -360,13 +455,25 @@ before you accept the budget.
 
 ### 4.5 Reconciliation — when do two candidates agree?
 
-**Agreement is defined by the same normalizer used for the statutory compare.** Two candidates
-agree when `foldCase(normalizeTransport(vlm)) === foldCase(normalizeTransport(ocr))`. Using a
-looser rule here — a similarity score, say — would quietly reintroduce fuzziness into the one
-place the design promised there would be none.
+**Agreement is defined by the same checks used for the statutory compare — both of them.** Two
+candidates agree when **both** of these hold:
 
-Reusing the comparator's own normalizer has a second benefit. Any pair of candidates that agree
-under it produce identical verdicts, so the subsystem never has to decide which channel "won".
+```text
+foldCase(normalizeTransport(vlm)) === foldCase(normalizeTransport(ocr))   # same words
+checkCapitalPositions(normalizeTransport(vlm))
+  === checkCapitalPositions(normalizeTransport(ocr))                      # same capitalization
+```
+
+The second line is not decoration. `foldCase` erases exactly the property §7.1 checks, so a
+body-only agreement test would call `GOVERNMENT WARNING` and `Government Warning` "agreeing"
+while the two candidates produce opposite verdicts. The channels must agree on everything the
+verdict depends on, or the word "agree" is not doing its job.
+
+Using a looser rule than these two — a similarity score, say — would quietly reintroduce
+fuzziness into the one place the design promised there would be none.
+
+Defining agreement this way buys a property worth stating: **any pair of candidates that agree
+produce identical verdicts**, so the subsystem never has to decide which channel "won".
 
 The decision table:
 
@@ -418,14 +525,46 @@ test, and the sort is the defence.
 
 | # | Rule | What it does | Why it passes the §5.1 test | Failure mode if chosen wrong |
 |---|---|---|---|---|
-| 1 | **Unicode NFKC** | Maps compatibility forms to canonical ones: fullwidth letters, ligatures, non-breaking space → space | These are encoding representations of the same visible glyph. A reader cannot see the difference | Skip it and a non-breaking space from the model's tokenizer causes a false FAIL |
-| 2 | **Strip zero-width and soft characters** | Removes U+200B, U+FEFF, U+00AD | They are invisible by definition. Removing an invisible character cannot change what a reader sees | Skip it and an invisible character from a tokenizer causes a false FAIL that is impossible to debug by eye |
-| 3 | **De-hyphenate at line ends** | `bever-\nages` → `beverages`. Fires only on a hyphen immediately followed by a line break | Justified text hyphenates at the line break. The hyphen is the typesetter's, not the statute's | Skip it and every justified label FAILs. Apply it too broadly — to any hyphen — and a label that really printed a hyphen escapes detection |
-| 4 | **Line breaks → space** | Every newline becomes one space | The label wraps because it is narrow. The wrap point is a layout accident | Skip it and every real label FAILs. This is the single biggest source of false FAILs if omitted |
-| 5 | **Collapse whitespace runs, trim ends** | Multiple spaces → one; strip leading and trailing | A reader does not count spaces. OCR and the model both pad inconsistently | Skip it and inter-word padding from OCR causes a false FAIL |
+| 1 | **Unicode NFC** | Canonical composition only. `e` + combining acute → `é` | Composed and decomposed forms of one character render identically. A reader cannot see the difference | Skip it and a decomposed character from a tokenizer causes a false FAIL. **Use NFKC instead and the rule fails §5.1's own test — see below** |
+| 2 | **Map the space characters to U+0020** | U+00A0, U+2007, U+202F, U+2009 → a normal space | Every one of them renders as a space. A reader sees a space | Skip it and a non-breaking space from the model's tokenizer causes a false FAIL |
+| 3 | **Strip zero-width and soft characters** | Removes U+200B, U+FEFF, U+00AD | They are invisible by definition. Removing an invisible character cannot change what a reader sees | Skip it and an invisible character from a tokenizer causes a false FAIL that is impossible to debug by eye |
+| 4 | **De-hyphenate at line ends** | `bever-\nages` → `beverages`. Fires only on a hyphen immediately followed by a line break | Justified text hyphenates at the line break. The hyphen is the typesetter's, not the statute's | Skip it and every justified label FAILs. Apply it too broadly — to any hyphen — and a printed hyphen is silently joined away |
+| 5 | **Line breaks → space** | Every newline becomes one space | The label wraps because it is narrow. The wrap point is a layout accident | Skip it and every real label FAILs. This is the single biggest source of false FAILs if omitted |
+| 6 | **Collapse whitespace runs, trim ends** | Multiple spaces → one; strip leading and trailing | A reader does not count spaces. OCR and the model both pad inconsistently | Skip it and inter-word padding from OCR causes a false FAIL |
 
-Rule 3 must run before rule 4. Once the newline is a space, the de-hyphenation rule can no longer
+Rule 4 must run before rule 5. Once the newline is a space, the de-hyphenation rule can no longer
 tell a wrap hyphen from a printed one.
+
+**Why NFC and not NFKC.** An earlier draft of this document used NFKC, and that was wrong by this
+document's own standard. NFKC folds *compatibility* forms, not only canonical ones: it maps a
+fullwidth `Ａ` to `A` and the ligature `ﬁ` to `fi`. A reader **can** see the difference between
+`Ａ` and `A`. So NFKC is a rule that changes what a reader sees, which is exactly what §5.1
+forbids — and it fails in the dangerous direction, by making a visibly deviant label compare
+equal. NFC folds only canonical equivalences, where the two encodings render as the same glyph by
+definition. Rule 2 then handles the one useful thing NFKC was doing for us — the space characters
+— explicitly, by name, on a list we can read.
+
+The practical effect on this project is nil, and I would rather say so than imply the fix caught
+a live bug: the statutory string is pure ASCII with no `fi`, `fl`, or `ff` sequence anywhere, so
+NFC and NFKC produce identical output on every string in the golden set. The edit distances in
+§5.4 are unchanged. The rule is corrected because it was wrong in principle, not because it was
+producing wrong numbers.
+
+**Why de-hyphenation cannot manufacture a PASS.** Rule 4 is the one rule that removes a character
+a reader can see, so it deserves the extra paragraph. The safety argument is the canonical
+string's own content: **it contains no hyphen** (§2.2, verified). A label that really prints a
+hyphen has already deviated from the statute, and joining across it produces a string that still
+differs from canonical — `birth-\ndefects` becomes `birthdefects`, which is not `birth defects`.
+So the rule cannot turn a deviant label into a PASS. What it can do is shrink the difference: a
+printed hyphen may land inside §5.5's near-miss band and report as REVIEW rather than FAIL. That
+is a downgrade in severity, never a false PASS, and REVIEW still puts the label in front of a
+person.
+
+The stricter version of this rule — fire only when the hyphen sits at the right margin — needs
+character bounding boxes. The OCR channel can supply them with `blocks: true`; the vision channel
+returns text with no geometry at all. A rule that only one channel can apply would make the two
+channels disagree by construction, so this document does not adopt it. LH-020 may revisit it if
+the golden set shows hyphenation is common.
 
 ### 5.3 The rules that are deliberately absent
 
@@ -440,18 +579,40 @@ this table is what that commitment looks like in practice.
 | Drop punctuation | yes | **no** | The colon, the parentheses around `(1)` and `(2)`, the commas, the periods are all part of the statement. Drop them and `GOVERNMENT WARNING (1) According to…` passes without its colon |
 | Fuzzy or similarity matching | yes | **no** | TH-R9 asks for word for word. A threshold is the opposite of word for word |
 | Reorder or normalize word order | no | **no** | Word order is the statement |
-| Casefold the whole string | yes | **partly** | See §5.4 — the one deliberate exception, and the one that needs a decision |
+| Casefold the whole string | yes | **partly** | Case is checked at four word positions and folded everywhere else. §5.4 gives each position's citation. This is the one deliberate exception to §5.1's test, and it is scoped by what TTB itself checks |
 
-### 5.4 Case — the one asymmetry, and the arithmetic behind it
+### 5.4 Case — checked at four positions, folded everywhere else
 
-Case gets split in two:
+**This section changed after review.** An earlier draft compared the whole body
+case-insensitively. TTB's own label checklist (§2.6) asks a specialist to confirm the capitals in
+`Surgeon General`, so that draft would have accepted `surgeon general` — a deviation the agency
+explicitly looks for. The rule below is narrower and every part of it now carries a citation.
 
-- **The prefix (`GOVERNMENT WARNING`): compared case-sensitively.** § 16.22(a)(2) regulates the
-  capitalization of exactly these two words. This is Jenny's catch and rubric gate G4's second
-  vector.
-- **The body: compared case-insensitively (recommended, open question 1).** No regulation states
-  the case of the remainder. Encoding a rule the regulation does not state would make LabelHunter
-  stricter than the law, and a false FAIL is the most damaging error this tool can make.
+**Capitalization is checked at four word positions, and folded everywhere else.**
+
+| Position | Required form | Authority |
+|---|---|---|
+| word 1 | `GOVERNMENT` — every letter capital | 27 CFR 16.22(a)(2) |
+| word 2 | `WARNING` — every letter capital | 27 CFR 16.22(a)(2) |
+| `Surgeon` | initial capital | TTB label checklist; TTB boot camp names it a common mistake (§2.6) |
+| `General` | initial capital | same |
+
+Everywhere else in the body, case is folded before comparison. The reason is the same one that
+governs the whole document: **we enforce rules we can cite, and only those.** No regulation and no
+TTB guidance we found states the case of `women`, `alcoholic`, or `machinery`. A label printing
+the body in capitals violates nothing we can point at, and a false FAIL is the most damaging error
+this tool can make.
+
+Two properties of this design are worth naming, because both come up under questioning.
+
+**It is a check, not a comparison.** The four positions are verified by a dedicated function
+(§7.1) against a fixed table, not by making part of the string compare case-sensitive. That keeps
+the wording compare and the capitalization check separately testable, and it lets the UI give
+each its own reason line — "must print in capital letters" is a different message to an agent
+than "wording differs from the required text".
+
+**It scales to a rule we have not found yet.** If a TTB source turns out to regulate another
+position, it becomes one more row in that table. It does not become a rewrite of the comparator.
 
 **Why the split is necessary rather than merely tidy** — this is derived arithmetic over the
 golden set's own ground-truth strings, not a model run (Appendix B):
@@ -466,13 +627,16 @@ golden set's own ground-truth strings, not a model run (Appendix B):
 
 Two conclusions come straight off that table.
 
-**The caps check is not optional and cannot be folded into the string compare.** Under a
-case-insensitive body compare, case-08 and case-09 are at distance 0 — the words are right. The
-*only* thing that catches them is the separate prefix check in §7.1. Remove that check and rubric
-gate G4 fails, which is an automatic "not submit-ready" verdict.
+**The capitalization check is not optional and cannot be folded into the string compare.** With
+case folded, case-08 and case-09 are at distance 0 — the words are right. The *only* thing that
+catches them is the separate check in §7.1. Remove it and rubric gate G4 fails, which is an
+automatic "not submit-ready" verdict.
 
 **Real rewordings are nowhere near a near-miss.** The closest genuine deviation in the golden set
 sits 24 characters away. That number sizes the band in §5.5.
+
+One gap this table exposes: **no golden case prints `surgeon general` in lower case**, so the two
+new checked positions have no covering case. Section 9.2 raises it as a fifth finding.
 
 ### 5.5 The near-miss band (proposed)
 
@@ -492,8 +656,9 @@ small sample, and I would say so rather than claim the band is proven.**
 
 Two guards on the band:
 
-1. **The band never applies to the prefix.** A caps failure is a caps failure at any distance. It
-   is a separate check on a separate rule (§7.1).
+1. **The band never applies to capitalization.** A capitalization failure at any of §5.4's four
+   positions is a failure at any distance. It is a separate check on a separate rule (§7.1), and
+   the distance metric never sees it, because case is folded before the distance is computed.
 2. **The band never turns a FAIL into a PASS.** Its only effect is FAIL → REVIEW. A human or the
    resolver still looks.
 
@@ -504,9 +669,11 @@ instead. Failure mode if there is no band at all: an OCR slip becomes a public a
 
 | Raw candidate (abbreviated) | After normalization | Verdict | Why |
 |---|---|---|---|
-| `GOVERNMENT WARNING: (1)\nAccording to the\nSurgeon General, …` | equals canonical | **PASS** | Rules 4 and 5 removed the label's line wrapping |
-| `GOVERNMENT WARNING: (1) … alcoholic bever-\nages during …` | equals canonical | **PASS** | Rule 3 rejoined the hyphenated wrap |
-| `Government Warning: (1) According to …` | body equals canonical | **FAIL** | Body matches; the prefix caps check fails (§7.1) |
+| `GOVERNMENT WARNING: (1)\nAccording to the\nSurgeon General, …` | equals canonical | **PASS** | Rules 5 and 6 removed the label's line wrapping |
+| `GOVERNMENT WARNING: (1) … alcoholic bever-\nages during …` | equals canonical | **PASS** | Rule 4 rejoined the hyphenated wrap |
+| `Government Warning: (1) According to …` | words equal canonical | **FAIL** | Words match; positions 1 and 2 fail the capitalization check (§7.1) |
+| `GOVERNMENT WARNING: (1) According to the surgeon general, women …` | words equal canonical | **FAIL** | Words match; `Surgeon` and `General` fail the capitalization check. TTB names this a common mistake (§2.6) |
+| `GOVERNMENT WARNING: (1) According to the Surgeon General women …` | distance 1 | **REVIEW** | The missing comma after `General` — TTB's boot camp names this one too. One character, so the near-miss band applies |
 | `GOVERNMENT WARNING: (1) According to the Surgeon General, pregnant women should not consume …` | distance 38 | **FAIL** | Genuine rewording. Far outside the band |
 | `GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defect.` | distance 1 | **REVIEW** | Near-miss band. One character. More likely a slip than a deviation |
 | VLM returns canonical; OCR returns garbled text | — | **REVIEW** | Channels disagree (§4.5) |
@@ -522,9 +689,10 @@ names the exact branch it returns.
 
 | Situation | `WarningComparatorResult` returned | Router's label verdict | UI reason line |
 |---|---|---|---|
-| Both channels agree, equals canonical, prefix all-caps | `{ verdict: "MATCH" }` | contributes PASS | "Government Warning matches the required text." |
+| Both channels agree, equals canonical, all four capitalization positions correct | `{ verdict: "MATCH" }` | contributes PASS | "Government Warning matches the required text." |
 | Wording deviates, distance ≥ 3 | `{ verdict: "MISMATCH", note }` | **FAIL** | "Government Warning wording differs from the required text." |
-| Prefix printed in title case | `{ verdict: "MISMATCH", note }` | **FAIL** | "Government Warning must print in capital letters." |
+| `GOVERNMENT WARNING` printed in title case | `{ verdict: "MISMATCH", note }` | **FAIL** | "Government Warning must print in capital letters." |
+| `Surgeon` or `General` printed without its initial capital | `{ verdict: "MISMATCH", note }` | **FAIL** | "Surgeon General must print with capital letters." |
 | Near miss, distance 1–2 | `{ verdict: "NEEDS_REVIEW", reviewReason: "WARNING_MISMATCH" }` | REVIEW | "Government Warning differs by a single character — needs a closer look." |
 | Channels disagree | `{ verdict: "NEEDS_REVIEW", reviewReason: "WARNING_MISMATCH" }` | REVIEW | "Government Warning could not be read consistently." |
 | OCR confidence low, or the crop is clipped, or single channel below 0.90 | `{ verdict: "NEEDS_REVIEW", reviewReason: "LOW_IMAGE_QUALITY" }` | REVIEW | "Government Warning is not clear enough in this image." |
@@ -588,15 +756,22 @@ able to say why, crisply, is one of the better answers available in this intervi
 
 ### 7.1 Caps — deterministic and hard
 
-**The rule.** Take the raw transcription, before any case folding. Take the first two
-whitespace-separated words. Strip a trailing colon from the second. Compare to `GOVERNMENT` and
-`WARNING` with `===`.
+**The rule.** Take the transport-normalized transcription, before any case folding (§3.3 step 3).
+Check four word positions against the §5.4 table: words 1 and 2 must be `GOVERNMENT` and
+`WARNING` in full capitals; the words `Surgeon` and `General` must each carry an initial capital.
+Strip a trailing colon from word 2 before comparing it.
 
-| Comparison | Meaning | Verdict |
+| Comparison at a checked position | Meaning | Verdict |
 |---|---|---|
-| Equal | Prefix conforms | continue to the body compare |
-| Not equal, but equal when case-folded | The words are right, the capitalization is not | **MISMATCH**, caps reason |
-| Not equal even when case-folded | The prefix is absent or reworded | **MISMATCH**, wording reason |
+| Equal | That position conforms | continue |
+| Not equal, but equal when case-folded | The word is right, the capitalization is not | **MISMATCH**, caps reason naming the position |
+| Not equal even when case-folded | The word is absent or reworded | **MISMATCH**, wording reason |
+
+The third row matters for the two body positions. `Surgeon` and `General` are only checkable when
+they are present, and a reworded clause (1) may not contain them at all. So the capitalization
+check runs **after** the wording compare has already established that the words exist, and a
+wording deviation reports as a wording deviation rather than as a confusing capitalization
+complaint.
 
 **Code derives the casing; it does not trust the model's report.** The extractor schema carries a
 `prefix_casing` enum (`ALL_CAPS` / `TITLE_CASE` / `OTHER` / `NOT_VISIBLE`). That field is a
@@ -604,12 +779,18 @@ cross-check, not the source of truth. Two reasons. It is a model's opinion about
 and this design does not let a model decide a statutory question. And code reading the first two
 characters of a string is testable in a way a model's self-report never is.
 
+Note the enum only describes the prefix. It says nothing about `Surgeon` and `General`, so those
+two positions have **no** model cross-check — code is the only reader. That is an argument for
+the design, not against it: extending the schema would add a second opinion we would then have to
+decide whether to trust.
+
 When the derived casing and the model's `prefix_casing` disagree, that is itself a signal: the
 transcription is unreliable, so the result is REVIEW rather than a verdict either way.
 
-**OCR checks caps too.** Tesseract preserves case literally. So the caps check has the same two
-independent channels the wording check has, and the same reconciliation applies. This is worth
-saying in the interview, because it is not obvious and it strengthens the strongest requirement.
+**OCR checks capitalization too.** Tesseract preserves case literally. So this check has the same
+two independent channels the wording check has, and §4.5's agreement rule requires both channels
+to produce the same capitalization verdict before either is trusted. This is worth saying in the
+interview, because it is not obvious and it strengthens the strongest requirement.
 
 **Why this is hard-enforced and bold is not:** capitalization survives a photograph. It is a
 choice of glyph, and a glyph is what a camera records. Stroke weight is a measurement, and the
@@ -733,28 +914,44 @@ measured OCR accuracy per source. Until then this is arithmetic, and it is label
 PRD §3.7 makes the model-upgrade decision a number, not a judgment call. Restated here because
 the comparator is what produces that number.
 
-**The segmentation.** Every warning check writes exactly one outcome class:
+**The segmentation.** Every warning check writes exactly one outcome class. The four classes
+below are **mutually exclusive and exhaustive** — every result §6.1 can produce lands in exactly
+one of them, and their counts must sum to the number of checks run. LH-030 asserts that sum;
+a segmentation that does not add up is a segmentation nobody can reason about.
 
-| Class | What it means | Upgrade signal? |
+| Class | Which §6.1 rows land here | Upgrade signal? |
 |---|---|---|
-| **Clean pass** | Both channels agree with the statute | no |
-| **True mismatch (FAIL)** | The label's text genuinely differs | **No — no matter how frequent.** This is the tool working |
-| **Resolution-suspect (REVIEW)** | `LOW_IMAGE_QUALITY`, or the two channels disagree | **Yes. This rate drives the ladder** |
+| **Clean pass** | both channels agree with the statute; **and** a single-channel PASS at confidence ≥ 0.90 (§4.5) | no |
+| **True mismatch (FAIL)** | wording deviation at distance ≥ 3; capitalization failure | **No — no matter how frequent.** This is the tool working |
+| **Resolution-suspect (REVIEW)** | `LOW_IMAGE_QUALITY`; channels disagree; near-miss band | **Yes. This rate drives the ladder** |
+| **Not found (REVIEW)** | `MISSING_REQUIRED_FIELD` | **No.** An absent warning is a labelling question, not a resolution question. Report it beside the rate, never inside it |
 
-Naming the denominator, which PRD §3.7 leaves implicit:
+The fourth class is why the denominator has to be written down. A missing warning is a REVIEW, so
+a naive "review rate" would count it as evidence that our reader needs upgrading — and no model
+upgrade finds a warning that is not in the photograph. Naming the denominator, which PRD §3.7
+leaves implicit:
 
 ```text
-suspect rate = resolution-suspect / (clean pass + true mismatch + resolution-suspect)
+suspect rate = resolution-suspect
+             / (clean pass + true mismatch + resolution-suspect + not found)
 ```
+
+Single-channel passes are counted as clean passes and **also reported as their own rate**, per
+open question 10. They are the residual false-PASS exposure (§10, Q7), so hiding them inside a
+healthy-looking aggregate would defeat the reason for measuring at all.
 
 **The ladder** (apply in order; re-measure on the golden set after each step):
 
 | Suspect rate | Action |
 |---|---|
 | ≤ 10% | Healthy. Keep Haiku plus the warning crop |
-| 10–25% | **Fix the crop pipeline first** — detection, DPI, framing. Re-measure before any model change |
+| > 10% and ≤ 25% | **Fix the crop pipeline first** — detection, DPI, framing. Re-measure before any model change |
 | > 25%, persistent after the crop fix | Field-level upgrade: the warning crop goes to Sonnet; Haiku keeps the other four fields |
 | Still failing, or other fields degrade too | Full extractor upgrade to Sonnet; re-run the latency and cost benchmarks before accepting |
+
+PRD §3.7 writes the middle band as "10–25%", which overlaps the first row at exactly 10%. The
+table above closes the overlap so every rate falls in exactly one rung. That is a disambiguation
+of the PRD's wording, not a change to its thresholds.
 
 The rung ordering encodes the design's own belief about what usually goes wrong: **a bad crop
 looks exactly like a bad model, and it is far cheaper to fix.** Spending a model upgrade on a
@@ -772,23 +969,28 @@ reviewed at CP-2." This is that review.
 
 ### 9.1 Current state, checked in this worktree
 
-- `golden-set/manifest.json`: **29 cases**, schema version 1.0.0. **12 are warning-relevant.**
+- `golden-set/manifest.json`: **29 cases**, schema version 1.0.0. **15 are warning-relevant.**
 - `golden-set/images/`: **empty except `.gitkeep`.** Zero images exist.
 - Every case has `verified: false`, because verification requires an image and none exist.
 - `golden-set/README.md` names the gap in its own words and explains why placeholder files would
   be worse than an empty directory. That judgment was right.
 
-The 12 warning-relevant cases, and which comparator branch each exercises:
+**The selection rule, stated so the count is checkable:** a case is warning-relevant when its
+expected `governmentWarning` verdict is not `MATCH` (11 cases), **or** it carries rubric vector V1,
+the exact-text PASS vector (4 cases). The two sets do not overlap, so the total is 15. An earlier
+draft of this section said 12 and listed a table that did not match its own count; the query that
+produces the 15 is in Appendix B, so nobody has to count by hand again.
 
 | Case | Category | Exercises | Expected label verdict |
 |---|---|---|---|
-| case-01, 03, 04 | clean-match | PASS path, rubric vector V1 | PASS |
-| case-08 | title-case prefix only | **§7.1 caps check** — rubric gate G4, Jenny's catch | FAIL |
-| case-09 | whole statement title case | §7.1 caps check with a title-case body | FAIL |
+| case-01, 02, 03, 04 | clean-match, V1 | PASS path, rubric vector V1 | PASS |
+| case-08 | title-case prefix only | **§7.1 capitalization check** — rubric gate G4, Jenny's catch | FAIL |
+| case-09 | whole statement title case | §7.1 check with a title-case body | FAIL |
 | case-10 | clause (1) reworded | §5 wording compare, distance 38 | FAIL |
 | case-11 | clause (2) reworded | §5 wording compare, distance 24 | FAIL |
 | case-12, 13 | missing warning | `MISSING_REQUIRED_FIELD` branch | REVIEW |
 | case-18 | glare on the warning block | `LOW_IMAGE_QUALITY` branch | REVIEW |
+| case-20 | label photographed upside down | `LOW_IMAGE_QUALITY` at whole-label scale | REVIEW |
 | case-22 | low light on the warning block | `LOW_IMAGE_QUALITY` branch | REVIEW |
 | case-23 | tiny text, standard bottle | crop DPI, §8.3 | REVIEW |
 | case-24 | tiny text, 50 mL miniature | crop DPI at the legal 1 mm floor | REVIEW |
@@ -796,7 +998,7 @@ The 12 warning-relevant cases, and which comparator branch each exercises:
 Rubric gate G4 needs three vectors: exact → PASS, title-case → FAIL, reworded → FAIL. All three
 are covered. G4 is a submission gate, so this coverage is not optional.
 
-### 9.2 Four findings the checkpoint should settle
+### 9.2 Five findings the checkpoint should settle
 
 **Finding 1 — two cases expect a reason this comparator cannot return.** Cases 23 and 24 expect a
 label-level `reviewReason` of `LOW_MODEL_CONFIDENCE`. `WarningComparatorResult` permits only
@@ -807,9 +1009,11 @@ would be `LOW_IMAGE_QUALITY`. **Recommendation:** change the two manifest entrie
 
 **Finding 2 — case-09's expected reason assumes a case-sensitive body.** Its reason string reads
 "the wording must match the statute exactly", which implies the title-case body itself is a wording
-failure. Under §5.4's recommendation the body compares case-insensitively, so the verdict is still
-MISMATCH but the reason is the caps rule alone. **Recommendation:** the verdict stays; the reason
-string changes to name the prefix. Settle open question 1 first — it decides this.
+failure. Under §5.4 the body's case is folded except at four named positions, so case-09 fails on
+the capitalization check rather than on wording. Its title-case body does capitalize `Surgeon` and
+`General`, so those two positions pass. **Recommendation:** the MISMATCH verdict stays; the reason
+string changes to name the capitalization rule, not the wording. Settle open question 1 first — it
+decides this.
 
 **Finding 3 — no case exercises channel disagreement, and no image can.** "VLM and OCR disagree" is
 a property of two readers, not of a label. No photograph produces it reliably. **Recommendation:**
@@ -821,9 +1025,18 @@ the golden set's deviations are 24 and 38 characters out. The band has no coveri
 **Recommendation:** add one case — the canonical text with a single character changed, expecting
 REVIEW. It is one renderer parameter and it is the band's only evidence.
 
+**Finding 5 — the two new checked positions have no covering case.** §5.4 now checks the initial
+capitals of `Surgeon` and `General`, on TTB's own authority (§2.6). No golden case prints
+`surgeon general` in lower case, so the rule ships with a citation and no test vector.
+**Recommendation:** add one case — the canonical text with `surgeon general` in lower case,
+expecting FAIL with the capitalization reason. This is the same shape of catch as Jenny's, from
+the same TTB checklist, and TTB's boot camp names it a common real-world mistake. A second,
+cheaper option for the same finding: the boot camp's other named mistake, a missing comma after
+`General`, which lands in the near-miss band and would also cover finding 4.
+
 ### 9.3 What CP-2 should sign off on, and what it cannot
 
-**Can sign off:** the 12 cases' *specifications* — what each label says, what the router should
+**Can sign off:** the 15 cases' *specifications* — what each label says, what the router should
 decide, and why. The specifications are complete and they cover the rubric's gate vectors.
 
 **Cannot sign off:** the images. None exist. PRD §12's mitigation reads "golden set reviewed at
@@ -835,7 +1048,11 @@ this plainly at the walkthrough rather than let the checkpoint imply coverage it
 > test must assert that constant against a **committed fixture of the retrieved eCFR XML**, not
 > against itself. Without the second half, a wrong constant would render a wrong label, match it,
 > and pass — the golden set would be testing our copy of the statute against our copy of the
-> statute. The fixture makes the statute check its own source.
+> statute. The fixture makes the constant check its source.
+>
+> What the fixture test does **not** do is notice that the regulation itself changed — the fixture
+> is a snapshot, so it moves only when a person moves it. §2.7 describes the separate live drift
+> check that covers that, and neither mechanism exists yet.
 
 ---
 
@@ -887,9 +1104,15 @@ requirements at once.
 Two costs I would flag rather than let someone find. The engine core is about 30 MB unpacked, which
 is real weight in a deploy image. And tesseract.js downloads its language data from a public CDN at
 runtime unless you set `langPath` — which would have quietly reintroduced the exact
-network-dependency problem TH-R7 warns about. We found that reading the source, not by hitting it,
-and the fix is to commit `eng.traineddata` and point `langPath` at it. There is a test that fails
-if someone unsets it.
+network-dependency problem TH-R7 warns about. We found that reading the library's source, not by
+hitting it in production.
+
+The fix is to commit the language data and point `langPath` at it, matching the filename the
+library actually builds — `eng.traineddata.gz` with `gzip: true`, or `eng.traineddata` with
+`gzip: false`. **None of that is built yet.** It is a requirement on LH-020, and the requirement
+includes the test that proves it: recognition must succeed with the network disabled. A test that
+only checks `langPath` is set would pass while the filename contract is wrong, which is the
+failure worth catching.
 
 ---
 
@@ -937,21 +1160,31 @@ the ladder says what to do about it in what order.
 
 **Q5. How do you catch `Government Warning` in title case deterministically?**
 
-Code takes the raw transcription before any case folding, takes the first two words, strips the
-trailing colon, and compares them to `GOVERNMENT` and `WARNING` with a case-sensitive equality
-check. If they differ only by case, that is the caps failure and it produces FAIL with the caps
-reason. The rule is 27 CFR 16.22(a)(2), which requires the first two words to print in capital
-letters.
+Code takes the transcription after transport normalization and before any case folding, takes the
+first two words, strips the trailing colon, and compares them to `GOVERNMENT` and `WARNING` with a
+case-sensitive equality check. If they differ only by case, that is the capitalization failure and
+it produces FAIL with the capitalization reason. The rule is 27 CFR 16.22(a)(2), which requires the
+first two words to print in capital letters.
 
-Two details make this stronger than it first sounds.
+Three details make this stronger than it first sounds.
+
+**It is not only the prefix.** TTB's own label checklist asks a specialist to confirm four things
+about capitalization, not one: the two words of `GOVERNMENT WARNING`, and the initial capitals in
+`Surgeon General`. TTB's boot camp deck for brewers lists lower-case `surgeon general` as a named
+common mistake. So the check runs at four word positions, and every one of them has a citation
+behind it rather than an engineer's guess. That is also why the body's case is folded everywhere
+else — we enforce what we can cite, and nothing beyond it.
 
 **Code derives the casing rather than trusting the model's report.** The extractor does return a
 `prefix_casing` enum, but that is a model's opinion about its own output. We use it as a
 cross-check: if the derived casing and the reported casing disagree, that is a signal the
-transcription is unreliable, and the result becomes REVIEW.
+transcription is unreliable, and the result becomes REVIEW. The enum covers only the prefix, so
+the two `Surgeon General` positions have no model cross-check at all — code is the only reader
+there.
 
 **The check has two channels, like the wording check.** Tesseract preserves case literally, so OCR
-gives an independent read of the capitalization too.
+gives an independent read of the capitalization too — and two candidates only count as agreeing
+when their capitalization verdicts match, not just their words.
 
 And here is the number that shows why this check cannot be folded into the string comparison. In
 the golden set, the title-case cases sit at edit distance **0** from the statutory string once case
@@ -1066,9 +1299,20 @@ one says the statement must appear as a "continuous statement", the others say "
 paragraph", and neither phrase appears in the CFR at all. So we treat "continuous" as guidance
 supporting the join rule, never as a rule of its own.
 
-And it does not stay verified by assertion: a committed fixture of the retrieved XML is what the
-constant is tested against, so a change to the regulation breaks a test rather than passing
-silently.
+The verification also changed a design decision, which is the best evidence it was worth doing.
+TTB publishes a *Checklist of Mandatory Label Information*, and its health warning section asks the
+specialist to confirm the capitals in `Surgeon General` — not just in `GOVERNMENT WARNING`. Our
+draft compared the body case-insensitively and would have accepted `surgeon general`. It now checks
+four named positions instead of two, and TTB's brewer training deck lists that exact lower-case
+error as a common real-world mistake.
+
+On keeping it verified: I would separate two mechanisms rather than overclaim one. A committed
+fixture of the retrieved XML lets a CI test assert the constant has not drifted from what we
+retrieved — that runs offline and it is deterministic. It cannot notice that the *regulation*
+changed, because the fixture is a snapshot too. That needs a separate live re-fetch, run on a
+schedule or by hand, reporting a difference for a person to read. I would not make it a build gate,
+because that makes our CI depend on a government website's uptime. Neither is built yet, and both
+belong to LH-020.
 
 ---
 
@@ -1091,33 +1335,36 @@ no quotation mark, and no non-ASCII character at all. So a quote-folding rule he
 a compliant label. It could only ever make a deviant one look compliant. Leaving it out is not
 caution — it is the only correct choice.
 
-The one deliberate exception is case, and it is scoped by the regulation itself. 16.22(a)(2)
-regulates the capitalization of exactly two words, and we check exactly those two words, hard and
-case-sensitively.
+The one deliberate exception is case, and it is scoped by what TTB actually checks: four word
+positions, each with a citation (§5.4). Everywhere else, case is folded.
 
 ---
 
-**Q11. If you compare the body case-insensitively, is that not a hole?**
+**Q11. You fold case in the body. Is that not a hole?**
 
-It is a deliberate choice with a cost, and I would rather defend the choice than pretend there is
-no cost.
+It is a narrower choice than it sounds, and getting it right took a correction I would rather
+describe than hide.
 
-The regulation states the capitalization rule for the first two words and says nothing about the
-rest. If we compared the body case-sensitively, a label that printed the whole warning in capitals
-would fail our check while violating no rule I can cite. That is the error I care most about
-avoiding — a false accusation of a federal labelling violation is worse than a missed catch,
-because a producer acts on it.
+The first draft folded case across the whole body. Then I read TTB's own *Checklist of Mandatory
+Label Information*, and its health warning section has a checkbox that says: "Are the 'S' in
+Surgeon and 'G' in General capitalized?" TTB's boot camp deck for brewers lists lower-case
+`surgeon general` as a named common mistake on real keg labels. So the first draft would have
+passed a label the agency's own specialist is instructed to catch. That is now fixed: the check
+runs at four positions — `GOVERNMENT`, `WARNING`, `Surgeon`, `General`.
 
-What we lose: if TTB does in fact expect the body in a particular case, we would not flag it. I
-could not find that requirement in 27 CFR part 16 or on ttb.gov, and I am not willing to enforce a
-rule I cannot cite.
+Everywhere else, case is folded, and the principle is the one that governs the whole document: we
+enforce rules we can cite. No source I found states the case of `women` or `machinery`. If we
+compared those case-sensitively, a label printing the body in capitals would fail our check while
+violating nothing I can point at — and a false accusation of a federal labelling violation is worse
+than a missed catch, because a producer acts on it.
 
-It is also the reason the caps check must be structurally separate rather than folded into the
-string compare — under case-insensitive comparison, the title-case cases sit at distance 0 and only
-the prefix check catches them.
+What we still lose, stated plainly: if TTB expects some other position capitalized and does not
+publish it, we would not flag it. The design absorbs that cheaply, though — a new rule is one more
+row in a table, not a rewrite of the comparator.
 
-This is on the open-questions list, and it is the one I would most want a TTB specialist to settle,
-because it is a regulatory question rather than an engineering one.
+And this is also why the capitalization check has to be structurally separate from the string
+compare rather than folded into it. With case folded, the title-case golden cases sit at distance
+0 — the words are all correct. The separate check is the only thing that catches them.
 
 ---
 
@@ -1164,13 +1411,21 @@ reconstruct is not one an agency can defend.
 
 These are real forks. Each has a recommendation and the cost of choosing wrong.
 
-**1. Should the warning body compare case-insensitively outside the prefix?**
-§5.4 recommends yes: case-sensitive on the two-word prefix (27 CFR 16.22(a)(2) regulates it),
-case-insensitive on the body (no regulation states it). *Recommendation:* adopt. Enforcing a rule
-we cannot cite is how a compliance tool makes a false accusation. *Cost of choosing wrong:* if TTB
-does expect a particular case in the body, we miss that deviation. If we go the other way and a
-compliant all-caps label fails, we accuse a producer of a violation with no citation behind it.
-This also decides finding 2 in §9.2.
+**1. Confirm the four checked capitalization positions.**
+§5.4 checks `GOVERNMENT` and `WARNING` (27 CFR 16.22(a)(2)) plus the initial capitals of `Surgeon`
+and `General` (TTB's own label checklist and its brewer boot camp, §2.6). Case is folded
+everywhere else. *Recommendation:* adopt all four. Each carries a citation, and TTB names the
+lower-case `surgeon general` error as one it sees in the field. *Cost of choosing wrong:* drop the
+two body positions and we pass a label TTB's own specialist is instructed to reject — the same
+class of miss as letting Jenny's title-case catch through. Add positions we cannot cite and we
+accuse a producer of a violation with nothing behind it. This decides findings 2 and 5 in §9.2.
+
+**1a. Should the extractor schema gain a cross-check for the two new positions?**
+CP-1's `prefix_casing` enum covers only the prefix, so `Surgeon` and `General` have no model
+cross-check (§7.1). *Recommendation:* no — leave the schema alone. Code reading two characters is
+more reliable than a model's self-report, and adding the field would create a second opinion we
+would then have to decide whether to trust. *Cost of choosing wrong:* none that we can name; this
+is listed so nobody assumes the omission was an oversight.
 
 **2. Adopt the near-miss band at distance 1–2?**
 §5.5 proposes that an edit distance of 1 or 2 returns REVIEW rather than FAIL. CP-1 open question 2
@@ -1223,10 +1478,13 @@ the joined string, so the structure matches the source and the join is a named, 
 *Cost of choosing wrong:* a single 283-character literal hides the join as an assumption, and it
 makes the eCFR fixture harder to assert against.
 
-**9. Add a near-miss golden case?**
-§9.2 finding 4: the proposed band has no covering case. *Recommendation:* add one — the canonical
-text with a single character changed, expecting REVIEW. It is one renderer parameter.
-*Cost of choosing wrong:* the band ships with reasoning and no evidence, which is exactly the thing
+**9. Add the two missing golden cases?**
+§9.2 findings 4 and 5: the near-miss band and the two new capitalization positions both ship with
+reasoning and no covering case. *Recommendation:* add two — the canonical text with `surgeon
+general` in lower case, expecting FAIL, and the canonical text with the comma after `General`
+removed, expecting REVIEW. TTB's boot camp names both as real-world mistakes (§2.6), so they are
+cases the agency sees rather than cases we invented. Each is one renderer parameter.
+*Cost of choosing wrong:* two rules ship with reasoning and no evidence, which is exactly the thing
 this project promised not to do.
 
 **10. Should a single channel ever be allowed to PASS?**
@@ -1252,6 +1510,11 @@ Named here so nobody assumes coverage that is not there.
 - **Bold detection.** Explicitly out of scope, with the limitation wording drafted in §7.3.
 - **Any physical measurement from § 16.22** — type size, characters per inch, compression,
   contrasting background. §2.5 explains why a photograph cannot supply the scale.
+- **TTB's "Does it appear as one statement?" checkbox** (§2.6). §5's normalization removes line
+  breaks before the comparison, so the comparator cannot distinguish one wrapped statement from two
+  separated ones. The OCR channel's block geometry could support this in a later version.
+- **TTB's "separate and apart from other information" checkbox** (§2.6, and § 16.21's own wording).
+  It is a spatial property of the label, not of the text.
 - **Whether the golden-set images look realistic.** No images exist. §9.3 says so plainly.
 - **Batch behaviour of the warning subsystem.** CP-3 owns the queue.
 
@@ -1265,21 +1528,24 @@ Tick these during the session. The checkpoint is not covered until all of them a
       byte-identical result against PRD §3.4. Confirm the two-paragraph finding in §2.4.
 - [ ] **The regulation's four rules.** Read §2.5's table. Confirm which two LabelHunter enforces
       and which two it does not.
-- [ ] **The dual path.** Read §4.1 and §4.5. Confirm the reconciliation table, and confirm that a
-      single channel never produces a FAIL.
+- [ ] **TTB's own checklist.** Read §2.6. Confirm each of the six checkboxes against what
+      LabelHunter does, and confirm the two it cannot check.
+- [ ] **The dual path.** Read §4.1 and §4.5. Confirm the agreement rule covers capitalization as
+      well as words, and confirm that a single channel never produces a FAIL.
 - [ ] **The normalization rules.** Read §5.1's one-sentence test, then §5.2 and §5.3. For each
-      absent rule, say out loud why it is absent.
-- [ ] **The case asymmetry.** Read §5.4's edit-distance table. Confirm that the caps check is what
-      catches Jenny's case, and that it must run before case folding.
+      absent rule, say out loud why it is absent. Confirm the NFC-not-NFKC reasoning.
+- [ ] **The four checked capitalization positions.** Read §5.4's table and its edit-distance table.
+      Confirm each position's citation, and confirm the check must run before case folding.
 - [ ] **The verdict mapping.** Read §6.1. Confirm every row maps onto a real
       `WarningComparatorResult` branch, and confirm the two names the union cannot return.
 - [ ] **The bold limitation.** Read §7.3's paragraph as written. Confirm it is the wording
       `docs/approach.md` and the README will reuse verbatim.
-- [ ] **The ladder.** Read §8.4. Say the suspect-rate definition and its denominator out loud.
-- [ ] **The golden set.** Read §9.1 and §9.2. Decide the four findings. Confirm that CP-2 signs off
+- [ ] **The ladder.** Read §8.4. Say the four outcome classes and the suspect-rate denominator out
+      loud. Confirm the classes partition every check.
+- [ ] **The golden set.** Read §9.1 and §9.2. Decide the five findings. Confirm that CP-2 signs off
       on specifications, not images, and that no image exists yet.
 - [ ] Run the Q&A in §10. Note any question that did not have a good answer.
-- [ ] Decide the ten open questions in §11.
+- [ ] Decide the eleven open questions in §11.
 - [ ] Say the words. Acknowledgment unblocks LH-020 and LH-021. Silence does not.
 
 ---
@@ -1307,18 +1573,75 @@ The `<EXTRACT>` element holds two `<P>` elements — statement (1) and statement
 curl -sS "https://www.ecfr.gov/api/versioner/v1/full/2026-07-06/title-27.xml?part=16"
 ```
 
-**S3–S5 — ttb.gov corroboration.** All three carry a byte-identical statement.
+**S3–S5 — ttb.gov corroboration.** All three carry a byte-identical statement. Fetch each page and
+compare its rendered text against the eCFR string:
 
-```text
-https://www.ttb.gov/regulated-commodities/beverage-alcohol/distilled-spirits/ds-labeling-home/ds-health-warning
-https://www.ttb.gov/regulated-commodities/beverage-alcohol/beer/labeling/malt-beverage-health-warning
-https://www.ttb.gov/regulated-commodities/beverage-alcohol/wine/labeling-wine/wine-labeling-health-warning-statement
+```bash
+for U in \
+ "https://www.ttb.gov/regulated-commodities/beverage-alcohol/distilled-spirits/ds-labeling-home/ds-health-warning" \
+ "https://www.ttb.gov/regulated-commodities/beverage-alcohol/beer/labeling/malt-beverage-health-warning" \
+ "https://www.ttb.gov/regulated-commodities/beverage-alcohol/wine/labeling-wine/wine-labeling-health-warning-statement"
+do
+  curl -sS -L -A "Mozilla/5.0" "$U" | python3 -c '
+import sys,re,html
+CANON=("GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink "
+ "alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption "
+ "of alcoholic beverages impairs your ability to drive a car or operate machinery, and may "
+ "cause health problems.")
+s=re.sub(r"<(script|style)[^>]*>.*?</\1>"," ",sys.stdin.read(),flags=re.S|re.I)
+t=re.sub(r"\s+"," ",html.unescape(re.sub(r"<[^>]+>"," ",s))).strip()
+i=t.find("GOVERNMENT WARNING")
+print("match:", t[i:i+len(CANON)]==CANON)'
+done
+```
+
+**S6, S7 — TTB's Checklist of Mandatory Label Information** (§2.6). Needs `pdftotext`.
+
+```bash
+curl -sS -L -A "Mozilla/5.0" "https://www.ttb.gov/media/66695/download" -o ds-checklist.pdf
+curl -sS -L -A "Mozilla/5.0" \
+  "https://www.ttb.gov/system/files/images/wine-label/wine-labeling-checklist.pdf" -o wine-checklist.pdf
+for F in ds-checklist.pdf wine-checklist.pdf; do pdftotext -layout "$F" - | grep -n "Surgeon"; done
+```
+
+Both print: `☐ Are the “S” in Surgeon and “G” in General capitalized?`
+
+**S8 — TTB 2022 Boot Camp for Brewers, "Keg Label Common Mistakes"** (§2.6).
+
+```bash
+curl -sS -L -A "Mozilla/5.0" \
+  "https://www.ttb.gov/system/files?file=images%2Fpdfs%2FTTB_Boot_Camp_for_Brewers-_Labeling.pdf" \
+  -o brewers-bootcamp.pdf
+pdftotext -layout brewers-bootcamp.pdf - | grep -n -A3 "S and"
 ```
 
 **The byte comparison against PRD §3.4.** Extract the candidate from the PRD, unwrap its Markdown
-line breaks, and compare bytes and SHA-256 against the eCFR text. Both are 283 characters and both
-hash to `35e1f5d39ee341ac7c114f8159956cb0cc1981b94e4ffeee194ff5060bf99fbc`. The equality check
-returned true and the character-level diff returned no operations.
+line breaks, and compare bytes and SHA-256 against the eCFR text:
+
+```bash
+python3 - <<'EOF'
+import re,html,hashlib,difflib,urllib.request
+url=("https://www.ecfr.gov/api/versioner/v1/full/2026-07-06/"
+     "title-27.xml?part=16&section=16.21")
+xml=urllib.request.urlopen(url).read().decode()
+ex=re.search(r"<EXTRACT>(.*?)</EXTRACT>",xml,re.S).group(1)
+ecfr=" ".join(html.unescape(re.sub(r"<[^>]+>","",p)).strip()
+              for p in re.findall(r"<P>(.*?)</P>",ex,re.S))
+prd=re.search(r"Canonical text \(27 CFR part 16\): `(.*?)`",
+              open("docs/PRD.md").read(),re.S).group(1)
+prd=re.sub(r"\s*\n\s*"," ",prd).strip()
+print("len:",len(ecfr),len(prd))
+print("equal:",ecfr==prd)
+print("sha256:",hashlib.sha256(ecfr.encode()).hexdigest())
+print("non-ascii:",[c for c in ecfr if ord(c)>127])
+print("diff ops:",[o for o in difflib.SequenceMatcher(None,ecfr,prd).get_opcodes()
+                   if o[0]!="equal"])
+EOF
+```
+
+Expected output: both lengths 283, `equal: True`, sha256
+`35e1f5d39ee341ac7c114f8159956cb0cc1981b94e4ffeee194ff5060bf99fbc`, no non-ASCII characters, no
+diff operations.
 
 **tesseract.js package facts.**
 
@@ -1330,10 +1653,29 @@ curl -sS "https://raw.githubusercontent.com/naptha/tesseract.js/master/src/worke
 curl -sS "https://raw.githubusercontent.com/naptha/tesseract.js/master/src/worker-script/constants/defaultOutput.js"
 ```
 
-`worker-script/index.js` carries the default CDN path for language data. `dump.js` shows
-`confidence` comes from `MeanTextConf()`. `defaultOutput.js` shows `blocks: false` is the default.
+`worker-script/index.js` carries two facts §4.3 depends on: the default CDN path for language data,
+and the loader's filename contract, `` `${langPathDownload}/${lang}.traineddata${gzip ? '.gz' : ''}` ``.
+`dump.js` shows `confidence` comes from `MeanTextConf()`. `defaultOutput.js` shows `blocks: false`
+is the default.
+
+**The warning-relevant case count in §9.1.**
+
+```bash
+python3 - <<'EOF'
+import json
+cases=json.load(open("golden-set/manifest.json"))["cases"]
+nm={c["caseId"] for c in cases
+    if c["expected"]["fields"]["governmentWarning"]["verdict"]!="MATCH"}
+v1={c["caseId"] for c in cases if "V1" in c.get("vectors",[])}
+print("not MATCH:",len(nm)," V1:",len(v1)," union:",len(nm|v1))
+EOF
+```
+
+Expected output: `not MATCH: 11  V1: 4  union: 15`.
 
 **The edit distances in §5.4.** Computed over `golden-set/manifest.json`'s own
 `label.governmentWarningText` strings, with the §5.2 normalization applied and standard Levenshtein
 distance. This is arithmetic over committed ground truth, not a model run — it is **derived**, not
-measured. LH-020 should carry it as a test so the margin cannot drift silently.
+measured. NFC and NFKC give identical results on these strings, so the correction in §5.2 does not
+move any number in the table. LH-020 should carry the distances as a test, so the near-miss band's
+margin cannot drift silently.

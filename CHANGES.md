@@ -4,6 +4,75 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-467 — PR review triage: 15 CodeRabbit findings, 14 fixed, 1 dismissed (2026-08-11)
+
+**This entry still does not clear CP-2.** It corrects the checkpoint document. CP-2 stays
+blocking until Troy runs the walkthrough and gives explicit acknowledgment.
+
+**What changed.** The orchestrator's gate run captured 15 findings against the CP-2 document.
+Each was verified against the document before anything was edited. Fourteen were real. One was
+dismissed with a reason. Three of the fixes are substantive enough to name.
+
+**1. TTB checks the capitals in `Surgeon General`, and our draft would have passed them in
+lower case.** CodeRabbit claimed TTB guidance requires it; we did not take that on faith. We
+retrieved TTB's own *Checklist of Mandatory Label Information* for wine and for distilled
+spirits, and both carry the checkbox verbatim: `☐ Are the “S” in Surgeon and “G” in General
+capitalized?` TTB's *2022 Boot Camp for Brewers* lists lower-case `surgeon general` under "Keg
+Label Common Mistakes". The document's §5.4 had recommended a fully case-insensitive body
+comparison, which would have accepted a deviation the agency's own specialist is instructed to
+catch. **Capitalization is now checked at four word positions** — `GOVERNMENT`, `WARNING`,
+`Surgeon`, `General` — each with its own citation, and case is folded everywhere else. The
+find also produced a new §2.6 mapping all six of TTB's warning checkboxes onto what LabelHunter
+does and does not do, and named the two it cannot check ("one statement", "separate and apart").
+This is the best material in the document, and it exists because a reviewer pushed on a claim.
+
+**2. NFKC was wrong by the document's own standard.** §5.1 states that a normalization rule is
+legitimate only when it cannot change what a human reader sees. NFKC folds compatibility forms —
+fullwidth `Ａ` to `A`, the ligature `ﬁ` to `fi` — which a reader **can** see, and it fails in
+the dangerous direction by making a visibly deviant label compare equal. Changed to **NFC**, with
+an explicit rule for the space characters (U+00A0 and friends) that NFKC had been handling by
+accident. The effect on this project is nil and the document says so: the statutory string is
+pure ASCII, so every edit distance in §5.4 is unchanged. The rule was corrected because it was
+wrong in principle, not because it produced a wrong number.
+
+**3. Two claims were stated in the present tense that describe work nobody has done.** The
+tesseract.js `langPath` test and "a change to the regulation breaks a test" both read as
+existing protections. Neither exists. The first is now an explicit LH-020 requirement, including
+the library's real filename contract (`` `${langPath}/${lang}.traineddata${gzip ? '.gz' : ''}` ``,
+verified from source) and a network-disabled startup test — a test that only checks `langPath`
+is set would pass while the filename is wrong. The second is now split into two mechanisms: a
+deterministic CI test against the committed eCFR fixture, which catches the constant drifting;
+and a separate live re-fetch, run on a schedule or by hand, which is the only thing that can
+notice the regulation itself changing. Neither is built.
+
+**The other eleven fixes.** Agreement between the VLM and OCR channels now requires matching
+capitalization verdicts, not only matching words — folding case in the agreement test would have
+called `GOVERNMENT WARNING` and `Government Warning` "agreeing" while they produce opposite
+verdicts. The ladder's outcome classes gained a fourth ("not found") and are now stated as a
+partition with a summing assertion, so a missing warning cannot inflate the resolution-suspect
+rate that drives model upgrades. The ladder's rate bands no longer overlap at exactly 10%. The
+capitalization check now runs on transport-normalized text rather than raw, so an invisible
+zero-width character cannot cause a false capitalization failure. De-hyphenation gained its
+safety argument — the statutory string contains no hyphen, so the rule cannot manufacture a PASS,
+only downgrade a FAIL to a REVIEW. The golden-set count was wrong: the document said 12 while its
+own table listed 13, and the correct figure under a stated selection rule is **15**; the rule and
+a runnable query are now both in the document. §9.2 gained a fifth finding — the two new
+capitalization positions have no covering golden case. Appendix B gained runnable commands for
+every claim it had been describing in prose, so "every command is in Appendix B" is now true.
+
+**One dismissed.** *"Single-channel PASS must be forbidden."* Dismissed: this is **open question
+10**, which the document already raises with a recommendation, both costs, and a named place in
+the Q&A (Q7 calls it the residual false-PASS path). Changing the rule here would pre-empt the
+decision the checkpoint exists to put in front of Troy. The document surfaces the exposure rather
+than hiding it, and §8.4 now also requires the single-channel rate to be reported separately so
+it cannot disappear into a healthy-looking aggregate.
+
+**How to run it.** Nothing to build or test. Re-read §2.6, §5.2, §5.4, and §7.1 — those carry the
+substantive changes. Appendix B's S6–S8 commands reproduce the TTB checklist finding; they need
+`pdftotext`.
+
+**Rollback.** `git revert` this commit. It edits two documents and no code.
+
 ## TRO-467 — LH-CP2: ⛔ CHECKPOINT 2 walkthrough material (2026-08-11)
 
 **This entry does not clear a checkpoint.** It adds the material Troy reads *at* the
@@ -39,13 +108,14 @@ checkpoint, and a "defend it" Q&A (TH-R9, TH-R10, TH-R7, TH-R12, TH-R15, TH-R21,
   all three appear in the brand-name normalizer, where equivalence rather than exactness is
   the requirement. The statutory string contains no apostrophe, no quotation mark, and no
   non-ASCII character, so those rules could only ever make a deviant label look compliant.
-- **Case gets split, and the arithmetic proves it must be.** The two-word prefix compares
-  case-sensitively, because 16.22(a)(2) regulates it. The body compares case-insensitively,
-  because no regulation states it. Computed over the golden set's own ground-truth strings,
-  the title-case cases (case-08, case-09) sit at edit distance **0** once case is folded — the
-  separate caps check is the only thing that catches them, and rubric gate G4 depends on it.
-  Genuine rewordings sit at distance 24 and 38, which is what sizes the proposed near-miss
-  band at 1–2.
+- **Capitalization is checked at four word positions and folded everywhere else.** Words 1 and
+  2 must be `GOVERNMENT WARNING` in full capitals (16.22(a)(2)); `Surgeon` and `General` must
+  each carry an initial capital (TTB's own label checklist — see the review-round entry above,
+  which corrected this section from a fully case-insensitive body). Computed over the golden
+  set's own ground-truth strings, the title-case cases (case-08, case-09) sit at edit distance
+  **0** once case is folded — the separate capitalization check is the only thing that catches
+  them, and rubric gate G4 depends on it. Genuine rewordings sit at distance 24 and 38, which
+  is what sizes the proposed near-miss band at 1–2.
 - **Every verdict maps onto a real `WarningComparatorResult` branch**, and the document names
   the two `ReviewReason` values the union cannot return: `CONFLICTING_EXTRACTION` (PRD §3.7
   uses it for channel disagreement) and `LOW_MODEL_CONFIDENCE` (golden cases 23 and 24 expect
@@ -60,17 +130,20 @@ checkpoint, and a "defend it" Q&A (TH-R9, TH-R10, TH-R7, TH-R12, TH-R15, TH-R21,
   box cannot arrive before the model call finishes, so it cannot satisfy §3.8's "OCR runs
   concurrently with the Haiku call". The document recommends classical detection instead, with
   a band-search fallback and a single-channel final fallback.
-- **The golden-set review CP-2 owns.** 29 cases, 12 warning-relevant, **zero images** —
+- **The golden-set review CP-2 owns.** 29 cases, 15 warning-relevant (the count and its
+  selection rule were corrected in the review round above), **zero images** —
   `golden-set/images/` holds only `.gitkeep`. CP-2 can sign off on the specifications and
-  cannot sign off on the pixels. Four findings are raised for the walkthrough to settle.
-- **Ten open questions**, each with a recommendation and the cost of choosing wrong. Every
+  cannot sign off on the pixels. Five findings are raised for the walkthrough to settle.
+- **Eleven open questions**, each with a recommendation and the cost of choosing wrong. Every
   threshold is marked **proposed** and every unmeasured figure says "not measured", CP-1 style.
   A fifth claim label, **verified**, was added for retrieved statutory text — it is a stronger
   claim than "derived" and weaker than "measured on our own system".
 
-**How to run it.** Nothing to run. Read `docs/checkpoints/cp2-warning-subsystem.md` — about 45
-minutes — and work the Appendix A checklist during the walkthrough. The canonical-text claim is
-independently checkable: run Appendix B's two `curl` commands and compare the result to §2.2.
+**How to run it.** Nothing to build, nothing to test — this branch adds no code, so `pnpm build`
+and `pnpm test` have nothing new to exercise. Read `docs/checkpoints/cp2-warning-subsystem.md`
+— about 45 minutes — and work the Appendix A checklist during the walkthrough. Appendix B holds
+a runnable command for every **verified** claim in the document, including the canonical-text
+byte comparison against PRD §3.4 and the golden-set case count.
 
 **Rollback.** `git revert` this commit. The document adds no code and nothing imports it.
 

@@ -16,17 +16,23 @@
  * would not. No network call: the HTML is fully inline, with no remote
  * fonts or images.
  *
- * KNOWN LIMITATION: font stacks below name system fonts (Helvetica/Arial,
- * plus generic `cursive`/`fantasy` fallbacks for the two odd-typography
- * cases), not fonts committed to the repo. Design doc §2 says "Fonts are
- * committed to the repo" — this renderer does not do that yet. Practical
- * effect: `pnpm golden:build` is deterministic on one machine (proven by
- * `render.test.ts`'s determinism test — same content, same browser, same
- * OS font substitution, same pixels every run), but re-running it on a
- * different OS could pick different font-substitution results. Committing
- * real font files and wiring `@font-face` would close this gap; deferred
- * here rather than picking a font quickly without checking its license.
+ * FONTS (TRO-505). Every font below is embedded, not a system-font name.
+ * `FONT_FACES_CSS` reads real font files from three pinned npm packages —
+ * `@fontsource/inter`, `@fontsource/dancing-script`,
+ * `@fontsource/unifrakturmaguntia` (each OFL-1.1) — and inlines them as
+ * base64 `data:` URIs inside a `@font-face` block. This is what design doc
+ * §2 means by "fonts are committed to the repo": `pnpm-lock.yaml` pins the
+ * exact bytes, and `pnpm install` fetches them the same way it fetches
+ * every other dependency. Chromium never asks the host OS to substitute a
+ * font for this renderer's three styles, so `pnpm golden:build` no longer
+ * depends on which fonts a given machine has installed. Before TRO-505,
+ * this comment named a KNOWN LIMITATION here: the font stacks named system
+ * fonts only (Helvetica/Arial, plus generic `cursive`/`fantasy`
+ * fallbacks), so a different OS could pick a different substitution and
+ * produce different pixels. TRO-505 closed that gap.
  */
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { chromium, type Page } from "@playwright/test";
 import type { GoldenSetCase } from "../../src/lib/golden-set/types";
 
@@ -114,16 +120,118 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-const BASE_FONT_STACK = '"Helvetica Neue", Helvetica, Arial, sans-serif';
-const SCRIPT_FONT_STACK =
-  '"Brush Script MT", "Apple Chancery", "Snell Roundhand", cursive';
-const BLACKLETTER_FONT_STACK = '"Blackletter", "UnifrakturMaguntia", fantasy';
+const fontPackageRequire = createRequire(import.meta.url);
+
+/**
+ * Reads one `@fontsource`-vendored WOFF2 file and returns it as a base64
+ * `data:` URI. Called once per distinct font file, at module load (see
+ * `FONT_FACES_CSS` below) — not once per case. The font bytes never change
+ * per case, so re-encoding them on every one of the 26 renderable cases in
+ * `pnpm golden:build` would repeat identical work for no benefit.
+ *
+ * `require.resolve` goes through the package's own `exports` map in its
+ * `package.json` — checked directly (`node_modules/@fontsource/*
+ * /package.json`) before this file relied on it, never assumed from the
+ * package name. CLAUDE.md rule 13: a font package's exported file path is
+ * a boundary to check, not a guess.
+ */
+function fontFileDataUri(packageSubpath: string): string {
+  const absolutePath = fontPackageRequire.resolve(packageSubpath);
+  const bytes = readFileSync(absolutePath);
+  return `data:font/woff2;base64,${bytes.toString("base64")}`;
+}
+
+/**
+ * Embedded `@font-face` rules for every font this renderer uses. Committed
+ * to the repo via `pnpm-lock.yaml`, not read from the host OS (TRO-505;
+ * design doc §2's "fonts are committed to the repo"). Three families, five
+ * weights total — the exact set `buildLabelHtml`'s CSS below requests:
+ *
+ * - Inter (OFL-1.1, `@fontsource/inter`) — the base sans-serif for
+ *   brand/class-type/content/warning body text. Weights 400 (content,
+ *   warning), 500 (class/type default), 700 (brand default).
+ * - Dancing Script (OFL-1.1, `@fontsource/dancing-script`) — the
+ *   script-style "odd typography" brand case (case-25). Weight 700, to
+ *   match `.brand`'s fixed `font-weight: 700` with a real bold cut of the
+ *   font instead of a browser-synthesized one.
+ * - UnifrakturMaguntia (OFL-1.1, `@fontsource/unifrakturmaguntia`) — the
+ *   blackletter "odd typography" class/type case (case-26). This is the
+ *   exact face this file already named as a *system*-font fallback before
+ *   TRO-505; it turns out to already ship as its own installable,
+ *   OFL-licensed package. Weight 400 — its only static weight.
+ *   `CASE_STYLE_OVERRIDES` below renders case-26's class/type at weight
+ *   400, not the usual 500, so Chromium never synthesizes a bold cut of a
+ *   font that was never designed with one — a synthesized weight would
+ *   change glyph metrics in a way `LABEL_REGIONS` was not built to absorb.
+ *
+ * Every license above was checked two ways before this file used it: the
+ * package's own `package.json` `license` field (`npm view <package>
+ * license`), and the actual `LICENSE` file text each package ships
+ * (confirmed SIL Open Font License 1.1 in every case, not assumed from the
+ * metadata field alone).
+ */
+const FONT_FACES_CSS = `
+  @font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 400;
+    src: url(${fontFileDataUri("@fontsource/inter/files/inter-latin-400-normal.woff2")}) format("woff2");
+  }
+  @font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 500;
+    src: url(${fontFileDataUri("@fontsource/inter/files/inter-latin-500-normal.woff2")}) format("woff2");
+  }
+  @font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 700;
+    src: url(${fontFileDataUri("@fontsource/inter/files/inter-latin-700-normal.woff2")}) format("woff2");
+  }
+  @font-face {
+    font-family: "Dancing Script";
+    font-style: normal;
+    font-weight: 700;
+    src: url(${fontFileDataUri("@fontsource/dancing-script/files/dancing-script-latin-700-normal.woff2")}) format("woff2");
+  }
+  @font-face {
+    font-family: "UnifrakturMaguntia";
+    font-style: normal;
+    font-weight: 400;
+    src: url(${fontFileDataUri("@fontsource/unifrakturmaguntia/files/unifrakturmaguntia-latin-400-normal.woff2")}) format("woff2");
+  }
+`;
+
+/**
+ * `BASE_FONT_STACK` keeps a generic `sans-serif` fallback: `Inter` is the
+ * base font itself, so there is no more-embedded family left to fall back
+ * to if its `@font-face` somehow failed to apply.
+ *
+ * `SCRIPT_FONT_STACK` and `BLACKLETTER_FONT_STACK` fall back to `"Inter"`,
+ * not a generic `cursive`/`fantasy` family. `cursive` and `fantasy` name no
+ * real font — only a category — so the OS would still pick the actual face
+ * for either one, exactly the substitution risk this file just closed.
+ * `Inter` is also embedded above, so even this fallback path stays
+ * file-embedded and deterministic. In today's committed HTML this fallback
+ * never actually triggers — `render.test.ts`'s "embeds each font family's
+ * real @fontsource file bytes" test confirms `buildLabelHtml` requests
+ * `Dancing Script` and `UnifrakturMaguntia` directly, and both load — but a
+ * future regression that broke one of those two `@font-face` rules would
+ * degrade to Inter, not silently to an OS-dependent generic family.
+ */
+const BASE_FONT_STACK = '"Inter", sans-serif';
+const SCRIPT_FONT_STACK = '"Dancing Script", "Inter"';
+const BLACKLETTER_FONT_STACK = '"UnifrakturMaguntia", "Inter"';
 const DEFAULT_WARNING_FONT_SIZE_PX = 24;
 const TINY_WARNING_FONT_SIZE_PX = 9;
+const DEFAULT_CLASS_TYPE_FONT_WEIGHT = 500;
+const BLACKLETTER_CLASS_TYPE_FONT_WEIGHT = 400;
 
 interface StyleOverride {
   readonly brandFontFamily?: string;
   readonly classTypeFontFamily?: string;
+  readonly classTypeFontWeight?: number;
   readonly warningFontSizePx?: number;
 }
 
@@ -148,6 +256,7 @@ const CASE_STYLE_OVERRIDES: Record<string, StyleOverride> = {
   },
   "case-26-odd-typography-blackletter-class-type": {
     classTypeFontFamily: BLACKLETTER_FONT_STACK,
+    classTypeFontWeight: BLACKLETTER_CLASS_TYPE_FONT_WEIGHT,
   },
 };
 
@@ -156,6 +265,7 @@ function styleFor(caseId: string): Required<StyleOverride> {
   return {
     brandFontFamily: override.brandFontFamily ?? BASE_FONT_STACK,
     classTypeFontFamily: override.classTypeFontFamily ?? BASE_FONT_STACK,
+    classTypeFontWeight: override.classTypeFontWeight ?? DEFAULT_CLASS_TYPE_FONT_WEIGHT,
     warningFontSizePx: override.warningFontSizePx ?? DEFAULT_WARNING_FONT_SIZE_PX,
   };
 }
@@ -186,6 +296,7 @@ export function buildLabelHtml(renderCase: RenderableCase): string {
 <head>
 <meta charset="utf-8" />
 <style>
+  ${FONT_FACES_CSS}
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
     width: ${CANVAS_WIDTH}px;
@@ -221,7 +332,7 @@ export function buildLabelHtml(renderCase: RenderableCase): string {
     align-items: center;
     font-family: ${style.classTypeFontFamily};
     font-size: 34px;
-    font-weight: 500;
+    font-weight: ${style.classTypeFontWeight};
     color: #333333;
   }
   .divider {

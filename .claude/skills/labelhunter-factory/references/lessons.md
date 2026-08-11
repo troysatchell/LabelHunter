@@ -51,6 +51,15 @@ production run (they are paid-for, not speculative); rules 10+ will be LabelHunt
     review, never a confident verdict. The UI always shows the reason, never a bare
     confidence percentage.
 
+13. **Validate at the boundary where a value's shape is only assumed, not guaranteed**
+    (recurring `correctness` category, TRO-459 + TRO-460). A plain substring test isn't an
+    equality check — CP-1's evidence-substring anti-hallucination check let 45 match inside
+    145. A pixel region isn't guaranteed finite or integer before it reaches `sharp()` —
+    fractional/NaN coordinates need an explicit check, not an assumption the caller already
+    validated. When code accepts a value from a model output, a detector, or any producer you
+    don't control, name the actual invariant (word-boundary, finite, integer, non-empty) and
+    check it explicitly — don't let the type system's silence stand in for a real check.
+
 ## Log
 
 *Append dated entries as the factory learns. One line each, with the ticket that taught it.*

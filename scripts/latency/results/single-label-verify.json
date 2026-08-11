@@ -1,0 +1,221 @@
+{
+  "ticket": "TRO-471 / LH-031",
+  "measuredAt": "2026-08-11T17:45:48.353Z",
+  "model": "claude-haiku-4-5",
+  "goldenSetCase": {
+    "caseId": "case-01-clean-match-spirits",
+    "category": "clean-match",
+    "beverageType": "spirits",
+    "imagePath": "golden-set/images/case-01-clean-match-spirits.jpg"
+  },
+  "pipelineScope": "Preprocess (sharp) -> Haiku extraction (claude-haiku-4-5, real API call) -> deterministic Validation Router -> DB writes, via handleVerifyRequest in-process (not a real HTTP round-trip). No OCR/warning-subsystem comparator (LH-020 not merged -- warningResult is always null) and no Sonnet resolver (LH-014 not merged) -- every run below is the fast path only; Sonnet never runs on the happy path (TH-R19).",
+  "machine": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpuModel": "Apple M4 Pro",
+    "cpuCount": 14,
+    "nodeVersion": "v23.2.0"
+  },
+  "requestedRuns": 20,
+  "successfulRuns": 20,
+  "failedRuns": 0,
+  "verdictCounts": {
+    "REVIEW": 20
+  },
+  "summaryMs": {
+    "count": 20,
+    "min": 3459,
+    "max": 5277,
+    "mean": 4252,
+    "p50": 4232,
+    "p95": 4763
+  },
+  "budget": {
+    "p50TargetMs": 5000,
+    "source": "TH-R2 / PRD §3.8: ~5s p50 wall-clock, single-label verify, realistic image.",
+    "internalFastPathP50TargetMs": 3000,
+    "internalFastPathSource": "PRD §3.8 stage table: 'Fast path total (~85-90% of labels): ~3s p50, <=5s p95' -- the internal engineering sub-target the 5s acceptance bar leaves headroom against, not the TH-R2 acceptance figure itself."
+  },
+  "runs": [
+    {
+      "index": 1,
+      "durationMs": 4757,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 2
+    },
+    {
+      "index": 2,
+      "durationMs": 4074,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 3
+    },
+    {
+      "index": 3,
+      "durationMs": 4356,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 4
+    },
+    {
+      "index": 4,
+      "durationMs": 3571,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 5
+    },
+    {
+      "index": 5,
+      "durationMs": 4143,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 6
+    },
+    {
+      "index": 6,
+      "durationMs": 4006,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 7
+    },
+    {
+      "index": 7,
+      "durationMs": 5277,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 8
+    },
+    {
+      "index": 8,
+      "durationMs": 4535,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 9
+    },
+    {
+      "index": 9,
+      "durationMs": 4382,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 10
+    },
+    {
+      "index": 10,
+      "durationMs": 4763,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 11
+    },
+    {
+      "index": 11,
+      "durationMs": 4205,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 12
+    },
+    {
+      "index": 12,
+      "durationMs": 4232,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 13
+    },
+    {
+      "index": 13,
+      "durationMs": 4700,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 14
+    },
+    {
+      "index": 14,
+      "durationMs": 4082,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 15
+    },
+    {
+      "index": 15,
+      "durationMs": 4248,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 16
+    },
+    {
+      "index": 16,
+      "durationMs": 4254,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 17
+    },
+    {
+      "index": 17,
+      "durationMs": 3533,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 18
+    },
+    {
+      "index": 18,
+      "durationMs": 3991,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 19
+    },
+    {
+      "index": 19,
+      "durationMs": 4477,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 20
+    },
+    {
+      "index": 20,
+      "durationMs": 3459,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 21
+    }
+  ]
+}

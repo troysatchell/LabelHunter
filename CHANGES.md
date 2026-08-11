@@ -4,6 +4,106 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-471 — LH-031: Latency harness (2026-08-11)
+
+**What changed.** A latency harness for the single-label verify flow (TH-R2, PRD §3.8, §6).
+
+- `scripts/latency/percentile.ts` — pure percentile math: `percentile(valuesMs, p)` (nearest-
+  rank method: sort ascending, `rank = ceil(p/100 * n)`) and `summarizeLatencies(valuesMs)`
+  (count/min/max/mean/p50/p95 in one pass). No clock, no network, no I/O. Written before
+  `measure.ts` — TDD, PRD §6.
+- `scripts/latency/percentile.test.ts` — 12 unit tests against synthetic millisecond arrays:
+  known nearest-rank values on 10- and 20-sample arrays, empty-array and out-of-range-`p`
+  guards (`RangeError`, never a silent `NaN`), shuffled-input order-independence, no mutation
+  of the input array. Runs inside `pnpm test` — the `scripts/**/*.test.ts` glob already
+  covers it (`vitest.config.ts`). No live call, no real money.
+- `scripts/latency/measure.ts` — the harness itself. Run: `pnpm latency:check` (optionally
+  `pnpm latency:check --runs=20 --case=<caseId>`). **Costs real money.** Each run makes one
+  real, live `claude-haiku-4-5` call. It never mocks the call — TH-R2 exists to produce an
+  honest number, and a mocked client would answer a different question. It calls
+  `handleVerifyRequest`, the exact function `route.ts`'s `POST` calls. It passes a real
+  `Request` through the real preprocessing pipeline, the real extractor, and the real
+  Validation Router, and it times wall-clock from that request to the rendered response body.
+  It deletes every application row it creates afterward (cascades to that row's label image,
+  verification, field results, and review-queue row). Uploaded images land in a scratch temp
+  directory, never the real `var/uploads/`. A run that throws, or that gets a non-200 status,
+  stays in the log with its own duration, but it does not count toward p50/p95 — a failure is
+  neither a verdict nor a flag, so it is not a latency sample for TH-R2's clock.
+- `scripts/latency/results/single-label-verify.json` — the committed measurement (below). The
+  next `pnpm latency:check` run overwrites it. The filename stays stable on purpose: a later
+  ticket (a stats page) can read it without knowing today's date. The file's own `measuredAt`
+  field carries the date instead.
+- `package.json` — added the `latency:check` script, matching `factory/config.yaml`'s
+  planned `commands.latencyCheck` name.
+
+**The measured numbers (observed, not derived, not fabricated).** 20 runs, case
+`case-01-clean-match-spirits` (the golden set's own "TH-R11 reference example": a clean
+spirits label, every field matching, no glare/rotation/degradation — the realistic image PRD
+§3.8 budgets the fast path against). All 20 succeeded (0 failed).
+
+| Stat | Value |
+|---|---|
+| p50 | **4232 ms** |
+| p95 | **4763 ms** |
+| mean | 4252 ms |
+| min | 3459 ms |
+| max | 5277 ms |
+
+Machine: Apple M4 Pro, macOS (darwin/arm64), Node v23.2.0, local development machine — not
+Render's deployed infrastructure, and not the same network path a real evaluator's browser
+would use. Model: `claude-haiku-4-5`. Ran sequentially, one call at a time, same local network,
+2026-08-11 afternoon.
+
+**Reading the number against the two PRD targets.** TH-R2's own acceptance bar is "about 5
+seconds," PRD §3.8's ~5s p50. This measurement meets it: 4232 ms p50 is under 5000 ms. PRD
+§3.8's stage table also names a more optimistic internal sub-target: "~3s p50 · ≤5s p95" for
+the fast path. The measured p50 runs about 1.2s over that internal figure. The measured p95
+(4763 ms) still clears the ≤5s p95 ceiling. One run of 20 — the max, 5277 ms — landed just
+past the literal 5-second mark. That is expected at a 95th-percentile reading on 20 samples:
+by definition, up to 1 in 20 sits above p95. It is not evidence of a systemic miss. This gap
+most likely comes from this machine and network running slower than Render will. It is not
+evidence of a broken pipeline. This entry reports it as an observed fact, not tuned away, per
+CLAUDE.md's "never fabricate a number."
+
+**Every run returned `REVIEW` / `LOW_MODEL_CONFIDENCE` — expected, not a bug.** This is not a
+Haiku confidence problem on the label's other four fields. The cause is
+`resolveGovernmentWarningField`'s defensive branch (`src/server/router/field-resolution.ts`,
+the `!input.warningResult` case). The warning subsystem (LH-020) has not merged. `route.ts`
+passes `warningResult: null` on every call — its own file comment says so — and this label
+carries a government warning. The router has no dedicated "warning subsystem not built yet"
+reason of its own, so the defensive branch reuses `LOW_MODEL_CONFIDENCE` instead of fabricating
+a match it cannot check. This verdict costs no extra wall-clock time. It is a same-request,
+synchronous answer. Sonnet never runs: LH-014's resolver has not merged either, so this route
+never calls Sonnet at all, escalated or not (TH-R19 — the cascade is the architecture).
+
+**Batch throughput: not measured, blocked on LH-041/LH-CP3.** The job queue and worker pool
+that would actually run a batch (LH-041) do not exist yet. `src/server/resolver/` is still an
+empty `.gitkeep`, and CP-3 is not acknowledged. PRD §3.8 is explicit that batch is
+throughput-bound, not latency-bound. A number extrapolated from the single-label figure above
+would not be a measurement. It would be a guess dressed as one. Deferred to LH-041.
+
+**Approximate real API spend.** 21 real Haiku calls total from this ticket's own work (1
+plumbing smoke-test run + the 20-run measurement). PRD §4's own estimate is ~$0.005/label for
+the extractor — about $0.10, against the $25 build+eval spend cap.
+
+**How to run it.** `source .factory-env` (or otherwise set `ANTHROPIC_API_KEY` and
+`DATABASE_URL`), then `pnpm latency:check`. Defaults to 20 runs against
+`case-01-clean-match-spirits`; override with `--runs=<n>` and `--case=<caseId>`. `pnpm test`
+runs the math unit tests (`percentile.test.ts`) — free, no live call.
+
+**What this ticket could not verify.**
+
+1. The deployed Render environment's own latency — this ran on a local development machine.
+2. Batch throughput (see above).
+3. The escalation path's own latency contribution. No run in this measurement hit Sonnet: LH-014
+   is not merged, so there is no live path to it from this route yet. PRD §3.8 already scopes
+   that time as async and off the 5-second clock, but this harness has nothing live to time
+   there either way.
+
+**Rollback.** `git revert` this commit, or delete `scripts/latency/` and the `latency:check`
+line in `package.json`. No product code path depends on this harness. Nothing else imports
+from `scripts/latency/`.
+
 ## TRO-497 — PR review round 4: local CodeRabbit pass, 4 fixed, 1 dismissed (2026-08-11)
 
 **What changed.** A fresh local CodeRabbit pass posted 5 findings against the round-3 fix

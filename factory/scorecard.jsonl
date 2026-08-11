@@ -9,3 +9,4 @@
 {"ticket":"TRO-461","attempt":2,"verdict":"pass","failedGates":[],"headSha":"47ae873","ts":"2026-08-11T00:02:00Z","note":"orchestrator authoritative run, post-fix, cr:crFindings=2 crFixNow=0 crNewTickets=1 crDismissed=1"}
 {"ticket":"TRO-462","attempt":1,"verdict":"pass","failedGates":[],"headSha":"164535f","ts":"2026-08-11T01:40:00Z","note":"orchestrator run 1, review capture errored (transient CLI mv failure, retried)"}
 {"ticket":"TRO-462","attempt":2,"verdict":"pass","failedGates":[],"headSha":"164535f","ts":"2026-08-11T01:42:00Z","note":"orchestrator run 2, review ok, cr:crFindings=7 crFixNow=7"}
+{"ticket":"TRO-462","attempt":3,"verdict":"pass","failedGates":[],"headSha":"46237db","ts":"2026-08-11T02:20:00Z","note":"orchestrator triage-round pass, cr:crFindings=5 crFixNow=2 crNewTickets=3(TRO-504) — merged PR #7"}

@@ -5,7 +5,7 @@
  * end-to-end by `pnpm golden:build` itself and by render.test.ts /
  * degrade.test.ts; this file covers only what's new here.
  */
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";

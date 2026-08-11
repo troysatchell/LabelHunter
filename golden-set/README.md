@@ -28,16 +28,38 @@ The pipeline is the render-first hybrid design doc §2 lays out:
 - **`scripts/golden/build.ts`** — orchestrates render → degrade for every case, and writes
   the committed JPEG at its manifest path. Run it with `pnpm golden:build`.
 
-**Still not done:** design doc §5 describes about 5 fully `ai-generated` "wild" labels.
-LH-005 owns that work. LH-005 makes the Gemini API call and gets the human `verified: true`
-sign-off. No case in this manifest has `provenance: "ai-generated"` yet. When LH-005 adds
-one, its image starts out absent — the same way every case here started before this ticket.
-LH-005 must land the image and set `verified: true` in the same manifest change. The loader
-already rejects a `verified: false` `ai-generated` case at load time. But the loader checks
-only the schema shape, not whether the file actually exists. `scripts/golden/images.test.ts`
-checks that second part. It starts failing the moment an `ai-generated` case claims
-`verified: true` with no matching file.
-`scripts/golden/verify.ts` (LH-006: the consistency and coverage CI gate) is also still open.
+**Still not done — `ai-generated` wild labels.** design doc §5 describes about 5 fully
+`ai-generated` "wild" labels (text included). No case in this manifest has `provenance:
+"ai-generated"` yet. When a future ticket adds one, its image starts out absent — the same way
+every case here started before LH-004. That ticket must land the image and set `verified: true`
+in the same manifest change. The loader already rejects a `verified: false` `ai-generated` case
+at load time, but only checks the schema shape, not whether the file actually exists —
+`scripts/golden/images.test.ts` checks that part.
+
+**Still not done — the realistic-corpus track.** A newer design,
+`docs/superpowers/specs/2026-08-11-realistic-corpus-gemini-design.md`, supersedes the rest of the
+original §5 scope: Gemini generates realistic bottle photographs (steady / motion-blur /
+camera-shake) from real reference photos, and the renderer's exact-text label is composited onto
+them — no warning-text transcription risk, unlike `ai-generated`. The tooling is built
+(`scripts/golden/{imagenPrompt,blankRegionDetector,compositeBackdrop,imagen}.ts`) and tested
+against synthetic fixtures, but `assets/golden/references/` is still empty — no case in this
+manifest has `provenance: "rendered+ai-backdrop"` yet. To add one once real bottle photos exist:
+
+1. Add a bottle reference JSON + photo under `assets/golden/references/` (schema:
+   `src/lib/golden-set/bottleReference.ts`).
+2. Run `pnpm golden:imagen` — it writes a backdrop PNG and a `.meta.json` sidecar (detected
+   `labelPlacement` + `generationMetadata`) to `golden-set/backdrops/` for every
+   `(scene, cameraCondition)` combination. It never edits `manifest.json`.
+3. Hand-author the case's manifest entry (ground truth, category, vectors — same as every other
+   case), folding in the sidecar's `referenceBottle`/`scene`/`cameraCondition`/`labelPlacement`/
+   `generationMetadata`. Set `verified: true` only after confirming the composited label is
+   legible and correctly placed (not re-transcribing warning text — the renderer already
+   guarantees that).
+4. Run `pnpm golden:build` — it composites the label onto the committed backdrop deterministically,
+   no network call.
+
+`scripts/golden/verify.ts` (LH-006, not yet built) will eventually check this track's consistency
+too; until then, the loader (`src/lib/golden-set/loader.ts`) already enforces the schema shape.
 
 Every case's `verified` field stays `false`, even though its image is now real. `verified`
 records a **human** sign-off (design doc §3). That is CP-2's review, not this ticket's.

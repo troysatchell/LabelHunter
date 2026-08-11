@@ -10,10 +10,13 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
 - `scripts/latency/percentile.ts` — pure percentile math. `percentile(valuesMs, p)` uses the
   nearest-rank method: sort ascending, then `rank = ceil(p/100 * n)`. `summarizeLatencies
-  (valuesMs)` returns count/min/max/mean/p50/p95 from one function call — a reduce for the
-  sum, separate min/max scans, and two calls to `percentile` (each sorts its own copy of the
-  input). Fine at this harness's sample sizes (15-50); not a single-pass algorithm. Neither
-  function touches a clock, a network, or disk. Written before `measure.ts`, TDD-style (PRD §6).
+  (valuesMs)` returns count/min/max/mean/p50/p95 from one function call. Internally that call
+  does a reduce for the sum, separate min/max scans, and two calls to `percentile` — each of
+  those sorts its own copy of the input. That is fine at this harness's sample sizes (15-50).
+  It is not a single-pass algorithm. Both functions reject a `NaN` or `Infinity` entry with a
+  `RangeError` instead of sorting it in or silently writing `null` into the committed report.
+  Neither function touches a clock, a network, or disk. Written before `measure.ts`,
+  TDD-style (PRD §6).
 - `scripts/latency/percentile.test.ts` — 12 unit tests against synthetic millisecond arrays.
   Covers known nearest-rank values on 10- and 20-sample arrays. Covers the empty-array and
   out-of-range-`p` guards: both throw `RangeError`, never return a silent `NaN`. Covers
@@ -22,10 +25,10 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
   it. No live call, no real money.
 - `scripts/latency/args.ts` — pure CLI argument parsing, split out from `measure.ts` so a test
   can import it without triggering a real API call. `parseArgs` reads `--runs=<n>` and
-  `--case=<caseId>`, defaulting to 20 runs against `case-01-clean-match-spirits`. It enforces
-  a hard `MAX_RUNS` ceiling of 50: every run spends real money on one live Haiku call, so a
-  typo like `--runs=2000` must fail loudly, not spend real API money by accident. Raising the
-  cap takes a deliberate code edit, not a CLI flag.
+  `--case=<caseId>`, defaulting to 20 runs against `case-01-clean-match-spirits`. It also
+  enforces a hard `MAX_RUNS` ceiling of 50. Every run spends real money on one live Haiku
+  call. A typo like `--runs=2000` must fail loudly instead of spending real API money by
+  accident. Raising the cap takes a deliberate code edit, not a CLI flag.
 - `scripts/latency/args.test.ts` — 11 unit tests: defaults, each flag alone and both together,
   the literal `--` token pnpm forwards (`scripts/run-tests.cjs` works around the same quirk
   for `pnpm test`), an unrecognized argument, a non-integer or zero `--runs`, and the
@@ -59,11 +62,11 @@ existed yet for any pass to review.
   clause sentences throughout (no fact, command, or number changed).
 - `measure.ts`'s `--runs` had no upper bound, so a typo could spend real API money at scale —
   fixed with the `MAX_RUNS` cap in `args.ts`, with its own regression test.
-- This entry's own claim that `summarizeLatencies` runs "in one pass" was not accurate — it
-  reduces once for the sum, scans twice more for min/max, and calls `percentile` twice (each
-  of which sorts its own copy of the input). Fixed the wording here and in
-  `percentile.test.ts`'s describe title; the sort-based approach is still correct and fast
-  enough at 15-50 samples, just not single-pass.
+- This entry's own claim that `summarizeLatencies` runs "in one pass" was not accurate. It
+  reduces once for the sum. It scans twice more for min/max. It calls `percentile` twice, and
+  each of those sorts its own copy of the input. Fixed the wording here and in
+  `percentile.test.ts`'s describe title. The sort-based approach is still correct and fast
+  enough at 15-50 samples — just not single-pass.
 - This entry's claim that the ~1.2s gap against PRD §3.8's internal sub-target "most likely"
   came from this machine or network running slower than Render was unsupported speculation —
   this harness never measured Render at all. Fixed: the cause is reported as not established.
@@ -135,14 +138,18 @@ passes `warningResult: null` on every call — its own file comment says so — 
 carries a government warning. The router has no dedicated "warning subsystem not built yet"
 reason of its own, so the defensive branch reuses `LOW_MODEL_CONFIDENCE` instead of fabricating
 a match it cannot check. This verdict costs no extra wall-clock time. It is a same-request,
-synchronous answer. Sonnet never runs: LH-014's resolver has not merged either, so this route
-never calls Sonnet at all, escalated or not (TH-R19 — the cascade is the architecture).
+synchronous answer. Sonnet never runs from this route, escalated or not (TH-R19 — the
+cascade is the architecture). **Updated after merging main (2026-08-11, later the same day):**
+LH-014's resolver (`src/server/resolver/`) has since merged to `main`. That does not change
+this measurement. `route.ts` is byte-identical before and after that merge — confirmed with
+`git diff`, not assumed — so this route still never calls the resolver inline. The resolver
+runs off the `review_queue` table, on its own schedule, not inside this request.
 
 **Batch throughput: not measured, blocked on LH-041/LH-CP3.** The job queue and worker pool
-that would actually run a batch (LH-041) do not exist yet. `src/server/resolver/` is still an
-empty `.gitkeep`, and CP-3 is not acknowledged. PRD §3.8 is explicit that batch is
-throughput-bound, not latency-bound. A number extrapolated from the single-label figure above
-would not be a measurement. It would be a guess dressed as one. Deferred to LH-041.
+that would actually run a batch (LH-041) do not exist yet. `src/worker/` is still an empty
+`.gitkeep`, and CP-3 is not acknowledged. PRD §3.8 is explicit that batch is throughput-bound,
+not latency-bound. A number extrapolated from the single-label figure above would not be a
+measurement. It would be a guess dressed as one. Deferred to LH-041.
 
 **Approximate real API spend.** 23 real Haiku calls total from this ticket's own work: 3
 plumbing smoke-test runs (one before the 20-run measurement, one after the `args.ts` refactor,
@@ -167,14 +174,66 @@ database, but the rest of `pnpm test` does.
 
 1. The deployed Render environment's own latency — this ran on a local development machine.
 2. Batch throughput (see above).
-3. The escalation path's own latency contribution. No run in this measurement hit Sonnet: LH-014
-   is not merged, so there is no live path to it from this route yet. PRD §3.8 already scopes
-   that time as async and off the 5-second clock, but this harness has nothing live to time
-   there either way.
+3. The escalation path's own latency contribution. No run in this measurement hit Sonnet.
+   `route.ts` has no live path to the resolver either way — true when this measurement ran,
+   and still true after merging main (LH-014 has since merged, but `route.ts` did not
+   change). PRD §3.8 already scopes that time as async and off the 5-second clock, but this
+   harness has nothing live to time there.
 
 **Rollback.** `git revert` this commit, or delete `scripts/latency/` and the `latency:check`
 line in `package.json`. No product code path depends on this harness. Nothing else imports
 from `scripts/latency/`.
+
+## TRO-471 — PR #13 review round 1: 3 CodeRabbit findings, 3 fixed, 0 dismissed (2026-08-11)
+
+**What changed.** GitHub's CodeRabbit posted a first review round on PR #13, against commit
+`8481b63`. This triage checked each finding against the current code, not against the
+suggested diff alone. All three named a real defect.
+
+- **CHANGES.md — several passages combined implementation details, rationale, limits, and
+  measurements in one sentence.** The `percentile.ts` bullet was the named example. Split into
+  single-fact sentences (see that bullet above, and the two triage bullets below it). No fact,
+  count, or number changed.
+- **`scripts/latency/percentile.ts` — `percentile` and `summarizeLatencies` accepted a `NaN`
+  or `Infinity` entry.** `NaN` sorts unpredictably: `Array.prototype.sort`'s comparator itself
+  returns `NaN` for a `NaN` operand, and the spec treats that as "equal," so the entry does
+  not settle to either end of the sort. `Infinity` sorts fine but `JSON.stringify` writes it
+  as `null` in the committed report — a bad duration would silently disappear rather than
+  fail loudly. Fixed: both functions now reject any non-finite entry with a `RangeError`,
+  checked before any sort, min/max, or sum runs. `percentile.test.ts` adds direct cases for
+  `percentile` and `summarizeLatencies`, both for `NaN` and for `Infinity`. Confirmed red
+  first — the three new assertions failed with "expected function to throw an error, but it
+  didn't" before the guard existed.
+- **`scripts/latency/measure.ts` — a scratch-directory cleanup failure could lose the whole
+  measurement.** The cleanup `finally` block ran `rm(scratchDir, ...)` then `pool.end()`. A
+  prior fix (this ticket's second local round) nested those two calls so `pool.end()` always
+  runs even if `rm` throws. That fix did not go far enough: `rm`'s error still propagated out
+  of the whole `finally` block, which propagated out of `main()` itself, skipping every line
+  after it — including the code that builds and writes the JSON report. A rare filesystem
+  error during cleanup would have silently discarded every already-completed, already-paid-for
+  run's results. Fixed: extracted `scripts/latency/cleanup.ts`'s `cleanupScratchDirAndPool`,
+  which catches an `rm` failure and returns it as `scratchDirCleanupError` instead of
+  re-throwing it. `main()` always reaches its report-writing code now, whether or not cleanup
+  succeeded. The report gains a `scratchDirCleanupError` field (`null` on a clean run), and the
+  exit code is non-zero when it is set — same "still writes a valid report, but flags
+  follow-up" treatment `cleanupFailures` already gets. `cleanup.test.ts` adds 5 tests, using
+  fake `removeScratchDir`/`closePool` closures — no real filesystem or database call. Confirmed
+  red first: temporarily removed the `catch` block, watched the "never throws" and
+  "still closes the pool" tests fail with the raw rejection instead of a normal assertion
+  failure, then restored the fix and confirmed all 5 pass.
+
+**Ledger.** All three findings recorded in `factory/review-findings.jsonl`
+(`source: "pr"`, `pr: "13"`).
+
+**How to run it.** `pnpm test` covers all three fixes (`percentile.test.ts`,
+`cleanup.test.ts`) — no live call, no real money. `pnpm latency:check --runs=1` smoke-tests
+the wired-in `cleanup.ts` end to end (one real API call); the committed 20-run
+`results/single-label-verify.json` is unaffected — restored from git after each smoke test in
+this round, same as prior rounds.
+
+**Rollback.** `git revert` this commit. `scripts/latency/cleanup.ts` and `cleanup.test.ts` are
+new files with no other caller; deleting them and reverting `measure.ts`'s import and cleanup
+block restores the prior (buggier) behavior.
 
 ## TRO-464 — PR #10 review round 3: 3 CodeRabbit comments, 2 fixed, 1 dismissed (2026-08-11)
 

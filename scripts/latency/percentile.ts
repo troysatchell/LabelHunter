@@ -37,6 +37,19 @@ export function percentile(valuesMs: readonly number[], p: number): number {
   if (!Number.isFinite(p) || p < 0 || p > 100) {
     throw new RangeError(`percentile: p must be between 0 and 100, got ${p}`);
   }
+  const badIndex = valuesMs.findIndex((v) => !Number.isFinite(v));
+  if (badIndex !== -1) {
+    // `NaN` sorts unpredictably (the comparator's `a - b` is itself `NaN`,
+    // which `Array.prototype.sort` treats as "equal" — it does not settle
+    // to either end), so a NaN entry can silently corrupt which value ends
+    // up at the percentile's rank. `Infinity` sorts fine but would make
+    // `JSON.stringify` write `null` for it in the committed report (a
+    // finite-looking budget field silently turned into no value at all).
+    // Reject both instead of trusting every element is a real duration.
+    throw new RangeError(
+      `percentile: valuesMs must contain only finite numbers — index ${badIndex} is ${valuesMs[badIndex]}`,
+    );
+  }
   const sorted = [...valuesMs].sort((a, b) => a - b);
   const rank = Math.ceil((p / 100) * sorted.length);
   const index = Math.min(Math.max(rank, 1), sorted.length) - 1;
@@ -46,12 +59,22 @@ export function percentile(valuesMs: readonly number[], p: number): number {
 /**
  * Summarizes one batch of millisecond durations: sample count, min, max,
  * mean (rounded to the nearest ms), p50, and p95. Throws `RangeError` on an
- * empty array (via `percentile`) — the same "never fabricate a number"
- * discipline as the rest of this ticket.
+ * empty array or a non-finite entry — the same "never fabricate a number"
+ * discipline as the rest of this ticket. Validated up front, before `min`/
+ * `max`/`mean` are computed — `percentile`'s own p50/p95 calls below would
+ * eventually catch a bad entry too, but only after `Math.min`/`Math.max`/
+ * `reduce` had already silently produced a `NaN` mean from it. Fail fast
+ * instead of fail eventually.
  */
 export function summarizeLatencies(valuesMs: readonly number[]): LatencySummary {
   if (valuesMs.length === 0) {
     throw new RangeError("summarizeLatencies: valuesMs is empty — no samples to summarize");
+  }
+  const badIndex = valuesMs.findIndex((v) => !Number.isFinite(v));
+  if (badIndex !== -1) {
+    throw new RangeError(
+      `summarizeLatencies: valuesMs must contain only finite numbers — index ${badIndex} is ${valuesMs[badIndex]}`,
+    );
   }
   const sum = valuesMs.reduce((total, v) => total + v, 0);
   return {

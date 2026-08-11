@@ -69,6 +69,7 @@ import { preprocessImage } from "../../src/server/preprocessing";
 import { productionComparators } from "../../src/server/comparators";
 import { saveLabelImage } from "../../src/server/storage/local-file-storage";
 import { parseArgs } from "./args";
+import { cleanupScratchDirAndPool } from "./cleanup";
 import { summarizeLatencies, type LatencySummary } from "./percentile";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -245,6 +246,10 @@ interface HarnessReport {
    * latency numbers above are wrong — it means housekeeping left rows
    * behind in the worktree's own disposable database. */
   cleanupFailures: CleanupFailure[];
+  /** `null` on a clean removal of the scratch image directory. The error
+   * message on a failure — same "housekeeping, not a measurement problem"
+   * meaning as `cleanupFailures`. */
+  scratchDirCleanupError: string | null;
   runs: RunResult[];
 }
 
@@ -287,6 +292,7 @@ async function main(): Promise<void> {
 
   const runResults: RunResult[] = [];
   const cleanupFailures: CleanupFailure[] = [];
+  let scratchDirCleanupError: string | null = null;
   try {
     for (let i = 1; i <= runs; i++) {
       const result = await runOnce(i, imageBytes, imagePath, mediaType, caseSpec, deps);
@@ -307,14 +313,19 @@ async function main(): Promise<void> {
       }
     }
   } finally {
-    // Nested finally: pool.end() must run even if rm() itself throws (rare —
-    // `force: true` already suppresses a missing-path error, but not e.g. a
-    // permissions error). An open pool keeps the Node event loop alive, so a
-    // leaked one would hang this script instead of exiting.
-    try {
-      await rm(scratchDir, { recursive: true, force: true });
-    } finally {
-      await pool.end();
+    // `cleanupScratchDirAndPool` never throws (see cleanup.ts) — a failed
+    // `rm` is captured into `scratchDirCleanupError`, not re-thrown, so this
+    // `finally` block always completes normally and `main` always reaches
+    // the report-writing code below. An earlier version let `rm`'s error
+    // propagate past this whole function, silently discarding every
+    // already-completed, already-paid-for run's results (a real PR review
+    // finding, not a hypothetical).
+    ({ scratchDirCleanupError } = await cleanupScratchDirAndPool(
+      () => rm(scratchDir, { recursive: true, force: true }),
+      () => pool.end(),
+    ));
+    if (scratchDirCleanupError) {
+      console.warn(`measure.ts: failed to remove scratch directory ${scratchDir}: ${scratchDirCleanupError}`);
     }
   }
 
@@ -359,6 +370,7 @@ async function main(): Promise<void> {
         "not the TH-R2 acceptance figure itself.",
     },
     cleanupFailures,
+    scratchDirCleanupError,
     runs: runResults,
   };
 
@@ -384,13 +396,19 @@ async function main(): Promise<void> {
         `The latency numbers above are still valid; this is a housekeeping failure, not a measurement one.`,
     );
   }
+  if (scratchDirCleanupError) {
+    console.warn(
+      `measure.ts: the scratch image directory could not be removed (${scratchDirCleanupError}). ` +
+        `The latency numbers above are still valid; this is a housekeeping failure, not a measurement one.`,
+    );
+  }
 
-  // Non-zero on a measurement failure (no successful run to report) OR a
-  // cleanup failure (rows left behind in the worktree's own database) — the
-  // second case still writes a fully valid report, but a caller checking
-  // the exit code should know follow-up is needed rather than trust a
-  // silent "0" that hid it.
-  if (successful.length === 0 || cleanupFailures.length > 0) {
+  // Non-zero on a measurement failure (no successful run to report) OR any
+  // cleanup failure (an application row or the scratch directory left
+  // behind) — every one of these cases still writes a fully valid report;
+  // a caller checking the exit code should know follow-up is needed rather
+  // than trust a silent "0" that hid it.
+  if (successful.length === 0 || cleanupFailures.length > 0 || scratchDirCleanupError) {
     process.exitCode = 1;
   }
 }

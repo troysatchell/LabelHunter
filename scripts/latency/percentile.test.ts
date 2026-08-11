@@ -59,6 +59,16 @@ describe("percentile — nearest-rank, PRD §3.8's p50/p95", () => {
     // rank = ceil(0.95 * 20) = 19 -> index 18 -> 1900.
     expect(percentile(samples, 95)).toBe(1900);
   });
+
+  it("rejects a NaN entry instead of sorting it in — never a silent wrong answer", () => {
+    expect(() => percentile([100, NaN, 200], 50)).toThrow(RangeError);
+    expect(() => percentile([100, NaN, 200], 50)).toThrow(/finite/);
+  });
+
+  it("rejects an Infinity entry — JSON.stringify would otherwise silently turn it into null", () => {
+    expect(() => percentile([100, Infinity, 200], 50)).toThrow(RangeError);
+    expect(() => percentile([100, -Infinity, 200], 95)).toThrow(RangeError);
+  });
 });
 
 describe("summarizeLatencies — count/min/max/mean/p50/p95 from one function call", () => {
@@ -89,5 +99,10 @@ describe("summarizeLatencies — count/min/max/mean/p50/p95 from one function ca
     const summary = summarizeLatencies([1, 2, 4]);
     // mean is 7/3 = 2.333... — rounded, not truncated or left as a repeating decimal.
     expect(summary.mean).toBe(2);
+  });
+
+  it("rejects a NaN or Infinity entry — a bad duration must fail loudly, not corrupt the report", () => {
+    expect(() => summarizeLatencies([2000, NaN, 4000])).toThrow(RangeError);
+    expect(() => summarizeLatencies([2000, Infinity, 4000])).toThrow(RangeError);
   });
 });

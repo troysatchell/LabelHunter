@@ -288,9 +288,14 @@ The already-committed 20-run report is left as it was — its `pipelineScope` te
 for the conditions under which that measurement actually ran (LH-014 had not merged yet); only
 the code that describes *future* runs needed the correction.
 
-**Ledger.** Eleven findings total recorded in `factory/review-findings.jsonl` across both PR
-and local sources — three `source: "pr"`, `pr: "13"`; eight `source: "local-cli"` across
-three follow-up rounds.
+**Ledger, whole-ticket total.** An earlier version of this note undercounted: it reported
+only this entry's own findings (11), not the whole ticket's. `factory/review-findings.jsonl`
+is the source of truth for the exact count. Run `grep -c '"ticket":"TRO-471"'
+factory/review-findings.jsonl` to see it live — `review-ledger.mjs report --since` will not
+match every row here, because the original entry's ten rows carry `ts: null`, not a date. As
+of the fix two paragraphs above this one: 21 rows for TRO-471, 3 `source: "pr"` (`pr: "13"`,
+this entry's round 1) and 18 `source: "local-cli"` (10 from the original entry's three
+rounds, 8 from this entry's three follow-up rounds).
 
 **How to run it.** `pnpm test` covers every fix in this entry (`percentile.test.ts`,
 `cleanup.test.ts`) — no live call, no real money. `pnpm latency:check --runs=1` smoke-tests

@@ -135,4 +135,42 @@ describe("listUnresolvedReviewQueue — real database", () => {
       await cleanup(newer.applicationId);
     }
   });
+
+  it("breaks a createdAt tie deterministically by id — CodeRabbit local review round 1", async () => {
+    // Not necessarily "red before this fix": with no concurrent writers, a
+    // small freshly-inserted set can happen to come back in insertion
+    // order even with no explicit tiebreaker. What this test actually
+    // proves is that the current query, with the id tiebreaker in place,
+    // is deterministic — not that the old query was ever observed to
+    // return the wrong order.
+    const sharedTime = new Date();
+    const first = await makeQueueItemFixture({ createdAt: sharedTime });
+    const second = await makeQueueItemFixture({ createdAt: sharedTime });
+    try {
+      const items = await listUnresolvedReviewQueue(db);
+      const relevantIds = items.map((row) => row.id).filter((id) => id === first.queueId || id === second.queueId);
+      expect(relevantIds).toEqual([first.queueId, second.queueId]);
+    } finally {
+      await cleanup(first.applicationId);
+      await cleanup(second.applicationId);
+    }
+  });
+
+  it("bounds the result to the given limit, keeping the oldest rows — CodeRabbit local review round 1", async () => {
+    // Anchored at the Unix epoch — guaranteed older than anything a
+    // concurrently running test file could insert (those use "now" or
+    // "60s ago"), so these two rows are always the globally oldest. That
+    // makes an exact-length assertion safe even though this suite shares
+    // one database with every other *.test.ts file.
+    const oldest = await makeQueueItemFixture({ createdAt: new Date(0) });
+    const secondOldest = await makeQueueItemFixture({ createdAt: new Date(1) });
+    try {
+      const items = await listUnresolvedReviewQueue(db, 1);
+      expect(items).toHaveLength(1);
+      expect(items[0]?.id).toBe(oldest.queueId);
+    } finally {
+      await cleanup(oldest.applicationId);
+      await cleanup(secondOldest.applicationId);
+    }
+  });
 });

@@ -3,7 +3,7 @@
  * designed error states). Pure — no React import — so it is unit tested
  * directly with a fake `fetch`, the same pattern `verify-client.ts` uses.
  */
-import { REVIEW_DISPOSITIONS, type ReviewDisposition } from "../../lib/db/enums";
+import { BEVERAGE_TYPES, LABEL_VERDICTS, REVIEW_DISPOSITIONS, REVIEW_REASONS, type ReviewDisposition } from "../../lib/db/enums";
 import {
   REVIEW_QUEUE_ERROR_KINDS,
   type RecordDispositionConflictResponse,
@@ -43,9 +43,36 @@ function isReviewQueueErrorResponse(payload: unknown): payload is ReviewQueueErr
   return typeof kind === "string" && (REVIEW_QUEUE_ERROR_KINDS as readonly string[]).includes(kind) && typeof message === "string";
 }
 
+/** True only when `item` has every `ReviewQueueListItemWire` field, with an
+ * enum field checked against its real closed set — not just "is a
+ * string". A malformed item (a schema drift between server and client, a
+ * proxy, a future API version) must never reach `ReviewQueueList.tsx` as
+ * if it were a real item; standing rule 13 applies at this boundary the
+ * same as at any other. */
+function isReviewQueueListItemWire(item: unknown): item is ReviewQueueListItemWire {
+  if (typeof item !== "object" || item === null) return false;
+  const row = item as Partial<ReviewQueueListItemWire>;
+  return (
+    typeof row.id === "number" &&
+    typeof row.verificationId === "number" &&
+    typeof row.applicationId === "number" &&
+    typeof row.reason === "string" &&
+    (REVIEW_REASONS as readonly string[]).includes(row.reason) &&
+    typeof row.reasonText === "string" &&
+    typeof row.brandName === "string" &&
+    typeof row.classType === "string" &&
+    typeof row.beverageType === "string" &&
+    (BEVERAGE_TYPES as readonly string[]).includes(row.beverageType) &&
+    typeof row.labelVerdict === "string" &&
+    (LABEL_VERDICTS as readonly string[]).includes(row.labelVerdict) &&
+    typeof row.createdAt === "string"
+  );
+}
+
 function isReviewQueueListResponse(payload: unknown): payload is ReviewQueueListResponse {
   if (typeof payload !== "object" || payload === null) return false;
-  return Array.isArray((payload as Partial<ReviewQueueListResponse>).items);
+  const items = (payload as Partial<ReviewQueueListResponse>).items;
+  return Array.isArray(items) && items.every(isReviewQueueListItemWire);
 }
 
 function isRecordDispositionResponse(payload: unknown): payload is RecordDispositionResponse {

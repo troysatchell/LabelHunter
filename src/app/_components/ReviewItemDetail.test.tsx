@@ -75,7 +75,6 @@ describe("ReviewItemDetail", () => {
               field: "brand_name",
               kind: "judged",
               disposition: "RESOLVED_MATCH",
-              needsHuman: null,
               correctedValue: "Old Tom Distillery",
               evidence: "OLD TOM DISTILLRY",
               reason: "The extractor misread one letter; the label matches the application.",

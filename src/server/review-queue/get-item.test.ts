@@ -142,6 +142,20 @@ describe("getReviewQueueItem — real database", () => {
 
       const abvRow = result.item.fields.find((f) => f.field === "ALCOHOL_CONTENT");
       expect(abvRow?.applicationValue).toBe("45%");
+
+      // This fixture inserts only BRAND_NAME and ALCOHOL_CONTENT into
+      // field_results — CLASS_TYPE has no row at all, exercising get-item.ts's
+      // defensive "no result was recorded" branch. CodeRabbit local review
+      // round 1 flagged that this branch ran on every test in this file but
+      // was never itself asserted on.
+      const classTypeRow = result.item.fields.find((f) => f.field === "CLASS_TYPE");
+      expect(classTypeRow?.fieldLabel).toBe("Class/type");
+      expect(classTypeRow?.verdict).toBe("NEEDS_REVIEW");
+      expect(classTypeRow?.labelValue).toBeNull();
+      expect(classTypeRow?.evidence).toBe("");
+      expect(classTypeRow?.applicationValue).toBe("Straight Bourbon Whiskey");
+      expect(classTypeRow?.reason).toBe("No result was recorded for this field.");
+
       // Never a bare confidence percentage anywhere (TH-R20).
       for (const row of result.item.fields) {
         expect(row.reason).not.toMatch(/\d+(\.\d+)?%/);

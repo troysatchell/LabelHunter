@@ -92,20 +92,32 @@ export interface ReviewQueueFieldDetail {
  * `get-item.ts`'s `summarizeResolverOutput`. `confidence` is intentionally
  * absent: standing rule 12 says a bare confidence number is never shown.
  */
-export interface ResolverSuggestedField {
-  field: string;
-  kind: "judged" | "correction";
-  /** Set only for a `kind: "judged"` field (`brand_name` / `class_type`) —
-   * `null` for a correction field, which carries no disposition at all
-   * (`resolver/types.ts`'s own structural rule, CP-1 §6.5). */
-  disposition: string | null;
-  /** Set only for a `kind: "correction"` field — `null` for a judged
-   * field. */
-  needsHuman: boolean | null;
-  correctedValue: string | null;
-  evidence: string;
-  reason: string;
-}
+/**
+ * A discriminated union on `kind`, not independently-optional
+ * `disposition`/`needsHuman` fields (CLAUDE.md standing rule 19 — CodeRabbit
+ * local review round 1 flagged the earlier, flat shape: `disposition` was
+ * only ever meaningful on a `"judged"` field and `needsHuman` only on a
+ * `"correction"` field, exactly the shape that rule exists to catch).
+ * Mirrors `resolver/types.ts`'s own `JudgedFieldResolution` /
+ * `CorrectionFieldResolution` split (CP-1 §6.5) at the display layer.
+ */
+export type ResolverSuggestedField =
+  | {
+      field: string;
+      kind: "judged";
+      disposition: string;
+      correctedValue: string | null;
+      evidence: string;
+      reason: string;
+    }
+  | {
+      field: string;
+      kind: "correction";
+      needsHuman: boolean;
+      correctedValue: string | null;
+      evidence: string;
+      reason: string;
+    };
 
 /** The full review/detail view for one queue item (PRD §5). */
 export interface ReviewQueueItemDetail {
@@ -119,16 +131,19 @@ export interface ReviewQueueItemDetail {
   classType: string;
   beverageType: BeverageType;
   createdAt: Date;
-  /** `null` until a human acts — the normal, expected state for every item
-   * reachable through this app's real request path today (see this
-   * ticket's report: nothing yet calls `resolveEscalatedLabel` off the
-   * queue, so `resolverOutput` is null on every live row). */
+  /** `null` until a human approves or rejects this item. Every item the
+   * list view returns is in this state, because `listUnresolvedReviewQueue`
+   * filters on `disposition IS NULL`. */
   disposition: ReviewDisposition | null;
   disposedAt: Date | null;
   /** The resolver's free-text note, when `resolver_output` is an object
    * with a string `note` property — present even on a legacy fixture shape
    * that fails the stricter structural check below. `null` when absent or
-   * when `resolver_output` itself is null (the normal case today). */
+   * when `resolver_output` itself is null. That is the normal, expected
+   * state for every item reachable through this app's real request path
+   * today: nothing yet calls `resolveEscalatedLabel` off a `review_queue`
+   * row (see this ticket's report), so `resolver_output` is null on every
+   * live row. */
   resolverNote: string | null;
   /** The resolver's structured, field-by-field suggestion, when
    * `resolver_output` matches the current resolver's shape closely enough

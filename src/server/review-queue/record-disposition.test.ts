@@ -69,17 +69,36 @@ async function cleanup(applicationId: number) {
  * `.cause` (confirmed by inspecting a real thrown error against this
  * worktree's database before writing this helper, not assumed). Asserting
  * on `.cause.constraint` is the precise, non-regex-fragile check.
+ *
+ * The "nothing threw" error is thrown AFTER the try/catch, not inside it
+ * (CodeRabbit local review round 1): the first draft threw that error
+ * inside the same `try` block guarding `await promise`, so its own catch
+ * caught its own "nothing threw" error and reported a confusing "expected
+ * undefined to be '23514'" instead of the intended message — a test that
+ * did not fail for the right reason (standing rule 6).
  */
 async function expectCheckConstraintViolation(promise: Promise<unknown>, constraintName: string): Promise<void> {
+  let resolved = false;
   try {
     await promise;
-    throw new Error(`expected a rejection carrying constraint "${constraintName}", but nothing threw`);
+    resolved = true;
   } catch (err) {
     const cause = err instanceof Error ? (err.cause as { code?: string; constraint?: string } | undefined) : undefined;
     expect(cause?.code).toBe("23514");
     expect(cause?.constraint).toBe(constraintName);
   }
+  if (resolved) {
+    throw new Error(`expected a rejection carrying constraint "${constraintName}", but nothing threw`);
+  }
 }
+
+describe("expectCheckConstraintViolation — the helper itself, not the database", () => {
+  it("reports 'nothing threw', not a confusing undefined-cause assertion, when the promise resolves", async () => {
+    await expect(expectCheckConstraintViolation(Promise.resolve("no rejection here"), "some_constraint")).rejects.toThrow(
+      'expected a rejection carrying constraint "some_constraint", but nothing threw',
+    );
+  });
+});
 
 describe("recordDisposition — real database", () => {
   it("records APPROVED and sets disposedAt together", async () => {

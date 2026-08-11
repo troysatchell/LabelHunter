@@ -33,8 +33,23 @@ import type { ReviewQueueListItem } from "./types";
  * order in one pass is not measured here — this ticket does not fabricate
  * that number. Either way this is the one query shape the index was added
  * to serve; inventing a second query shape would not be.
+ *
+ * `LIMIT` (CodeRabbit local review round 1): an unbounded read of every
+ * unresolved item does not scale as the queue grows, and nothing before
+ * this fix stopped it from trying. 100 is a generous ceiling for a
+ * prototype's realistic scale — a queue that deep would need pagination
+ * as a real feature, not a bigger constant, and this ticket does not
+ * invent pagination the PRD never asked for. A second `ORDER BY` key
+ * (`reviewQueue.id`) makes the order deterministic even when two rows
+ * share one `createdAt` — Postgres gives no ordering guarantee among rows
+ * that tie on the only sort key it is given.
  */
-export async function listUnresolvedReviewQueue(db: typeof defaultDb): Promise<ReviewQueueListItem[]> {
+const DEFAULT_LIST_LIMIT = 100;
+
+export async function listUnresolvedReviewQueue(
+  db: typeof defaultDb,
+  limit: number = DEFAULT_LIST_LIMIT,
+): Promise<ReviewQueueListItem[]> {
   const rows = await db
     .select({
       id: reviewQueue.id,
@@ -51,7 +66,8 @@ export async function listUnresolvedReviewQueue(db: typeof defaultDb): Promise<R
     .innerJoin(verifications, eq(reviewQueue.verificationId, verifications.id))
     .innerJoin(applications, eq(verifications.applicationId, applications.id))
     .where(isNull(reviewQueue.disposition))
-    .orderBy(asc(reviewQueue.createdAt));
+    .orderBy(asc(reviewQueue.createdAt), asc(reviewQueue.id))
+    .limit(limit);
 
   return rows.map((row) => ({
     id: row.id,

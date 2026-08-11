@@ -4,6 +4,55 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-476 — local CodeRabbit review round 1: 6 findings, 6 fixed (2026-08-11)
+
+**What changed.** `scripts/factory/gate.sh`'s local CodeRabbit CLI reviewed this branch
+against `main`. It reported 6 findings. This entry checked each one against the current
+code, not on trust. All 6 named a real, narrow defect. This round fixes all 6.
+
+- **`review-queue-client.ts` — the list response's `items` array was checked for shape, not
+  its contents.** `isReviewQueueListResponse` confirmed `items` was an array. It never
+  checked what was inside. A malformed entry would have reached `ReviewQueueList.tsx` as if
+  it were real. `isReviewQueueListItemWire` now checks every field of every entry, enum
+  fields included, against the real closed set — not just "is a string."
+- **`get-item.test.ts` — a defensive branch ran on every test but no test checked it.** This
+  file's fixture inserts only two of five `field_results` rows. The other three always hit
+  `get-item.ts`'s "no result was recorded" fallback. No assertion ever looked at that
+  fallback's shape. One test now checks it directly.
+- **`types.ts` — `ResolverSuggestedField` used two fields that only made sense some of the
+  time.** `disposition` was only ever set on a `"judged"` field. `needsHuman` was only ever
+  set on a `"correction"` field. CLAUDE.md's own standing rule 19 asks for a discriminated
+  union in exactly this case, not two independently-optional fields. `ResolverSuggestedField`
+  is now a proper union, keyed on `kind`.
+- **`types.ts` — one doc comment explained the wrong field.** The comment above
+  `ReviewQueueItemDetail.disposition` was really about `resolverOutput` and
+  `resolveEscalatedLabel`. That explanation now sits with `resolverNote`, the field it
+  actually describes. `disposition`'s own comment is about `disposition` only.
+- **`record-disposition.test.ts` — a test helper's own fallback error could get swallowed by
+  its own `catch` block.** `expectCheckConstraintViolation` threw its "nothing threw" error
+  inside the same `try` block that awaited the real promise. Its own `catch` then caught
+  that error and asserted on an undefined `.cause` — a confusing failure, not the intended
+  one. The fallback error now throws after the `try`/`catch`, not inside it. A new test
+  proves the helper reports the right message.
+- **`list.ts` — no limit, and no tiebreaker for two rows sharing one `createdAt`.**
+  `listUnresolvedReviewQueue` read every unresolved row with no bound. A large, real queue
+  would read all of it on every page load. Two rows created in the same instant had no
+  guaranteed order between them. `listUnresolvedReviewQueue` now takes an optional `limit`
+  (default 100) and orders by `createdAt` then `id`, so ties resolve the same way every time.
+
+**Tests.** `pnpm test -- src/server/review-queue src/app/_lib/review-queue-client.test.ts
+src/app/_components/ReviewItemDetail.test.tsx` runs 5 files and 34 cases (up from 30 before
+this round). Every new case in this round was checked against the pre-fix code by reasoning
+through the code path, not run against a deliberately-broken copy — each is explained above
+in terms of exactly what the old code did wrong.
+
+**How to run it.** `source .factory-env` first. `pnpm test -- src/server/review-queue
+src/app/_lib/review-queue-client.test.ts src/app/_components/ReviewItemDetail.test.tsx`.
+`pnpm test` for the full suite. `pnpm typecheck` and `pnpm lint` are both clean.
+
+**Rollback.** `git revert` this commit. The TRO-476 entry below stands on its own; this
+round only tightens it.
+
 ## TRO-476 — LH-050: Review queue UI (2026-08-11)
 
 **What changed.** This ticket builds the review queue (PRD §5). A person uses this screen

@@ -45,6 +45,15 @@ describe("fetchReviewQueue — designed error states", () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ nope: true }), { status: 200 }));
     await expect(fetchReviewQueue({ fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
   });
+
+  it("does not trust a 200 body whose items array contains one malformed entry — CodeRabbit local review round 1", async () => {
+    // Only the array's own shape was checked before this fix — a real item
+    // next to a malformed one (a bad enum value here) passed through
+    // whole. Every entry must now individually match ReviewQueueListItemWire.
+    const malformed = { ...SAMPLE_ITEM, reason: "NOT_A_REAL_REASON" };
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ items: [SAMPLE_ITEM, malformed] }), { status: 200 }));
+    await expect(fetchReviewQueue({ fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
+  });
 });
 
 describe("submitDisposition — the happy path", () => {

@@ -88,10 +88,10 @@ function toDisplaySuggestion(value: unknown): ResolverSuggestedField | null {
   if (typeof field !== "string" || evidence === null || reason === null) return null;
 
   if (obj.kind === "judged" && JUDGED_FIELD_VALUES.has(field) && typeof obj.disposition === "string") {
-    return { field, kind: "judged", disposition: obj.disposition, needsHuman: null, correctedValue, evidence, reason };
+    return { field, kind: "judged", disposition: obj.disposition, correctedValue, evidence, reason };
   }
   if (obj.kind === "correction" && CORRECTION_FIELD_VALUES.has(field) && typeof obj.needsHuman === "boolean") {
-    return { field, kind: "correction", disposition: null, needsHuman: obj.needsHuman, correctedValue, evidence, reason };
+    return { field, kind: "correction", needsHuman: obj.needsHuman, correctedValue, evidence, reason };
   }
   return null;
 }

@@ -66,16 +66,21 @@ The JSON is the source of truth for what to generate. It carries data only — s
 camera condition — never its own prompt phrasing. `scripts/golden/imagenPrompt.ts` is the single
 place that turns data into prose, so every bottle's prompts share one structure.
 
-`imagenPrompt.ts` expands each `scene × cameraCondition` pair into Gemini's prompt:
+`imagenPrompt.ts` expands each `scene × cameraCondition` pair into Gemini's prompt. The prompt's
+sentence order states the hierarchy explicitly — reference image gives bottle identity, scene JSON
+gives environment, camera condition gives the photographic artifact, and the blank label is a
+compositing requirement, not a style choice:
 
-> "A photorealistic photograph of {bottleDescription}, using the provided reference image as the
-> authoritative reference for the bottle's physical appearance. Preserve its silhouette,
-> proportions, glass color, closure, and overall geometry. The bottle is standing on {setting}.
-> {lighting}. {cameraCondition}. The label area is completely blank with a neutral matte cream
-> surface (#F0E9DC) — no text, logos, illustrations, typography, seals, or other graphics. The
-> blank label follows the bottle's existing label placement and perspective, and is suitable for
-> digital compositing. Shot as a realistic product photograph with natural materials, reflections,
-> shadows, and physically plausible lighting."
+> "Create a photorealistic photograph of the bottle shown in the provided reference image.
+> Preserve the bottle's silhouette, proportions, glass color, closure, and overall geometry. Place
+> the bottle on {setting}. {lighting}. {cameraCondition}.
+>
+> Keep the bottle's label area in its existing position and perspective, but make the label
+> surface completely blank and uniform matte cream (#F0E9DC). Do not generate any text, logos,
+> illustrations, typography, seals, or other graphics. The blank label must remain suitable for
+> later digital compositing.
+>
+> Realistic materials, reflections, shadows, depth of field, and physically plausible lighting."
 
 `cameraCondition` is one of three fixed clauses:
 
@@ -84,6 +89,12 @@ place that turns data into prose, so every bottle's prompts share one structure.
 | `steady` | "Tripod-steady, 1/125s shutter speed, tack-sharp image with minimal motion blur." |
 | `motion-blur` | "Handheld at approximately 1/15s, with gentle directional motion blur while the bottle silhouette and label area remain clearly recognizable." |
 | `camera-shake` | "Handheld low-light phone photograph with visible multi-directional camera shake and imperfect sharpness, while the bottle remains recognizable." |
+
+**Guardrail — keep the compiler boring.** The bottle JSON stays limited to the fields shown
+above: no per-bottle prompt overrides, no free-text prompt fragments. `imagenPrompt.ts` stays the
+single deterministic template — no LLM-generated prompt layer, no dynamic prompt rewriting, no
+per-bottle prompt customization. Add that complexity only if the pilot (§5) discovers a concrete
+failure mode a template change cannot fix; do not add it speculatively.
 
 ## 4. Generation
 
@@ -110,9 +121,20 @@ corners, and the script saves them to a sidecar JSON next to that image. Used on
 where automated detection fails.
 
 **Rollout — pilot before scale.** Generate one bottle × 2 scenes × 3 conditions (6 images) first.
-Build and test the detector against those 6. If detection is reliable, generate the rest of the
-corpus and run the same detector unattended. If detection is flaky on some images, fall back to
-manual clicking for those only — not the whole corpus.
+Build and test the detector against those 6. This is a hard gate — do not generate the remaining
+corpus until the pilot demonstrates all five of:
+
+1. The blank region is actually produced in every pilot image.
+2. It stays geometrically aligned with the bottle (not floating free of the label area).
+3. The `#F0E9DC` color is separable enough from the rest of the scene to detect reliably.
+4. The connected-component detector does not pick up unrelated cream-colored regions elsewhere
+   in the frame (background, bottle cap, table surface).
+5. The recovered perspective quad is good enough for `render.ts`'s label to warp into without
+   visible distortion.
+
+If all five hold, generate the rest of the corpus and run the same detector unattended. If
+detection is flaky on some images, fall back to manual clicking for those only — not the whole
+corpus.
 
 ## 6. Schema changes
 
@@ -127,10 +149,16 @@ manual clicking for those only — not the whole corpus.
   is lighter than for `ai-generated`: a human confirms the composited label is legible and
   correctly placed. No warning-text transcription — that text is trusted by construction from the
   renderer.
+- `generationMetadata` (new, `rendered+ai-backdrop` only): `{ model, resolution, promptVersion,
+  generatedAt }`. `promptVersion` is a string constant in `imagenPrompt.ts`, bumped whenever the
+  template text changes. This is forensic record-keeping, not a reproducibility claim — it lets
+  anyone looking at a committed image later understand why it looks the way it does (which model,
+  which template version, which bottle and scene produced it) without implying a re-run would
+  produce the same bytes. §10 already establishes that generation is not reproducible.
 
 `scripts/golden/verify.ts` (LH-006, not yet built) must additionally check: every
-`rendered+ai-backdrop` case has `referenceBottle`/`scene`/`cameraCondition` set, its referenced
-bottle JSON and reference photo exist, and it is `verified: true`.
+`rendered+ai-backdrop` case has `referenceBottle`/`scene`/`cameraCondition`/`generationMetadata`
+set, its referenced bottle JSON and reference photo exist, and it is `verified: true`.
 
 ## 7. QA gates
 

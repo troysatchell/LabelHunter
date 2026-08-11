@@ -135,6 +135,16 @@ production run (they are paid-for, not speculative); rules 10+ will be LabelHunt
     `review-ledger.mjs report` and silently drops out of the recurrence ladder. All four
     were backfilled by the orchestrator this session — check for this gap on sight in any
     ticket whose CHANGES.md names a "local CodeRabbit pass" the ledger doesn't also show.
+22. **A hardened `pg.Pool` doesn't protect a second `new Pool(...)` created somewhere else**
+    (`unhandled-error` + `resource-timeout`, 2 tickets: TRO-456, TRO-471). TRO-456 fixed
+    `src/lib/db/index.ts`'s pool: an error listener (so a dropped idle connection doesn't crash
+    the process) and a real `connectionTimeoutMillis` (so an unreachable database doesn't hang
+    forever). TRO-471's latency harness (`scripts/latency/measure.ts`) instantiated its own
+    separate `Pool` for cleanup, and both defects were back — the fix lives on one object
+    instance, not in a rule anyone reading `new Pool(` remembers to reapply. Reuse the existing
+    hardened client from `src/lib/db` wherever a database connection is needed; if a script
+    genuinely needs its own pool (short-lived, torn down per run), copy both settings, not just
+    the constructor call.
 
 ## Log
 

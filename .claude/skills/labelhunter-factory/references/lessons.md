@@ -249,3 +249,19 @@ production run (they are paid-for, not speculative); rules 10+ will be LabelHunt
   grep for). The other four have no such recorded reason for staying ungated — they are an open
   item, not a closed one. Run the report before every wave, the way the skill actually says to;
   a threshold crossed and not acted on is the same failure as never measuring it.
+- 2026-08-11 (TRO-476, PR #16 review triage) — **The gate-check backlog above is still open,
+  and one more category just crossed the line.** `resource-timeout` had a brief rule (22,
+  above) at 2 tickets (TRO-456, TRO-471); TRO-476's review round added a 3rd (two separate
+  findings: a missing timeout on both review-queue requests, then — caught on the very next
+  local CodeRabbit pass — a timeout that cleared before `response.json()` could hang). Full
+  report at this run: `correctness` (29/9), `prose-style` (26/9), `test-coverage` (22/7),
+  `docs` (12/6), `boundary-validation` (25/5), `doc-consistency` (22/5), `false-positive-review`
+  (8/3), `type-safety` (5/3), `resource-timeout` (4/3, newly crossed) — nine categories at
+  GATE CHECK, none acted on. Filed TRO-508 to build the mechanical checks rather than adding
+  an eleventh log entry that also goes unactioned — a threshold this stale is a queue, not a
+  finding, and triage time inside one ticket's review round is the wrong place to design eight
+  gate checks under time pressure. `resource-timeout` specifically recurred WITHIN this same
+  ticket's own review rounds (not just across tickets) — the same gap (timer cleared too early)
+  survived one full fix-and-review cycle before the second pass caught the part the first pass
+  missed; a grep for `new AbortController()` without a `finally`-scoped `clearTimeout` spanning
+  every `await` that follows would have caught this on the first pass.

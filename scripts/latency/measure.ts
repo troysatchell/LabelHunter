@@ -72,6 +72,7 @@ import { productionComparators } from "../../src/server/comparators";
 import { saveLabelImage } from "../../src/server/storage/local-file-storage";
 import { parseArgs } from "./args";
 import { cleanupScratchDirAndPool } from "./cleanup";
+import { computeExitCode } from "./exit-status";
 import { summarizeLatencies, type LatencySummary } from "./percentile";
 import { parseVerifySuccessBody } from "./response";
 
@@ -456,14 +457,13 @@ async function main(): Promise<void> {
     );
   }
 
-  // Non-zero on a measurement failure (no successful run to report) OR any
-  // cleanup failure (an application row, the scratch directory, or the
-  // database pool itself) — every one of these cases still writes a fully
-  // valid report; a caller checking the exit code should know follow-up is
-  // needed rather than trust a silent "0" that hid it.
-  if (successful.length === 0 || cleanupFailures.length > 0 || scratchDirCleanupError || closePoolError) {
-    process.exitCode = 1;
-  }
+  process.exitCode = computeExitCode({
+    successfulCount: successful.length,
+    failedCount: failed.length,
+    cleanupFailureCount: cleanupFailures.length,
+    scratchDirCleanupError,
+    closePoolError,
+  });
 }
 
 main().catch((err: unknown) => {

@@ -4,6 +4,79 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-463 / TRO-504 — LH-013: real field comparators (2026-08-11)
+
+**What changed.** This ticket builds the real field comparators under `src/server/comparators/`.
+They replace the router's placeholder judgment logic. They serve TH-R8 and TH-R11.
+
+- `normalize.ts` — the fuzzy-match normalizer. Six steps: Unicode NFKC, casefold, apostrophe
+  folding, diacritic stripping, whitespace collapse, punctuation drop. Apostrophe folding runs
+  before NFKC, not after. NFKC decomposes the acute accent (´) into a space and a combining
+  mark. Folding first keeps that character from disappearing before the fold rule can see it.
+  A code comment states this exception and why.
+- `similarity.ts` — normalized Levenshtein distance. It backs the brand/class fuzzy match.
+- `brand.ts` — the real `brand_name` / `class_type` comparator. TH-R8's named case: label
+  "STONE'S THROW" against application "Stone's Throw" now MATCHes, with a note. Similarity at
+  or above 0.95 MATCHes. Below 0.95, the field goes to NEEDS_REVIEW. It never returns MISMATCH.
+  A brand comparator is a judgment tool, not an exact one.
+- `abv.ts` — the real ABV grammar. It reads a percent, a proof statement, or both, in either
+  order. It checks proof against percent: 27 CFR 5.1 defines proof as twice the percent by
+  volume. It compares the label's percent against the application's declared percent.
+- `net-contents.ts` — the real net-contents grammar. It reads a value and a unit (mL, L, fl
+  oz), converts units, and compares the label's quantity against the application's.
+- `index.ts` — `productionComparators`, the one import site LH-015 (TRO-465) wires into
+  `routeLabel` in place of the router's placeholder set.
+
+**TRO-504's three deferred edge cases close here, not as patches to the code they name.**
+
+1. Combining marks did not stop `text-boundary.ts`'s evidence check from reading a combining
+   mark's position as a word boundary. An unaccented value could pass as evidence for a
+   different, accented word. `\p{M}` now joins `\p{L}\p{N}` in that check's lookaround.
+2. `text-boundary.ts`'s casefold used bare `toLowerCase()`. German ß did not fold to "ss", so
+   an all-caps label spelling and a mixed-case ß spelling of the same word did not match. Both
+   `text-boundary.ts` and the new fuzzy normalizer now fold ß (and ẞ) to "ss".
+3. The net-contents parser stopped at the first number in the text and gave up if that
+   number's unit did not match. `"90 Proof 750 mL"` returned no match instead of finding
+   `750 mL`. The real parser scans every number in the text and returns the first one a known
+   unit follows.
+
+**A regulatory VERIFY cell closes.** `required-fields.ts` marked beer's `alcohol_content` cell
+VERIFY. 27 CFR 7.65(a) states an alcohol content statement is optional on a malt beverage
+label, unless a state law prohibits or requires it. This system models the federal rule, not
+state law. The cell is now `not_required`, cited. Wine's cell stays VERIFY: 27 CFR 4.36(a)'s
+real rule is conditional on the wine's own ABV and its class/type wording. The required-field
+table has no way to express that condition without a larger schema change. The comment states
+what was verified and what still needs a larger fix.
+
+**Two numbers move from "fails safe, unverified" to "verified, and zero is correct."** TTB's
+ABV tolerance regulations (27 CFR 5.65(b) for spirits, 27 CFR 4.36(b) for wine) govern how far
+the bottled product may deviate from its own label. That is a different question from whether
+the label's printed number matches the application form's declared number, which is what this
+comparator checks. Zero tolerance is the right answer for the second question, not a stand-in
+for the first.
+
+**Wiring.** `field-resolution.ts` and `overrides.ts` import their numeric parsing from
+`../comparators/abv.ts` and `../comparators/net-contents.ts` now, not from
+`provisional-numeric.ts`. That file's docstring says LH-013 replaces its callers, not
+necessarily the file itself. Its only remaining caller is `test-support.ts`'s own placeholder
+fixtures, which belong to the already-merged LH-012 router-core ticket. The docstring is
+narrowed to say so.
+
+**A known gap, left open rather than silently fixed.** CP-1 §5.3 names three literal
+apostrophe variants to fold: the straight apostrophe, the backtick, and the acute accent. A
+label extracted by a real vision model may use a Unicode right single quotation mark (’,
+U+2019) as a stylized apostrophe instead. That character is not one of the three named
+variants, so it is not folded. `docs/checkpoints/cp1-cascade-router-prompts.md` should decide
+whether to add it; this ticket implements the rule as written, not a guess at its intent.
+
+**How to run it.** `pnpm test -- src/server/comparators src/server/router` runs the new and
+changed suites. `pnpm test` runs everything; 325 tests pass repo-wide. `pnpm typecheck` and
+`pnpm lint` are both clean.
+
+**Rollback.** `git revert` this commit. `field-resolution.ts` and `overrides.ts` would need
+their imports pointed back at `provisional-numeric.ts` by hand, since that file's callers
+changed in this same commit — a plain revert restores that automatically.
+
 ## TRO-462 — PR review round 2: orchestrator triage, 2 fixed, 3 deferred (2026-08-10)
 
 **What changed.** The orchestrator's independent gate run found 5 more CodeRabbit findings

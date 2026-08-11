@@ -17,16 +17,15 @@
  * bucket, applies only when the comparator said MATCH and confidence alone
  * forced the escalation (CP-1 §5.3: "no higher-ranked reason applied").
  */
-import type { ExtractedField } from "../extractor/types";
-import { MISMATCH_ESCALATION_CEILING, shouldEscalateField } from "./confidence";
+import { abvAsPercent, parseAbv, type ParsedAbv } from "../comparators/abv";
 import {
   convertNetContentsToMl,
-  normalizeProvisionalUnit,
-  provisionalParseAbv,
-  provisionalParseNetContents,
-  type ParsedAbv,
+  normalizeNetContentsUnit,
+  parseNetContents,
   type ParsedNetContents,
-} from "./provisional-numeric";
+} from "../comparators/net-contents";
+import type { ExtractedField } from "../extractor/types";
+import { MISMATCH_ESCALATION_CEILING, shouldEscalateField } from "./confidence";
 import type {
   ApplicationRecord,
   ComparatorFieldKey,
@@ -37,11 +36,21 @@ import type {
 } from "./types";
 
 /**
- * `tolerance[beverageType]` for the ABV self-consistency check (CP-1 §5.3).
- * **VERIFY** — TTB permits labeling tolerances that differ by beverage
- * type; this document does not encode them. Zero fails safe: nothing is
- * silently accepted before the real value is verified and cited. LH-013
- * replaces this with the cited real values.
+ * `tolerance[beverageType]` for the label-vs-application ABV check (CP-1
+ * §5.3). Verified, not merely "fails safe": zero is the CORRECT value here,
+ * for every beverage type, not a strictest-guess placeholder.
+ *
+ * TTB does publish ABV tolerances — 27 CFR 5.65(b) allows spirits actual
+ * content to differ from the LABEL's own printed statement by up to 0.3
+ * percentage points; 27 CFR 4.36(b) allows wine a similar 1-3 percentage
+ * point band depending on range. But that tolerance governs how far the
+ * BOTTLED PRODUCT may deviate from what its OWN LABEL prints — a product-QC
+ * question. This check asks something else: does the LABEL's printed number
+ * match what the APPLICANT TYPED on the application form. A correctly
+ * filed application restates the label's own number exactly; the QC
+ * tolerance has no bearing on a data-entry consistency check between two
+ * paper records. Zero tolerance is the verified answer, not a placeholder
+ * pending it (CP-1 §5.3's original VERIFY marking is closed by this note).
  */
 export const ABV_TOLERANCE_BY_BEVERAGE_TYPE: Record<ApplicationRecord["beverageType"], number> = {
   beer: 0,
@@ -77,21 +86,13 @@ const SAME_VALUE_EPSILON = 0.05;
  * in CONFLICTING ways" (emphasis CP-1's own), not "restates it at all". A
  * label reading `"45%"` with an alternate of `"45.0%"` is the same number
  * twice, not a conflict; a naive `alternates.length > 0` check would flag
- * it anyway.
+ * it anyway. `abvAsPercent` (27 CFR 5.1: proof is twice the percent) is the
+ * canonical scale both readings convert to before comparing.
  */
-/** Proof is twice the percent (27 CFR's own definition) — the canonical
- * scale both readings convert to before comparing. `null` when a reading
- * states neither number. */
-function abvAsPercent(parsed: ParsedAbv): number | null {
-  if (parsed.percent !== null) return parsed.percent;
-  if (parsed.proof !== null) return parsed.proof / 2;
-  return null;
-}
-
 function abvAlternatesConflict(parsed: ParsedAbv, alternates: readonly string[]): boolean {
   const parsedPercent = abvAsPercent(parsed);
   return alternates.some((alternate) => {
-    const alternateParsed = provisionalParseAbv(alternate);
+    const alternateParsed = parseAbv(alternate);
     if (alternateParsed.percent === null && alternateParsed.proof === null) return true; // an unparsed "second reading" is still a conflict
     const alternatePercent = abvAsPercent(alternateParsed);
     // Either side unparseable-to-percent (shouldn't happen given the guard
@@ -109,7 +110,7 @@ function abvAlternatesConflict(parsed: ParsedAbv, alternates: readonly string[])
 function netContentsAlternatesConflict(parsed: ParsedNetContents, alternates: readonly string[]): boolean {
   const parsedMl = convertNetContentsToMl(parsed);
   return alternates.some((alternate) => {
-    const alternateParsed = provisionalParseNetContents(alternate);
+    const alternateParsed = parseNetContents(alternate);
     if (!alternateParsed) return true;
     const alternateMl = convertNetContentsToMl(alternateParsed);
     const fractionDiff = parsedMl === 0 ? Infinity : Math.abs(parsedMl - alternateMl) / parsedMl;
@@ -134,7 +135,7 @@ export function checkAbvStructural(
 ): StructuralCheck {
   if (extracted.value === null) return { hit: false }; // MISSING_REQUIRED_FIELD's territory, not this one.
 
-  const parsed = provisionalParseAbv(extracted.value);
+  const parsed = parseAbv(extracted.value);
   if (parsed.percent === null && parsed.proof === null) return { hit: true };
   if (abvAlternatesConflict(parsed, extracted.alternates)) return { hit: true };
 
@@ -163,14 +164,15 @@ export function checkNetContentsStructural(
 ): StructuralCheck {
   if (extracted.value === null) return { hit: false };
 
-  const parsed = provisionalParseNetContents(extracted.value);
+  const parsed = parseNetContents(extracted.value);
   // CP-1 lists "does not parse into a number plus a unit" and "the unit is
-  // not in the accepted set" as two bullets; this stand-in parser conflates
-  // them (both return `null`) — a deliberate simplification LH-013 unwinds.
+  // not in the accepted set" as two bullets; this grammar conflates them
+  // (both return `null`) — the distinction does not change the outcome
+  // (either way, `AMBIGUOUS_NET_CONTENTS` fires), so one check answers both.
   if (!parsed) return { hit: true };
   if (netContentsAlternatesConflict(parsed, extracted.alternates)) return { hit: true };
 
-  const applicationUnit = normalizeProvisionalUnit(application.netContentsUnit);
+  const applicationUnit = normalizeNetContentsUnit(application.netContentsUnit);
   if (applicationUnit === null) return { hit: false }; // Cannot compare; do not fabricate a finding.
 
   if (parsed.unit !== applicationUnit) {

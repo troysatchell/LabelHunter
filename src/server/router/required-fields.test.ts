@@ -12,9 +12,12 @@ describe("REQUIRED_FIELD_TABLE — CP-1 §5.3's table, implemented exactly as gi
     }
   });
 
-  it("requires alcohol_content for spirits, and marks it VERIFY (not settled) for beer and wine", () => {
+  it("requires alcohol_content for spirits (27 CFR 5.65) and does not require it for beer (27 CFR 7.65(a), federal law)", () => {
     expect(REQUIRED_FIELD_TABLE.spirits.alcohol_content).toBe("required");
-    expect(REQUIRED_FIELD_TABLE.beer.alcohol_content).toBe("verify");
+    expect(REQUIRED_FIELD_TABLE.beer.alcohol_content).toBe("not_required");
+  });
+
+  it("marks wine's alcohol_content VERIFY — the real rule (27 CFR 4.36(a)) is conditional on ABV and class/type wording, which this table cannot express as a flat cell", () => {
     expect(REQUIRED_FIELD_TABLE.wine.alcohol_content).toBe("verify");
   });
 });

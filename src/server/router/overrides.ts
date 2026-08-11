@@ -12,15 +12,10 @@
  * extractor's own tests (LH-011) check its output is well-SHAPED; they do
  * not check it is well-EVIDENCED. That is this ticket's job.
  */
+import { parseAbv, type ParsedAbv } from "../comparators/abv";
+import { convertNetContentsToMl, parseNetContents, type ParsedNetContents } from "../comparators/net-contents";
 import type { ExtractedField, ExtractedGovernmentWarning } from "../extractor/types";
 import { isValidConfidence } from "./confidence";
-import {
-  convertNetContentsToMl,
-  provisionalParseAbv,
-  provisionalParseNetContents,
-  type ParsedAbv,
-  type ParsedNetContents,
-} from "./provisional-numeric";
 import { evidenceSupportsTextValue } from "./text-boundary";
 
 /** Which §4.4 check rejected a field, or `null` when none did. Kept for the
@@ -32,11 +27,12 @@ export type OverrideViolation = "evidence_missing" | "evidence_does_not_support_
  * How the §4.4 rule 2 evidence check reads a field's `value`. `"exempt"`
  * skips rule 2 entirely — used only for `beverage_type`, see the TRO-502
  * comment at its call site in `index.ts`. `"text"` is the word-boundary
- * check (`text-boundary.ts`); `"numeric_abv"` / `"numeric_net_contents"` are
- * the provisional numeric stand-ins (`provisional-numeric.ts`), each
- * falling back to the word-boundary check when the value itself does not
- * parse — a parse failure is `AMBIGUOUS_ABV` / `AMBIGUOUS_NET_CONTENTS`'s
- * job to flag (`reasons.ts`), not this override's.
+ * check (`text-boundary.ts`); `"numeric_abv"` / `"numeric_net_contents"` use
+ * the real numeric grammar (`../comparators/abv.ts`, `../comparators/net-
+ * contents.ts`), each falling back to the word-boundary check when the
+ * value itself does not parse — a parse failure is `AMBIGUOUS_ABV` /
+ * `AMBIGUOUS_NET_CONTENTS`'s job to flag (`field-resolution.ts`), not this
+ * override's.
  */
 export type EvidenceSupportKind = "text" | "numeric_abv" | "numeric_net_contents" | "exempt";
 
@@ -61,15 +57,15 @@ function numbersClose(a: number, b: number | null, epsilon = 0.01): boolean {
 }
 
 function numericEvidenceSupportsAbv(value: string, evidence: string): boolean {
-  const valueParsed: ParsedAbv = provisionalParseAbv(value);
+  const valueParsed: ParsedAbv = parseAbv(value);
   if (valueParsed.percent === null && valueParsed.proof === null) {
-    // The value itself does not parse under the provisional ABV grammar.
-    // `AMBIGUOUS_ABV` (reasons.ts) flags the parse failure on its own;
-    // this override only checks for a hallucinated value, so it falls
+    // The value itself does not parse under the ABV grammar.
+    // `AMBIGUOUS_ABV` (field-resolution.ts) flags the parse failure on its
+    // own; this override only checks for a hallucinated value, so it falls
     // back to the weaker word-boundary text check.
     return evidenceSupportsTextValue(value, evidence);
   }
-  const evidenceParsed = provisionalParseAbv(evidence);
+  const evidenceParsed = parseAbv(evidence);
   const percentSupported = valueParsed.percent === null || numbersClose(valueParsed.percent, evidenceParsed.percent);
   const proofSupported = valueParsed.proof === null || numbersClose(valueParsed.proof, evidenceParsed.proof);
   return percentSupported && proofSupported;
@@ -82,12 +78,12 @@ function numericEvidenceSupportsAbv(value: string, evidence: string): boolean {
 const NET_CONTENTS_EVIDENCE_TOLERANCE_ML = 0.5;
 
 function numericEvidenceSupportsNetContents(value: string, evidence: string): boolean {
-  const valueParsed: ParsedNetContents | null = provisionalParseNetContents(value);
+  const valueParsed: ParsedNetContents | null = parseNetContents(value);
   if (!valueParsed) {
     // Same fallback reasoning as the ABV case above.
     return evidenceSupportsTextValue(value, evidence);
   }
-  const evidenceParsed = provisionalParseNetContents(evidence);
+  const evidenceParsed = parseNetContents(evidence);
   if (!evidenceParsed) return false;
   // Convert both to mL before comparing — CP-1 §5.3 itself compares "the
   // CONVERTED values" for a cross-unit reading, not the raw numbers. A

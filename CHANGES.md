@@ -99,17 +99,17 @@ case-25 and case-26. Those are the two cases that load the Dancing Script and
 UnifrakturMaguntia `@font-face` rules. Each case renders across two independent browser
 instances. Both produced byte-identical decoded pixels, the same result as case-01.
 
-**How to run it.** `pnpm golden:build` regenerates every image from the current manifest.
-`pnpm test -- scripts/golden` runs every test file under `scripts/golden/`, none of which touch
-the database. `render.test.ts` now holds 12 tests, up from 8 before this ticket.
-`degrade.test.ts` holds 21 tests, unchanged by this ticket. All pass.
+**How to run it.** Source `.factory-env` first, per this repo's standing convention. `pnpm
+golden:build` regenerates every image from the current manifest. `pnpm test -- scripts/golden`
+runs every test file under `scripts/golden/`. `render.test.ts` now holds 12 tests, up from 8
+before this ticket. `degrade.test.ts` holds 21 tests, unchanged by this ticket. All pass.
 
 **Rollback.** `git revert` this ticket's commit(s). Reverting restores the three system-font
 stacks and removes the three `@fontsource/*` devDependencies from `package.json`. Run `pnpm
 install` and then `pnpm golden:build` again after a revert. The 29 committed images are pixel
 data, not source. They need a fresh render to match the reverted code.
 
-**Review triage.** Three local CodeRabbit rounds against this ticket's own commits, three real
+**Review triage.** Four local CodeRabbit rounds against this ticket's own commits, five real
 findings fixed, one dismissed:
 - Round 1 (major, `CHANGES.md`): the entry's font and license bullets were sentence
   fragments — no explicit subject or verb. Fixed with a full ASD-STE100 rewrite, same facts,
@@ -121,14 +121,30 @@ findings fixed, one dismissed:
 - Round 3 (major, `CHANGES.md`): repeated "this ticket" as the subject of many sentences read
   as an abstract, repetitive actor. Fixed: named the concrete actor instead — `render.ts`,
   `pnpm golden:build`, the maintainers, or TRO-505 by ticket ID.
-- Round 3 (major, `CHANGES.md`), dismissed: a finding asked the "How to run it" section to
-  document `DATABASE_URL` for `pnpm test -- scripts/golden`, citing this repo's real
-  DATABASE_URL discipline (CLAUDE.md). Checked, not assumed: ran that exact command with
-  `DATABASE_URL` (and every other secret) unset from the environment entirely. All 45 tests
-  across `render.test.ts`, `degrade.test.ts`, and `images.test.ts` passed. `vitest.setup.ts`
-  (the global setup file) touches no database. None of the three test files import a
-  database module. Adding a `DATABASE_URL` requirement to a command that provably does not
-  need one would itself be an inaccurate claim.
+- Round 4 (major, `CHANGES.md`): a repeated finding asked the "How to run it" section to show
+  `DATABASE_URL` discipline for `pnpm test -- scripts/golden`, this time asking explicitly for
+  no documented exception. Round 3 checked this command directly — with `DATABASE_URL` and
+  every other secret unset from the environment entirely, all 45 tests across
+  `render.test.ts`, `degrade.test.ts`, and `images.test.ts` passed, because none of the three
+  files or the global `vitest.setup.ts` touch a database. That check still stands and is not
+  retracted. Round 4 fixed the documentation anyway: "How to run it" now leads with sourcing
+  `.factory-env`, this repo's own standing convention (CLAUDE.md, lessons.md rule 3),
+  regardless of whether this specific command strictly needs it.
+- Round 4 (minor, `scripts/golden/render.test.ts`): the "never references a pre-TRO-505 system
+  font" test only checked `renderableCases[0]` (case-01). Case-01 never triggers the
+  script/blackletter overrides, so it could never have caught `"Brush Script MT"`
+  (`SCRIPT_FONT_STACK`'s original fallback) inside case-25's own rendered HTML specifically.
+  Fixed: the test now checks every rendered case. Confirmed red-first against the true
+  pre-TRO-505 `render.ts` (checked out from before this ticket's first commit).
+- Round 4 (major, `CHANGES.md`), dismissed: a finding asked the "What changed" opening
+  paragraph to split into more granular sub-topics (font-stack history, substitution risk,
+  design requirement, implementation change, TH-R17 impact) than its current eight short
+  sentences already do. That paragraph already gives each sentence one claim, an explicit
+  subject, and an active verb — every concrete rule in CLAUDE.md's ASD-STE100 table. Further
+  fragmentation past that point is a stylistic preference beyond what this repo's own written
+  standard requires, and a fourth rewrite of the same paragraph risks introducing a new defect
+  for undefined benefit — round 1's fix introduced round 2's finding; round 2's fix left
+  round 3's finding. This entry stops chasing paraphrase-level suggestions here.
 
 **Not done here (explicitly out of scope).** LH-006 plans a CI smoke test: render one label
 headlessly, then run `verify.ts`. TRO-505 does not build that test. TRO-505 only removes the

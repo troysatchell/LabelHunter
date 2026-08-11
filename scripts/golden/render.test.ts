@@ -149,7 +149,10 @@ describe("buildLabelHtml font embedding (TRO-505)", () => {
   });
 
   it("never references a pre-TRO-505 system font (no OS font substitution to fall back to)", () => {
-    const html = buildLabelHtml(renderableCases[0]);
+    // Checked across every case, not just case-01 — case-01 never triggers
+    // the script/blackletter overrides, so it could never have caught
+    // "Brush Script MT" (SCRIPT_FONT_STACK's old fallback) in case-25's own
+    // rendered HTML. CodeRabbit caught this narrowing on this ticket.
     const preTro505SystemFonts = [
       "Helvetica Neue",
       "Brush Script MT",
@@ -157,11 +160,14 @@ describe("buildLabelHtml font embedding (TRO-505)", () => {
       "Snell Roundhand",
       '"Blackletter"',
     ];
-    for (const systemFont of preTro505SystemFonts) {
-      expect(
-        html.includes(systemFont),
-        `must not reference pre-TRO-505 system font ${systemFont}`,
-      ).toBe(false);
+    for (const c of renderableCases) {
+      const html = buildLabelHtml(c);
+      for (const systemFont of preTro505SystemFonts) {
+        expect(
+          html.includes(systemFont),
+          `${c.caseId}: must not reference pre-TRO-505 system font ${systemFont}`,
+        ).toBe(false);
+      }
     }
   });
 

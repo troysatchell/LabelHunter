@@ -79,17 +79,27 @@ const SAME_VALUE_EPSILON = 0.05;
  * twice, not a conflict; a naive `alternates.length > 0` check would flag
  * it anyway.
  */
+/** Proof is twice the percent (27 CFR's own definition) — the canonical
+ * scale both readings convert to before comparing. `null` when a reading
+ * states neither number. */
+function abvAsPercent(parsed: ParsedAbv): number | null {
+  if (parsed.percent !== null) return parsed.percent;
+  if (parsed.proof !== null) return parsed.proof / 2;
+  return null;
+}
+
 function abvAlternatesConflict(parsed: ParsedAbv, alternates: readonly string[]): boolean {
+  const parsedPercent = abvAsPercent(parsed);
   return alternates.some((alternate) => {
     const alternateParsed = provisionalParseAbv(alternate);
     if (alternateParsed.percent === null && alternateParsed.proof === null) return true; // an unparsed "second reading" is still a conflict
-    const percentAgrees =
-      parsed.percent === null ||
-      alternateParsed.percent === null ||
-      Math.abs(parsed.percent - alternateParsed.percent) <= SAME_VALUE_EPSILON;
-    const proofAgrees =
-      parsed.proof === null || alternateParsed.proof === null || Math.abs(parsed.proof - alternateParsed.proof) <= SAME_VALUE_EPSILON;
-    return !(percentAgrees && proofAgrees);
+    const alternatePercent = abvAsPercent(alternateParsed);
+    // Either side unparseable-to-percent (shouldn't happen given the guard
+    // above, but stay conservative rather than divide by a missing value).
+    if (parsedPercent === null || alternatePercent === null) return true;
+    // "45%" vs "90 Proof" is the same value on the canonical scale — not a
+    // conflict. "45%" vs "100 Proof" (50%) genuinely disagrees.
+    return Math.abs(parsedPercent - alternatePercent) > SAME_VALUE_EPSILON;
   });
 }
 

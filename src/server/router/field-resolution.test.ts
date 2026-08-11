@@ -40,6 +40,16 @@ describe("checkAbvStructural — CP-1 §5.3 AMBIGUOUS_ABV, the named proof-arith
     expect(result.hit).toBe(false);
   });
 
+  it("does not fire when an alternate restates the same value on the other axis — 45% and 90 Proof agree", () => {
+    const result = checkAbvStructural(abvField({ value: "45%", alternates: ["90 Proof"] }), 0.9, 45, 0);
+    expect(result.hit).toBe(false);
+  });
+
+  it("fires when an alternate genuinely disagrees across axes — 45% and 100 Proof (50%) do not", () => {
+    const result = checkAbvStructural(abvField({ value: "45%", alternates: ["100 Proof"] }), 0.9, 45, 0);
+    expect(result.hit).toBe(true);
+  });
+
   it("still fires when an alternate does not parse at all — an unparsed 'second reading' is still a conflict", () => {
     const result = checkAbvStructural(abvField({ alternates: ["illegible smudge"] }), 0.9, 45, 0);
     expect(result.hit).toBe(true);

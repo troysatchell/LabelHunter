@@ -137,7 +137,17 @@ export interface PreprocessingSignal {
 }
 
 /** One row of the router's output table (CP-1 §5.5, exact columns). */
-export interface FieldResultRow {
+/**
+ * `resolvedBy` and `reviewReason` are not independent: a field is resolved
+ * by Sonnet or a human only because it was escalated in the first place, so
+ * a non-null `resolvedBy` requires the `reviewReason` that caused it — an
+ * invalid `{ resolvedBy: "sonnet", reviewReason: null }` state cannot be
+ * constructed. The unresolved branch keeps `reviewReason` optional-null:
+ * a field can carry a reason while waiting on resolution, or carry none at
+ * all when it never needed escalation. Always the second branch from this
+ * ticket — LH-014's resolver does not exist yet.
+ */
+export type FieldResultRow = {
   field: RouterFieldKey;
   verdict: FieldVerdict;
   /** What the extractor read. `null` when absent or rejected by an override. */
@@ -150,10 +160,10 @@ export interface FieldResultRow {
   confidence: number;
   /** One line of UI English (PRD §3.3, TH-R20) — never a bare confidence percentage. */
   reason: string;
-  reviewReason: ReviewReason | null;
-  /** Always `null` from this ticket — LH-014's resolver does not exist yet. */
-  resolvedBy: "sonnet" | "human" | null;
-}
+} & (
+  | { resolvedBy: "sonnet" | "human"; reviewReason: ReviewReason }
+  | { resolvedBy: null; reviewReason: ReviewReason | null }
+);
 
 /** The router's full output for one label. */
 export interface LabelRouterResult {

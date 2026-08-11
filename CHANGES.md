@@ -4,6 +4,38 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-462 — PR review round 2: orchestrator triage, 2 fixed, 3 deferred (2026-08-10)
+
+**What changed.** The orchestrator's independent gate run found 5 more CodeRabbit findings
+against the round-1 fix commit. Two were real and fixed here.
+
+- `field-resolution.ts` (major): `abvAlternatesConflict` compared a percent reading to a
+  percent alternate, and a proof reading to a proof alternate, as two separate checks. It
+  never converted across the two scales. `"45%"` against an alternate of `"100 Proof"`
+  passed as agreeing, because neither separate check ever ran — 100 Proof has no percent
+  reading to compare, and 45% has no proof reading to compare. Fixed: both readings convert
+  to a canonical percent scale first (proof is twice the percent, 27 CFR's own definition),
+  then compare. `"45%"` against `"90 Proof"` now correctly agrees. `"45%"` against
+  `"100 Proof"` (50%) now correctly conflicts.
+- `types.ts` (major): `FieldResultRow` allowed `resolvedBy: "sonnet"` with
+  `reviewReason: null` — a state that should not exist, since a field is only resolved
+  because something escalated it. Fixed: a discriminated union. The resolved branch
+  requires the reason; the unresolved branch keeps it nullable. No behavior change — every
+  construction site in this ticket already passes `resolvedBy: null`, since LH-014's
+  resolver does not exist yet.
+
+Three findings were real but deferred, filed as **TRO-504** rather than fixed here:
+combining-mark and German-ß handling in the word-boundary text match (deep Unicode edge
+cases with no golden-set coverage yet), and a provisional net-contents parser that stops
+at the first unsupported unit instead of scanning past it (the parser's own docstring
+already marks it a stand-in for LH-013's real implementation — more polish on a stand-in
+is not the right place to spend the fix).
+
+**How to run it.** `pnpm test -- src/server/router` — 11 files, 135 cases (up from 133).
+
+**Rollback.** `git revert` this commit. The two fixes are independent of round 1; nothing
+else depends on either change.
+
 ## TRO-462 — LH-012: Validation Router core (2026-08-10)
 
 **What changed.** This ticket adds the Validation Router's decision logic under

@@ -4,6 +4,59 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-466 — PR review round 1: local CodeRabbit pass, 7 fixed, 1 dismissed (2026-08-11)
+
+**What changed.** A local CodeRabbit pass against this branch posted 8 findings. Seven are
+real. This entry fixes all seven. One finding is dismissed below. This entry states the
+reason.
+
+Fixed:
+- `src/app/verify/[verificationId]/page.tsx` (a real correctness gap): the not-found
+  branches rendered a plain component. That answered HTTP 200, with "not found" wording in
+  the body. The words were honest; the status code was wrong. Fixed: call
+  `next/navigation`'s `notFound()` instead, backed by a new `not-found.tsx` in the same
+  route segment. Observed with a real `pnpm dev` run: `/verify/999999999` and
+  `/verify/not-a-number` both now answer 404, with the same plain-language message as
+  before.
+- `src/app/_components/DetailView.tsx` (minor, accessibility): the image's alt text said
+  "The uploaded label photo." A screen reader already announces the element as an image.
+  The word "photo" repeated that fact. Fixed: "The label submitted with this application."
+  It names the content, not the medium. Updated the matching test query.
+- `src/app/globals.css` (minor): `.secondary-button` had no explicit `display` rule. Fixed:
+  added `display: inline-block`. The class now works the same way inside or outside a flex
+  container.
+- `src/app/_components/DetailView.test.tsx` (trivial, test isolation): one test rendered the
+  component twice without unmounting the first tree. A later `getByText` call then searched
+  two mounted trees at once. Fixed: unmount between the two renders.
+- `src/app/_components/DetailView.test.tsx` (trivial, test honesty): a second test's own name
+  promised "never a bare confidence number." No line in that test asserted it. The claim held
+  only because that test's fixture had no number to leak. Fixed: added the same regex check
+  this codebase already uses for the identical claim elsewhere.
+- `src/app/api/label-images/[labelImageId]/route.test.ts` (trivial): added an explicit
+  `Cache-Control` assertion to the existing success-path test.
+- `src/server/verification-detail/get-verification-detail.test.ts` (trivial): expanded the
+  header comment. It now says `DATABASE_URL` must point at the worktree's own database
+  before this file runs.
+
+Dismissed:
+- `src/app/api/label-images/[labelImageId]/route.ts` (tagged major): "authenticate the
+  requester and verify ownership… using the existing application auth and ownership
+  mechanisms." No such mechanism exists anywhere in this app yet. Every route, including the
+  one that saves these same photos (`POST /api/verify`), is equally open today. Access
+  control is PRD §8 and LH-061 ("Key protection"), an Urgent ticket. LH-061 is already
+  scoped for a shared access code, per-IP and global rate limits, and its own
+  security-semantics escalation gate before merge. Bolting one-off auth onto a single GET
+  route now would leave every sibling route open. It would also preempt LH-061's real
+  design. It also falls under this factory's own stop condition for security-semantics
+  changes. Not fixed here. Flagged for LH-061 to own.
+
+**How to run it.** `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`. All four ran
+clean after every fix above, in the same worktree.
+
+**Rollback.** `git revert` this commit. The Detail view (the entry below this one) still
+works without it — this round only tightens an error state's status code, a11y wording, one
+CSS rule, and three tests.
+
 ## TRO-466 — LH-016: Detail view (2026-08-11)
 
 **What changed.** LabelHunter now has a Detail view (PRD §5). It shows the label photo next

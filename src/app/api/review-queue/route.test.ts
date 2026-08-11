@@ -21,9 +21,10 @@ describe("GET /api/review-queue", () => {
       expect(item).toBeDefined();
       expect(item?.brandName).toBe("Old Tom Distillery");
       expect(item?.reasonText.length).toBeGreaterThan(0);
-      expect(typeof item?.createdAt).toBe("string");
-      expect(() => new Date(item?.createdAt ?? "")).not.toThrow();
-      expect(Number.isNaN(new Date(item?.createdAt ?? "").getTime())).toBe(false);
+      // Canonical round-trip, not only "parseable" — matches the same rigor
+      // review-queue-client.ts's isCanonicalTimestamp requires on the client
+      // side (CodeRabbit finding, local review round 8).
+      expect(new Date(item?.createdAt ?? "").toISOString()).toBe(item?.createdAt);
     } finally {
       await cleanup(applicationId);
     }

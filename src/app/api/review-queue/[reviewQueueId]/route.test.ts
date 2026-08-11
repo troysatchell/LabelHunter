@@ -27,8 +27,10 @@ describe("PATCH /api/review-queue/:reviewQueueId", () => {
       const body = (await response.json()) as RecordDispositionResponse;
       expect(body.id).toBe(queueId);
       expect(body.disposition).toBe("APPROVED");
-      expect(typeof body.disposedAt).toBe("string");
-      expect(Number.isNaN(new Date(body.disposedAt).getTime())).toBe(false);
+      // Canonical round-trip, not only "parseable" — matches the same rigor
+      // review-queue-client.ts's isCanonicalTimestamp requires on the client
+      // side (CodeRabbit finding, local review round 8).
+      expect(new Date(body.disposedAt).toISOString()).toBe(body.disposedAt);
 
       const [row] = await db.select().from(reviewQueue).where(eq(reviewQueue.id, queueId));
       expect(row.disposition).toBe("APPROVED");

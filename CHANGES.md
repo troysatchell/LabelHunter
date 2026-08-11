@@ -4,6 +4,190 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-462 — PR review round 2: orchestrator triage, 2 fixed, 3 deferred (2026-08-10)
+
+**What changed.** The orchestrator's independent gate run found 5 more CodeRabbit findings
+against the round-1 fix commit. Two were real and fixed here.
+
+- `field-resolution.ts` (major): `abvAlternatesConflict` compared a percent reading to a
+  percent alternate, and a proof reading to a proof alternate, as two separate checks. It
+  never converted across the two scales. `"45%"` against an alternate of `"100 Proof"`
+  passed as agreeing, because neither separate check ever ran — 100 Proof has no percent
+  reading to compare, and 45% has no proof reading to compare. Fixed: both readings convert
+  to a canonical percent scale first (proof is twice the percent, 27 CFR's own definition),
+  then compare. `"45%"` against `"90 Proof"` now correctly agrees. `"45%"` against
+  `"100 Proof"` (50%) now correctly conflicts.
+- `types.ts` (major): `FieldResultRow` allowed `resolvedBy: "sonnet"` with
+  `reviewReason: null` — a state that should not exist, since a field is only resolved
+  because something escalated it. Fixed: a discriminated union. The resolved branch
+  requires the reason; the unresolved branch keeps it nullable. No behavior change — every
+  construction site in this ticket already passes `resolvedBy: null`, since LH-014's
+  resolver does not exist yet.
+
+Three findings were real but deferred, filed as **TRO-504** rather than fixed here:
+combining-mark and German-ß handling in the word-boundary text match (deep Unicode edge
+cases with no golden-set coverage yet), and a provisional net-contents parser that stops
+at the first unsupported unit instead of scanning past it (the parser's own docstring
+already marks it a stand-in for LH-013's real implementation — more polish on a stand-in
+is not the right place to spend the fix).
+
+**How to run it.** `pnpm test -- src/server/router` — 11 files, 135 cases (up from 133).
+
+**Rollback.** `git revert` this commit. The two fixes are independent of round 1; nothing
+else depends on either change.
+
+## TRO-462 — LH-012: Validation Router core (2026-08-10)
+
+**What changed.** This ticket adds the Validation Router's decision logic under
+`src/server/router/`. It serves PRD §3.3, TH-R2, TH-R8, and TH-R19. The router answers one
+question. Given what the Haiku extractor read, and what the applicant filed, what does each
+field's verdict say? What does the whole label say? The router is deterministic TypeScript.
+It never calls a model.
+
+This ticket builds the router shell. That shell covers confidence bands, the
+anti-hallucination overrides, the eight `ReviewReason` rules, their precedence, and the
+label-level rollup. The design comes from `docs/checkpoints/cp1-cascade-router-prompts.md`
+§4-§5. Troy approved that design at CP-1. This ticket implements it as written.
+
+This ticket does not build the real field comparators. Those cover normalization, fuzzy
+brand and class matching, ABV parsing, and net-contents parsing. LH-013 (TRO-463) owns that
+work, and this ticket blocks it. This ticket also does not build the warning comparator.
+LH-020 owns that work, in its own CP-2-gated subsystem.
+
+**Files.**
+- `types.ts` — the router's public shapes. `ApplicationRecord` is the applicant's filed
+  record. `FieldComparator` is the interface LH-013 implements against. `WarningComparatorResult`
+  is the contract LH-020 implements against. It is a discriminated union: a `NEEDS_REVIEW`
+  verdict requires a `reviewReason`; every other verdict forbids one. `PreprocessingSignal`
+  carries what LH-010 found before the image reached the extractor. `FieldResultRow` is one
+  output row, with CP-1 §5.5's exact columns.
+- `confidence.ts` — the three confidence bands from CP-1 §4.2, and the asymmetry rule from
+  §4.3. A low-confidence MATCH escalates only below 0.60. A low-confidence MISMATCH escalates
+  below 0.90. A NEEDS_REVIEW comparator result always escalates. The two escalation cutoffs
+  look like the per-field trusted threshold (0.85, or 0.90 for the warning transcription),
+  but they answer a different question. This file names them as separate constants
+  (`MATCH_ESCALATION_CEILING`, `MISMATCH_ESCALATION_CEILING`) so a future re-tune of one does
+  not silently move the other.
+- `overrides.ts` — the three CP-1 §4.4 anti-hallucination checks. Evidence must be present.
+  Evidence must support the value at a boundary, not a substring. Confidence must be a real
+  number in range. A failed check rejects the field. It never clamps a bad number into range.
+  `beverage_type` is exempt from the evidence-support check only. Its value is an inferred
+  category. It is never verbatim in the label's evidence. This is a known, ticketed exemption,
+  TRO-502. The exemption is commented at its call site in `index.ts`.
+- `text-boundary.ts` — the word-boundary text check the evidence-support override uses for
+  text fields. This is not LH-013's real normalization pipeline. LH-013's pipeline covers
+  Unicode NFKC, apostrophe folding, and diacritic stripping. This file answers one narrower
+  question only: does the evidence contain this exact word.
+- `provisional-numeric.ts` — a minimal, clearly-labeled stand-in ABV and net-contents parser.
+  The overrides' numeric check uses it. The `AMBIGUOUS_ABV` and `AMBIGUOUS_NET_CONTENTS`
+  structural checks use it too. LH-013 replaces every caller with the real, ttb.gov-cited
+  grammar.
+- `required-fields.ts` — the required-field-by-beverage-type table. It implements CP-1 §5.3's
+  table exactly as given, including the `alcohol_content` cells CP-1 marks **VERIFY** for
+  beer and wine. A `"verify"` cell stays its own distinct value. The code does not fold it
+  into `"required"` silently. It does route as required today. That is the fail-safe reading.
+- `field-state.ts` — the field-shape-aware absence check. `government_warning` has no
+  `value`. It has `present` instead. A uniform `value === null` check would never fire for
+  the warning field. It would silently pass a warning the router never actually examined.
+- `label-blockers.ts` — the two label-level blockers, `LOW_IMAGE_QUALITY` and
+  `CONFLICTING_EXTRACTION`.
+- `field-resolution.ts` — the field-specific `AMBIGUOUS_ABV` and `AMBIGUOUS_NET_CONTENTS`
+  structural checks. This includes the proof-arithmetic self-contradiction check. CP-1 names
+  `"45% Alc./Vol. (100 Proof)"` as the worked example. This file also resolves each field's
+  final verdict and reason, for the four comparator-driven fields and for the government
+  warning's contract.
+- `precedence.ts` — the exact CP-1 §5.2 rank order, and the headline-reason picker.
+- `rollup.ts` — the CP-1 §5.4 label rollup. A label-level blocker outranks every field
+  verdict. The rollup checks the blocker first, so it cannot miss one.
+- `reason-text.ts` — one line of UI English per row. PRD §3.3 and TH-R20 require this. The
+  text is never a bare confidence number.
+- `index.ts` — `routeLabel`, the module's one public entry point. It wires every file above
+  together.
+- `test-support.ts` — placeholder comparators for this ticket's own tests. They check exact
+  match after a trim and a casefold. They are honestly named. Nobody should read them as real
+  judgment logic. `STONE'S THROW` and `Stone's Throw` would NOT match here. That judgment is
+  LH-013's job.
+
+**Load-bearing decisions.**
+- The word-boundary evidence check first used `\b`. `\b`'s boundary depends on the character
+  at the edge of the pattern itself. The government warning transcription ends in a period.
+  That put a non-word character on both sides of the trailing `\b`. The check never matched,
+  even for the correct reading. TDD caught this. The first `index.test.ts` run failed a
+  clean-fixture case with `CONFLICTING_EXTRACTION`, for the right reason. The fix uses
+  lookaround instead: `(?<![\p{L}\p{N}])...(?![\p{L}\p{N}])`, with the `u` flag. Lookaround
+  checks the character outside the match. It also now recognizes Unicode letters, not only
+  ASCII ones, so an accented brand name does not break the boundary check.
+- The asymmetry rule's two escalation cutoffs are fixed values. They apply the same way
+  across every field. They do not scale off the per-field trusted threshold. CP-1 §4.3 gives
+  them as flat numbers, not a formula.
+- `MISSING_REQUIRED_FIELD` does not fire when `LOW_IMAGE_QUALITY` already fired for the
+  label. CP-1 §5.3 states this carve-out for this one pair of reasons. This ticket implements
+  that carve-out literally. It does not generalize it into a broader rule the document does
+  not state elsewhere.
+- `REVIEW_REASON_PRECEDENCE` derives from a `Record<ReviewReason, number>`, not a hand-written
+  array. TypeScript requires every `ReviewReason` member to have a rank. A ninth reason added
+  to the enum without a rank is a compile error here, not a silent gap.
+
+**Review round.** Two independent CodeRabbit passes ran against the first commit: one from
+this worktree's own gate, one from the orchestrator's. Together they found real, fix-now
+issues, folded into this same entry rather than a separate one, since no PR had opened yet.
+- **Major.** `buildFieldReasonText`'s verdict fallback treated every non-MISMATCH verdict as
+  a match. CP-1 §5.3's own carve-out (above) leaves a field at `NEEDS_REVIEW` with
+  `reviewReason: null`. That field printed "Matches the application." Fixed: a `NEEDS_REVIEW`
+  verdict now falls back to its own line, "This field needs a closer look."
+- **Major.** The `AMBIGUOUS_ABV` and `AMBIGUOUS_NET_CONTENTS` alternates check flagged any
+  non-empty `alternates` array, even one that only restated the same number. CP-1 §5.3 says
+  "conflicting ways," not "stated twice." Fixed: each alternate is now parsed and compared to
+  the primary value; only a genuine numeric disagreement counts as a conflict.
+- **Major.** `provisionalParseNetContents`'s regex could capture trailing label text past the
+  real unit, e.g. `"750 mL Alcohol 45%"`, and then fail to match any known unit at all. Fixed:
+  the unit is now matched against the start of the captured text only, so trailing text after
+  the unit does not break the parse.
+- **Major.** `numericEvidenceSupportsNetContents` (the §4.4 override's numeric check) compared
+  unit strings, so `"750 mL"` as the value and `"0.75 L"` as the evidence — the same quantity —
+  failed the check. Fixed: both sides now convert to mL before comparing, matching CP-1 §5.3's
+  own wording, "the converted values."
+- **Major.** `WarningComparatorResult` allowed a `NEEDS_REVIEW` verdict with no `reviewReason`,
+  and the router silently defaulted one. Fixed: the type is now a discriminated union.
+  `reviewReason` is required on the `NEEDS_REVIEW` branch and does not exist on any other
+  branch. An unnamed REVIEW result is a compile error for LH-020 to hit, not a silent default.
+- **Major.** `isLowImageQuality`'s partial-legibility check counted an override-rejected
+  field's confidence, even though `overrides.ts` zeroes that confidence only so it never
+  displays a garbage number. That zero is evidence the extraction was broken, not evidence the
+  image was hard to read. Fixed: an override-rejected field is now excluded from this check.
+- **Major.** The `beverage_type` cross-check compared the extractor's raw string against the
+  application's beverage type with no normalization, so `"Spirits"` (a valid, schema-legal
+  extractor output) against `"spirits"` (the application's value) would have falsely triggered
+  `CONFLICTING_EXTRACTION`. Fixed: both sides are normalized the same way the evidence
+  word-boundary check normalizes text, before comparing. The 0.85 confidence gate on this
+  check now reuses `TRUSTED_THRESHOLD_DEFAULT` instead of a second, separate 0.85 literal.
+- **Minor.** The three `AMBIGUOUS_*` reason texts all read "needs a closer look," with no
+  detail. Fixed: each now names what a reviewer must check, e.g. "A reviewer must check the
+  alcohol content against the label."
+- **Minor.** This entry's own opening sentence, and several entries below, buried more than
+  one idea inside a single long sentence with nested em-dash parentheticals. The same catch
+  TRO-461's review made. Fixed: rewritten throughout as short, standalone sentences.
+
+**Regression tests.** `src/server/router/*.test.ts` — 11 files, 133 cases. One file covers
+one concern: confidence bands, overrides, provisional numeric parsing, the required-field
+table, field-shape-aware absence, the two label blockers, field resolution, reason text,
+precedence, rollup, and an `index.test.ts` integration suite. Named cases include the
+proof-arithmetic self-contradiction example, the `beverage_type` TRO-502 exemption, and a
+case for every review-round fix above.
+
+**How to run it.** `pnpm test -- src/server/router` runs 11 files and 133 cases. `pnpm
+typecheck` and `pnpm lint` both run clean. The full repo suite, `pnpm test`, runs 23 files
+and 247 cases.
+
+**Known limits.** The real field comparators, LH-013, and the warning comparator, LH-020, do
+not exist yet. This ticket routes on their contracts, not their real output. The
+`alcohol_content` VERIFY cells for beer and wine, and the ABV and net-contents tolerances,
+stay unverified regulatory placeholders. Each one is flagged in code, pending LH-013's
+ttb.gov citations.
+
+**Rollback.** Run `git revert` on this commit and the router-core commit before it.
+`src/server/router/*.ts` and `*.test.ts` are removed, and `.gitkeep` returns.
+
 ## TRO-461 — PR review: local CodeRabbit triage, 3 findings fixed (2026-08-10)
 
 **What changed.** The local `scripts/factory/gate.sh` run captured 3 findings; all 3 were

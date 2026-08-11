@@ -67,8 +67,12 @@ export function ReviewQueueBrowser({ fetchItems = fetchReviewQueue }: ReviewQueu
     // away the reviewer's scroll position on every refresh, defeating the
     // point of this control (this file's own comment above: "a queue a
     // reviewer can churn through smoothly") (CodeRabbit finding, PR #16
-    // review round 2).
-    setPhase((current) => (current.status === "success" ? { status: "refreshing", items: current.items } : { status: "loading" }));
+    // review round 2). Retrying after a failed refresh must keep the rows
+    // too, not only a successful refresh — the first version of this fix
+    // checked only "success" (CodeRabbit finding, local review round 4).
+    setPhase((current) =>
+      current.status === "success" || current.status === "refresh-error" ? { status: "refreshing", items: current.items } : { status: "loading" },
+    );
     setRequestId((id) => id + 1);
   }
 

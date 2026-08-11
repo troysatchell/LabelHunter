@@ -112,4 +112,30 @@ describe("ReviewQueueBrowser", () => {
     expect(screen.getByTestId("review-queue-row-42")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled();
   });
+
+  it("retrying after a failed refresh keeps the list mounted too, not only after a successful one", async () => {
+    // refresh() checked only current.status === "success" before deciding
+    // whether to keep rows mounted; retrying from "refresh-error" fell
+    // through to the bare "loading" state and unmounted the list again
+    // (CodeRabbit finding, local review round 4).
+    let resolveRetry!: (items: ReviewQueueListItemWire[]) => void;
+    const user = userEvent.setup();
+    const fetchItems = vi
+      .fn()
+      .mockResolvedValueOnce([ITEM])
+      .mockRejectedValueOnce(new ReviewQueueClientError("SERVICE", "LabelHunter could not load the review queue. Try again."))
+      .mockImplementationOnce(() => new Promise<ReviewQueueListItemWire[]>((resolve) => (resolveRetry = resolve)));
+    render(<ReviewQueueBrowser fetchItems={fetchItems} />);
+
+    await screen.findByTestId("review-queue-row-42");
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await screen.findByRole("alert");
+
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(screen.getByTestId("review-queue-row-42")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refreshing…" })).toBeInTheDocument();
+
+    resolveRetry([ITEM]);
+    expect(await screen.findByRole("button", { name: "Refresh" })).toBeEnabled();
+  });
 });

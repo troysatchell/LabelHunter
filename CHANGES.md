@@ -4,14 +4,17 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
-## TRO-476 — PR #16 review round 2: 24 CodeRabbit findings, 22 fixed, 1 filed, 1 dismissed (2026-08-11)
+## TRO-476 — PR #16 review round 2: 31 CodeRabbit findings, 28 fixed, 1 filed, 2 dismissed (2026-08-11)
 
-**What changed.** CodeRabbit reviewed PR #16 across three passes: the GitHub PR review (11
-findings), then two rounds of the gate's local CLI capture against each resulting commit (9,
-then 4 more). Three of those 13 local findings were regressions in this round's own earlier
-fixes. The orchestrator checked every finding against the current code, not on trust. All 24
-findings named a real, narrow issue. Twenty-two are fixed here. One is real but out of this
-PR's scope; it is filed as TRO-507. One is dismissed, with the reason stated below.
+**What changed.** CodeRabbit reviewed PR #16 five times. The GitHub PR review reported 11
+findings. The gate's local CLI capture then ran four more times, once against each new
+commit. Those four rounds reported 9, then 4, then 4, then 3 more findings. Five of those 20
+local findings were regressions in this round's own earlier fixes. The orchestrator checked
+every finding against the current code, not on trust. All 31 findings named a real issue or a
+legitimate duplicate. Twenty-eight are fixed here. One is real but out of this PR's scope; it
+is filed as TRO-507. Two are dismissed, with reasons stated below. `factory/review-findings.jsonl`
+is the authoritative count if this drifts again — CodeRabbit's own review of a commit that
+updates this count necessarily reviews a commit one count behind itself.
 
 **Buttons stayed live after a conflict.** A 409 conflict left the Approve and Reject buttons
 enabled. A retry could only ever 409 again. TH-R3 asks for no hidden actions. A dead action
@@ -75,7 +78,11 @@ cleanup helpers.** Both now import them from a new `test-support.ts`.
 
 **A failed manual refresh replaced a working list with a bare error panel.** The reviewer
 lost the rows they already had on screen. A refresh failure now keeps the rows mounted and
-shows the error alongside them, the same principle as the earlier in-flight-refresh fix.
+shows the error alongside them, the same principle as the earlier in-flight-refresh fix. That
+fix itself missed one case: retrying after a failed refresh checked only whether the previous
+attempt had *succeeded* before deciding to keep the rows mounted. Retrying after a *failed*
+refresh fell through to the bare loading state and unmounted the list again. Both cases now
+keep the rows mounted.
 
 **The PATCH response's `id` field used a weaker check than the list response's items.** Both
 now require the same positive-integer shape the server route itself enforces.

@@ -110,4 +110,16 @@ describe("GET /api/label-images/:labelImageId", () => {
     const response = await handleGetLabelImage(String(labelImageId), makeDeps());
     expect(response.status).toBe(404);
   });
+
+  it("returns 500, not a 404, when the file read fails for a reason other than a missing file", async () => {
+    const labelImageId = await seedLabelImage(Buffer.from("bytes"));
+    const eaccesError = Object.assign(new Error("permission denied"), { code: "EACCES" });
+    const response = await handleGetLabelImage(
+      String(labelImageId),
+      makeDeps({
+        readLabelImage: () => Promise.reject(eaccesError),
+      }),
+    );
+    expect(response.status).toBe(500);
+  });
 });

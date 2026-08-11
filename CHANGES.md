@@ -4,6 +4,30 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-466 — PR #15 review round 2: 3 findings, 1 fixed, 2 dismissed (2026-08-11)
+
+**Fixed.** `src/app/api/label-images/[labelImageId]/route.ts` treated any `readLabelImage`
+failure as a missing file (404). A permissions error or a disk I/O error is a different fact —
+the row and the file both exist, something else went wrong, and that is a server error, not a
+404. Fixed: checks `error.code === "ENOENT"` specifically; anything else now answers 500. One
+new regression test injects an `EACCES` error and confirms 500, not 404 — confirmed red first.
+
+**Dismissed.**
+- The "add auth" finding is an exact duplicate of round 1's already-dismissed finding on this
+  same route — no auth mechanism exists anywhere in this app yet; deferred to LH-061 (TRO-482).
+- A finding asked `vitest.setup.ts` (loads for every test file) to reject an unset
+  `DATABASE_URL` globally, before any test runs. Checked, not assumed: only 2 of 48
+  `*.test.ts(x)` files under `src/` reference `DATABASE_URL` at all — the rest are pure-function
+  and component tests with no database dependency. A global guard would break roughly 46
+  legitimate tests that have never needed one. The underlying concern (this repo's own
+  `DATABASE_URL` discipline) is real, but the right fix is a per-file or per-DB-helper guard,
+  not a blanket one — out of scope for a one-line change on this ticket.
+
+**How to run it.** `pnpm test -- "src/app/api/label-images"`, `pnpm typecheck`. Both ran clean.
+
+**Rollback.** `git revert` this commit. The `isMissingFileError`/`readFailed` helpers and the
+new test are additive; reverting restores the prior (over-broad 404) behavior.
+
 ## TRO-466 — PR review round 1: local CodeRabbit pass, 7 fixed, 1 dismissed (2026-08-11)
 
 **What changed.** A local CodeRabbit pass against this branch posted 8 findings. Seven are

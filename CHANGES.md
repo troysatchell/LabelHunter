@@ -4,7 +4,6 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
-<<<<<<< HEAD
 ## TRO-497 — PR review round 3: GitHub PR #9, 11 fixed, 2 dismissed (2026-08-11)
 
 **What changed.** PR #9's CodeRabbit review (the tool running against the live GitHub diff,
@@ -326,7 +325,6 @@ LH-005 (Imagen) and LH-006 (verify gate) are both still open, and unblocked eith
 **Not done here (explicitly out of scope).** `scripts/golden/verify.ts` (LH-006) and
 `scripts/golden/imagen.ts` (LH-005) — neither written nor called. No code in this ticket
 performs a network call.
-=======
 ## TRO-463 / TRO-504 — LH-013: real field comparators (2026-08-11)
 
 **What changed.** This ticket builds the real field comparators under `src/server/comparators/`.
@@ -457,7 +455,6 @@ changed suites. `pnpm test` runs everything; 344 tests pass repo-wide. `pnpm typ
 commit changed `field-resolution.ts` and `overrides.ts`'s imports. It also added the module
 they import from. A revert restores the old imports and the old behavior together. Nothing is
 left to fix by hand.
->>>>>>> origin/main
 
 ## TRO-462 — PR review round 2: orchestrator triage, 2 fixed, 3 deferred (2026-08-10)
 

@@ -112,39 +112,42 @@ data, not source. They need a fresh render to match the reverted code.
 **Review triage.** Four local CodeRabbit rounds against this ticket's own commits, five real
 findings fixed, one dismissed:
 - Round 1 (major, `CHANGES.md`): the entry's font and license bullets were sentence
-  fragments — no explicit subject or verb. Fixed with a full ASD-STE100 rewrite, same facts,
-  complete sentences.
+  fragments — no explicit subject or verb. A full ASD-STE100 rewrite fixed this. Every fact
+  stayed; every sentence gained a subject and a verb.
 - Round 2 (major, `scripts/golden/render.ts`): `SCRIPT_FONT_STACK` and `BLACKLETTER_FONT_STACK`
-  still fell back to the OS-dependent generic `cursive`/`fantasy` categories. Fixed above.
-- Round 2 (trivial, `CHANGES.md`): "this gap"/"that gap" read as abstract backreferences.
-  Fixed: named the concrete risk directly instead.
+  still fell back to the OS-dependent generic `cursive`/`fantasy` categories. Both stacks now
+  fall back to `"Inter"` instead, described in the font section above.
+- Round 2 (trivial, `CHANGES.md`): "this gap"/"that gap" read as abstract backreferences. The
+  rewrite named the concrete risk directly instead.
 - Round 3 (major, `CHANGES.md`): repeated "this ticket" as the subject of many sentences read
-  as an abstract, repetitive actor. Fixed: named the concrete actor instead — `render.ts`,
+  as an abstract, repetitive actor. The rewrite named the concrete actor instead — `render.ts`,
   `pnpm golden:build`, the maintainers, or TRO-505 by ticket ID.
 - Round 4 (major, `CHANGES.md`): a repeated finding asked the "How to run it" section to show
   `DATABASE_URL` discipline for `pnpm test -- scripts/golden`, this time asking explicitly for
-  no documented exception. Round 3 checked this command directly — with `DATABASE_URL` and
-  every other secret unset from the environment entirely, all 45 tests across
-  `render.test.ts`, `degrade.test.ts`, and `images.test.ts` passed, because none of the three
-  files or the global `vitest.setup.ts` touch a database. That check still stands and is not
-  retracted. Round 4 fixed the documentation anyway: "How to run it" now leads with sourcing
-  `.factory-env`, this repo's own standing convention (CLAUDE.md, lessons.md rule 3),
-  regardless of whether this specific command strictly needs it.
+  no documented exception. Round 3 already checked this command directly. With `DATABASE_URL`
+  and every other secret unset from the environment entirely, all 45 tests across
+  `render.test.ts`, `degrade.test.ts`, and `images.test.ts` passed. None of those three files,
+  and no part of the global `vitest.setup.ts`, touch a database. That check still stands; this
+  entry does not retract it. "How to run it" now leads with sourcing `.factory-env` anyway,
+  this repo's own standing convention (CLAUDE.md, lessons.md rule 3), regardless of whether
+  this specific command strictly needs it.
 - Round 4 (minor, `scripts/golden/render.test.ts`): the "never references a pre-TRO-505 system
   font" test only checked `renderableCases[0]` (case-01). Case-01 never triggers the
-  script/blackletter overrides, so it could never have caught `"Brush Script MT"`
-  (`SCRIPT_FONT_STACK`'s original fallback) inside case-25's own rendered HTML specifically.
-  Fixed: the test now checks every rendered case. Confirmed red-first against the true
-  pre-TRO-505 `render.ts` (checked out from before this ticket's first commit).
+  script/blackletter overrides. It could never have caught `"Brush Script MT"` —
+  `SCRIPT_FONT_STACK`'s original fallback — inside case-25's own rendered HTML specifically.
+  The test now checks every rendered case instead. The maintainers confirmed this red-first
+  against the true pre-TRO-505 `render.ts`, checked out from before this ticket's first commit
+  and restored after.
 - Round 4 (major, `CHANGES.md`), dismissed: a finding asked the "What changed" opening
-  paragraph to split into more granular sub-topics (font-stack history, substitution risk,
-  design requirement, implementation change, TH-R17 impact) than its current eight short
-  sentences already do. That paragraph already gives each sentence one claim, an explicit
-  subject, and an active verb — every concrete rule in CLAUDE.md's ASD-STE100 table. Further
-  fragmentation past that point is a stylistic preference beyond what this repo's own written
-  standard requires, and a fourth rewrite of the same paragraph risks introducing a new defect
-  for undefined benefit — round 1's fix introduced round 2's finding; round 2's fix left
-  round 3's finding. This entry stops chasing paraphrase-level suggestions here.
+  paragraph to split into more granular sub-topics than its current eight short sentences
+  already do — font-stack history, substitution risk, design requirement, implementation
+  change, and TH-R17 impact as separate parts. That paragraph already gives each sentence one
+  claim, an explicit subject, and an active verb. It already satisfies every concrete rule in
+  CLAUDE.md's ASD-STE100 table. Further fragmentation past that point is a stylistic
+  preference beyond what this repo's own written standard requires. A fourth rewrite of the
+  same paragraph risks introducing a new defect for undefined benefit — round 1's fix
+  introduced round 2's finding, and round 2's fix left round 3's finding. This entry stops
+  chasing paraphrase-level suggestions at this point.
 
 **Not done here (explicitly out of scope).** LH-006 plans a CI smoke test: render one label
 headlessly, then run `verify.ts`. TRO-505 does not build that test. TRO-505 only removes the

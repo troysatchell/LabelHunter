@@ -60,6 +60,14 @@ production run (they are paid-for, not speculative); rules 10+ will be LabelHunt
     don't control, name the actual invariant (word-boundary, finite, integer, non-empty) and
     check it explicitly — don't let the type system's silence stand in for a real check.
 
+14. **Sync local `main` with `origin/main` before every `worktree.sh` call**, not just
+    after a wave. `gh pr merge` updates the remote only; the orchestrator's own local `main`
+    stays stale until an explicit `git merge --ff-only origin/main`. `worktree.sh` branches
+    from local `main` and, worse, silently reuses an already-existing branch at whatever base
+    it had — it does not detect or refuse a stale one. TRO-462 was provisioned from a `main`
+    six commits behind, missing the two tickets it depends on, and had to be torn down
+    (`git worktree remove --force` + `git branch -D`) and re-provisioned.
+
 ## Log
 
 *Append dated entries as the factory learns. One line each, with the ticket that taught it.*

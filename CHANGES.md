@@ -4,6 +4,77 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-465 — LH-015: Verify screen + results checklist (2026-08-11)
+
+**What changed.** The single-label verify flow now runs end to end. It serves PRD §3.8, §5,
+and TH-R1, TH-R3, TH-R20.
+
+- `src/app/api/verify/route.ts` — a new `POST /api/verify` route. One request does the whole
+  fast path: preprocess the photo, run the Haiku extractor, route the result, persist
+  `applications`, `label_images`, `verifications`, `field_results`, and — on a REVIEW verdict —
+  `review_queue`. It returns per-field verdicts and the label verdict in the same response. It
+  never calls Sonnet. A REVIEW verdict returns immediately with an explicit "needs review —
+  {reason}" flag, matching PRD §3.8's latency contract; LH-014's resolver (a sibling ticket,
+  not yet merged) consumes the `review_queue` row later, on its own schedule.
+- `src/app/api/verify/parse-request.ts` — boundary validation for the multipart form: image
+  present, beverage type in the closed set, brand name and class/type non-blank, alcohol
+  content a number in 0–100 or blank, net contents a positive number with a recognized unit.
+  Every rejection carries a specific, plain-language message.
+- `src/app/api/verify/types.ts` — shapes shared between the route and the UI.
+- `src/server/router/provisional-comparators.ts` — **LH-013 (TRO-463) has not merged.** This
+  is a minimal, clearly-labeled stand-in `FieldComparators` bundle: exact text match after a
+  trim and a casefold, and the router's own provisional numeric parser for ABV and net
+  contents. It never returns `MISMATCH` on its own (PRD §3.3: a real disagreement routes to
+  REVIEW, never a silent FAIL). It is the ONE place a `FieldComparators` value reaches
+  `routeLabel` in production code — swap this one import in `route.ts` for LH-013's real
+  bundle when it lands; nothing else changes.
+- **The government warning has no comparator yet either** (LH-020, gated by CP-2, not yet
+  merged). `route.ts` passes `warningResult: null` to `routeLabel` — honestly, not a
+  fabricated match. `resolveGovernmentWarningField` (LH-012) already handles a `null` result
+  by routing to `NEEDS_REVIEW`. Until LH-020 lands, every label with a warning on it needs
+  review for that one field. Expected, not a bug in this ticket.
+- `src/server/storage/local-file-storage.ts` — writes the uploaded photo to `var/uploads/`
+  (gitignored) and returns the path `label_images.storage_path` stores. Prototype-appropriate,
+  not a durable store: Render's filesystem is ephemeral, so a redeploy can lose these files
+  while the database row survives. Documented in the file as a one-file swap point for a real
+  object store later.
+- `src/app/page.tsx` — replaces the scaffold placeholder with the Verify screen: upload
+  control, the five application fields plus the beverage-type selector, one Verify button.
+- `src/app/_components/VerifyForm.tsx`, `ResultsChecklist.tsx`, `ErrorPanel.tsx` —
+  the form, the results checklist (✓ / ✗ / ⚠ rows with evidence and the one-line reason from
+  `reason-text.ts`, never a bare confidence number), and the designed error panel (`role="alert"`,
+  not a toast) for every failure mode TH-R20 names.
+- `src/app/_lib/verify-client.ts` — the fetch wrapper. Classifies every failure into
+  `VerifyClientError` with a `kind`: a structured error body from the server, a non-2xx
+  response with none, a response this client cannot parse, a network failure, or a 45-second
+  client-side timeout (`AbortController`) for the case the server never answers.
+- `src/app/globals.css` — USWDS-influenced styling: navy and white, 18px base type, high-
+  contrast focus rings, no purple-gradient AI slop, no emoji-driven design. Dark mode follows
+  `prefers-color-scheme` for users whose system asks for it.
+
+**A jsdom finding, not a product bug.** `VerifyForm` reads the selected photo from the file
+input's own `.files` ref, not `new FormData(form).get("image")`. In this repo's jsdom test
+environment, a `FormData` built from a form element reconstructs its file entries with the
+right filename but `size: 0` — the underlying bytes are lost in that reconstruction. Reading
+the input directly sidesteps it and is arguably the more direct design regardless.
+
+**How to run it.** `pnpm dev`, open `/`. `pnpm test -- src/app src/server/router/provisional-comparators.test.ts src/server/storage` for this ticket's own suites, or `pnpm test` for everything (309 tests, 31 files, all green). `pnpm build` succeeds; a manual smoke test against
+`pnpm start` confirmed the page renders and `/api/verify` returns the right JSON for a missing
+image and for an unreadable image, over a real HTTP request (no live Anthropic call).
+
+**What this ticket could not verify.** No live Haiku call, and no real photograph of a real
+label — every test mocks the Anthropic client (`makeMockMessage`, matching
+`src/server/extractor/index.test.ts`'s own pattern) or uses a synthetic sharp-generated JPEG.
+A true end-to-end run needs a real `ANTHROPIC_API_KEY` and a real label photo; say so rather
+than claim it.
+
+**Comparator set shipped.** Provisional (`provisional-comparators.ts`), not LH-013's real
+bundle — LH-013 had not merged into `main` as of this ticket's work. `main` was re-checked
+immediately before finishing; still not merged.
+
+**Rollback.** `git revert` this commit. `var/uploads/` is gitignored and holds no data worth
+preserving.
+
 ## TRO-462 — PR review round 2: orchestrator triage, 2 fixed, 3 deferred (2026-08-10)
 
 **What changed.** The orchestrator's independent gate run found 5 more CodeRabbit findings

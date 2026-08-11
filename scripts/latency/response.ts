@@ -26,12 +26,15 @@ export interface VerifySuccessBody {
 /**
  * Returns the typed body when `body` matches `VerifySuccessBody`'s shape,
  * `null` otherwise. Never throws — a caller decides what a `null` means
- * (here, a failed run, not a crash).
+ * (here, a failed run, not a crash). `applicationId` must be a positive
+ * safe integer — a real database identity, never negative, fractional,
+ * zero, or past `Number.MAX_SAFE_INTEGER`.
  */
 export function parseVerifySuccessBody(body: unknown): VerifySuccessBody | null {
   if (!body || typeof body !== "object") return null;
   const candidate = body as Record<string, unknown>;
   if (typeof candidate.applicationId !== "number") return null;
+  if (!Number.isSafeInteger(candidate.applicationId) || candidate.applicationId <= 0) return null;
   if (typeof candidate.labelVerdict !== "string") return null;
   if (candidate.headlineReason !== null && typeof candidate.headlineReason !== "string") return null;
   return {

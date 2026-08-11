@@ -340,6 +340,17 @@ unaffected by any of them — restored from git each time.
 new files with no other caller; deleting them and reverting `measure.ts`'s import and cleanup
 block restores the prior (buggier) behavior.
 
+**Orchestrator triage, one more round (2026-08-11).** `gate.sh`'s local capture surfaced 2 more
+findings after the rounds above. `scripts/latency/response.ts`'s `parseVerifySuccessBody`
+checked `applicationId` was a `number` but not that it was a positive safe integer — negative,
+zero, fractional, and unsafe-integer values all passed through. Fixed: added
+`Number.isSafeInteger(...) && > 0`, 4 new regression cases (red confirmed before the fix — all
+four previously passed through unrejected). The second finding — recovering a run's cleanup
+handle even from a malformed 200 body — is dismissed with a comment at the call site
+(`measure.ts`, above `parseVerifySuccessBody`'s call): unreachable today per `route.ts`'s own
+type guarantee, and a real fix needs a second identity channel disproportionate to a
+measurement harness; the failure is already loud (non-zero exit), not silent.
+
 ## TRO-464 — PR #10 review round 3: 3 CodeRabbit comments, 2 fixed, 1 dismissed (2026-08-11)
 
 **What changed.** GitHub's CodeRabbit posted a third review round on PR #10.

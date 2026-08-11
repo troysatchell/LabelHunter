@@ -179,6 +179,17 @@ async function runOnce(
     // Validate rather than assume (standing rule 13).
     const success = parseVerifySuccessBody(body);
     if (!success) {
+      // A malformed 200 body means this run's applicationId is unrecoverable
+      // here — there is no channel to it other than the body that just
+      // failed to parse, so `cleanup()` cannot delete this run's row.
+      // Reviewed and left as-is (2026-08-11): unreachable today per the
+      // comment above, and closing it for real would need a second,
+      // redundant identity channel (a response header, or a DB lookup by a
+      // marker planted in the request) — real design work disproportionate
+      // to a measurement harness, not a quick validation add. The failure
+      // is loud (non-zero exit, the message below), not silent, so an
+      // operator would see and fix an orphaned row by hand rather than the
+      // harness losing evidence quietly.
       return {
         index,
         durationMs,

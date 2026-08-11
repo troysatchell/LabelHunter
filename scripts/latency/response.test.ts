@@ -52,4 +52,21 @@ describe("parseVerifySuccessBody", () => {
   it("rejects a missing headlineReason — the field must be explicitly present", () => {
     expect(parseVerifySuccessBody({ applicationId: 1, labelVerdict: "PASS" })).toBeNull();
   });
+
+  it("rejects a negative applicationId", () => {
+    expect(parseVerifySuccessBody({ applicationId: -1, labelVerdict: "PASS", headlineReason: null })).toBeNull();
+  });
+
+  it("rejects a fractional applicationId", () => {
+    expect(parseVerifySuccessBody({ applicationId: 1.5, labelVerdict: "PASS", headlineReason: null })).toBeNull();
+  });
+
+  it("rejects a zero applicationId", () => {
+    expect(parseVerifySuccessBody({ applicationId: 0, labelVerdict: "PASS", headlineReason: null })).toBeNull();
+  });
+
+  it("rejects an unsafe-integer applicationId", () => {
+    const body = { applicationId: Number.MAX_SAFE_INTEGER + 1, labelVerdict: "PASS", headlineReason: null };
+    expect(parseVerifySuccessBody(body)).toBeNull();
+  });
 });

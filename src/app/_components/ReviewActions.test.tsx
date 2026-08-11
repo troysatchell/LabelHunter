@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ReviewActions } from "./ReviewActions";
 import { ReviewQueueClientError } from "../_lib/review-queue-client";
 import type { RecordDispositionResponse } from "../api/review-queue/types";
@@ -21,6 +21,15 @@ function deferred<T>() {
 const RECORDED: RecordDispositionResponse = { id: 42, disposition: "APPROVED", disposedAt: "2026-08-11T14:03:00.000Z" };
 
 describe("ReviewActions — TH-R3, two large obvious buttons, no hidden actions", () => {
+  // Restores console.error unconditionally, not only when a spying test's
+  // own assertions all pass — a mid-test failure before the old inline
+  // mockRestore() would have left every later test in this file running
+  // with console.error silently mocked (CodeRabbit finding, local review
+  // round 7).
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("renders exactly one Approve button and one Reject button, both enabled", () => {
     render(<ReviewActions reviewQueueId={42} submit={vi.fn()} onResolved={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
@@ -130,7 +139,6 @@ describe("ReviewActions — TH-R3, two large obvious buttons, no hidden actions"
 
     expect(await screen.findByText(/Recorded/)).toBeInTheDocument();
     expect(consoleError).toHaveBeenCalledWith("onResolved threw after a successful review-queue decision", expect.any(Error));
-    consoleError.mockRestore();
   });
 
   it("also logs an asynchronous rejection from onResolved, not only a synchronous throw", async () => {
@@ -151,6 +159,5 @@ describe("ReviewActions — TH-R3, two large obvious buttons, no hidden actions"
 
     expect(await screen.findByText(/Recorded/)).toBeInTheDocument();
     expect(consoleError).toHaveBeenCalledWith("onResolved threw after a successful review-queue decision", expect.any(Error));
-    consoleError.mockRestore();
   });
 });

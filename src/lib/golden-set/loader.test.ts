@@ -211,6 +211,272 @@ describe("validateManifest", () => {
     expect(() => validateManifest(ok)).not.toThrow();
   });
 
+  it("accepts a case with a well-formed degradations list", () => {
+    const ok = manifest([
+      validCase({
+        provenance: "rendered+degraded",
+        degradations: [
+          { type: "glare", params: { region: "brand", opacity: 0.85 } },
+          { type: "rotate", params: { angleDegrees: 15 } },
+        ],
+      }),
+    ]);
+
+    expect(() => validateManifest(ok)).not.toThrow();
+  });
+
+  it("accepts every degradation type with its required params present", () => {
+    const ok = manifest([
+      validCase({
+        provenance: "rendered+degraded",
+        degradations: [
+          { type: "glare", params: { region: "warning" } },
+          { type: "low-light", params: { region: "front", brightnessFactor: 0.3 } },
+          { type: "blur", params: { sigma: 18 } },
+          { type: "rotate", params: { angleDegrees: 180 } },
+          { type: "perspective", params: { shear: 0.15 } },
+        ],
+      }),
+    ]);
+
+    expect(() => validateManifest(ok)).not.toThrow();
+  });
+
+  it("accepts a case with no degradations field at all", () => {
+    const ok = manifest([validCase()]);
+    expect(() => validateManifest(ok)).not.toThrow();
+  });
+
+  it("rejects an unknown degradation type", () => {
+    const broken = manifest([
+      validCase({
+        provenance: "rendered+degraded",
+        // @ts-expect-error -- intentionally malformed input for the red-first test
+        degradations: [{ type: "sepia", params: {} }],
+      }),
+    ]);
+
+    expect(() => validateManifest(broken)).toThrow(GoldenSetValidationError);
+    try {
+      validateManifest(broken);
+      expect.unreachable("validateManifest should have thrown");
+    } catch (err) {
+      const problems = (err as GoldenSetValidationError).problems;
+      expect(problems.some((p) => p.includes("sepia"))).toBe(true);
+    }
+  });
+
+  it("rejects a rotate degradation missing angleDegrees", () => {
+    const broken = manifest([
+      validCase({
+        provenance: "rendered+degraded",
+        degradations: [{ type: "rotate", params: {} }],
+      }),
+    ]);
+
+    expect(() => validateManifest(broken)).toThrow(GoldenSetValidationError);
+    try {
+      validateManifest(broken);
+      expect.unreachable("validateManifest should have thrown");
+    } catch (err) {
+      const problems = (err as GoldenSetValidationError).problems;
+      expect(problems.some((p) => p.includes("angleDegrees"))).toBe(true);
+    }
+  });
+
+  it("rejects a glare degradation whose region is the wrong type", () => {
+    // No @ts-expect-error here: `params` is typed `Record<string, number |
+    // string>`, so `region: 42` type-checks fine — this is a schema-level
+    // mistake (glare's `region` must actually be a string), not a type
+    // error, which is exactly what checkDegradations is for.
+    const broken = manifest([
+      validCase({
+        provenance: "rendered+degraded",
+        degradations: [{ type: "glare", params: { region: 42 } }],
+      }),
+    ]);
+
+    expect(() => validateManifest(broken)).toThrow(GoldenSetValidationError);
+    try {
+      validateManifest(broken);
+      expect.unreachable("validateManifest should have thrown");
+    } catch (err) {
+      const problems = (err as GoldenSetValidationError).problems;
+      expect(problems.some((p) => p.includes("region"))).toBe(true);
+    }
+  });
+
+  it("accepts glare's optional angleDegrees and opacity when present and well-typed", () => {
+    const ok = manifest([
+      validCase({
+        provenance: "rendered+degraded",
+        degradations: [
+          { type: "glare", params: { region: "brand", angleDegrees: 25, opacity: 0.85 } },
+        ],
+      }),
+    ]);
+    expect(() => validateManifest(ok)).not.toThrow();
+  });
+
+  it("rejects glare's optional opacity when present but wrong-typed", () => {
+    const broken = manifest([
+      validCase({
+        provenance: "rendered+degraded",
+        degradations: [{ type: "glare", params: { region: "brand", opacity: "0.85" } }],
+      }),
+    ]);
+
+    expect(() => validateManifest(broken)).toThrow(GoldenSetValidationError);
+    try {
+      validateManifest(broken);
+      expect.unreachable("validateManifest should have thrown");
+    } catch (err) {
+      const problems = (err as GoldenSetValidationError).problems;
+      expect(problems.some((p) => p.includes("opacity"))).toBe(true);
+    }
+  });
+
+  it("rejects a degradation param the transform does not accept (closed schema)", () => {
+    const broken = manifest([
+      validCase({
+        provenance: "rendered+degraded",
+        degradations: [
+          { type: "rotate", params: { angleDegrees: 15, sigma: 20 } },
+        ],
+      }),
+    ]);
+
+    expect(() => validateManifest(broken)).toThrow(GoldenSetValidationError);
+    try {
+      validateManifest(broken);
+      expect.unreachable("validateManifest should have thrown");
+    } catch (err) {
+      const problems = (err as GoldenSetValidationError).problems;
+      expect(problems.some((p) => p.includes("sigma") && p.includes("does not accept"))).toBe(
+        true,
+      );
+    }
+  });
+
+  it("rejects a glare entry that follows a 180-degree rotate entry", () => {
+    const broken = manifest([
+      validCase({
+        provenance: "rendered+degraded",
+        degradations: [
+          { type: "rotate", params: { angleDegrees: 180 } },
+          { type: "glare", params: { region: "brand" } },
+        ],
+      }),
+    ]);
+
+    expect(() => validateManifest(broken)).toThrow(GoldenSetValidationError);
+    try {
+      validateManifest(broken);
+      expect.unreachable("validateManifest should have thrown");
+    } catch (err) {
+      const problems = (err as GoldenSetValidationError).problems;
+      expect(problems.some((p) => p.includes("glare") && p.includes("rotate"))).toBe(true);
+    }
+  });
+
+  it("rejects a low-light entry that follows a 180-degree rotate entry", () => {
+    const broken = manifest([
+      validCase({
+        provenance: "rendered+degraded",
+        degradations: [
+          { type: "rotate", params: { angleDegrees: 180 } },
+          { type: "low-light", params: { region: "warning", brightnessFactor: 0.3 } },
+        ],
+      }),
+    ]);
+
+    expect(() => validateManifest(broken)).toThrow(GoldenSetValidationError);
+    try {
+      validateManifest(broken);
+      expect.unreachable("validateManifest should have thrown");
+    } catch (err) {
+      const problems = (err as GoldenSetValidationError).problems;
+      expect(problems.some((p) => p.includes("low-light") && p.includes("rotate"))).toBe(true);
+    }
+  });
+
+  it("rejects a glare entry that follows a perspective entry", () => {
+    const broken = manifest([
+      validCase({
+        provenance: "rendered+degraded",
+        degradations: [
+          { type: "perspective", params: { shear: 0.15 } },
+          { type: "glare", params: { region: "brand" } },
+        ],
+      }),
+    ]);
+
+    expect(() => validateManifest(broken)).toThrow(GoldenSetValidationError);
+    try {
+      validateManifest(broken);
+      expect.unreachable("validateManifest should have thrown");
+    } catch (err) {
+      const problems = (err as GoldenSetValidationError).problems;
+      expect(problems.some((p) => p.includes("glare") && p.includes("perspective"))).toBe(true);
+    }
+  });
+
+  it("accepts a glare entry that comes before a rotate entry", () => {
+    const ok = manifest([
+      validCase({
+        provenance: "rendered+degraded",
+        degradations: [
+          { type: "glare", params: { region: "brand" } },
+          { type: "rotate", params: { angleDegrees: 180 } },
+        ],
+      }),
+    ]);
+
+    expect(() => validateManifest(ok)).not.toThrow();
+  });
+
+  it("rejects a non-empty degradations list on a case that isn't rendered+degraded", () => {
+    const broken = manifest([
+      validCase({
+        provenance: "rendered",
+        degradations: [{ type: "rotate", params: { angleDegrees: 15 } }],
+      }),
+    ]);
+
+    expect(() => validateManifest(broken)).toThrow(GoldenSetValidationError);
+    try {
+      validateManifest(broken);
+      expect.unreachable("validateManifest should have thrown");
+    } catch (err) {
+      const problems = (err as GoldenSetValidationError).problems;
+      expect(problems.some((p) => p.includes("degradations") && p.includes("rendered"))).toBe(true);
+    }
+  });
+
+  it("accepts an empty degradations list regardless of provenance", () => {
+    const ok = manifest([validCase({ provenance: "rendered", degradations: [] })]);
+    expect(() => validateManifest(ok)).not.toThrow();
+  });
+
+  it("rejects a degradation missing params", () => {
+    const broken = manifest([
+      validCase({
+        provenance: "rendered+degraded",
+        // @ts-expect-error -- intentionally malformed input for the red-first test
+        degradations: [{ type: "rotate" }],
+      }),
+    ]);
+
+    expect(() => validateManifest(broken)).toThrow(GoldenSetValidationError);
+    try {
+      validateManifest(broken);
+      expect.unreachable("validateManifest should have thrown");
+    } catch (err) {
+      const problems = (err as GoldenSetValidationError).problems;
+      expect(problems.some((p) => p.includes("params"))).toBe(true);
+    }
+  });
+
   it("collects more than one problem in a single pass", () => {
     const broken = manifest([
       validCase({ caseId: "case-01-clean-match" }),

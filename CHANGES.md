@@ -4,6 +4,84 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-466 — LH-016: Detail view (2026-08-11)
+
+**What changed.** LabelHunter now has a Detail view (PRD §5). It shows the label photo next
+to every field's extracted value, the applicant's own value, a match badge, and the reason.
+The results checklist gained one new link to open it: "See the label photo and full
+comparison."
+
+The view lives at `/verify/:verificationId`. It reads straight from the database. It works
+right after a verify, and it works for a link revisited later. It never calls a model. It
+only shapes rows the verify route already saved — TH-R19: the cascade is the architecture.
+
+Three server pieces support it:
+- `src/server/verification-detail/` shapes one verification's full detail. Each field gets a
+  label value, an application value, evidence, a verdict, and a reason. The detail also
+  includes the label image's URL and pixel dimensions.
+- `src/app/api/label-images/[labelImageId]/route.ts` serves the saved label photo's bytes.
+- `src/server/storage/local-file-storage.ts` gained `readLabelImage`, the read-side twin of
+  the existing `saveLabelImage`.
+
+**The scope question, resolved with evidence.** The ticket asked what PRD §5's Detail view
+needs that the app does not carry yet.
+
+- The application's own value per field is already in the database, on the `applications`
+  table (`brand_name`, `class_type`, `alcohol_content_raw`, `net_contents_raw`). This view
+  reads those columns directly. It needs no migration.
+- The label image for side-by-side display was already in the database
+  (`label_images.storage_path`). No route served it before this ticket. The new image route
+  closes that gap.
+- A "Resolved by Sonnet" flag is already in the database, but only at the label level
+  (`verifications.resolution_path`). `field_results` has no per-field resolver column. This
+  view shows one label-level badge instead of a per-field annotation. A per-field annotation
+  would invent a fact the schema does not carry. This entry names that limit instead of
+  hiding it.
+- The warning's "expected vs. detected" diff has a limit: the government warning has no
+  per-application value to diff against. One fixed statutory standard applies to every label,
+  not an application-specific one (see `schema.ts`'s own comment on `applications`). Sourcing
+  and verifying that statutory text against ttb.gov is LH-020's own decision. CP-2 gates that
+  decision, and CP-2 has not run yet. This view shows the label's detected text and a plain
+  description of the legal standard, side by side. The verdict and reason shown come from a
+  check already computed upstream. It never computes its own text comparison. Standing rule
+  11 requires the real exact-compare result here, never a fuzzy re-derivation invented by
+  this view.
+
+**Tests added this ticket.** Every new module was written test-first (red for the right
+reason, then green):
+- `get-verification-detail.test.ts` — 13 cases: the not-found path, a clean PASS, the
+  "not filed on the application" fallback, resolved-by-Sonnet true and false, the resolver's
+  note read defensively against an untyped `jsonb` column, and the headline message for a
+  REVIEW verdict.
+- The label-image route's `route.test.ts` — 4 cases: a real byte round-trip, a 404 for an
+  unknown id, a 404 for a non-numeric id with no database query at all, and a 404 (never a
+  crash) for a database row whose file was lost from disk.
+- `DetailView.test.tsx` — 9 cases: the image tag's real dimensions, the shared verdict-banner
+  text, per-field match badges, the warning row's own column labels, the "Resolved by Sonnet"
+  badge, and the resolver's note, with an explicit check that its confidence number never
+  reaches the page.
+- `local-file-storage.test.ts` — 4 new cases for `readLabelImage`, including a
+  path-traversal check.
+- `ResultsChecklist.test.tsx` — 1 new case for the "See the label photo and full comparison"
+  link.
+
+**Observed, not only unit-tested.** A real `pnpm build` and a real `pnpm dev` run gave direct
+evidence, not only unit tests. A real POST to `/api/verify` made one live Haiku call. A real
+fetch of the returned `/verify/:id` link then showed the persisted headline message, an image
+tag with the right URL, and all five field rows. `/api/label-images/:id` returned a genuine
+JPEG matching the uploaded photo's exact pixel dimensions. A nonexistent id on both routes
+returned a designed 404, never a crash. Setting `resolution_path` to `EXTRACTOR_RESOLVER` by
+hand, and adding a resolver note, confirmed two things: the "Resolved by Sonnet" badge and the
+note text render on the page, and the note's confidence number does not render.
+
+**How to run it.** `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`.
+
+**Rollback.** `git revert` this commit. The verify flow and the results checklist keep
+working without it: this ticket only adds a new view, linked from the checklist, and two new
+server modules. It changes no database table. It changes no existing route's request or
+response shape. The only visible change to an existing screen is the checklist's one new
+link.
+
 ## TRO-497 — PR review round 4: local CodeRabbit pass, 4 fixed, 1 dismissed (2026-08-11)
 
 **What changed.** A fresh local CodeRabbit pass posted 5 findings against the round-3 fix

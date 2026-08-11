@@ -10,14 +10,15 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 real and fixed here.
 - `index.ts` (major): `extractLabel` built a fresh `new Anthropic()` on every call when
   no client was injected. Fixed: `getDefaultExtractorClient()` builds the client once and
-  reuses it — a batch run extracts hundreds of labels (PRD §3.5), and a client per call is
-  needless setup. The shared client also sets an explicit `timeout` (30s — a safety net
-  against a hung request, not the SDK's 10-minute default sized for long completions) and
-  `maxRetries: 0` (not the SDK default of 2 — an SDK-level retry runs underneath, not
-  coordinated with, the batch worker's own rate-limit backoff CP-3 will build, and can add
-  seconds neither TH-R2's 5-second budget nor TH-R4's batch throughput accounts for; the
-  caller decides whether to retry a 429/5xx). `options.client` still overrides it, for
-  tests. Verified the reuse test is load-bearing: removing the caching made
+  reuses it. A batch run extracts hundreds of labels (PRD §3.5); a client per call is
+  needless setup. The shared client sets `timeout: 30s`. That timeout is a safety net
+  against a hung request; the SDK's own default is 10 minutes, sized for long completions.
+  The shared client also sets `maxRetries: 0`, not the SDK default of 2. An SDK-level
+  retry would run underneath the batch worker's own rate-limit backoff (CP-3 builds that
+  worker) with no coordination between the two, and could add seconds that neither TH-R2's
+  5-second budget nor TH-R4's batch throughput accounts for. The caller decides whether to
+  retry a 429 or 5xx. `options.client` still overrides the shared client, for tests.
+  Verified the reuse test is load-bearing: removing the caching made
   "returns the same client instance on every call" fail, as expected, then restored it.
 - `golden-case.test.ts` (minor): the government-warning assertions hardcoded `true`/
   `"ALL_CAPS"` instead of deriving them from the golden-set fixture. A fixture change

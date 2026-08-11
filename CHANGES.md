@@ -4,6 +4,124 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-464 — LH-014: Sonnet resolver + review-queue insertion (2026-08-11)
+
+**What changed.** The Sonnet resolver (PRD §3.1/§3.3, TH-R1, TH-R22) under
+`src/server/resolver/`. It answers a narrow question for the fields the Validation
+Router (LH-012/LH-013) could not decide: what should the verdict be? It never runs on
+a label the router passed — `resolveEscalatedLabel` refuses at runtime when
+`labelVerdict !== "REVIEW"`, not just by convention (TH-R19). The design is CP-1 §6,
+Troy-approved; this ticket implements it as written.
+
+- **`prompt.ts`** — `SYSTEM_PROMPT`, the CP-1-approved bytes (§6.2) copied verbatim.
+- **`schema.ts`** — `RESOLVER_JSON_SCHEMA`, the CP-1-approved output schema (§6.4),
+  also copied verbatim.
+- **`serialize.ts`** — `serializeUntrusted(value)`. Plain `JSON.stringify` does not
+  escape `<`, `>`, or `/` — a value containing the literal string
+  `</UNTRUSTED_DATA>` survives a bare `JSON.stringify` call intact and can close the
+  prompt's untrusted-data block early. Verified with a real `node -e` run before
+  writing this down (see `serialize.ts`'s doc comment for the exact input/output
+  pair). This function Unicode-escapes those three characters after
+  `JSON.stringify`, so no literal `<`, `>`, or `/` reaches the prompt.
+- **`input-validation.ts`** — `assertUntrustedInputWithinBounds`, the length check
+  CP-1 §6.3 requires before any application or extraction value reaches the prompt
+  template (an implausibly long value is itself a signal). Rejects, never truncates.
+- **`user-message.ts`** — builds the resolver's per-call user message: two
+  `<UNTRUSTED_DATA>` blocks (application form, extractor reading, both through
+  `serializeUntrusted`), a "WHAT THE CODE DECIDED" table from the router's own field
+  rows, and a "FLAGGED FIELDS" section naming only the fields the caller flagged.
+- **`request.ts`** — `buildResolverRequestParams(input)`: `model: "claude-sonnet-5"`,
+  `output_config.format` carrying the schema, `output_config.effort: "high"`
+  (CP-1 §6.6's starting point), no `temperature` (the model rejects it — confirmed
+  live during TRO-460, reused here rather than re-asserted), no `thinking` config
+  (adaptive thinking is on by default).
+- **`response.ts`** — `parseResolverResponse`/`deriveResolvedFields`: shape validation
+  (collects every problem, same convention as the extractor), then the
+  judges-only-brand/class rule (CP-1 §6.5). `brand_name`/`class_type` keep the
+  resolver's disposition as authoritative. `alcohol_content`/`net_contents`/
+  `government_warning` never carry a MATCH/MISMATCH opinion forward — the type
+  (`CorrectionFieldResolution`) has no property that could hold one; only
+  `needsHuman` survives, because "I cannot read this" is real signal the prompt
+  explicitly allows (rule 7), distinct from the equivalence judgment the prompt
+  forbids for these fields (rule 5). `overall` is always recomputed from the derived
+  fields, never trusted from the raw response.
+- **`field-result.ts`** — `toJudgedFieldResultRow`, the one place this ticket
+  constructs a router `FieldResultRow`. Its parameter type is `JudgedFieldResolution`,
+  not the full `ResolvedFieldResult` union — passing a correction-field resolution is
+  a compile error. `resolvedBy: "sonnet"` only appears with a non-null
+  `reviewReason`, satisfying `FieldResultRow`'s discriminated union by construction.
+  The three correction fields still need a real comparator re-run on the corrected
+  reading before they have a final verdict (CP-1 §6.5: "code re-decides") — that is
+  the pipeline's job (LH-015/LH-016), not this ticket's.
+- **`queue.ts`** — `insertReviewQueueEntry`. One `review_queue` row per escalated
+  verification, for both a `resolved` and a `needs-human` outcome — `disposition`
+  stays null in both; it is a human's later action, never set by this module
+  (matches `db:seed`'s own fixture). `resolverOutput` carries the full,
+  business-rule-enforced resolution as the auditable trail TH-R22 asks for.
+- **`index.ts`** — `resolveEscalatedLabel(input, options?)`, the public entry point.
+  Guards `labelVerdict === "REVIEW"` and a non-empty `flaggedFields` list before
+  calling anything. Injectable `client` and `db` for tests; the shared default client
+  reads `ANTHROPIC_API_KEY`, timeout 60s, `maxRetries: 0` (same reasoning as the
+  extractor: an SDK-level retry would stack silently under a future batch worker's
+  own backoff).
+
+**Load-bearing decisions.**
+- `serializeUntrusted` is applied to every untrusted value, always after
+  `JSON.stringify`, never as a substitute for it — confirmed the composition order
+  matters with the same `node -e` check.
+- The judges-only-brand/class rule is enforced by the TYPE, not a comment: there is
+  no code path anywhere in this module that can read a MATCH/MISMATCH opinion off a
+  correction field, because the type has no such property.
+- `resolveEscalatedLabel` throws `ResolverNotEscalatedError` on a non-REVIEW router
+  result — a second, runtime layer of TH-R19 enforcement, independent of whichever
+  pipeline ticket ends up calling this function.
+
+**Tests.** `pnpm test -- src/server/resolver` — 11 files, 71 cases. Covers: the
+attack-string serialization (byte-exact, from a real `node -e` run), input-length
+rejection, the resolver request shape (model, no temperature, effort, image-before-
+text), the judges-only-brand/class rule, review-queue insertion against this
+worktree's real database (`queue.test.ts`, via `.factory-env`'s `DATABASE_URL` — a
+unique-constraint violation on a second insert for one verification is asserted,
+not just the happy path), the discriminated-union legality of `FieldResultRow`
+(`field-result.test.ts`, plus a compile-time proof in `types.test.ts` via
+`@ts-expect-error`), never-on-the-happy-path (both a runtime guard and a mocked-
+client assertion that Sonnet is never called for a non-REVIEW result), and a
+dedicated prompt-injection oracle (`injection.test.ts`) matching CP-1 §6.3's own
+oracle exactly: the targeted field's disposition is unaffected by a sibling field's
+injection payload, tested at both the request-building layer (byte-identical
+serialized sibling data) and the response-parsing layer (byte-identical derived
+correction for `government_warning` whether or not `brand_name`'s entry carries the
+payload).
+
+**Red-first, confirmed.** Two regressions were deliberately reintroduced and
+confirmed to fail the right tests before being reverted: (1) reverting
+`serializeUntrusted` to a bare `JSON.stringify` failed 4 tests, including the
+injection test that caught a forged third `<UNTRUSTED_DATA>` tag; (2) making
+`deriveResolvedFields` always report `needsHuman: false` for a correction field
+failed 3 tests, including the `needs-human` outcome test in `index.test.ts`. Both
+fixes were then restored and the suite re-confirmed green.
+
+**How to run it.** `pnpm test -- src/server/resolver` (needs `DATABASE_URL` pointed
+at a migrated worktree database — source `.factory-env` first; one test file,
+`queue.test.ts`, writes to and cleans up after itself against the real schema).
+`pnpm typecheck` / `pnpm lint` / `pnpm build` all clean.
+
+**Rollback.** `git revert` this commit; restore `src/server/resolver/.gitkeep`.
+Nothing outside `src/server/resolver/` changed.
+
+**Known limits — not verified.** No live call to `claude-sonnet-5` was made, or
+could be, under this repo's no-live-API-calls-in-tests rule — every claim about the
+model's actual behavior (whether it truly ignores an injected instruction, its real
+latency, its real token cost) is "not measured," same honesty standard as CP-1 §7.
+What IS verified: the request this module builds matches CP-1 §6.6's settings
+exactly, the untrusted-data escaping is byte-verified, and the parsing/business-rule
+layer defends correctly against every raw response shape this repo can construct in
+a test, including one simulating a model that got the injection wrong. This ticket
+does not wire the resolver into a pipeline — no code in this repo calls
+`resolveEscalatedLabel` yet outside its own tests; that wiring, and the comparator
+re-run for `alcohol_content`/`net_contents`/`government_warning`'s corrected
+readings, is LH-015/LH-016.
+
 ## TRO-462 — PR review round 2: orchestrator triage, 2 fixed, 3 deferred (2026-08-10)
 
 **What changed.** The orchestrator's independent gate run found 5 more CodeRabbit findings

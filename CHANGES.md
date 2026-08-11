@@ -309,6 +309,837 @@ does not wire the resolver into a pipeline — no code in this repo calls
 `resolveEscalatedLabel` yet outside its own tests; that wiring, and the comparator
 re-run for `alcohol_content`/`net_contents`/`government_warning`'s corrected
 readings, is LH-015/LH-016.
+## TRO-497 — PR review round 4: local CodeRabbit pass, 4 fixed, 1 dismissed (2026-08-11)
+
+**What changed.** A fresh local CodeRabbit pass posted 5 findings against the round-3 fix
+commit. Four are real; this entry fixes all four. One restates round 2's already-deferred
+`Degradation.params` discriminated-union item. Dismissed again; no code change.
+
+Fixed:
+- `scripts/golden/build.ts:11` (minor): the header's determinism claim was unqualified. Fixed:
+  scoped to "one machine with one toolchain," and pointed at `render.ts`'s system-font
+  substitution known limitation.
+- `golden-set/README.md:31` (major): the LH-005 paragraph read as dense prose. Fixed: ASD-STE100
+  rewrite into short, one-fact sentences. Every fact stays — LH-005 ownership, the Gemini API
+  call, the image's current absence, the required `verified: true` sign-off, the loader's
+  schema-only check, and `images.test.ts`'s existence check.
+- `CHANGES.md:9` (major): the round-three summary combined several facts per sentence. Fixed:
+  ASD-STE100 rewrite into short, single-fact sentences. Every count and detail stays.
+- `src/lib/golden-set/loader.ts:244` (major): `checkDegradations` accepted a `glare` or
+  `low-light` entry after a `rotate` or `perspective` entry. `degrade.ts`'s
+  `assertMatchesOriginalCanvas` already refuses that same order at build time — a geometric
+  transform changes the canvas, so `LABEL_REGIONS`'s coordinates go stale. Fixed: the same
+  order check now runs at spec-validation time. New red-first tests cover a 180-degree rotate
+  followed by `glare` and by `low-light`, and a `perspective` entry followed by `glare`. The
+  committed manifest has no case that breaks the new rule — confirmed by
+  `loadGoldenSetManifest`'s own test, which loads and validates the real file.
+
+Dismissed:
+- `src/lib/golden-set/types.ts:130` (minor): replace `Degradation.params` with a discriminated
+  union keyed by `DegradationType`. Round 2 already deferred this same item as a bigger refactor
+  across `types.ts`, `loader.ts`, and `degrade.ts`'s dispatcher. Still true; no code change here.
+
+**Tests added this round.** `loader.test.ts`: three new rejection cases for the degradation
+order rule (rotate-then-glare, rotate-then-low-light, perspective-then-glare), and one new
+acceptance case (glare-then-rotate). Two pre-existing tests changed their fixture's
+degradation order to stay valid under the new rule; their assertions did not change.
+
+**How to run it.** `pnpm test`, `pnpm typecheck`, `pnpm lint`.
+
+**Rollback.** `git revert` this commit.
+
+## TRO-497 — PR review round 3: GitHub PR #9, 11 fixed, 2 dismissed (2026-08-11)
+
+**What changed.** CodeRabbit reviewed PR #9's live GitHub diff, not the local round-1/round-2
+passes. That review posted 13 comments. Eleven were real; this entry fixes all eleven. Two
+are dismissed. One restates a finding this entry already fixes, under a different comment.
+CodeRabbit's own severity tag calls the other one "Low value" — it is a test refactor, not a
+bug.
+
+Fixed — documentation and ground truth:
+- `CHANGES.md:10` (minor): round 2's own header claimed "5 fixed, 3 deferred." Its breakdown
+  listed something different: six real fixes bundled into five bullets, one stale finding, two
+  deferred findings, and one dismissed prose complaint mislabeled "deferred." Round 1's own
+  CodeRabbit-triage section had the same kind of mismatch — it fell three lines short of its
+  claimed "3 deferred." Fixed: both headers and their "Deferred" lists now match what each
+  entry enumerates.
+- `CHANGES.md:220` (minor): the "How to run it" line said "same spec in, same pixels out." That
+  is an unqualified determinism claim. `render.ts`'s font stacks name system fonts, not files
+  committed to the repo — this same changelog entry already states that fact 30 lines earlier.
+  Fixed: the claim now says "on one machine" and points at the font-substitution caveat.
+- `golden-set/manifest.json:1165` (minor): case-20's `description` and `notes` named only the
+  upside-down rotation. Its `degradations` list also applies an 18-sigma blur, and its `V9`
+  vector maps to "blurry/unreadable" specifically because of that blur. Fixed: both fields now
+  name the blur.
+- `golden-set/README.md:38` (major): the LH-005 section said the loader "rejects a
+  `verified: true` `ai-generated` case" — backwards. `loader.ts` line 494 rejects
+  `verified !== true`; it requires `true`, not rejects it. Fixed: swapped `true` for `false`.
+- `golden-set/README.md:70` (minor): the `degradations` field's parenthetical named three of
+  the five `DegradationType` values (glare, rotation, low light), reading as if `blur` and
+  `perspective` were unsupported. Fixed: named all five.
+- `golden-set/README.md:87` (minor): the naming convention permitted `.png` for any case, but
+  `build.ts` always JPEG-encodes a `rendered`/`rendered+degraded` case — a `.png` path there
+  would hold JPEG bytes under a PNG name, undetected. Fixed: scoped `.png` to a future
+  `ai-generated` case (LH-005), whose image comes straight from Imagen, not `build.ts`'s encode
+  step.
+- `scripts/golden/images.test.ts:8` (minor): the file header claimed its tests confirm a
+  degraded case's `degradations` entry "matches what `degrade.ts` actually applied when
+  `build.ts` produced the committed image." The tests compare the manifest against hardcoded
+  literals; none reads the committed image bytes or calls `degrade.ts`. Fixed: the header now
+  states what the tests check, and names the real gap — a manifest edit without a
+  `pnpm golden:build` rerun goes uncaught here.
+
+Fixed — code:
+- `scripts/golden/build.ts:76` (trivial): the JPEG encode had no explicit `.flatten()` call.
+  sharp's JPEG encoder composites alpha over black by default; the pipeline avoids that today
+  only because `render.ts` paints an opaque white body and `applyRotate`/`applyPerspective` fill
+  new corners white — an invariant spanning three files, enforced nowhere. Fixed: added
+  `.flatten({ background: "#ffffff" })` before the JPEG encode, the same call `pipeline.ts` uses
+  for the same reason. A no-op on today's fully opaque images — confirmed by rebuild: all 29
+  committed images stayed byte-identical.
+- `scripts/golden/render.ts:203` (minor): `.classType` and both `.divider` elements hardcoded
+  pixel positions (`210`, `90`, `310`, `500`) that must stay in sync with `LABEL_REGIONS` by
+  hand. `degrade.ts` crops by `LABEL_REGIONS`; a future edit to one side without the other would
+  move painted pixels without moving the crop — the same silent-wrong-pixels risk round 2's
+  `assertMatchesOriginalCanvas` fix closed for `applyGlare`/`applyLowLight`. Fixed: the four
+  literals now derive from `LABEL_REGIONS` plus three named gap constants
+  (`CLASS_TYPE_GAP_PX`, `CONTENT_DIVIDER_GAP_PX`, `WARNING_DIVIDER_GAP_PX`), reproducing today's
+  exact values. Confirmed by rebuild: byte-identical to before.
+- `scripts/golden/degrade.test.ts:235` (trivial): no test asserted `applyDegradation`'s
+  documented determinism claim — that the same input and params always produce the same output
+  bytes. `applyGlare` rasterizes an SVG through librsvg, the transform most likely to vary.
+  Fixed: a new test calls each of the five types twice on the same input and asserts byte
+  equality.
+- `scripts/golden/render.test.ts:142` (trivial): the one determinism test reused a single
+  `renderer.page` for both renders, proving determinism only within one Chromium process.
+  `pnpm golden:build` launches a fresh browser every run (`createLabelRenderer` in `build.ts`'s
+  `main`). Fixed: a second test renders the same case from an independent
+  `createLabelRenderer()` call and compares decoded pixels.
+
+Dismissed:
+- `scripts/golden/render.test.ts:1` — a rollup comment restating the same two gaps
+  `degrade.test.ts:235` and `render.test.ts:142` already name individually (both fixed above).
+  Duplicate, not a separate finding.
+- `src/lib/golden-set/loader.test.ts:267` — extract six tests' repeated throw/catch block into a
+  shared helper. CodeRabbit's own severity tag on this finding is "Low value." No correctness or
+  coverage gap; skipped to avoid churn against six passing tests — CLAUDE.md's simplicity rule
+  governs prose Claude writes, not restructuring code "for its own sake."
+
+**Tests added this round.** `degrade.test.ts`: one new case, byte-equality for all five
+degradation types called twice. `render.test.ts`: one new case, decoded-pixel equality across
+two independent `createLabelRenderer()` calls.
+
+**How to run it.** `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`. Rebuilt with
+`pnpm golden:build` after the `build.ts`/`render.ts` changes — all 29 committed images matched
+their prior byte counts exactly (1,104,318 bytes total), confirming no rendered pixel changed.
+
+**Rollback.** `git revert` this commit. The pipeline works without it; these are documentation
+corrections and hardening, not new features.
+
+## TRO-497 — PR review round 2: 6 fixed, 2 deferred (2026-08-11)
+
+**What changed.** A second gate run triggered a fresh CodeRabbit pass against round 1's fix
+commit. It found 10 findings. Six were real defects. The five bullets below fix all six — one
+bullet fixes two findings in the same file. One finding restated work round 1 already did:
+stale, no action needed. Two findings are real but deferred, not fixed here. One finding is
+addressed by explanation below, not by a code change — it is neither a fix nor a deferral.
+
+- `degrade.ts` (major): `applyGlare` and `applyLowLight` trusted `LABEL_REGIONS`'s fixed
+  coordinates. Those coordinates are only correct against the original, unrotated canvas. A
+  degradations list that ran a geometric transform (`rotate`, `perspective`) before a
+  region-targeted one (`glare`, `low-light`) would silently glare or dim the wrong pixels. No
+  committed case does this today, but a future one could. Fixed: `assertMatchesOriginalCanvas`
+  checks the input image's real decoded size before either function runs, and throws a clear
+  `RangeError` on a mismatch instead of silently misplacing the effect. New tests: apply each
+  function to an already-rotated image, confirm it throws.
+- `loader.ts` (major): `DEGRADATION_PARAM_SHAPE` checked only each type's required params. It
+  never checked glare's optional `angleDegrees`/`opacity` when present, and never rejected a
+  param a transform does not use at all — for example, a `rotate` entry that also carried a
+  stray `sigma`. Fixed: the shape table now has a `required` and an `optional` part per type,
+  every optional key is type-checked when present, and any key outside both sets fails
+  validation. New tests for all three cases.
+- `build.ts` (major): `imagePath` came straight from the manifest into `join(REPO_ROOT, ...)`.
+  The loader already checks `imagePath` starts with the literal string
+  `"golden-set/images/"`, but that is a string-prefix check — it would not catch a value like
+  `"golden-set/images/../../etc/passwd"`, which starts with that same prefix as plain text.
+  Fixed: `resolveImagePath` resolves the real path and confirms it stays inside
+  `golden-set/images/` before any write. The manifest is a committed, reviewed file, not
+  runtime input, so this is defense in depth, not a response to an active threat.
+- `images.test.ts` (minor): the existence check confirmed a file was present and non-empty,
+  never that it decoded as an actual JPEG. Fixed: a new test decodes every committed image
+  with sharp and asserts `metadata.format === "jpeg"`.
+- `golden-set/README.md` (minor + major): "May be empty." lost its subject — changed to "The
+  list may be empty." The LH-005 section did not say an `ai-generated` case's image and its
+  `verified: true` flag must land in the same manifest change — added that sentence, and named
+  which test starts failing if they don't (`images.test.ts`).
+
+One finding restated "commit the missing image assets" — already done in round 1's commit;
+stale against the current tree, no action needed.
+
+Two findings are deferred, not fixed here:
+- Replacing `Degradation.params: Record<string, number | string>` with a discriminated union
+  keyed by `DegradationType`. The shape validation added in round 1, tightened further above,
+  already closes the practical gap. The type-level version is a bigger refactor across
+  `types.ts`, `loader.ts`, and `degrade.ts`'s dispatcher — better as its own change.
+- `render.ts`'s font stacks name system fonts, not fonts committed to the repo, which design
+  doc §2 calls for. Documented as a known limitation directly in `render.ts`'s module comment,
+  with the exact practical consequence (same-machine determinism holds; cross-machine font
+  substitution could differ). Not fixed here — sourcing and license-checking real font files
+  is a real task, and rushing a font choice risks a license problem worse than the gap it
+  closes.
+
+**Dismissed, not deferred.** A tenth finding argued this changelog entry (round 1's) was still
+too dense. Round 1 already applied one real ASD-STE100 pass (see that entry's own note). This
+round adds five more short, single-fact paragraphs rather than a second full rewrite of round
+1's text — further compressing already-compressed technical detail risks losing precision for
+its own sake, which CLAUDE.md's writing-style section warns against directly.
+
+**Tests added this round.** `degrade.test.ts`: two new "rejects an already-transformed image"
+cases (glare, low-light). `loader.test.ts`: four new cases for the closed degradation-params
+schema (accepts glare's optional params when well-typed, rejects a wrong-typed optional param,
+rejects an unrecognized param). `images.test.ts`: one new case for the decoded-JPEG check.
+
+**How to run it.** Same as round 1: `pnpm golden:build`, `pnpm test`, `pnpm typecheck`,
+`pnpm lint`, `pnpm build`. Re-ran `pnpm golden:build` after these fixes — every image's byte
+count matched round 1's exactly, confirming the fixes changed no rendered pixel.
+
+**Rollback.** `git revert` this commit. Round 1's pipeline still works without it; these are
+hardening fixes, not new features.
+
+## TRO-497 — LH-004: golden-set degradation pass, plus the renderer LH-003 deferred (2026-08-11)
+
+**Scope note.** This ticket's stated job was the degradation pass. LH-003 (TRO-458, Done)
+shipped the spec schema, the manifest, and the loader. LH-003 did not ship `render.ts`. Its
+own CHANGES.md entry says so directly: "the renderer itself... `golden-set/images/` is still
+empty." A degradation pass needs a clean base image to degrade. No clean base existed. The
+orchestrator approved building the renderer here, as a prerequisite of this ticket, on this
+branch — not as a separate ticket. Both pieces follow below.
+
+**What changed.** `golden-set/images/` now holds a real, committed JPEG for every `rendered`
+or `rendered+degraded` case. That is 29 of 29 — every case that currently exists in the
+manifest. Total size: 1,104,318 bytes (1078 KB). Largest file: 46,719 bytes (case-19).
+Smallest file: 9,365 bytes (case-20). Every image stays well under the ticket's ~500 KB
+target. No `ai-generated` case exists in the manifest yet — that provenance is LH-005's job.
+This ticket leaves that path imageless; a scoped test checks for exactly that, per plan.
+
+- **`scripts/golden/render.ts`** — the renderer. `buildLabelHtml` is a pure function. Given a
+  case's `label` ground truth, it builds an HTML/CSS document. The document draws the brand,
+  class/type, ABV line, net contents, and government warning verbatim. Whatever string the
+  spec carries is the string in the HTML, byte for byte — design doc §1's core rule: no image
+  model is ever trusted with the warning text. `renderLabelImage` screenshots that HTML with
+  Playwright's bundled Chromium. Chromium is already a repo dependency, for `pnpm test:e2e` —
+  no new dependency. The HTML is fully inline, so this makes no network call. `LABEL_REGIONS`
+  names four pixel rectangles (`brand`, `front`, `content`, `warning`); `degrade.ts` targets
+  each region by name. Two categories bake their "imperfection" into the render itself, not a
+  post-process transform: tiny warning text (case-23/24) and an unusual brand/class-type font
+  (case-25/26). Both are print choices, not photo conditions. `CASE_STYLE_OVERRIDES`
+  (`render.ts:105`) is keyed by exact `caseId`, never a substring match.
+- **`scripts/golden/degrade.ts`** — five transforms per design doc §4: `applyRotate`,
+  `applyBlur`, `applyPerspective`, `applyGlare`, `applyLowLight`. `applyDegradation` is the
+  one dispatcher `build.ts` calls. It reads a manifest case's `degradations` list, so that
+  list stays the single source of truth for what happened to a case's pixels. Every numeric or
+  region parameter is validated before it reaches sharp — finite, in-range, a real region name
+  (CLAUDE.md rule 13). `degrade.test.ts`'s "rejects ..." tests are red-first against that
+  validation: each one checks a specific bad input throws, not just that something throws.
+  `applyPerspective` approximates a keystone camera angle with a 2D affine shear. sharp has no
+  true 4-corner projective warp; a real one needs a per-pixel remap, and this repo has no
+  dependency for that — not worth adding one for a synthetic test fixture. No committed case
+  uses `applyPerspective` yet. It is implemented and unit-tested as a design-doc-§4 capability,
+  ready for the next case that needs it.
+- **`scripts/golden/build.ts`** — orchestrates render → degrade → JPEG-encode (mozjpeg,
+  quality 82) → write, for every non-`ai-generated` case. Run with `pnpm golden:build`.
+- **`golden-set/manifest.json`** — six cases gained a `degradations` entry recording the exact
+  parameters `build.ts` used:
+  - case-17: glare on the `brand` region.
+  - case-18: glare on the `warning` region.
+  - case-19: a mild, correctable 15° rotation.
+  - case-20: a 180° rotation plus an 18-sigma blur — direct evidence for rubric V9's
+    "blurry/unreadable," not rotation alone. The case's own note says no field should read
+    confidently; the added blur backs that up.
+  - case-21: low light on the `front` region.
+  - case-22: low light on the `warning` region.
+
+  Cases 23–26 (tiny text, odd typography) and every clean `rendered` case carry no
+  `degradations`. Their imperfection, if any, is render-time — never a `degrade.ts` transform.
+- **`src/lib/golden-set/types.ts`, `loader.ts`** — added `DegradationType` and `Degradation`.
+  Design doc §3 named this `degradations` field; LH-003 never implemented it. Added the
+  loader's matching validation: the field is optional, each entry's `type` must be a known
+  transform, and each transform's required `params` keys must be present with the right type
+  (see the review-triage note below for the two checks added after CodeRabbit's first pass).
+  New `loader.test.ts` cases cover both the accept and reject paths. The manifest's shape
+  changed. The loader still accepts it — "loader stays green," per this ticket's brief.
+- **`vitest.config.ts`** — widened `include` to also match `scripts/**/*.test.ts`. This
+  ticket's tests now run inside `pnpm test`, the one unit vitest run — not a separate suite.
+- **`package.json`** — added the `golden:build` script.
+- **`golden-set/README.md`** — replaced the "no images yet" section. It now states what
+  exists (the three-script pipeline, image sizes) and what still doesn't (LH-005's
+  `ai-generated` wild labels, LH-006's `verify.ts`). Left `verified: false` on every case
+  alone. `verified` records a **human** sign-off (design doc §3); CP-2 review is where that
+  happens, not this ticket.
+
+**A real tool quirk found while writing tests, not a `degrade.ts` bug.** Chaining
+`sharp(image).extract(region).stats()` in one pipeline silently returns whole-image
+statistics. It ignores the extract (sharp 0.35.3 / vips 8.18.3, this machine). A minimal
+repro confirmed it: a 100×100 white canvas with one 10×10 black corner. `.extract().stats()`
+reported the *same* mean for the black corner, a white corner, and the full image.
+Materializing the extract into its own buffer first fixes it — `.extract(region).toBuffer()`,
+then `sharp(thatBuffer).stats()` — and gives the correct, expected numbers. `degrade.ts`
+itself never calls `.stats()`. It chains `.extract()` straight into
+`.modulate()`/`.composite()` and `.toBuffer()`, which materializes correctly regardless. So
+this was a test-helper bug, not a production one. `degrade.test.ts`'s `meanBrightness` helper
+documents the finding and the fix.
+
+**CodeRabbit review triage.** Round 1's local CodeRabbit pass raised 10 findings against the
+initial commit. Five were real defects, fixed below. One was already correct by design. One is
+deferred. Two more are STE100 prose critiques resolved by an in-place rewrite, not by a
+deferral — see the note after the deferred item.
+
+Fixed:
+- `loader.ts` (major): `checkDegradations` checked that `params` was an object but never that
+  it held the right keys. Fixed: a `DEGRADATION_PARAM_SHAPE` table checks each transform's
+  required params are present with the right primitive type (`angleDegrees`/`sigma`/`shear`/
+  `brightnessFactor` numeric, `region` a string). Range checks stay in `degrade.ts`, the
+  schema of record for those.
+- `loader.ts` / `checkCase` (major): a `rendered` case could carry a non-empty `degradations`
+  list — self-contradictory, since "rendered" means clean. Fixed: the loader now rejects a
+  non-empty `degradations` list unless `provenance` is `rendered+degraded`.
+- `degrade.ts` (major): `applyPerspective` checked `shear` was finite but never bounded it.
+  Fixed: rejects `|shear| > 3` (`MAX_SHEAR_MAGNITUDE`), with tests at and past the bound.
+- `render.test.ts` (minor): the "omits the ABV line" test only checked that net-contents text
+  appeared somewhere in the HTML — it would not have caught a stray empty ABV line. Fixed per
+  CodeRabbit's own suggested diff: count `.line` divs directly, assert exactly one, holding
+  net contents.
+- `images.test.ts` (major): the ai-generated existence test only checked one direction
+  (unverified + no image). Fixed: now checks both directions — a verified case must have a
+  real image, and an imageless case must not be verified.
+
+Already correct by design, not a real gap:
+- A finding argued the loader's `imagePath` contract should let an `ai-generated` case be
+  imageless. It already is: the loader never checks file existence for any case (LH-003's own
+  design — see `loader.ts`'s comments); only `images.test.ts` checks existence, and it already
+  scopes that check to non-`ai-generated` cases.
+
+Deferred (filed as follow-up work, not fixed here — real but larger than this triage pass):
+- Replacing the loose `Degradation.params: Record<string, number | string>` with a
+  discriminated union keyed by `DegradationType`, one interface per transform. The shape
+  validation added above closes the practical gap (a manifest with a missing or wrong-typed
+  param now fails to load); the type-level version is a bigger refactor across `types.ts`,
+  `loader.ts`, and `degrade.ts`'s dispatcher, better done as its own change.
+
+Resolved by explanation, not deferred: two STE100 prose findings against this entry's own
+first draft and against `golden-set/README.md`'s new section were addressed directly, in
+place, rather than filed as follow-up work.
+
+**Tests (all in `pnpm test`, red-first where a fix followed).**
+- `scripts/golden/render.test.ts` — `buildLabelHtml`'s exact-warning-text guarantee, checked
+  by a literal substring match (`.includes()`) against every rendered case's spec text; the
+  same for brand/class-type text. The warning `<div>` is empty when
+  `governmentWarningPresent` is false. HTML-escaping is scoped to `&`/`<`/`>` only — a first
+  draft escaped `'`/`"` too, which broke the literal-substring check against case-14's
+  `STONE'S THROW`; fixed by narrowing the escape to the three characters that are actually
+  structural in a text-content context, never a quoted attribute here. The "omits the ABV
+  line" test counts `.line` divs directly (see the review-triage note above). A
+  Playwright-backed determinism test renders the same case twice and compares **decoded raw
+  pixels**, not just PNG bytes, for exact equality.
+- `scripts/golden/degrade.test.ts` — each transform's effect: rotation expands the canvas and
+  changes pixels; blur measurably lowers stdev; glare brightens its target region only; low
+  light darkens its target region only; perspective changes shape. Plus the
+  boundary-rejection tests described above, including the new shear bound. The dispatcher
+  routes every known type and rejects an unknown one.
+- `scripts/golden/images.test.ts` — every non-`ai-generated` case's `imagePath` resolves to a
+  real, non-empty, well-under-500KB file. The six degraded cases' `degradations` entries match
+  exactly what's described above. Every tiny-text/odd-typography/clean case carries none. The
+  ai-generated consistency check covers both directions (see the review-triage note above).
+- `src/lib/golden-set/loader.test.ts` — new cases for the `degradations` schema: accepts a
+  well-formed list and every transform type with its required params; rejects an unknown
+  transform type, a missing `params` object, a missing required param
+  (`rotate` without `angleDegrees`), a wrong-typed param (`glare` with a numeric `region`),
+  and a non-empty list on a case that isn't `rendered+degraded`.
+
+**How to run it.** `pnpm golden:build` regenerates every image from the current manifest and
+code. This is deterministic on one machine: same spec in, same pixels out on that machine —
+proven by the render-determinism test. Cross-machine determinism is not verified. `render.ts`'s
+font stacks name system fonts (see the "Deferred" note above), so a different OS could
+substitute a different font and produce different pixels. `pnpm test` runs everything above.
+`pnpm typecheck` / `pnpm lint` / `pnpm build` all pass.
+
+**Rollback.** `git revert` this ticket's commit(s). Reverting removes `scripts/golden/`, the
+29 committed images, the `degradations` manifest entries and schema addition, and the
+`vitest.config.ts`/`package.json` wiring. No other ticket's code depends on any of it yet.
+LH-005 (Imagen) and LH-006 (verify gate) are both still open, and unblocked either way.
+
+**Not done here (explicitly out of scope).** `scripts/golden/verify.ts` (LH-006) and
+`scripts/golden/imagen.ts` (LH-005) — neither written nor called. No code in this ticket
+performs a network call.
+## TRO-467 — PR review round 2: 8 findings, 7 fixed, 1 dismissed (2026-08-11)
+
+**Still does not clear CP-2.** The gate's second review pass found 8 more findings against the
+corrected document. Seven were real.
+
+Four were internal inconsistencies the round-1 edits introduced or left behind. Two passages
+said capitalization is checked at "three named positions" and then listed four words. §5.4's
+distance table said "the other 25 cases with a warning" when 29 total minus 2 missing-warning
+cases minus 4 listed cases is **23**. Q8 still described the ladder with three outcome classes
+and overlapping rate bands, while §8.4 had been corrected to four classes and disjoint bands.
+And the original CP-2 entry below still credited NFKC as passing the normalization test.
+
+Two were real gaps. §7.1 promised that a disagreement between the derived capitalization and the
+model's `prefix_casing` produces REVIEW, but §6.1's mapping table had no row for it — a promise
+with no branch behind it. And Appendix B's verification commands could not fail: they printed
+`match: True`/`False` and exited 0 either way, and the TTB-page check carried a **second
+hard-coded copy of the statutory string**, which is precisely the drift risk this document exists
+to remove. Both scripts now derive the expected text from the S1 fetch, check all six of TTB's
+checklist items rather than one, and exit non-zero on any mismatch. Both were extracted from the
+document and executed as written before this commit.
+
+One was prose style: §5's opening used a figurative "gets attacked in the interview". Rewritten
+literally, per the repo's ASD-STE100 rule.
+
+**One dismissed, for the second time.** *"De-hyphenation must require line-geometry evidence"*
+(raised as major in round 1, escalated to critical in round 2, with no new argument). Dismissed
+on two grounds, and §5.2 now states the first as a proof rather than an assertion: for the rule
+to produce a false PASS, some candidate would have to de-hyphenate to the canonical string
+without being a hyphenated wrap — but the rule only deletes a hyphen that a newline follows, and
+the canonical string contains no hyphen, so every such candidate is canonical with a wrap hyphen
+inserted. No such candidate exists. The worst case is a severity downgrade from FAIL to REVIEW,
+which still puts the label in front of a person. Second: the proposed mechanism needs character
+bounding boxes, which the OCR channel can supply and the vision channel cannot, so adopting it
+would make the two channels disagree by construction on every hyphenated label.
+
+**How to run it.** Nothing to build or test. Appendix B's S3–S5 and S6–S7 scripts are now
+runnable checks — `bash` them; they exit non-zero if a source has changed.
+
+**Rollback.** `git revert` this commit.
+
+## TRO-467 — PR review triage: 15 CodeRabbit findings, 14 fixed, 1 dismissed (2026-08-11)
+
+**This entry still does not clear CP-2.** It corrects the checkpoint document. CP-2 stays
+blocking until Troy runs the walkthrough and gives explicit acknowledgment.
+
+**What changed.** The orchestrator's gate run captured 15 findings against the CP-2 document.
+Each was verified against the document before anything was edited. Fourteen were real. One was
+dismissed with a reason. Three of the fixes are substantive enough to name.
+
+**1. TTB checks the capitals in `Surgeon General`, and our draft would have passed them in
+lower case.** CodeRabbit claimed TTB guidance requires it; we did not take that on faith. We
+retrieved TTB's own *Checklist of Mandatory Label Information* for wine and for distilled
+spirits, and both carry the checkbox verbatim: `☐ Are the “S” in Surgeon and “G” in General
+capitalized?` TTB's *2022 Boot Camp for Brewers* lists lower-case `surgeon general` under "Keg
+Label Common Mistakes". The document's §5.4 had recommended a fully case-insensitive body
+comparison, which would have accepted a deviation the agency's own specialist is instructed to
+catch. **Capitalization is now checked at four word positions** — `GOVERNMENT`, `WARNING`,
+`Surgeon`, `General` — each with its own citation, and case is folded everywhere else. The
+find also produced a new §2.6 mapping all six of TTB's warning checkboxes onto what LabelHunter
+does and does not do, and named the two it cannot check ("one statement", "separate and apart").
+This is the best material in the document, and it exists because a reviewer pushed on a claim.
+
+**2. NFKC was wrong by the document's own standard.** §5.1 states that a normalization rule is
+legitimate only when it cannot change what a human reader sees. NFKC folds compatibility forms —
+fullwidth `Ａ` to `A`, the ligature `ﬁ` to `fi` — which a reader **can** see, and it fails in
+the dangerous direction by making a visibly deviant label compare equal. Changed to **NFC**, with
+an explicit rule for the space characters (U+00A0 and friends) that NFKC had been handling by
+accident. The effect on this project is nil and the document says so: the statutory string is
+pure ASCII, so every edit distance in §5.4 is unchanged. The rule was corrected because it was
+wrong in principle, not because it produced a wrong number.
+
+**3. Two claims were stated in the present tense that describe work nobody has done.** The
+tesseract.js `langPath` test and "a change to the regulation breaks a test" both read as
+existing protections. Neither exists. The first is now an explicit LH-020 requirement, including
+the library's real filename contract (`` `${langPath}/${lang}.traineddata${gzip ? '.gz' : ''}` ``,
+verified from source) and a network-disabled startup test — a test that only checks `langPath`
+is set would pass while the filename is wrong. The second is now split into two mechanisms: a
+deterministic CI test against the committed eCFR fixture, which catches the constant drifting;
+and a separate live re-fetch, run on a schedule or by hand, which is the only thing that can
+notice the regulation itself changing. Neither is built.
+
+**The other eleven fixes.** Agreement between the VLM and OCR channels now requires matching
+capitalization verdicts, not only matching words — folding case in the agreement test would have
+called `GOVERNMENT WARNING` and `Government Warning` "agreeing" while they produce opposite
+verdicts. The ladder's outcome classes gained a fourth ("not found") and are now stated as a
+partition with a summing assertion, so a missing warning cannot inflate the resolution-suspect
+rate that drives model upgrades. The ladder's rate bands no longer overlap at exactly 10%. The
+capitalization check now runs on transport-normalized text rather than raw, so an invisible
+zero-width character cannot cause a false capitalization failure. De-hyphenation gained its
+safety argument — the statutory string contains no hyphen, so the rule cannot manufacture a PASS,
+only downgrade a FAIL to a REVIEW. The golden-set count was wrong: the document said 12 while its
+own table listed 13, and the correct figure under a stated selection rule is **15**; the rule and
+a runnable query are now both in the document. §9.2 gained a fifth finding — the two new
+capitalization positions have no covering golden case. Appendix B gained runnable commands for
+every claim it had been describing in prose, so "every command is in Appendix B" is now true.
+
+**One dismissed.** *"Single-channel PASS must be forbidden."* Dismissed: this is **open question
+10**, which the document already raises with a recommendation, both costs, and a named place in
+the Q&A (Q7 calls it the residual false-PASS path). Changing the rule here would pre-empt the
+decision the checkpoint exists to put in front of Troy. The document surfaces the exposure rather
+than hiding it, and §8.4 now also requires the single-channel rate to be reported separately so
+it cannot disappear into a healthy-looking aggregate.
+
+**How to run it.** Nothing to build or test. Re-read §2.6, §5.2, §5.4, and §7.1 — those carry the
+substantive changes. Appendix B's S6–S8 commands reproduce the TTB checklist finding; they need
+`pdftotext`.
+
+**Rollback.** `git revert` this commit. It edits two documents and no code.
+
+## TRO-467 — LH-CP2: ⛔ CHECKPOINT 2 walkthrough material (2026-08-11)
+
+**This entry does not clear a checkpoint.** It adds the material Troy reads *at* the
+checkpoint. CP-2 stays blocking until Troy runs the walkthrough and gives explicit
+acknowledgment. Until then, LH-020 and LH-021 do not start.
+
+**What changed.** One new document: `docs/checkpoints/cp2-warning-subsystem.md`. No product
+code, no `src/` change, no golden-set change. It covers everything PRD §10 requires CP-2 to
+cover — canonical text sourcing, the OCR choice, normalization, the exact compare, caps and
+bold handling, and the limitation wording — plus the golden-set review PRD §12 assigns to this
+checkpoint, and a "defend it" Q&A (TH-R9, TH-R10, TH-R7, TH-R12, TH-R15, TH-R21, TH-R23).
+
+- **The canonical text is now verified, not assumed.** PRD §3.4 carried the statutory string
+  with a note beside it: "verify verbatim against ttb.gov during implementation — a ticket,
+  not an assumption." This is that task, and it is done. The statement was retrieved live on
+  2026-08-11 from the eCFR API for 27 CFR 16.21 (title 27, issue date 2026-07-06) and
+  cross-checked against three ttb.gov pages — malt beverage, wine, and distilled spirits. All
+  four sources carry a byte-identical string. **The PRD's copy is exactly right:** 283
+  characters, pure ASCII, SHA-256 `35e1f5d39ee341ac7c114f8159956cb0cc1981b94e4ffeee194ff5060bf99fbc`,
+  no discrepancy in wording, punctuation, casing, or whitespace. Every command is in the
+  document's Appendix B.
+- **Two findings the verification turned up.** The CFR renders the statement as two
+  paragraphs, not one string, so the joined form is a documented design decision rather than
+  something inherited. And the caps rule lives in 27 CFR 16.22(a)(2), not 16.21 — a sentence
+  that carries **two** bold rules, not one: the first two words must print in bold, and the
+  remainder may not. The extractor schema has a single `formatting.bold` flag and checks
+  neither. The document names both and drafts the limitation wording.
+- **Normalization is the load-bearing section**, and it turns on one sentence: a normalization
+  rule is legitimate only when it cannot change what a human reader sees on the label.
+  Whitespace runs, line breaks, line-end hyphenation, invisible characters, Unicode NFC
+  canonical forms, and an explicit list of space characters all pass that test and are
+  normalized. (This bullet said NFKC when the document first shipped; NFKC folds *visibly*
+  different compatibility forms and therefore fails the test — corrected in the review round
+  above.) Quote folding, diacritic
+  stripping, and punctuation dropping all fail it and are deliberately absent — even though
+  all three appear in the brand-name normalizer, where equivalence rather than exactness is
+  the requirement. The statutory string contains no apostrophe, no quotation mark, and no
+  non-ASCII character, so those rules could only ever make a deviant label look compliant.
+- **Capitalization is checked at four word positions and folded everywhere else.** Words 1 and
+  2 must be `GOVERNMENT WARNING` in full capitals (16.22(a)(2)); `Surgeon` and `General` must
+  each carry an initial capital (TTB's own label checklist — see the review-round entry above,
+  which corrected this section from a fully case-insensitive body). Computed over the golden
+  set's own ground-truth strings, the title-case cases (case-08, case-09) sit at edit distance
+  **0** once case is folded — the separate capitalization check is the only thing that catches
+  them, and rubric gate G4 depends on it. Genuine rewordings sit at distance 24 and 38, which
+  is what sizes the proposed near-miss band at 1–2.
+- **Every verdict maps onto a real `WarningComparatorResult` branch**, and the document names
+  the two `ReviewReason` values the union cannot return: `CONFLICTING_EXTRACTION` (PRD §3.7
+  uses it for channel disagreement) and `LOW_MODEL_CONFIDENCE` (golden cases 23 and 24 expect
+  it). Recommendation: leave the type alone and fix the two golden entries.
+- **The tesseract.js choice is verified, and it carries a hazard.** Version 7.0.0, Apache-2.0,
+  pure JS plus a WASM core with no native dependencies — that is the Render argument. But
+  unless `langPath` is set, it downloads language data from a public CDN **at runtime**, which
+  would break TH-R7's constrained-network requirement and PRD §3.8's latency budget together.
+  Found by reading the package source, not by hitting it. LH-020 must commit
+  `eng.traineddata`, set `langPath`, and test that it stays set.
+- **A real conflict between PRD §3.8 and one crop-detection option.** A model-reported bounding
+  box cannot arrive before the model call finishes, so it cannot satisfy §3.8's "OCR runs
+  concurrently with the Haiku call". The document recommends classical detection instead, with
+  a band-search fallback and a single-channel final fallback.
+- **The golden-set review CP-2 owns.** 29 cases, 15 warning-relevant (the count and its
+  selection rule were corrected in the review round above), **zero images** —
+  `golden-set/images/` holds only `.gitkeep`. CP-2 can sign off on the specifications and
+  cannot sign off on the pixels. Five findings are raised for the walkthrough to settle.
+- **Eleven open questions**, each with a recommendation and the cost of choosing wrong. Every
+  threshold is marked **proposed** and every unmeasured figure says "not measured", CP-1 style.
+  A fifth claim label, **verified**, was added for retrieved statutory text — it is a stronger
+  claim than "derived" and weaker than "measured on our own system".
+
+**How to run it.** Nothing to build, nothing to test — this branch adds no code, so `pnpm build`
+and `pnpm test` have nothing new to exercise. Read `docs/checkpoints/cp2-warning-subsystem.md`
+— about 45 minutes — and work the Appendix A checklist during the walkthrough. Appendix B holds
+a runnable command for every **verified** claim in the document, including the canonical-text
+byte comparison against PRD §3.4 and the golden-set case count.
+
+**Rollback.** `git revert` this commit. The document adds no code and nothing imports it.
+## TRO-465 — LH-013 comparator swap (2026-08-11)
+
+**What changed.** LH-013 (TRO-463) merged real field comparators to `main`
+(`src/server/comparators/`). This ticket's one swap point,
+`src/app/api/verify/route.ts`, now imports `productionComparators` from there instead of
+the provisional stand-in. `provisional-comparators.ts` and its test are deleted — nothing
+else in the repo imported them.
+
+**Behavioral change, honest.** `alcohol_content` and `net_contents` can now report a
+`MISMATCH` on a genuine numeric disagreement — the provisional stand-in never asserted
+`MISMATCH` for any field. `brand_name`/`class_type` still never do (CP-1 §5.3: a judgment
+call routes to REVIEW, never a silent FAIL — LH-013's own design, unchanged by this ticket).
+The label-level verdict a real disagreement now produces is still `REVIEW`, not `FAIL`: the
+government warning has no comparator yet (LH-020) and always needs review today, and REVIEW
+outranks FAIL in the rollup. `route.test.ts` updated: the STONE'S THROW case now asserts a
+real `MATCH` with a normalization note (TH-R8, previously untestable under the provisional
+stand-in's plain casefold); a new test asserts the ABV field-level `MISMATCH` this ticket
+could not previously produce. No test was weakened — every changed assertion states the real
+comparator's real behavior, verified by reading `src/server/comparators/*.ts` directly, not
+by trusting either side's prose.
+
+**How to run it.** `pnpm typecheck`, `pnpm lint`, `pnpm test` (400 tests), `pnpm build` — all
+green.
+
+**Rollback.** `git revert` this commit. The provisional comparator files it deletes are
+restored by the revert; no other ticket depends on them.
+
+## TRO-465 — PR review round 1: orchestrator triage, 9 fixed, 0 dismissed (2026-08-11)
+
+**What changed.** The worktree's captured CodeRabbit review (`.factory/coderabbit.json`, 9
+findings) was triaged against current code, not against the review text's own instructions.
+Every finding checked out as real and current — none was stale or a misread. All 9 fixed.
+
+Fixed, real:
+
+- `verify-client.ts` (critical): the default `fetchImpl` was a bare `fetch` reference. Some
+  engines throw "Illegal invocation" when `fetch` runs detached from its receiver. Fixed:
+  `globalThis.fetch.bind(globalThis)`. Added a test that stubs `globalThis.fetch` and confirms
+  the default path works with no injected `fetchImpl`.
+- `verify-client.ts` (major): `isVerifyErrorResponse` accepted any object with an `error` key,
+  with no check that `kind` was a real `VerifyErrorKind` or that `message` was a string. A
+  successful response was cast to `VerifySuccessResponse` with zero shape check. Fixed: `kind`
+  now checks against a new `VERIFY_ERROR_KINDS` array (`types.ts`), and a new
+  `isVerifySuccessResponse` guard checks `applicationId`, `verificationId`, `labelVerdict`
+  (against `LABEL_VERDICTS`), and `fields` before trusting the body. Either check failing now
+  throws the same designed `VerifyClientError("SERVICE", …)` instead of letting a malformed
+  body reach `ResultsChecklist` and crash it. Four new tests cover the paths this closes.
+- `ResultsChecklist.tsx` (major): its own `aria-live="polite"` wrapper mounts fresh, with its
+  content already inside, only once a result exists — a live region that appears with content
+  already in it is not guaranteed to be announced (WAI-ARIA). Fixed: `ResultsChecklist` no
+  longer sets `aria-live` itself; `VerifyForm.tsx` now renders it inside the one persistent
+  `aria-live="polite"` region that already existed for the loading message, present from the
+  form's first render.
+- `parse-request.test.ts` (trivial, ×2): added a test for the inclusive alcohol-content
+  boundaries (0 and 100 both parse) and a test for a missing `netContentsUnit` (same rejection
+  message as an unrecognized one).
+- `ResultsChecklist.test.tsx` (trivial): added a test for a `MISMATCH` row — the suite
+  previously only exercised `MATCH` and `NEEDS_REVIEW`.
+- `VerifyForm.tsx` (trivial): added a comment on the `FormData` build explaining why it must
+  run before `setPhase({ status: "loading" })` — every control disables on loading, and a
+  disabled control is excluded from `FormData` by the HTML forms spec itself.
+- `CHANGES.md` (minor, ×2): reworded the provisional-comparators bullet for precision
+  (`provisional-comparators.ts` defines the default bundle; `route.ts` is the call site that
+  passes it into `routeLabel`) and rewrote the styling/jsdom/how-to-run prose to ASD-STE100 —
+  shorter sentences, one instruction each, no hedging, no embedded test/file counts that go
+  stale on the next edit.
+
+Not raised by this review, confirmed unchanged: no finding asked for the real field
+comparators or the warning subsystem. The provisional stand-in and the `warningResult: null`
+wiring stay exactly as this ticket's original entry describes — settled design, not something
+this round touched. `main` still does not have LH-013 merged (re-checked before this round).
+
+**How to run it.** `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` — all green.
+
+**Rollback.** `git revert` this commit. Independent of the original TRO-465 commit below;
+reverting this one alone restores the pre-triage behavior without touching the rest of the
+ticket.
+
+## TRO-465 — LH-015: Verify screen + results checklist (2026-08-11)
+
+**What changed.** The single-label verify flow now runs end to end. It serves PRD §3.8, §5,
+and TH-R1, TH-R3, TH-R20.
+
+- `src/app/api/verify/route.ts` — a new `POST /api/verify` route. One request does the whole
+  fast path: preprocess the photo, run the Haiku extractor, route the result, persist
+  `applications`, `label_images`, `verifications`, `field_results`, and — on a REVIEW verdict —
+  `review_queue`. It returns per-field verdicts and the label verdict in the same response. It
+  never calls Sonnet. A REVIEW verdict returns immediately with an explicit "needs review —
+  {reason}" flag, matching PRD §3.8's latency contract; LH-014's resolver (a sibling ticket,
+  not yet merged) consumes the `review_queue` row later, on its own schedule.
+- `src/app/api/verify/parse-request.ts` — boundary validation for the multipart form: image
+  present, beverage type in the closed set, brand name and class/type non-blank, alcohol
+  content a number in 0–100 or blank, net contents a positive number with a recognized unit.
+  Every rejection carries a specific, plain-language message.
+- `src/app/api/verify/types.ts` — shapes shared between the route and the UI.
+- `src/server/router/provisional-comparators.ts` — **LH-013 (TRO-463) has not merged.** This
+  file defines the default `FieldComparators` bundle: exact text match after a trim and a
+  casefold, and the router's own provisional numeric parser for ABV and net contents. It never
+  returns `MISMATCH` on its own (PRD §3.3: a real disagreement routes to REVIEW, never a
+  silent FAIL). `route.ts` is the only production call site that passes a `FieldComparators`
+  value into `routeLabel` — it does so through `VerifyRouteDeps.comparators`, defaulted to
+  this bundle. Swap the one import in `route.ts` for LH-013's real bundle when it lands;
+  nothing else changes.
+- **The government warning has no comparator yet either** (LH-020, gated by CP-2, not yet
+  merged). `route.ts` passes `warningResult: null` to `routeLabel` — honestly, not a
+  fabricated match. `resolveGovernmentWarningField` (LH-012) already handles a `null` result
+  by routing to `NEEDS_REVIEW`. Until LH-020 lands, every label with a warning on it needs
+  review for that one field. Expected, not a bug in this ticket.
+- `src/server/storage/local-file-storage.ts` — writes the uploaded photo to `var/uploads/`
+  (gitignored) and returns the path `label_images.storage_path` stores. Prototype-appropriate,
+  not a durable store: Render's filesystem is ephemeral, so a redeploy can lose these files
+  while the database row survives. Documented in the file as a one-file swap point for a real
+  object store later.
+- `src/app/page.tsx` — replaces the scaffold placeholder with the Verify screen: upload
+  control, the five application fields plus the beverage-type selector, one Verify button.
+- `src/app/_components/VerifyForm.tsx`, `ResultsChecklist.tsx`, `ErrorPanel.tsx` —
+  the form, the results checklist (✓ / ✗ / ⚠ rows with evidence and the one-line reason from
+  `reason-text.ts`, never a bare confidence number), and the designed error panel (`role="alert"`,
+  not a toast) for every failure mode TH-R20 names.
+- `src/app/_lib/verify-client.ts` — the fetch wrapper. Classifies every failure into
+  `VerifyClientError` with a `kind`: a structured error body from the server, a non-2xx
+  response with none, a response this client cannot parse, a network failure, or a 45-second
+  client-side timeout (`AbortController`) for the case the server never answers.
+- `src/app/globals.css` — USWDS-influenced styling: navy and white, 18px base type, and
+  high-contrast focus rings. No purple-gradient AI slop. No emoji-driven design. Dark mode
+  follows `prefers-color-scheme`.
+
+**A jsdom finding, not a product bug.** `VerifyForm` reads the selected photo from the file
+input's own `.files` ref, not `new FormData(form).get("image")`. In this repo's jsdom test
+environment, a `FormData` built from a form element reconstructs its file entries with the
+right filename but `size: 0`. The reconstruction loses the underlying bytes. Reading the input
+directly avoids the problem.
+
+**How to run it.** Run `pnpm dev` and open `/`. Run
+`pnpm test -- src/app src/server/router/provisional-comparators.test.ts src/server/storage`
+for this ticket's own suites. Run `pnpm test` for the full suite; every test passes. Run
+`pnpm build`; it succeeds. A manual smoke test against `pnpm start` confirmed the page
+renders. The same test confirmed that `/api/verify` returns the correct JSON for a missing
+image and for an unreadable image, over a real HTTP request. The smoke test made no live
+Anthropic call.
+
+**What this ticket could not verify.** No live Haiku call, and no real photograph of a real
+label — every test mocks the Anthropic client (`makeMockMessage`, matching
+`src/server/extractor/index.test.ts`'s own pattern) or uses a synthetic sharp-generated JPEG.
+A true end-to-end run needs a real `ANTHROPIC_API_KEY` and a real label photo; say so rather
+than claim it.
+
+**Comparator set shipped.** Provisional (`provisional-comparators.ts`), not LH-013's real
+bundle — LH-013 had not merged into `main` as of this ticket's work. `main` was re-checked
+immediately before finishing; still not merged.
+
+**Rollback.** `git revert` this commit. `var/uploads/` is gitignored and holds no data worth
+preserving.
+
+## TRO-463 / TRO-504 — LH-013: real field comparators (2026-08-11)
+
+**What changed.** This ticket builds the real field comparators under `src/server/comparators/`.
+They replace the router's placeholder judgment logic. They serve TH-R8 and TH-R11.
+
+- `normalize.ts` — the fuzzy-match normalizer. Six steps: Unicode NFKC, casefold, apostrophe
+  folding, diacritic stripping, whitespace collapse, punctuation drop. Apostrophe folding runs
+  before NFKC, not after. NFKC decomposes the acute accent (´) into a space and a combining
+  mark. Folding first keeps that character from disappearing before the fold rule can see it.
+  A code comment explains the exception.
+- `similarity.ts` — normalized Levenshtein distance. It backs the brand/class fuzzy match.
+- `brand.ts` — the real `brand_name` / `class_type` comparator. TH-R8's named case: label
+  "STONE'S THROW" against application "Stone's Throw" now MATCHes, with a note. Similarity at
+  or above 0.95 MATCHes. Below 0.95, the field goes to NEEDS_REVIEW. It never returns MISMATCH.
+  A brand comparator is a judgment tool, not an exact one.
+- `abv.ts` — the real ABV grammar. It reads a percent, a proof statement, or both, in either
+  order. It checks proof against percent: 27 CFR 5.1 defines proof as twice the percent by
+  volume. It compares the label's percent against the application's declared percent.
+- `net-contents.ts` — the real net-contents grammar. It reads a value and a unit (mL, L, fl
+  oz), converts units, and compares the label's quantity against the application's.
+- `index.ts` — `productionComparators`, the one import site LH-015 (TRO-465) wires into
+  `routeLabel` in place of the router's placeholder set.
+
+**TRO-504's three deferred edge cases close here, not as patches to the code they name.**
+
+1. Combining marks did not stop `text-boundary.ts`'s evidence check from reading a combining
+   mark's position as a word boundary. An unaccented value could pass as evidence for a
+   different, accented word. `\p{M}` now joins `\p{L}\p{N}` in that check's lookaround.
+2. `text-boundary.ts`'s casefold used bare `toLowerCase()`. German ß did not fold to "ss", so
+   an all-caps label spelling and a mixed-case ß spelling of the same word did not match. Both
+   `text-boundary.ts` and the new fuzzy normalizer now fold ß (and ẞ) to "ss".
+3. The net-contents parser stopped at the first number in the text and gave up if that
+   number's unit did not match. `"90 Proof 750 mL"` returned no match instead of finding
+   `750 mL`. The real parser scans every number in the text and returns the first one a known
+   unit follows.
+
+**A regulatory VERIFY cell closes.** `required-fields.ts` marked beer's `alcohol_content` cell
+VERIFY. 27 CFR 7.65(a) states an alcohol content statement is optional on a malt beverage
+label, unless a state law prohibits or requires it. This system models the federal rule, not
+state law. The cell is now `not_required`, cited. Wine's cell stays VERIFY: 27 CFR 4.36(a)'s
+real rule is conditional on the wine's own ABV and its class/type wording. The required-field
+table has no way to express that condition without a larger schema change. The comment states
+what was verified and what still needs a larger fix.
+
+**Two numbers move from "fails safe, unverified" to "verified, and zero is correct."** TTB's
+ABV tolerance regulations govern the bottled product against its own label (27 CFR 5.65(b) for
+spirits, 27 CFR 4.36(b) for wine). This comparator checks a different thing: does the label's
+printed number match the application form's declared number. Zero tolerance is the right
+answer for that second question. It is not a stand-in for the first.
+
+**Wiring.** `field-resolution.ts` and `overrides.ts` import their numeric parsing from
+`../comparators/abv.ts` and `../comparators/net-contents.ts` now, not from
+`provisional-numeric.ts`. That file's docstring says LH-013 replaces its callers, not
+necessarily the file itself. Its only remaining caller is `test-support.ts`'s own placeholder
+fixtures, which belong to the already-merged LH-012 router-core ticket. The docstring is
+narrowed to say so.
+
+**A known gap, left open rather than silently fixed.** CP-1 §5.3 names three literal
+apostrophe variants to fold: the straight apostrophe, the backtick, and the acute accent. A
+label extracted by a real vision model may use a Unicode right single quotation mark (’,
+U+2019) as a stylized apostrophe instead. That character is not one of the three named
+variants, so it is not folded. Measured effect: "Stone’s Throw" against "Stone’s Throw" scores
+about 0.923 similarity. That is just under the 0.95 match threshold. The pair routes to
+NEEDS_REVIEW, not a clean MATCH. `docs/checkpoints/cp1-cascade-router-prompts.md` should decide
+whether to widen the rule. This ticket implements the rule as written, not a guess at its
+intent.
+
+**Six more fixes from this ticket's own CodeRabbit review round, applied before this commit.**
+Each one is a real gap, each has a named regression test, and each keeps the comparators pure
+functions with no new dependency.
+
+- `brand.ts`: two values that both normalize to an empty string (e.g. "..." against "---",
+  once punctuation is stripped) no longer score a false MATCH. Empty normalized text has
+  nothing left to judge, so it now routes to NEEDS_REVIEW like any other undecidable pair.
+- `abv.ts`: `compareAbv` now catches a self-contradictory label (CP-1's own named example, "45%
+  Alc./Vol. (100 Proof)") on its own, as a pure function — not only through the router's
+  separate structural check. It reports NEEDS_REVIEW even when the stated percent happens to
+  equal the application's.
+- `net-contents.ts`: `parseNetContents` now reads a comma-grouped thousands number
+  ("1,000 mL") as one value, and does not misread a comma-decimal (European-style "1,5") as a
+  US decimal.
+- `net-contents.ts`: `compareNetContents` now MATCHes two equal zero quantities. The tolerance
+  check divides by the application's quantity, defined as an infinite fraction when that
+  quantity is zero — correct when the label states something else, wrong when the label also
+  states zero and the two numbers actually agree.
+- `field-resolution.ts`: `checkAbvStructural`'s tolerance-vs-application check now reads a
+  proof-only label's canonical percent (27 CFR 5.1), not only a label that states a percent
+  directly. A proof-only reading used to skip this check entirely.
+- `overrides.ts`: the ABV evidence-support check now compares the value and the evidence on
+  the canonical percent scale, not axis-by-axis (percent-vs-percent, proof-vs-proof only). A
+  value stated as "45%" whose evidence states only "90 Proof" is the same reading and is now
+  recognized as such — this is the same bug class TRO-462's own `abvAlternatesConflict` fix
+  already closed for the alternates check, now closed here too.
+
+**Two required-fields.ts findings from that same review round, not adopted.** CodeRabbit
+suggested reverting beer's `alcohol_content` cell from `not_required` back to `verify`. This
+ticket verified the regulation directly (27 CFR 7.65(a), fetched and quoted in the code
+comment): a malt beverage label's alcohol content statement is optional under federal law.
+`not_required` is the cited, correct value, not a guess CodeRabbit's heuristic should override.
+
+**Three more fixes from PR #8's GitHub review, applied before this commit.** Each one has a
+named regression test.
+
+- `net-contents.ts`: `parseNetContents("1,5 L")` used to return `{ value: 5, unit: "l" }`
+  instead of failing. The comma-grouping fix above stopped it from misreading "1,5" as "1.5",
+  but it left the orphaned "5" behind as a fresh candidate. `NUMBER_PATTERN` now refuses to
+  read a bare number that sits directly after a comma, so a malformed comma-decimal rejects the
+  whole read instead of handing back a different, wrong quantity.
+- `field-resolution.ts`: `checkNetContentsStructural`'s alternates check now MATCHes two equal
+  zero quantities, the same zero-division bug already fixed in `compareNetContents`, present
+  here too.
+- `text-boundary.ts`: `normalizeForBoundaryMatch` now calls `.normalize("NFC")` first. A
+  precomposed accented letter and its canonically equivalent decomposed form (a base letter
+  plus a combining mark) used to normalize to different strings. They are the same text under
+  Unicode's own definition, and now they normalize the same way.
+
+**A note on running tests.** `pnpm test` and `pnpm test -- <path>` both read `DATABASE_URL`.
+Every worktree gets its own database (`scripts/factory/worktree.sh`); running tests with
+`DATABASE_URL` unset, or pointing at any database other than the current worktree's own, is
+this repo's own non-negotiable rule (`CLAUDE.md`) — test provisioning resets the target
+schema. `source .factory-env` before running either command below.
+
+**How to run it.** `pnpm test -- src/server/comparators src/server/router` runs the new and
+changed suites. `pnpm test` runs everything; 344 tests pass repo-wide. `pnpm typecheck` and
+`pnpm lint` are both clean.
+
+**Rollback.** `git revert` this commit. That one command is the whole procedure. The same
+commit changed `field-resolution.ts` and `overrides.ts`'s imports. It also added the module
+they import from. A revert restores the old imports and the old behavior together. Nothing is
+left to fix by hand.
 
 ## TRO-462 — PR review round 2: orchestrator triage, 2 fixed, 3 deferred (2026-08-10)
 

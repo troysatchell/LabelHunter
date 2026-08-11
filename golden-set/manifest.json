@@ -977,6 +977,9 @@
         }
       },
       "notes": "Photo condition for whoever generates or sources the image: a bright reflective streak crossing the brand-name area of the front label, rest of the label evenly lit.",
+      "degradations": [
+        { "type": "glare", "params": { "region": "brand", "angleDegrees": 25, "opacity": 0.85 } }
+      ],
       "vectors": [],
       "provenance": "rendered+degraded",
       "verified": false
@@ -1035,6 +1038,9 @@
         }
       },
       "notes": "governmentWarningText above records what is genuinely printed on the label (ground truth) \u2014 the photo defect is what makes it unreadable, not the printed content. Photo condition: glare streak positioned over the back-label warning panel.",
+      "degradations": [
+        { "type": "glare", "params": { "region": "warning", "angleDegrees": -20, "opacity": 0.85 } }
+      ],
       "vectors": [],
       "provenance": "rendered+degraded",
       "verified": false
@@ -1092,13 +1098,16 @@
         }
       },
       "notes": "Proves TH-R10's mild case: a moderate camera-angle rotation should still produce a confident, correct PASS, not a reflexive REVIEW. Pairs with case-20 (severe rotation).",
+      "degradations": [
+        { "type": "rotate", "params": { "angleDegrees": 15 } }
+      ],
       "vectors": [],
       "provenance": "rendered+degraded",
       "verified": false
     },
     {
       "caseId": "case-20-rotation-severe-upside-down",
-      "description": "Label photographed upside down; the tool cannot reliably read any field.",
+      "description": "Label photographed upside down and out of focus; the tool cannot reliably read any field.",
       "category": "rotation",
       "beverageType": "spirits",
       "imagePath": "golden-set/images/case-20-rotation-severe-upside-down.jpg",
@@ -1149,7 +1158,11 @@
           }
         }
       },
-      "notes": "Same label content as case-19, shot upside down instead of mildly rotated \u2014 proves graceful degradation instead of a confident wrong verdict (TH-R10).",
+      "notes": "Same label content as case-19, shot upside down and out of focus instead of mildly rotated \u2014 proves graceful degradation instead of a confident wrong verdict (TH-R10). The blur is what carries vector V9.",
+      "degradations": [
+        { "type": "rotate", "params": { "angleDegrees": 180 } },
+        { "type": "blur", "params": { "sigma": 18 } }
+      ],
       "vectors": [
         "V9"
       ],
@@ -1209,6 +1222,9 @@
         }
       },
       "notes": "Photo condition: front label underexposed; back label (ABV, net contents, warning) evenly lit and legible.",
+      "degradations": [
+        { "type": "low-light", "params": { "region": "front", "brightnessFactor": 0.32 } }
+      ],
       "vectors": [],
       "provenance": "rendered+degraded",
       "verified": false
@@ -1266,6 +1282,9 @@
         }
       },
       "notes": "governmentWarningText records the true printed content (ground truth); the photo defect, not the print, is why it can't be read confidently.",
+      "degradations": [
+        { "type": "low-light", "params": { "region": "warning", "brightnessFactor": 0.3 } }
+      ],
       "vectors": [],
       "provenance": "rendered+degraded",
       "verified": false

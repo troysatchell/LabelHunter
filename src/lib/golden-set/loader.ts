@@ -81,6 +81,13 @@ const PROVENANCE_VALUES: readonly GoldenSetProvenance[] = [
 const RUBRIC_VECTORS: readonly RubricVector[] = [
   "V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10",
 ];
+const DEGRADATION_TYPES = [
+  "rotate",
+  "perspective",
+  "glare",
+  "low-light",
+  "blur",
+] as const;
 const EXPECTED_FIELD_KEYS = [
   "brandName",
   "classType",
@@ -190,6 +197,123 @@ function checkVectors(
       );
     }
   }
+}
+
+type ParamType = "number" | "string";
+
+/** A `DegradationType`'s required and optional `params` keys, with each key's primitive type. */
+interface DegradationParamShape {
+  readonly required: Record<string, ParamType>;
+  readonly optional?: Record<string, ParamType>;
+}
+
+/**
+ * Required and optional parameter keys, and their primitive type, per
+ * `DegradationType` — matching what `scripts/golden/degrade.ts`'s `apply*`
+ * functions actually read (its `params.angleDegrees ?? 25` style defaults
+ * are exactly the `optional` keys below). This is a shape check only
+ * (present-if-required, right primitive type, no unrecognized key) — the
+ * real range checks (opacity in (0,1], sigma in [0.3, 1000], and so on)
+ * stay in `degrade.ts`, the schema of record for a transform's own limits.
+ * A manifest that names a key with the wrong type, or a key a transform
+ * does not read at all, is still a mistake worth catching here, before
+ * `build.ts` ever calls sharp.
+ */
+const DEGRADATION_PARAM_SHAPE: Record<
+  (typeof DEGRADATION_TYPES)[number],
+  DegradationParamShape
+> = {
+  rotate: { required: { angleDegrees: "number" } },
+  blur: { required: { sigma: "number" } },
+  perspective: { required: { shear: "number" } },
+  glare: {
+    required: { region: "string" },
+    optional: { angleDegrees: "number", opacity: "number" },
+  },
+  "low-light": { required: { region: "string", brightnessFactor: "number" } },
+};
+
+/**
+ * Validates the optional `degradations` list (TRO-497 / LH-004, design doc
+ * §3). Absent or an empty array are both fine — most cases carry no
+ * degradations. Checks that every entry's `params` object has the required
+ * keys its `type` needs, that any optional key present has the right
+ * type, and that no other, unrecognized key is present — a closed schema,
+ * not just a required-keys check. Also checks order: a `glare` or
+ * `low-light` entry cannot follow a `rotate` or `perspective` entry.
+ * `degrade.ts`'s `assertMatchesOriginalCanvas` refuses that same
+ * combination at build time. A rotate or perspective transform changes
+ * the canvas, so `LABEL_REGIONS`'s coordinates no longer point at the
+ * right pixels.
+ */
+function checkDegradations(
+  problems: string[],
+  where: string,
+  raw: unknown,
+): void {
+  if (!Array.isArray(raw)) {
+    problems.push(`${where}: field "degradations" must be an array, got ${JSON.stringify(raw)}`);
+    return;
+  }
+
+  // Tracks whether an earlier entry in this same list already applied a
+  // geometric transform (rotate or perspective). See the ordering note
+  // above this function.
+  let sawGeometricTransform = false;
+
+  raw.forEach((entry, i) => {
+    const w = `${where}.degradations[${i}]`;
+    if (!isRecord(entry)) {
+      problems.push(`${w}: must be an object`);
+      return;
+    }
+    checkEnum(problems, w, entry, "type", DEGRADATION_TYPES);
+    if (!("params" in entry) || !isRecord(entry.params)) {
+      problems.push(`${w}: field "params" must be an object`);
+      return;
+    }
+
+    const type = entry.type;
+    if (typeof type !== "string" || !(type in DEGRADATION_PARAM_SHAPE)) {
+      return; // Already reported by the checkEnum call above.
+    }
+
+    if ((type === "glare" || type === "low-light") && sawGeometricTransform) {
+      problems.push(
+        `${w}: "${type}" cannot follow a rotate or perspective entry — LABEL_REGIONS no longer matches the transformed image`,
+      );
+    }
+    if (type === "rotate" || type === "perspective") {
+      sawGeometricTransform = true;
+    }
+
+    const shape = DEGRADATION_PARAM_SHAPE[type as keyof typeof DEGRADATION_PARAM_SHAPE];
+    const params = entry.params;
+
+    for (const [key, expectedType] of Object.entries(shape.required)) {
+      if (typeof params[key] !== expectedType) {
+        problems.push(
+          `${w}.params: "${type}" requires "${key}" to be a ${expectedType}, got ${JSON.stringify(params[key])}`,
+        );
+      }
+    }
+    for (const [key, expectedType] of Object.entries(shape.optional ?? {})) {
+      if (key in params && typeof params[key] !== expectedType) {
+        problems.push(
+          `${w}.params: "${type}"'s optional "${key}" must be a ${expectedType} when present, got ${JSON.stringify(params[key])}`,
+        );
+      }
+    }
+    const allowedKeys = new Set([
+      ...Object.keys(shape.required),
+      ...Object.keys(shape.optional ?? {}),
+    ]);
+    for (const key of Object.keys(params)) {
+      if (!allowedKeys.has(key)) {
+        problems.push(`${w}.params: "${type}" does not accept a "${key}" param`);
+      }
+    }
+  });
 }
 
 function checkApplication(problems: string[], where: string, raw: unknown): void {
@@ -414,6 +538,25 @@ function checkCase(problems: string[], index: number, raw: unknown): void {
     checkExpected(problems, caseLabel, raw.expected);
   } else {
     problems.push(`${caseLabel}: missing required field "expected"`);
+  }
+
+  if ("degradations" in raw && raw.degradations !== undefined) {
+    checkDegradations(problems, caseLabel, raw.degradations);
+    // A non-empty degradations list only makes sense on a case that admits
+    // to being degraded. A "rendered" (clean) or "ai-generated" case
+    // claiming a rotate/glare/etc. history is self-contradictory — one or
+    // the other field is wrong, and this catches it at manifest-load time
+    // instead of at whatever point later code trusts one field over the
+    // other.
+    if (
+      Array.isArray(raw.degradations) &&
+      raw.degradations.length > 0 &&
+      raw.provenance !== "rendered+degraded"
+    ) {
+      problems.push(
+        `${caseLabel}: "degradations" is non-empty but provenance is ${JSON.stringify(raw.provenance)} — only "rendered+degraded" cases may carry degradations`,
+      );
+    }
   }
 
   checkOptionalField(problems, caseLabel, raw, "notes", isNonEmptyString, "a non-empty string");

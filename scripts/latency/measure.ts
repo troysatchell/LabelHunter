@@ -19,10 +19,13 @@
  * real browser's upload time and the Next.js HTTP framing layer, neither of
  * which PRD §3.8's stage table (preprocess / OCR / Haiku / router) budgets
  * for. Uploaded images are saved to a scratch directory, not the real
- * `var/uploads/`, and every application row this script creates is deleted
- * afterward (cascades to its label image, verification, field results, and
- * review-queue row) — the same cleanup `route.test.ts` does, so a
- * measurement run leaves the worktree database exactly as it found it.
+ * `var/uploads/`. This script deletes every application row it creates as
+ * it goes (cascades to that row's label image, verification, field
+ * results, and review-queue row) — the same cleanup `route.test.ts` does.
+ * A delete failure is recorded, not silently retried or ignored (see
+ * `main`'s `cleanupFailures`) — this is best-effort row cleanup, not a
+ * guarantee the database ends up byte-for-byte as it started (sequence
+ * counters still advance either way).
  *
  * **What is NOT in this measurement, and why.** The warning subsystem
  * (LH-020) and the Sonnet resolver (LH-014) have not merged as of this
@@ -123,6 +126,14 @@ interface RunResult {
   headlineReason?: string | null;
   applicationId?: number;
   error?: string;
+}
+
+/** One `applications` row this script created but failed to delete
+ * afterward. Recorded, never silently swallowed — see `main`'s own
+ * `cleanupFailures` handling and this file's module comment. */
+interface CleanupFailure {
+  applicationId: number;
+  error: string;
 }
 
 async function runOnce(
@@ -229,6 +240,11 @@ interface HarnessReport {
     internalFastPathP50TargetMs: number;
     internalFastPathSource: string;
   };
+  /** `applications` rows this script created but could not delete
+   * afterward. Empty on a clean run. A non-empty list does not mean the
+   * latency numbers above are wrong — it means housekeeping left rows
+   * behind in the worktree's own disposable database. */
+  cleanupFailures: CleanupFailure[];
   runs: RunResult[];
 }
 
@@ -270,6 +286,7 @@ async function main(): Promise<void> {
   };
 
   const runResults: RunResult[] = [];
+  const cleanupFailures: CleanupFailure[] = [];
   try {
     for (let i = 1; i <= runs; i++) {
       const result = await runOnce(i, imageBytes, imagePath, mediaType, caseSpec, deps);
@@ -283,7 +300,9 @@ async function main(): Promise<void> {
         try {
           await db.delete(schema.applications).where(eq(schema.applications.id, result.applicationId));
         } catch (cleanupError) {
-          console.warn(`  run ${i}/${runs}: cleanup of application ${result.applicationId} failed:`, cleanupError);
+          const message = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+          console.warn(`  run ${i}/${runs}: cleanup of application ${result.applicationId} failed: ${message}`);
+          cleanupFailures.push({ applicationId: result.applicationId, error: message });
         }
       }
     }
@@ -339,6 +358,7 @@ async function main(): Promise<void> {
         "the internal engineering sub-target the 5s acceptance bar leaves headroom against, " +
         "not the TH-R2 acceptance figure itself.",
     },
+    cleanupFailures,
     runs: runResults,
   };
 
@@ -357,8 +377,20 @@ async function main(): Promise<void> {
   }
   console.log(`measure.ts: verdict counts: ${JSON.stringify(verdictCounts)}`);
   console.log(`measure.ts: wrote ${RESULTS_PATH}`);
+  if (cleanupFailures.length > 0) {
+    console.warn(
+      `measure.ts: ${cleanupFailures.length} application row(s) could not be cleaned up — ` +
+        `left behind in the worktree database: ${cleanupFailures.map((f) => f.applicationId).join(", ")}. ` +
+        `The latency numbers above are still valid; this is a housekeeping failure, not a measurement one.`,
+    );
+  }
 
-  if (successful.length === 0) {
+  // Non-zero on a measurement failure (no successful run to report) OR a
+  // cleanup failure (rows left behind in the worktree's own database) — the
+  // second case still writes a fully valid report, but a caller checking
+  // the exit code should know follow-up is needed rather than trust a
+  // silent "0" that hid it.
+  if (successful.length === 0 || cleanupFailures.length > 0) {
     process.exitCode = 1;
   }
 }

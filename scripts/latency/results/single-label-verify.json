@@ -36,6 +36,7 @@
     "internalFastPathP50TargetMs": 3000,
     "internalFastPathSource": "PRD §3.8 stage table: 'Fast path total (~85-90% of labels): ~3s p50, <=5s p95' -- the internal engineering sub-target the 5s acceptance bar leaves headroom against, not the TH-R2 acceptance figure itself."
   },
+  "cleanupFailures": [],
   "runs": [
     {
       "index": 1,

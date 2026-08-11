@@ -50,10 +50,10 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 - `package.json` — added the `latency:check` script, matching `factory/config.yaml`'s
   planned `commands.latencyCheck` name.
 
-**Local CodeRabbit triage, two passes (7 findings, 6 fixed, 1 dismissed).**
-`scripts/factory/gate.sh`'s review step ran before any PR existed. Both passes' findings are
-folded into this same entry rather than split into separate round entries, since no PR
-existed yet for either pass to review.
+**Local CodeRabbit triage, three passes (10 findings, 9 fixed, 1 dismissed).**
+`scripts/factory/gate.sh`'s review step ran before any PR existed. All three passes' findings
+are folded into this same entry rather than split into separate round entries, since no PR
+existed yet for any pass to review.
 
 - This CHANGES.md entry read as too dense in several spots — fixed with shorter, single-
   clause sentences throughout (no fact, command, or number changed).
@@ -70,15 +70,27 @@ existed yet for either pass to review.
 - The "How to run it" section did not repeat this repo's `DATABASE_URL` discipline for
   `pnpm test` — fixed by adding the same reminder other entries use.
 - **Dismissed:** a suggestion to compute `durationMs` after `response.json()` instead of
-  before it. Checked against the actual code first: `durationMs` is already computed before
-  the `response.json()` call, not after — the suggestion described code this file does not
-  have. The current order is intentional (`route.ts`'s `NextResponse.json(...)` already
-  serializes the body by the time `handleVerifyRequest` resolves, so parsing it afterward is
-  this harness's own bookkeeping, not server time). Added a comment explaining why, instead
-  of the suggested reorder, which would have inflated the measured number.
+  before it. This finding described code this file does not have. `measure.ts` already
+  computes `durationMs` before the `response.json()` call, not after. That order is
+  intentional, not an oversight. `route.ts`'s `NextResponse.json(...)` already serializes the
+  response body by the time `handleVerifyRequest` resolves. Parsing that body again, in this
+  harness, is this harness's own bookkeeping — not server time. The suggested reorder would
+  have inflated the measured number with that bookkeeping cost. Added a comment at that line
+  instead, so a future review pass sees the reasoning and does not re-raise the same finding.
 - A `finally` block called `rm(scratchDir, ...)` then `pool.end()` — if `rm` itself threw,
   `pool.end()` would never run, leaking an open connection pool that keeps the process alive.
   Fixed with a nested `try`/`finally` so `pool.end()` always runs.
+- `measure.ts`'s module comment claimed a measurement run "leaves the worktree database
+  exactly as it found it." Too strong: cleanup is best-effort row deletion, logged on
+  failure, not a guarantee (sequence counters still advance regardless). Reworded.
+- A failed per-row cleanup delete only reached `console.warn` — invisible to anything reading
+  the committed JSON artifact, and never affected the exit code. Fixed: `measure.ts` now
+  collects `cleanupFailures` into the report, prints a summary warning naming the stranded
+  `applicationId`(s) if any, and exits non-zero on a cleanup failure (still writes a fully
+  valid report either way — a cleanup failure means housekeeping needs a follow-up look, not
+  that the p50/p95 numbers are wrong).
+- The "Dismissed" bullet above (originally written in the second-pass commit) read as one
+  dense paragraph. Rewritten into short, separate sentences, same facts.
 
 **The measured numbers (observed, not derived, not fabricated).** 20 runs, case
 `case-01-clean-match-spirits` (the golden set's own "TH-R11 reference example": a clean

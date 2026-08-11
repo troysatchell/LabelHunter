@@ -13,6 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
   BeverageType,
+  CameraCondition,
   FieldVerdict,
   GoldenSetCase,
   GoldenSetCategory,
@@ -77,7 +78,16 @@ const PROVENANCE_VALUES: readonly GoldenSetProvenance[] = [
   "rendered",
   "rendered+degraded",
   "ai-generated",
+  "rendered+ai-backdrop",
 ];
+const CAMERA_CONDITIONS: readonly CameraCondition[] = ["steady", "motion-blur", "camera-shake"];
+const AI_BACKDROP_ONLY_FIELDS = [
+  "referenceBottle",
+  "scene",
+  "cameraCondition",
+  "labelPlacement",
+  "generationMetadata",
+] as const;
 const RUBRIC_VECTORS: readonly RubricVector[] = [
   "V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10",
 ];
@@ -232,6 +242,45 @@ const DEGRADATION_PARAM_SHAPE: Record<
   },
   "low-light": { required: { region: "string", brightnessFactor: "number" } },
 };
+
+/**
+ * Validates a `rendered+ai-backdrop` case's `labelPlacement` — the 4
+ * corners `build.ts` warps the renderer's label into on every rebuild
+ * (design doc §5/§6). Each corner just needs finite x/y; the geometry
+ * itself (does this quad make sense on the backdrop) is a human's job at
+ * `verified: true` time, not a schema check.
+ */
+function checkLabelPlacement(problems: string[], where: string, raw: unknown): void {
+  if (!isRecord(raw)) {
+    problems.push(`${where}: "labelPlacement" must be an object`);
+    return;
+  }
+  for (const corner of ["topLeft", "topRight", "bottomLeft", "bottomRight"] as const) {
+    const point = raw[corner];
+    if (!isRecord(point) || !isFiniteNumber(point.x) || !isFiniteNumber(point.y)) {
+      problems.push(`${where}.labelPlacement.${corner}: must be an object with finite "x" and "y"`);
+    }
+  }
+}
+
+/**
+ * Validates a `rendered+ai-backdrop` case's `generationMetadata` — a
+ * forensic record, not a reproducibility claim (design doc §6/§10). Every
+ * field is a required non-empty string; there is no enum to check against
+ * here because the model name and resolution are free text describing
+ * whatever `imagen.ts` actually used, not a closed set this schema owns.
+ */
+function checkGenerationMetadata(problems: string[], where: string, raw: unknown): void {
+  if (!isRecord(raw)) {
+    problems.push(`${where}: "generationMetadata" must be an object`);
+    return;
+  }
+  const w = `${where}.generationMetadata`;
+  checkField(problems, w, raw, "model", isNonEmptyString, "a non-empty string");
+  checkField(problems, w, raw, "resolution", isNonEmptyString, "a non-empty string");
+  checkField(problems, w, raw, "promptVersion", isNonEmptyString, "a non-empty string");
+  checkField(problems, w, raw, "generatedAt", isNonEmptyString, "a non-empty string");
+}
 
 /**
  * Validates the optional `degradations` list (TRO-497 / LH-004, design doc
@@ -520,6 +569,44 @@ function checkCase(problems: string[], index: number, raw: unknown): void {
     problems.push(
       `${caseLabel}: provenance "ai-generated" requires verified: true before the eval harness may use it (currently ${JSON.stringify(raw.verified)})`,
     );
+  }
+
+  if (raw.provenance === "rendered+ai-backdrop") {
+    // Design doc §6: no warning-text transcription risk (the renderer owns
+    // that text), but a human must still confirm the composited label
+    // landed legibly and correctly placed before eval may trust the case —
+    // the same verified: true gate as ai-generated, checked here rather
+    // than only in the type because this is a manifest-level rule.
+    checkField(problems, caseLabel, raw, "referenceBottle", isNonEmptyString, "a non-empty string");
+    checkField(problems, caseLabel, raw, "scene", isNonEmptyString, "a non-empty string");
+    checkEnum(problems, caseLabel, raw, "cameraCondition", CAMERA_CONDITIONS);
+    if ("labelPlacement" in raw) {
+      checkLabelPlacement(problems, caseLabel, raw.labelPlacement);
+    } else {
+      problems.push(`${caseLabel}: missing required field "labelPlacement"`);
+    }
+    if ("generationMetadata" in raw) {
+      checkGenerationMetadata(problems, caseLabel, raw.generationMetadata);
+    } else {
+      problems.push(`${caseLabel}: missing required field "generationMetadata"`);
+    }
+    if (raw.verified !== true) {
+      problems.push(
+        `${caseLabel}: provenance "rendered+ai-backdrop" requires verified: true before the eval harness may use it (currently ${JSON.stringify(raw.verified)})`,
+      );
+    }
+  } else {
+    // A rendered/rendered+degraded/ai-generated case has no business
+    // carrying backdrop-generation traceability fields — the same
+    // closed-schema reasoning checkDegradations already applies to a
+    // non-rendered+degraded case's degradations list.
+    for (const key of AI_BACKDROP_ONLY_FIELDS) {
+      if (key in raw && raw[key] !== undefined) {
+        problems.push(
+          `${caseLabel}: field "${key}" is only valid when provenance is "rendered+ai-backdrop" (currently ${JSON.stringify(raw.provenance)})`,
+        );
+      }
+    }
   }
 
   if ("application" in raw) {

@@ -73,7 +73,7 @@ export async function handleRecordDispositionRequest(
     const outcome = await recordDisposition(deps.db, id, disposition);
 
     if (outcome.status === "not-found") {
-      return errorResponse(404, "NOT_FOUND", "LabelHunter could not find that review-queue item. It may have already been removed.");
+      return errorResponse(404, "NOT_FOUND", "LabelHunter could not find that review-queue item.");
     }
 
     if (outcome.status === "already-disposed") {

@@ -4,6 +4,109 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-476 — LH-050: Review queue UI (2026-08-11)
+
+**What changed.** This ticket builds the review queue (PRD §5). A person uses this screen
+to approve or reject a label. The router or the resolver could not decide that label alone.
+
+**This is TH-R22's differentiator.** LabelHunter routes every label through a
+confidence-based cascade:
+
+1. Haiku extracts the label's fields.
+2. Code routes each field deterministically.
+3. Sonnet resolves an escalation.
+4. A human makes the final call on what is still uncertain.
+
+The review queue is the visible end of that chain. It turns "uncertain beats wrong" from an
+internal rule into a real screen. A TTB reviewer can act on it directly. The
+escalation-to-human-review loop is the differentiated idea. It is not a UI detail added on
+top.
+
+- **List endpoint.** `GET /api/review-queue` (`src/app/api/review-queue/route.ts`) returns
+  every unresolved item, oldest first. Its `WHERE` clause matches
+  `review_queue_unresolved_idx` (`schema.ts`), the partial index built for this query.
+  `EXPLAIN` against this worktree's database confirms the index serves the filter. The
+  table was empty during that check. This is not a claim about a larger, real-world table.
+  See `src/server/review-queue/list.ts`'s own comment for the exact, honest result.
+- **Action endpoint.** `PATCH /api/review-queue/:reviewQueueId`
+  (`src/app/api/review-queue/[reviewQueueId]/route.ts`) records `APPROVED` or `REJECTED`.
+  `recordDisposition` (`src/server/review-queue/record-disposition.ts`) sets `disposition`
+  and `disposedAt` together, in one guarded `UPDATE … WHERE disposition IS NULL`. Two
+  reviewers acting on the same item cannot both win this way. A second call returns 409. It
+  carries whichever decision already won, so the client can show "Someone already rejected
+  this item" instead of a bare conflict message.
+- **Queue list page** (`/review-queue`, `ReviewQueueBrowser.tsx` + `ReviewQueueList.tsx`).
+  Each row shows the reason, brief context (brand, class/type), and a link to the item. A
+  manual refresh button re-fetches the list. An empty queue shows one designed message: "No
+  items need review right now."
+- **Review/detail page** (`/review-queue/:id`, `ReviewItemWorkspace.tsx` +
+  `ReviewItemDetail.tsx` + `ReviewActions.tsx`). It shows the reason, the full per-field
+  extracted-vs-application comparison, and the resolver's suggestion when one exists. Two
+  large Approve/Reject buttons record the decision.
+- **`resolverOutput` null is the normal case, not an error state.** Nothing in this running
+  system calls the Sonnet resolver off a `review_queue` row yet. `route.ts` writes the row.
+  The consumer that would call `resolveEscalatedLabel` against it is LH-041's job, behind
+  CP-3. It does not exist yet. Every item reachable through the app's real request path
+  today shows its reason. A human decides with no resolver suggestion present. This is the
+  case this ticket designed for, not a fallback case. `get-item.ts` also reads a populated
+  `resolverOutput` correctly, for whenever LH-041 lands or a test fixture supplies one.
+- **No verdict mutation.** PRD §5 says "approve/reject records disposition." It does not say
+  a disposition changes `verifications.verdict`. This ticket records the disposition only.
+  Whether a later ticket should also update the verdict is an open question. This entry
+  flags it; it does not answer it.
+- **No reviewer identity anywhere.** TH-R6 and `schema.ts`'s own comment on `review_queue`
+  are explicit about this rule. This ticket adds no reviewer-identity column and no such
+  field.
+
+**On LH-016 (TRO-466, the Detail view) — a premise correction.** This ticket's brief assumed
+two files were already merged into this branch's base:
+`src/server/verification-detail/get-verification-detail.ts` and `DetailView.tsx`. They are
+not. PR #15 (`feat/lh-016-detail-view`) is still open. `factory/tickets.md`'s own LH-050
+entry lists it as "Blocked by LH-014" only, not LH-016. This ticket does not depend on that
+PR merging first.
+
+`src/server/review-queue/get-item.ts` reads the same database tables independently. It
+reuses two things that are actually merged: `ResultsChecklist.tsx`'s CSS classes, and
+`src/server/router/index.ts`'s own wording (lines 227 and 252) for an unfiled optional field
+and for the government warning's application-side text. It does not show the label image.
+That route is also LH-016's, also unmerged. PRD §5's review-queue line does not ask for a
+photo. `src/app/_components/ReviewItemDetail.tsx` uses a `review-field*` CSS prefix, not
+`detail-field*`, to avoid a name collision with `DetailView.tsx`'s own rules once that PR
+lands.
+
+**Tests.** Written first. Each one failed for the right reason before implementation. All
+are green now.
+
+- `src/lib/db/enums.test.ts` — `toReviewDisposition`.
+- `src/server/review-queue/list.test.ts`, `get-item.test.ts`, `record-disposition.test.ts` —
+  against this worktree's real database. Two tests try to violate
+  `review_queue_disposition_disposed_at_consistency` directly, with an `UPDATE` and an
+  `INSERT`, in both column directions. Both confirm the database itself rejects the write,
+  not only this module's own code.
+- `src/app/api/review-queue/route.test.ts` and
+  `src/app/api/review-queue/[reviewQueueId]/route.test.ts` — the two HTTP endpoints,
+  including the 400/404/409 error paths.
+- `src/app/_lib/format-timestamp.test.ts` and `review-queue-client.test.ts`.
+- `src/app/_components/ReviewQueueList.test.tsx`, `ReviewItemDetail.test.tsx`,
+  `ReviewActions.test.tsx`, and `ReviewQueueBrowser.test.tsx`.
+
+This command runs 12 files and 67 cases, all new or touched by this ticket:
+
+`pnpm test -- src/server/review-queue src/app/api/review-queue src/app/_lib/review-queue-client.test.ts src/app/_lib/format-timestamp.test.ts src/app/_components/Review src/lib/db/enums.test.ts`
+
+**How to run it.** Run `source .factory-env` first. Several of these tests need
+`DATABASE_URL` pointed at a migrated worktree database. Then run the command above, or run
+`pnpm test` for the full suite (646 cases pass). `pnpm typecheck`, `pnpm lint`, and
+`pnpm build` are all clean. `pnpm build` shows `/review-queue` prerendered as a static
+shell. Its data comes from the client-side `GET /api/review-queue` call, marked dynamic, not
+from anything baked in at build time. `pnpm build` shows `/review-queue/:id` server-rendered
+on demand. Both match this ticket's design.
+
+**Rollback.** Run `git revert` on this ticket's commits, in reverse order. This ticket makes
+no schema change and no migration, so there is nothing to roll back at the database level.
+`src/lib/db/enums.ts`'s `toReviewDisposition` is additive. No other ticket uses it yet, so
+reverting it is safe.
+
 ## TRO-464 — PR #10 review round 3: 3 CodeRabbit comments, 2 fixed, 1 dismissed (2026-08-11)
 
 **What changed.** GitHub's CodeRabbit posted a third review round on PR #10.

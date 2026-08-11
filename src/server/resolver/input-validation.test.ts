@@ -9,7 +9,12 @@ import { makeResolverApplication, makeResolverInput } from "./test-support";
 
 function baseInput() {
   const input = makeResolverInput();
-  return { application: input.application, extraction: input.extraction };
+  return {
+    application: input.application,
+    extraction: input.extraction,
+    router: input.router,
+    flaggedFields: input.flaggedFields,
+  };
 }
 
 describe("assertUntrustedInputWithinBounds", () => {
@@ -177,6 +182,54 @@ describe("assertUntrustedInputWithinBounds", () => {
         alcohol_content: { value: "45%", evidence: "45%", confidence: 0.9, alternates: [42 as unknown as string] },
       };
       expect(() => assertUntrustedInputWithinBounds(input)).toThrow(/extraction\.alcohol_content\.alternates\[0\].*expected a string or null/);
+    });
+
+    it("rejects a null field container instead of crashing on extracted.value", () => {
+      const input = baseInput();
+      input.extraction = { ...input.extraction, class_type: null as never };
+      expect(() => assertUntrustedInputWithinBounds(input)).toThrow(/extraction\.class_type.*expected an object/);
+    });
+
+    it("rejects an undefined field container instead of crashing on extracted.value", () => {
+      const input = baseInput();
+      const { brand_name: _dropped, ...withoutBrandName } = input.extraction;
+      input.extraction = withoutBrandName as never;
+      expect(() => assertUntrustedInputWithinBounds(input)).toThrow(/extraction\.brand_name.*expected an object/);
+    });
+
+    it("rejects a null government_warning container instead of crashing on its properties", () => {
+      const input = baseInput();
+      input.extraction = { ...input.extraction, government_warning: null as never };
+      expect(() => assertUntrustedInputWithinBounds(input)).toThrow(/extraction\.government_warning.*expected an object/);
+    });
+
+    it("rejects an array where a field container is expected — arrays are objects too, but not the right shape", () => {
+      const input = baseInput();
+      input.extraction = { ...input.extraction, net_contents: [] as never };
+      expect(() => assertUntrustedInputWithinBounds(input)).toThrow(/extraction\.net_contents.*expected an object/);
+    });
+  });
+
+  describe("router-derived text is validated too — PR #10 review", () => {
+    it("rejects an implausibly long router field reason", () => {
+      const input = baseInput();
+      input.router = {
+        ...input.router,
+        fields: input.router.fields.map((row, i) => (i === 0 ? { ...row, reason: "x".repeat(SHORT_FIELD_MAX_LENGTH + 1) } : row)),
+      };
+      expect(() => assertUntrustedInputWithinBounds(input)).toThrow(/router\.fields\[0\]\.reason/);
+    });
+
+    it("rejects an implausibly long flagged-field trigger", () => {
+      const input = baseInput();
+      input.flaggedFields = input.flaggedFields.map((flagged, i) =>
+        i === 0 ? { ...flagged, trigger: "x".repeat(SHORT_FIELD_MAX_LENGTH + 1) } : flagged,
+      );
+      expect(() => assertUntrustedInputWithinBounds(input)).toThrow(/flaggedFields\[0\]\.trigger/);
+    });
+
+    it("accepts ordinary-length router reasons and triggers", () => {
+      expect(() => assertUntrustedInputWithinBounds(baseInput())).not.toThrow();
     });
   });
 });

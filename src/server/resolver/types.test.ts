@@ -55,7 +55,13 @@ function _typeOnly_correctionFieldHasNoDisposition(): void {
 
 describe("ResolverJudgedField / ResolverCorrectionField — no overlap", () => {
   it("is exactly the two TH-R8 judgment fields", () => {
-    const judged: ResolverJudgedField[] = ["brand_name", "class_type"];
-    expect(judged).toEqual(["brand_name", "class_type"]);
+    // A `Record<ResolverJudgedField, true>` map, not `toEqual` against a
+    // second identical array literal — the earlier version compared one
+    // literal to an equally-hand-written copy of itself, so it would still
+    // pass even if `ResolverJudgedField` gained or lost a member. This map
+    // fails `pnpm typecheck` (a missing or an extra property) if that ever
+    // happens, which an `expect` on two literals cannot do.
+    const exhaustive: Record<ResolverJudgedField, true> = { brand_name: true, class_type: true };
+    expect(Object.keys(exhaustive).sort()).toEqual(["brand_name", "class_type"]);
   });
 });

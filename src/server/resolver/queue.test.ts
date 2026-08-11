@@ -188,4 +188,68 @@ describe("findExistingReviewQueueEntry — real database", () => {
       await cleanup(applicationId);
     }
   });
+
+  it("throws on a valid outcome with a malformed fields member — PR #10 review", async () => {
+    const { applicationId, verificationId } = await makeVerificationFixture();
+    try {
+      // A shallower check that only looked at `outcome` and `Array.isArray(fields)`
+      // previously accepted this row and returned `fields: [null]` as a real
+      // ResolverResolution — a data-integrity gap this row exercises directly.
+      await db.insert(reviewQueue).values({
+        verificationId,
+        reason: "AMBIGUOUS_BRAND",
+        resolverOutput: { outcome: "resolved", fields: [null] },
+      });
+
+      await expect(findExistingReviewQueueEntry(verificationId)).rejects.toThrow(/does not match/);
+    } finally {
+      await cleanup(applicationId);
+    }
+  });
+
+  it("throws when a fields member has an unrecognized kind", async () => {
+    const { applicationId, verificationId } = await makeVerificationFixture();
+    try {
+      await db.insert(reviewQueue).values({
+        verificationId,
+        reason: "AMBIGUOUS_BRAND",
+        resolverOutput: {
+          outcome: "resolved",
+          fields: [{ kind: "bogus", field: "brand_name", evidence: "x", reason: "x", confidence: 0.9, correctedValue: "x" }],
+        },
+      });
+
+      await expect(findExistingReviewQueueEntry(verificationId)).rejects.toThrow(/does not match/);
+    } finally {
+      await cleanup(applicationId);
+    }
+  });
+
+  it("throws when a judged field carries a field name from the wrong branch (a correction field's name)", async () => {
+    const { applicationId, verificationId } = await makeVerificationFixture();
+    try {
+      await db.insert(reviewQueue).values({
+        verificationId,
+        reason: "AMBIGUOUS_BRAND",
+        resolverOutput: {
+          outcome: "resolved",
+          fields: [
+            {
+              kind: "judged",
+              field: "government_warning", // illegal — government_warning is a correction field
+              disposition: "RESOLVED_MATCH",
+              correctedValue: "x",
+              evidence: "x",
+              reason: "x",
+              confidence: 0.9,
+            },
+          ],
+        },
+      });
+
+      await expect(findExistingReviewQueueEntry(verificationId)).rejects.toThrow(/does not match/);
+    } finally {
+      await cleanup(applicationId);
+    }
+  });
 });

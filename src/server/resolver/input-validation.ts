@@ -24,6 +24,7 @@
  */
 import type { ApplicationRecord } from "../router/types";
 import type { HaikuExtractionResult } from "../extractor/types";
+import type { FlaggedField, LabelRouterResult } from "./types";
 
 export class ResolverInputError extends Error {
   readonly problems: string[];
@@ -110,6 +111,26 @@ function checkFiniteNumber(value: unknown, path: string, problems: string[], opt
   }
 }
 
+/**
+ * Validates a container is actually a non-null, non-array object before any
+ * leaf check dereferences a property on it. `extraction[field]` and
+ * `extraction.government_warning` are typed as always-present objects
+ * (`HaikuExtractionResult`), but this module's whole premise (see the module
+ * doc comment) is that a declared type is not trusted at this boundary — a
+ * `null` or `undefined` container here previously reached `extracted.value`
+ * directly and threw an uncontrolled `TypeError`, the exact failure mode
+ * `checkAlternates` above exists to prevent for the array case. Found by PR
+ * review (PR #10): the container check was missing even though the leaf
+ * checks were already defensive.
+ */
+function checkObject(value: unknown, path: string, problems: string[]): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    problems.push(`${path}: expected an object, got ${describeUnknown(value)} — refusing to read untrusted fields from a non-object`);
+    return false;
+  }
+  return true;
+}
+
 function describeUnknown(value: unknown): string {
   if (value === undefined) return "undefined";
   if (Array.isArray(value)) return "an array";
@@ -119,24 +140,31 @@ function describeUnknown(value: unknown): string {
 }
 
 /**
- * Walks every value the resolver's user message will embed from the
- * application record and the extractor's reading — both untrusted input by
- * construction (CP-1 §6.3) — and collects every problem found, the same
- * "report every problem, not just the first" convention
- * `../extractor/response.ts` uses. Throws `ResolverInputError` if any is found.
+ * Walks every value the resolver's user message will embed — from the
+ * application record, the extractor's reading, the router's own field
+ * rows, and the caller-supplied flagged-field list — and collects every
+ * problem found, the same "report every problem, not just the first"
+ * convention `../extractor/response.ts` uses. Throws `ResolverInputError`
+ * if any is found.
  *
  * Every field of `ApplicationRecord` that `user-message.ts`'s
  * `buildApplicationBlock` serializes is checked here — not just
  * `brandName`/`classType` — because every one of them reaches the prompt
  * the same way, through the same `serializeUntrusted` call, and an
  * unchecked field is exactly as reachable by an attacker as a checked one.
+ * `router.fields[].reason` and `flaggedFields[].trigger` are checked for
+ * the same reason (PR #10 review): a comparator's `note` can embed the
+ * extractor's raw label reading in `reason`, and `trigger` is typically
+ * that same text, carried through by the caller.
  */
 export function assertUntrustedInputWithinBounds(input: {
   application: ApplicationRecord;
   extraction: HaikuExtractionResult;
+  router: LabelRouterResult;
+  flaggedFields: FlaggedField[];
 }): void {
   const problems: string[] = [];
-  const { application, extraction } = input;
+  const { application, extraction, router, flaggedFields } = input;
 
   checkLength(application.brandName, "application.brandName", SHORT_FIELD_MAX_LENGTH, problems);
   checkLength(application.classType, "application.classType", SHORT_FIELD_MAX_LENGTH, problems);
@@ -146,19 +174,27 @@ export function assertUntrustedInputWithinBounds(input: {
   checkFiniteNumber(application.netContentsValue, "application.netContentsValue", problems);
 
   for (const field of ["brand_name", "class_type", "alcohol_content", "net_contents", "beverage_type"] as const) {
-    const extracted = extraction[field];
-    checkLength(extracted.value, `extraction.${field}.value`, SHORT_FIELD_MAX_LENGTH, problems);
-    checkLength(extracted.evidence, `extraction.${field}.evidence`, SHORT_FIELD_MAX_LENGTH, problems);
-    checkAlternates(extracted.alternates, `extraction.${field}.alternates`, SHORT_FIELD_MAX_LENGTH, problems);
+    const extracted: unknown = extraction[field];
+    const path = `extraction.${field}`;
+    if (checkObject(extracted, path, problems)) {
+      checkLength(extracted.value, `${path}.value`, SHORT_FIELD_MAX_LENGTH, problems);
+      checkLength(extracted.evidence, `${path}.evidence`, SHORT_FIELD_MAX_LENGTH, problems);
+      checkAlternates(extracted.alternates, `${path}.alternates`, SHORT_FIELD_MAX_LENGTH, problems);
+    }
   }
 
-  checkLength(
-    extraction.government_warning.transcription,
-    "extraction.government_warning.transcription",
-    LONG_FIELD_MAX_LENGTH,
-    problems,
-  );
-  checkLength(extraction.government_warning.evidence, "extraction.government_warning.evidence", LONG_FIELD_MAX_LENGTH, problems);
+  const warning: unknown = extraction.government_warning;
+  if (checkObject(warning, "extraction.government_warning", problems)) {
+    checkLength(warning.transcription, "extraction.government_warning.transcription", LONG_FIELD_MAX_LENGTH, problems);
+    checkLength(warning.evidence, "extraction.government_warning.evidence", LONG_FIELD_MAX_LENGTH, problems);
+  }
+
+  router.fields.forEach((row, i) => {
+    checkLength(row.reason, `router.fields[${i}].reason`, SHORT_FIELD_MAX_LENGTH, problems);
+  });
+  flaggedFields.forEach((flagged, i) => {
+    checkLength(flagged.trigger, `flaggedFields[${i}].trigger`, SHORT_FIELD_MAX_LENGTH, problems);
+  });
 
   if (problems.length > 0) {
     throw new ResolverInputError(problems);

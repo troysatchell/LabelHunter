@@ -9,9 +9,18 @@
  * §6.3's implementation requirement, verified in `serialize.ts`). The image
  * itself carries no text delimiter here — it is a separate content block
  * (`request.ts`), not text, so it needs none (CP-1 §6.2 SECURITY).
+ *
+ * `row.reason` (the router's `FieldResultRow.reason`) and `flagged.trigger`
+ * are ALSO untrusted, even though they are not JSON blobs — a field
+ * comparator's `note` (`src/server/comparators/*.ts`) can interpolate the
+ * extractor's raw label reading straight into `reason` with no escaping of
+ * its own, and `trigger` is typically that same `reason` text, carried
+ * through by the caller (`types.ts`'s `FlaggedField` doc comment). Both go
+ * through `escapeUntrustedText` before they reach the prompt — found by
+ * PR review (PR #10), not by this ticket's own first pass.
  */
 import { assertUntrustedInputWithinBounds } from "./input-validation";
-import { serializeUntrusted } from "./serialize";
+import { escapeUntrustedText, serializeUntrusted } from "./serialize";
 import type { FlaggedField, ResolverInput } from "./types";
 
 function buildApplicationBlock(input: ResolverInput): string {
@@ -32,13 +41,18 @@ function buildExtractionBlock(input: ResolverInput): string {
 }
 
 function buildWhatCodeDecidedBlock(input: ResolverInput): string {
-  const lines = input.router.fields.map((row) => `  ${row.field}\t${row.verdict}\t${row.reason}`);
+  const lines = input.router.fields.map(
+    (row) => `  ${row.field}\t${row.verdict}\t${escapeUntrustedText(row.reason)}`,
+  );
   return ["WHAT THE CODE DECIDED", ...lines].join("\n");
 }
 
 function buildFlaggedFieldsBlock(flaggedFields: FlaggedField[]): string {
   const entries = flaggedFields.map((flagged) => {
-    const lines = [`  ${flagged.field} — ${flagged.reviewReason}`, `    Trigger: ${flagged.trigger}`];
+    const lines = [
+      `  ${flagged.field} — ${flagged.reviewReason}`,
+      `    Trigger: ${escapeUntrustedText(flagged.trigger)}`,
+    ];
     if (flagged.field === "government_warning") {
       lines.push("    Do not judge the wording. Copy the warning block again, exactly.");
     } else {

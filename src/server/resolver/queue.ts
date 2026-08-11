@@ -19,7 +19,7 @@
 import { reviewQueue } from "../../lib/db/schema";
 import { db as defaultDb } from "../../lib/db";
 import type { ReviewReason } from "../router/types";
-import type { ResolverResolution } from "./types";
+import type { ResolvedFieldResult, ResolverResolution } from "./types";
 
 export interface InsertReviewQueueEntryParams {
   verificationId: number;
@@ -67,18 +67,57 @@ export interface ExistingReviewQueueEntry {
   resolverOutput: ResolverResolution;
 }
 
+const JUDGED_FIELD_VALUES = new Set(["brand_name", "class_type"]);
+const CORRECTION_FIELD_VALUES = new Set(["alcohol_content", "net_contents", "government_warning"]);
+const DISPOSITION_VALUES = new Set(["RESOLVED_MATCH", "RESOLVED_MISMATCH", "NEEDS_HUMAN"]);
+
 /**
- * Narrows an unknown jsonb value to `ResolverResolution` — a shallow but
- * decisive check. It exists to tell this module's own shape apart from
- * `db:seed.ts`'s own hand-written `resolverOutput` fixture, which predates
- * this ticket and uses a different ad hoc shape (`{ resolvedAbvPercent,
- * note, confidence }`, no `outcome`/`fields`) — that fixture correctly
- * fails this check rather than being silently misread as a real resolution.
+ * Narrows an unknown array element to `ResolvedFieldResult` — every
+ * property of both union branches (`types.ts`'s `JudgedFieldResolution` /
+ * `CorrectionFieldResolution`), not just that it is "an object". Found by
+ * PR review (PR #10): the shallower `isResolverResolution` check below
+ * previously accepted `{ outcome: "resolved", fields: [null] }` as a valid
+ * `ResolverResolution` — `isResolverResolution` checked that `fields` was
+ * an array, never what was inside it.
+ */
+function isResolvedFieldResult(value: unknown): value is ResolvedFieldResult {
+  if (typeof value !== "object" || value === null) return false;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.correctedValue !== "string" && obj.correctedValue !== null) return false;
+  if (typeof obj.evidence !== "string") return false;
+  if (typeof obj.reason !== "string") return false;
+  if (typeof obj.confidence !== "number" || !Number.isFinite(obj.confidence)) return false;
+
+  if (obj.kind === "judged") {
+    return (
+      typeof obj.field === "string" &&
+      JUDGED_FIELD_VALUES.has(obj.field) &&
+      typeof obj.disposition === "string" &&
+      DISPOSITION_VALUES.has(obj.disposition)
+    );
+  }
+  if (obj.kind === "correction") {
+    return typeof obj.field === "string" && CORRECTION_FIELD_VALUES.has(obj.field) && typeof obj.needsHuman === "boolean";
+  }
+  return false;
+}
+
+/**
+ * Narrows an unknown jsonb value to `ResolverResolution`. It exists to tell
+ * this module's own shape apart from `db:seed.ts`'s own hand-written
+ * `resolverOutput` fixture, which predates this ticket and uses a different
+ * ad hoc shape (`{ resolvedAbvPercent, note, confidence }`, no
+ * `outcome`/`fields`) — that fixture correctly fails this check rather than
+ * being silently misread as a real resolution. Validates every element of
+ * `fields`, not just that `fields` itself is an array — see
+ * `isResolvedFieldResult` above for why that distinction is load-bearing.
  */
 function isResolverResolution(value: unknown): value is ResolverResolution {
   if (typeof value !== "object" || value === null) return false;
   const obj = value as Record<string, unknown>;
-  return (obj.outcome === "resolved" || obj.outcome === "needs-human") && Array.isArray(obj.fields);
+  if (obj.outcome !== "resolved" && obj.outcome !== "needs-human") return false;
+  if (!Array.isArray(obj.fields)) return false;
+  return obj.fields.every(isResolvedFieldResult);
 }
 
 /**

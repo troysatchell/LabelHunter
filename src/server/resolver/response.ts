@@ -107,6 +107,23 @@ class ValidationContext {
     return 0;
   }
 
+  /**
+   * A confidence value, not just any number (CP-1 §4.4's rule, restated for
+   * the resolver): `NaN`, `Infinity`, `-1`, and `42` are all `typeof
+   * "number"` but not a real confidence. Found by PR review (PR #10) — `num`
+   * alone let a malformed model response's confidence flow unchecked into
+   * `JudgedFieldResolution.confidence` and, from there, into a persisted
+   * `field_results` row. Rejected here, never clamped into range — the same
+   * "reject, never clamp" rule this module's doc comment already states.
+   */
+  unitInterval(value: unknown, path: string): number {
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1) {
+      return value;
+    }
+    this.note(path, `expected a finite number in [0, 1], got ${describeType(value)} (${JSON.stringify(value)})`);
+    return 0;
+  }
+
   enumOf<T extends string>(value: unknown, allowed: readonly T[], path: string): T {
     if (typeof value === "string" && (allowed as readonly string[]).includes(value)) {
       return value as T;
@@ -124,7 +141,7 @@ function parseRawField(ctx: ValidationContext, value: unknown, path: string): Ra
     corrected_value: ctx.nullableStr(obj.corrected_value, `${path}.corrected_value`),
     evidence: ctx.str(obj.evidence, `${path}.evidence`),
     reason: ctx.str(obj.reason, `${path}.reason`),
-    confidence: ctx.num(obj.confidence, `${path}.confidence`),
+    confidence: ctx.unitInterval(obj.confidence, `${path}.confidence`),
   };
 }
 
@@ -156,9 +173,22 @@ function isJudgedField(field: string): field is ResolverJudgedField {
  * enforces CP-1 §6.5's judges-only-brand/class rule while doing it. Throws
  * `ResolverResponseError` when a flagged field has no matching entry, or
  * more than one — never guesses which entry to trust (CP-1's own "validate
- * at the boundary... reject, never clamp" rule).
+ * at the boundary... reject, never clamp" rule). Also throws on an empty
+ * `flaggedFields` list — found by PR review (PR #10): with no loop
+ * iterations, `problems` would stay empty and `fields.every(...)` on an
+ * empty array is vacuously `true`, so this function would otherwise return
+ * `{ outcome: "resolved", fields: [] }` for a label the resolver decided
+ * nothing about. `resolveEscalatedLabel` (`index.ts`) already guards this
+ * for its own callers, but this function is exported and callable directly
+ * (as its own tests do), so the guard belongs here too, not only upstream.
  */
 export function deriveResolvedFields(raw: RawResolverResponse, flaggedFields: FlaggedField[]): ResolverResolution {
+  if (flaggedFields.length === 0) {
+    throw new ResolverResponseError([
+      "flaggedFields is empty — the resolver cannot report a label resolved when it was asked to decide nothing",
+    ]);
+  }
+
   const problems: string[] = [];
   const fields: ResolvedFieldResult[] = [];
 

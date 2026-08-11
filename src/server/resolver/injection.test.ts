@@ -84,6 +84,12 @@ describe("injection payload on a sibling field — request-building side", () =>
     // extractor_reading) — the payload did not forge a third.
     const openTags = text.match(/<UNTRUSTED_DATA source=/g) ?? [];
     expect(openTags).toHaveLength(2);
+    // Closing tags too — an opening-tag count alone misses a payload that
+    // injects a bare </UNTRUSTED_DATA> with no matching opening tag, which
+    // truncates a block early without forging a whole new one. Found by PR
+    // review (PR #10).
+    const closeTags = text.match(/<\/UNTRUSTED_DATA>/g) ?? [];
+    expect(closeTags).toHaveLength(2);
   });
 });
 

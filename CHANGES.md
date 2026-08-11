@@ -4,20 +4,138 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-464 — PR #10 review round: 13 CodeRabbit comments, 10 fixed, 2 dismissed, 1 deferred (2026-08-11)
+
+**What changed.** GitHub's CodeRabbit review of PR #10 posted 13 comments. Each
+comment was checked against the current code, not applied on trust. Ten named a
+real defect. Two were checked and found incorrect. One named a real gap outside
+this ticket's scope. Every comment is recorded in
+`factory/review-findings.jsonl`, `--source pr`.
+
+**The important fix.** `user-message.ts` interpolated `FieldResultRow.reason`
+and `FlaggedField.trigger` straight into the prompt, outside any
+`<UNTRUSTED_DATA>` block and with no escaping. This was a real gap in the
+untrusted-data boundary CP-1 §6.3 exists to hold. A field comparator's `note`
+(`src/server/comparators/net-contents.ts`, `abv.ts`, `brand.ts`, already merged
+to main) interpolates the extractor's raw label reading straight into `reason`
+— confirmed by reading those files, not assumed. A label whose printed text
+contains `</UNTRUSTED_DATA>` could have reached the prompt through that path,
+unescaped, even though the two JSON blocks were already safe. Fixed:
+`serialize.ts` gained `escapeUntrustedText`, and both values now go through it
+before they reach the prompt. `input-validation.ts` now bounds their length too.
+
+**Other fixes.**
+
+- **`input-validation.ts`.** `extraction[field]` and `extraction.government_warning`
+  were dereferenced without checking they were objects first. A `null` or
+  `undefined` container crashed with an uncontrolled `TypeError` instead of the
+  aggregated `ResolverInputError` — the exact failure mode the array check
+  next to it already prevented. Added the same container check for objects.
+- **`response.ts`.** `confidence` accepted any value typed `number` — `NaN`,
+  `Infinity`, `-1`, and `42` all passed, then flowed into a persisted
+  `field_results` row. `ValidationContext` gained `unitInterval`, which
+  rejects (never clamps) anything outside a finite `[0, 1]`.
+- **`response.ts`.** `deriveResolvedFields` returned `{ outcome: "resolved",
+  fields: [] }` for an empty `flaggedFields` list — an empty array's
+  `.every(...)` is vacuously true, and an empty loop leaves `problems`
+  empty too. `resolveEscalatedLabel` already guarded its own callers, but
+  `deriveResolvedFields` is exported and callable directly. It now guards
+  itself.
+- **`queue.ts`.** `isResolverResolution` checked that `fields` was an array,
+  never what was inside it — `{ outcome: "resolved", fields: [null] }` passed.
+  It now validates every element against both `ResolvedFieldResult` branches.
+- **`serialize.ts`.** `JSON.stringify` returns `undefined`, not a string, for
+  `undefined`, a function, or a symbol. `.replace` then threw an uncontrolled
+  `TypeError`. `serializeUntrusted` now checks the result's type and throws a
+  named error.
+- **`types.test.ts`.** One assertion compared a literal array to an
+  identical hand-written copy — it would still pass if `ResolverJudgedField`
+  gained or lost a member. Replaced with a `Record<ResolverJudgedField, true>`
+  map, which fails `pnpm typecheck` on that drift instead.
+- **`injection.test.ts`.** The forged-tag test counted opening
+  `<UNTRUSTED_DATA source=...>` tags only. A bare injected `</UNTRUSTED_DATA>`
+  with no opening tag truncates a block early and this count alone would not
+  catch it. Added a matching closing-tag count.
+- **`user-message.test.ts`.** The escaping test proved only the
+  `application_form` block was safe. `buildExtractionBlock` uses the same
+  `serializeUntrusted` call but had no test of its own. Extracted a shared
+  `blockContent` helper and applied the same assertion to both blocks, plus
+  new cases for the `row.reason`/`flagged.trigger` fix above.
+
+**Dismissed (2), with reasons.**
+
+- **`schema.ts` — add `minItems: 1` and `confidence: {minimum, maximum}` to
+  the resolver's structured-output schema.** The schema is CP-1 §6.4-approved,
+  copied verbatim — this ticket's own mandate is to implement it as written,
+  not to silently amend Troy-approved bytes. CP-1 §3.4 note 2 already
+  documents, for the sibling extractor schema, that structured outputs do not
+  support `minimum`/`maximum`; the same constraint plausibly applies here, and
+  this repo forbids the live API call that would confirm or refute it. The
+  equivalent protection now exists at the code layer instead — `response.ts`'s
+  new `unitInterval` check (confidence) and the new empty-`flaggedFields`
+  guard (the array-length concern) — without touching the approved schema.
+  Amending CP-1 §6.4 itself needs a new checkpoint, not a reviewer suggestion
+  applied silently.
+- **`types.test.ts` — a `@ts-expect-error` directive is followed by another
+  comment line, which the finding claims makes it "Unused" and fails
+  `pnpm typecheck`.** Checked, not assumed: `pnpm typecheck` passed clean
+  before this claim was investigated, and passed clean again after an
+  isolated reproduction of the exact structure (a `// @ts-expect-error` line
+  immediately followed by a second `//` comment line, immediately followed by
+  the erroring code) compiled against this repo's own `typescript@5.9.3`
+  with zero errors. TypeScript treats consecutive `//` lines as one
+  contiguous comment block; the directive applies to the code line after the
+  whole block, not literally the next physical line. The finding's cited web
+  sources describe a different scenario, or an outcome that does not hold for
+  this exact adjacent-comment structure on this compiler version.
+
+**Deferred to a new ticket (1).**
+
+- **`index.ts` — the duplicate-verification check is TOCTOU, not atomic.**
+  Correct as stated: two concurrent callers can both find no `review_queue`
+  row and both call Sonnet before either inserts. A real fix needs a
+  reservation acquired BEFORE the model call — insert a placeholder row first,
+  let the unique constraint pick one winner, have the loser wait for or reuse
+  the winner's result — which is a genuinely different, heavier shape than a
+  pre-flight check, and CP-1 §10 already assigns "queue design, concurrency,
+  rate-limit strategy, partial-failure semantics" to CP-3, not this ticket.
+  No caller of `resolveEscalatedLabel` exists in this repo yet outside its own
+  tests, so the race is not reachable today. The CHANGES.md overclaim this
+  finding also caught ("the model is never called twice") is corrected in the
+  PR review round 1 entry below. Filed as a CP-3-scoped follow-up, not
+  silently dropped.
+
+**Tests.** `pnpm test -- src/server/resolver` runs 11 files and 121 cases (up
+from 91). Every fix's regression test was confirmed red-first against the
+pre-fix code before being restored, the same discipline as the round-1 entry
+below.
+
+**How to run it.** `pnpm test -- src/server/resolver`. `pnpm typecheck` /
+`pnpm lint` / `pnpm build` clean.
+
+**Rollback.** `git revert` this commit.
+
 ## TRO-464 — PR review round 1: orchestrator triage, 6 fixed, 2 test-only (2026-08-11)
 
 **What changed.** The orchestrator's independent gate run kept 8 CodeRabbit findings
 from this worktree's earlier capture. Each finding was checked against the current
-code, not applied on trust. Six named real defects. All six are fixed here, each
-with a new regression test, each confirmed red-first.
+code, not applied on trust. Six findings named a real defect. All six are fixed
+here, each with a new regression test, each confirmed red-first.
 
 - **`index.ts`/`queue.ts` (trivial, real).** A duplicate call for one verification
   paid for a second Sonnet call before the review-queue unique constraint ever
   caught the duplicate. `findExistingReviewQueueEntry` now runs before the model
-  call. A row that already exists is returned as-is. The model is never called
-  twice for one verification. A row whose `resolverOutput` does not match this
-  module's shape (`db:seed.ts`'s own older fixture, for example) raises a clear
-  error instead of a silent guess.
+  call. A row that already exists is returned as-is. This closes the gap for a
+  SEQUENTIAL duplicate — a caller retrying after a crash or a timeout. It does
+  NOT close the gap for a genuinely CONCURRENT one: two callers racing for the
+  same `verificationId` can still both find no row and both call the model,
+  because the check and the model call are not atomic. A real fix needs a
+  reservation held before the model call, not after — a heavier change than
+  this ticket's scope, and CP-1 §10 already assigns concurrency and queue
+  design to CP-3. Filed as a follow-up rather than built here; see the PR #10
+  review-round entry below for the full reasoning. A row whose `resolverOutput`
+  does not match this module's shape (`db:seed.ts`'s own older fixture, for
+  example) raises a clear error instead of a silent guess.
 - **`input-validation.ts` (major, real, two findings).** The length check covered
   only `brandName` and `classType`. It now covers every `ApplicationRecord` field
   that reaches the prompt: `beverageType`, `netContentsUnit`, and the two numeric

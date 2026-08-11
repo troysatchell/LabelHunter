@@ -38,7 +38,33 @@ describe("validateResolverResult — malformed responses fail loudly", () => {
       overall: "RESOLVED",
       fields: [{ ...WELL_FORMED_RESOLVER_BODY.fields[0], confidence: "high" }],
     };
-    expect(() => validateResolverResult(body)).toThrow(/confidence.*expected a number/);
+    expect(() => validateResolverResult(body)).toThrow(/confidence.*expected a finite number in \[0, 1\]/);
+  });
+
+  describe("confidence must be a finite number in [0, 1] — PR #10 review", () => {
+    it.each([
+      ["NaN", Number.NaN],
+      ["Infinity", Number.POSITIVE_INFINITY],
+      ["-Infinity", Number.NEGATIVE_INFINITY],
+      ["negative", -1],
+      ["above 1", 42],
+    ])("rejects confidence: %s", (_label, confidence) => {
+      const body = { overall: "RESOLVED", fields: [{ ...WELL_FORMED_RESOLVER_BODY.fields[0], confidence }] };
+      expect(() => validateResolverResult(body)).toThrow(/confidence.*expected a finite number in \[0, 1\]/);
+    });
+
+    it.each([0, 1, 0.5, 0.999])("accepts confidence: %s", (confidence) => {
+      const body = { overall: "RESOLVED", fields: [{ ...WELL_FORMED_RESOLVER_BODY.fields[0], confidence }] };
+      expect(() => validateResolverResult(body)).not.toThrow();
+    });
+
+    it("never clamps an out-of-range value into range — the field is rejected, not silently corrected", () => {
+      // A malformed confidence.ts:1.5 clamped to 1.0 would move malformed
+      // output onto the trusted path — exactly the bug CP-1 §4.4 names for
+      // the extractor and this module's own doc comment repeats for itself.
+      const body = { overall: "RESOLVED", fields: [{ ...WELL_FORMED_RESOLVER_BODY.fields[0], confidence: 1.5 }] };
+      expect(() => validateResolverResult(body)).toThrow(ResolverResponseError);
+    });
   });
 
   it("throws when fields is missing entirely", () => {
@@ -68,6 +94,22 @@ describe("validateResolverResult — malformed responses fail loudly", () => {
     expect(problems.length).toBeGreaterThanOrEqual(2);
     expect(problems.join("\n")).toMatch(/overall/);
     expect(problems.join("\n")).toMatch(/confidence/);
+  });
+});
+
+describe("deriveResolvedFields — rejects an empty flaggedFields list (PR #10 review)", () => {
+  it("throws instead of reporting a label resolved when nothing was flagged", () => {
+    const raw: RawResolverResponse = { overall: "RESOLVED", fields: [] };
+    expect(() => deriveResolvedFields(raw, [])).toThrow(ResolverResponseError);
+    expect(() => deriveResolvedFields(raw, [])).toThrow(/flaggedFields is empty/);
+  });
+
+  it("would otherwise vacuously report resolved: true — the exact bug this guard prevents", () => {
+    // Documents WHY the guard is needed: fields.every(...) on an empty
+    // array is vacuously true, and an empty flaggedFields loop leaves
+    // problems empty too — nothing else in this function would catch it.
+    const raw: RawResolverResponse = { overall: "NEEDS_HUMAN", fields: [] };
+    expect(() => deriveResolvedFields(raw, [])).toThrow();
   });
 });
 

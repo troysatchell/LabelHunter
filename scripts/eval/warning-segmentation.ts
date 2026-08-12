@@ -156,11 +156,25 @@ export function segmentWarningCheckOutcomes(cases: readonly VerdictCaseScore[]):
   const resolutionSuspectCount = classes.filter((c) => c === "RESOLUTION_SUSPECT").length;
   const notFoundCount = classes.filter((c) => c === "NOT_FOUND").length;
 
+  // TRO-535 / LH-030b: the single-channel-pass rate, CP-2 §8.4's own named
+  // residual false-PASS exposure ("Single-channel passes are counted as
+  // clean passes and also reported as their own rate... They are the
+  // residual false-PASS exposure", §10 Q7). NOT a fifth partition member —
+  // it is the subset of `clean` (index-aligned with `classes` above) whose
+  // `warningChannel` is `"single"`, so it can overlap `clean` by
+  // construction and is excluded from the four-class sum a caller might
+  // assert. Denominator: `total` — the SAME denominator every class above
+  // shares. CP-2 §8.4 writes a denominator for the suspect rate only
+  // (cp2:945-948); this rate's denominator is this function's own explicit
+  // choice, stated here because CP-2 states none for it.
+  const singleChannelPassCount = cases.filter((c, i) => classes[i] === "CLEAN" && c.warningChannel === "single").length;
+
   return {
     total,
     clean: toSegmentCount(cleanCount, total),
     trueMismatch: toSegmentCount(trueMismatchCount, total),
     resolutionSuspect: toSegmentCount(resolutionSuspectCount, total),
     notFound: toSegmentCount(notFoundCount, total),
+    singleChannelPass: toSegmentCount(singleChannelPassCount, total),
   };
 }

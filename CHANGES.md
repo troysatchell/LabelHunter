@@ -114,6 +114,430 @@ call again unless the revert is also applied). No data migration existed to reve
 real Render deployment has ever run, so no production row anywhere depends on a value
 this ticket wrote.
 
+## TRO-519 — OCR channel timeout (2026-08-12)
+
+**What this builds.** `runWarningOcr` (`src/server/warning/ocr.ts`) now bounds its whole
+worker lifecycle behind one shared deadline: `OCR_TIMEOUT_MS`, 2000ms. It covers creation,
+parameter set, and recognition. It uses `Promise.race` against a timer — lessons.md rule
+23's pattern, one timer across every await, cleared once at the end. Before this ticket, none
+of those awaits carried a deadline. A hung Node `worker_threads` worker used to hang
+`runWarningOcr` forever, and hang `/api/verify` with it. No error. No database row. That was
+TRO-480's finding. On a timeout, `runWarningOcr` returns `null` — the exact value its
+existing `catch` block already returns for a thrown error. No new branch. No new field. No
+change to `reconcile.ts`. TRO-519's own scope says stop there, so this does.
+
+**Reproduction check.** `pnpm build && pnpm start`, two real `POST /api/verify` submissions
+against golden-set case-01. Both completed: HTTP 200, PASS verdict, a database row confirmed
+by direct query. Times were 3.97s and 6.08s. **Did not reproduce.** That has an explanation,
+not just a negative result. TRO-479 already found and fixed a related but different
+production-build bug. Next's build-time output tracing could not follow tesseract.js's own
+runtime path to its worker-thread entry point. `serverExternalPackages: ["tesseract.js"]`
+(`next.config.ts`) fixed that before this ticket's worktree existed. That fix explains the
+clean repro. It does not close TRO-519's own gap. The missing timeout was real on its own
+terms — any other cause of a stuck worker thread hits the identical failure mode. A bonus
+check under `pnpm dev` (TRO-480's original environment, with this ticket's fix applied) also
+completed cleanly: HTTP 200, 4.01s. That is consistent with, but not proof of, the same
+config fix also covering dev mode. No hang occurred in that one live attempt, so it never
+exercised the timeout path. The deterministic tests below are the real proof the mechanism
+works, not this live check.
+
+**The timeout value — 2000ms, reasoned from PRD §3.8, not measured.** The OCR channel's own
+p50 target is ~0.5s. 2000ms is 4x that: room for a real, slow-but-working recognition. Haiku
+extraction's own p50 target is ~2.5s. The two channels run concurrently
+(`compareGovernmentWarningFromImage`'s own `Promise.all`). A single OCR hang bounded at
+2000ms stays under Haiku's own typical latency. The hang hides behind the Haiku call already
+on the critical path, instead of becoming the new bottleneck. Named residual risk, out of
+this ticket's file scope: `region-detect.ts`'s band-search fallback can call `runWarningOcr`
+up to four times in one request. A systemic hang cause would hang every one of those calls
+alike, so that combination's worst case is roughly 4x this constant, not 1x. That combination
+is narrower than the single-hang case this ticket targets, and it was infinite before this
+ticket regardless.
+
+**Cancellation — investigated, none exists.** Checked the installed `tesseract.js@7.0.0`'s
+own type declarations and `createWorker.js` source directly. Neither `createWorker` nor
+`Worker.recognize` takes a `signal`, or any abort option, anywhere in the public API. This
+ticket falls back to the bare-timer path as the honest fallback.
+
+**Worker termination — fire-and-forget, and it covers a late-arriving worker too.** A first
+draft awaited `worker.terminate()` inside the timeout branch's own cleanup. Local CodeRabbit
+review round 1 (major) caught the real risk: a hanging `.terminate()` would extend the
+deadline it should enforce. Fixed — termination is now fire-and-forget everywhere, logged if
+it fails, never awaited before returning. The same round named a second gap. A worker whose
+`createWorker()` call resolves after the deadline already fired was left running,
+unterminated. It did real OCR work nobody would ever read. Fixed with a `timedOut` flag,
+checked the moment that late worker exists. It terminates the worker immediately and skips
+`setParameters`/`recognize` entirely. One case still cannot be terminated: a `createWorker()`
+call that never settles at all. There is provably no handle to terminate, ever, in that case.
+`runWarningOcr` still returns `null` within `OCR_TIMEOUT_MS` regardless.
+
+**New problem noticed, not fixed here (out of this ticket's scope).** TRO-479's own
+investigation found that tesseract.js's Node backend never attaches a real listener to the
+underlying `worker_threads.Worker`'s `error` event. `createWorker.js` sets
+`worker.onerror = fn`. That hook only does something for the library's browser backend.
+Node's own `Worker` has no such property-style dispatch. TRO-479 removed the one known
+trigger for this — the build-trace failure — with `serverExternalPackages`. The underlying
+gap is still there for any other trigger: no listener on the raw Node worker's `error` event.
+It crashes the whole process, not just one request — Node's default behavior for an
+`EventEmitter` `error` event with no listener. No timeout can fix a crashed process.
+tesseract.js's public API gives no hook to attach a listener to the raw worker from outside
+the library. Worth its own ticket if Troy wants defense in depth here.
+
+**Tests.** `src/server/warning/ocr.test.ts` — 6 new cases. A `createWorker` that never
+resolves degrades to `null` inside the deadline. A `recognize()` that never resolves degrades
+to `null` and terminates the worker. A fast real success still returns its result and still
+terminates. A thrown `createWorker` error and a `createWorker` timeout converge on the
+identical `null`. A worker whose own `terminate()` never resolves does not block
+`runWarningOcr`'s return. A worker that resolves from `createWorker` after the deadline is
+terminated the moment it exists, with `setParameters`/`recognize` never called on it.
+`src/server/warning/index.test.ts` — 1 new case: the real `runWarningOcr` (not a fake),
+injected only at its own `createWorker` seam. It degrades `compareGovernmentWarningFromImage`
+all the way to a single-channel `MATCH` inside the deadline. That proves the production
+wiring, not just the innermost function. Every new test uses vitest's fake timers; none
+sleeps for real (lessons.md rule 8). Full suite: 1535 tests, all pass (`pnpm test`).
+
+**Local CodeRabbit review, round 1 (3 findings, all fixed).**
+- `src/server/warning/ocr.ts` (major): `worker.terminate()` was awaited inside the timeout's
+  own cleanup, so a hanging termination could extend the timeout it was meant to enforce. A
+  worker whose `createWorker()` resolved after the deadline was left running, unterminated.
+  Fixed as described above: fire-and-forget termination everywhere. A `timedOut` check
+  terminates a late-arriving worker the moment it exists, and skips real OCR work on it.
+  Two new tests cover both fixes directly.
+- `src/server/warning/index.ts` (minor): `runOcrChannel`'s own comment overclaimed a
+  channel-wide bound. Only each individual `ocr` call is actually bounded by
+  `OCR_TIMEOUT_MS`. `detectWarningRegion`'s band-search fallback can call it up to four
+  times, and `detectRegion`/`crop` carry no deadline of their own. Fixed by naming the real
+  bound precisely instead of the overclaim.
+- CHANGES.md (minor): several sentences in this entry ran past ASD-STE100's 25-word
+  guidance. Fixed by splitting them — this pass.
+
+**How to run it.** No new command. `pnpm test` covers the regression.
+`pnpm dev`/`pnpm build && pnpm start` both run the real path unchanged.
+
+**Rollback.** `git revert` this ticket's commit(s) on `fix/ocr-channel-timeout`. No schema
+and no config ride along. `ocr.ts`, `index.ts`, their tests, and this entry are the whole
+diff.
+## TRO-535 — LH-030b · Sweep OCR_CONFIDENCE_FLOOR (2026-08-12)
+
+**What changed.** A statutory field passed on one channel. The second channel ran. It
+disagreed badly. The reconciler discarded it anyway. `OCR_CONFIDENCE_FLOOR`
+(`src/server/warning/reconcile.ts:106`) moves from 60, proposed and unmeasured, to 50, measured.
+
+**The measurement.** `scripts/eval/ocr-floor-sweep.ts` replays the OCR channel against every
+golden-set image. It calls the same five functions the verify route calls, in the same order:
+`preprocessImage`, `detectWarningRegion`, `cropForOcr`, `runWarningOcr`, `evaluateCandidate`. It
+makes no API call. It writes one file: `scripts/eval/results/ocr-floor-sweep.json`.
+
+Every warning-bearing case landed in one of two confidence clusters, with a wide, empty gap
+between them. Low cluster: 56 and 58 (case-24 and case-23, tiny warning print). Both are real
+readings, badly degraded — distance 42 and 47 from the canonical text. High cluster: 91, 95, or
+96 (25 of 27 warning-bearing cases with a usable OCR candidate). One high-cluster case (case-18,
+glare on the warning block) read confidently while reading garbage — Tesseract confidence is
+not a read-quality oracle, which is why the dual-channel agreement check, not this floor, is the
+real safety net.
+
+The old floor of 60 sat inside the empty gap, above both tiny-print readings. That is why it
+discarded case-23 and case-24's OCR evidence every time, no matter how badly the print
+degraded, and let a single confident VLM channel pass a label whose only other reader produced
+47 and 42 edits of garbage.
+
+**The chosen floor: 50.** The midpoint of Tesseract's 0-100 scale. Not the smallest number that
+flips two cases — 55 or 56 would already do that. 50 sits 6 to 8 points under both measured
+tiny-print readings.
+
+**Honest limit.** The golden set has no case between blank-crop noise (confidence 0,
+`ocr.test.ts`) and 56. Nothing in this corpus proves 50 over 40 or 45. `reconcile.ts`'s comment
+and the CP-2 amendment below both name this gap. Neither hides it.
+
+**CP-2 amendment.** `docs/checkpoints/cp2-warning-subsystem.md` §4.5 merged two states into one
+table row: "OCR unavailable or below the confidence floor." Case-23 and case-24 proved they are
+different states — one has no reading to discard, the other has a real one. The row is split
+into two, dated 2026-08-12. CP-2 is an approved checkpoint. The split is recorded as a dated
+amendment, not a silent rewrite of the original text. §11 open question 7 carries a matching
+resolution note.
+
+**Channel provenance.** `WarningComparatorResult` (`src/server/router/types.ts`) carries an
+optional field, `channel`: `"dual"` or `"single"`. Every result `reconcileWarningChannels`
+itself returns sets it — passed as an explicit argument through the reconciliation functions,
+never read back off an already-built result. The eval report carries it too.
+`VerdictCaseScore.warningChannel` (`scripts/eval/types.ts`) is populated in `cascade-runner.ts`
+from the `compareGovernmentWarning` dependency's own captured result — by the time the HTTP
+response body is built, `routeLabel` has already turned it into a `FieldResultRow` that carries
+no channel of its own.
+
+`WarningSegmentationSummary` gains `singleChannelPass` (`scripts/eval/warning-segmentation.ts`).
+CP-2 §8.4 names this rate: the residual false-PASS exposure. It is the subset of `clean` where
+one VLM channel decided PASS, with no OCR channel to disagree. It is not a fifth,
+mutually-exclusive class — it overlaps `clean` by construction, exactly as CP-2 §8.4 states.
+Same denominator as the other four classes: `total`. The code states that choice, because CP-2
+states one for the suspect rate only.
+
+**Measured, live: case-23 and case-24 score REVIEW, not PASS.** `pnpm eval:check -- --live
+--full`, 2026-08-12T21:28:19Z, 32/32 cases, 0 failures, $0.318 measured cost. Both cases:
+`actualLabelVerdict: REVIEW`, `government_warning` field verdict `NEEDS_REVIEW` (matches the
+manifest), `warningChannel: "dual"` (both channels now compared), `actualReviewReason:
+WARNING_MISMATCH`. That reason does not match the manifest's `LOW_IMAGE_QUALITY` — expected and
+named up front in the ticket. TRO-516's correction C4 owns closing that gap; not closed here.
+
+Label-verdict accuracy moved from 21/32 (65.6%) to 24/32 (75.0%) in this run. **Only two of
+those three newly-correct cases are this ticket's fix.** The third, case-17, also flipped
+PASS→REVIEW. Its headline reason is `AMBIGUOUS_BRAND`, not a warning reason. Its cause: Haiku
+read `brand_name` differently on the two live calls (correct, then wrong). The original
+2026-08-12 diagnosis already named this exact case as model-call variance. This ticket's code
+never touches brand extraction. That same misread also cost extraction accuracy one point,
+154/160 → 153/160.
+
+The full per-case diff was checked, not assumed. Exactly three `labelVerdictCorrect` values
+changed. All three moved False → True. None moved the other way.
+
+`scripts/eval/baseline.json` is updated from this same live, full, zero-failure run — the only
+honest source, since `singleChannelPass` and `warningChannel` did not exist as concepts before
+this ticket and no historical value for them exists to preserve.
+
+**A TypeScript control-flow limit, found and worked around.** A `let` variable a nested closure
+reassigns (`cascade-runner.ts`'s `capturedWarningResult`) narrows to `never` at any later
+property read — confirmed with a minimal reproduction, even across an intervening `await`. This
+is a real TypeScript limit, not a bug in the captured value. Fixed with one small named
+function, `extractWarningChannel`. A function parameter gets a fresh type binding from its own
+annotation; that resets the over-narrowing.
+
+**What stays open.** Whether Haiku read case-23 and case-24's 9px print, or completed it from
+memory, stays unmeasured. No golden case pairs tiny print with a wording deviation, so nothing
+in this repo can tell the two apart (CP-2 §10 Q7). Separately, this run's `singleChannelPass`
+metric caught a live, real instance of the same exposure class on a different case: case-22's
+`government_warning` field is a single-channel MATCH against an expected NEEDS_REVIEW (the label
+verdict still lands on REVIEW overall, from a different blocker) — noticed, not fixed, here.
+
+**How to run it.** `pnpm eval:ocr-floor-sweep` re-runs the sweep. It makes no API call. `pnpm
+test` runs the regression suite, including new cases in `reconcile.test.ts` that encode the
+measured case-23 (58) and case-24 (56) confidence values directly — red under the old floor,
+green under the measured one. `pnpm eval:check -- --live --full` re-measures the live cascade.
+This spends real money.
+
+**Rollback.** `git revert` this commit. `OCR_CONFIDENCE_FLOOR` reverts to 60. `channel` and
+`singleChannelPass` are additive; dropping them is safe for every other caller. The CP-2
+amendment is a dated addition, not an edit to the original text — reverting it restores the
+pre-amendment document exactly. `scripts/eval/baseline.json` and `eval-report.json` would need a
+fresh `--live --full --update-baseline` run to re-establish the pre-ticket floor, since the old
+files are not restored by a plain revert once superseded (both are working artifacts, committed
+for evidence, not source).
+## TRO-534 — LH-029 · Guard the beverage_type cross-check (2026-08-12)
+
+**What changed.** The beverage_type cross-check in `src/server/router/index.ts` (CP-1 §5.3's
+free cross-check) now needs two things before it fires `CONFLICTING_EXTRACTION`. First, the
+extractor's normalized `beverage_type.value` must be a real `BEVERAGE_TYPES` member (`beer`,
+`wine`, `spirits`). Second, that member must disagree with the application's declared type.
+Before this fix, the check compared a free-form extractor string against the application's
+closed enum by plain equality. An off-menu subtype — a real TTB category the application form
+has no slot for — read as a conflict.
+
+**Why.** The measurement comes from `scripts/eval/results/eval-report.json`, run
+`2026-08-12T13:26:45.488Z`, mode `live`, model `claude-haiku-4-5`. case-11 declares beverage
+type `wine`. Its label prints class type `Mead`. TTB classes mead as a wine. Neither record is wrong. The old check still
+fired `CONFLICTING_EXTRACTION`. That set a label-level blocker. `rollup.ts:15` returned REVIEW
+before it ever read the government warning's own `MISMATCH`. TH-R9's acceptance evidence reads
+"reworded warning → fail" (`audit/requirements/inventory.md:87`). case-11 carries a genuinely
+reworded warning. It now returns FAIL.
+
+**Step 1's live read.** A scratch script, never committed, called `runOneCase` against
+case-11. It pointed `DATABASE_URL` at this worktree's own database first. The raw extraction
+was `beverage_type: { value: "mead", evidence: "Mead", confidence: 0.99, alternates: [] }`.
+`"mead"` is not a `BEVERAGE_TYPES` member. Its confidence clears `TRUSTED_THRESHOLD_DEFAULT`
+(0.85). An off-menu value at trusted confidence does not meet the ticket's stop condition
+(step 3). The fix proceeds on this measured basis, not a guess.
+
+**Net effect on label-verdict accuracy.** Accuracy stays unchanged at 21/32. This is not a
+scoreboard win. Two live single-case runs followed the fix. The PR pastes both outputs in
+full below:
+
+- `pnpm eval:check -- --live --case=case-11-reworded-warning-clause-two`: `labelVerdict`
+  `FAIL` (was REVIEW), `reviewReason` `null`. This result is now correct.
+- `pnpm eval:check -- --live --case=case-22-low-light-warning-block`: `labelVerdict` `PASS`
+  (was REVIEW), `reviewReason` `null`. This result is now incorrect.
+
+case-22 also declares `wine`/`Mead`. Its `government_warning` field genuinely needs review.
+The golden set expects `NEEDS_REVIEW`. The router now returns `MATCH`. The old blocker masked
+this defect. The blocker did not produce a correct verdict for a correct reason. It produced
+the right label verdict through the wrong mechanism. Removing the blocker exposes the defect
+instead of hiding it. The fix corrects one case. The fix exposes one case's masked defect. The
+count holds at 21/32. Read both results as honest-evidence wins under PRD §6. Neither is a net
+gain or a net loss that cancels the other out.
+
+**How to run it.** `pnpm test` runs the two new tests in `src/server/router/index.test.ts`,
+beside the existing beverage_type block. `pnpm eval:check -- --live --case=<id>` reads one
+case live. It never touches the committed report or baseline (`check.ts`'s own contract).
+
+**Rollback.** Run `git revert` on every commit `git log main..fix/lh-029-beverage-type-crosscheck`
+lists, oldest first. All the changes live in one file, `src/server/router/index.ts`: a new
+import, the `isKnownBeverageType` guard, and the vocabulary check inside `routeLabel`. A
+revert restores the old, unguarded string-equality check.
+
+**Related, not duplicated here.** TRO-502 owns override rule 1
+(`src/server/router/overrides.ts:134`) — a separate defect in the same field. This ticket
+changes only the label-level cross-check in `index.ts`.
+
+## TRO-537 — LH-032 · Prove the government warning FAIL path on a real image (2026-08-12)
+
+**What this proves.** TH-R9 names three acceptance cases. One passes. Two fail. Until this
+ticket, only the PASS case ran the real pipeline — case-01 in
+`src/server/warning/index.test.ts`. Both FAIL cases ran only against hand-built strings. Both
+went straight to `reconcileWarningChannels` (`reconcile.test.ts:59-63`, `:80-87`). That gap
+mattered. CP-2 §4.5's rule: "we never accuse on one channel." A single readable channel
+returns `NEEDS_REVIEW`, never `MISMATCH`. Comparator-level proof does not show that the live
+path reaches the same answer. Troy ruled on this (INT-001,
+`audit/requirements/interpretations.md:9-24`): comparator-level proof does not satisfy TH-R9.
+
+**Two new tests, one file.** Both live in `src/server/warning/index.test.ts`, in the existing
+"real image, real OCR, real region detection" `describe` block, beside the case-01 test they
+mirror. Neither passes a `deps` argument to `compareGovernmentWarningFromImage` — region
+detection, cropping, and OCR all run for real.
+
+- **case-08** (the case INT-001 requires): real pipeline against
+  `golden-set/images/case-08-title-case-warning-prefix-only.jpg`. Verdict `MISMATCH`, note
+  "Government Warning must print in capital letters."
+- **case-10** (optional under INT-001, added anyway — nearly free, and it closes TH-R9's third
+  acceptance shape on a real image): real pipeline against
+  `golden-set/images/case-10-reworded-warning-clause-one.jpg`. Verdict `MISMATCH`, note
+  "Government Warning wording differs from the required text."
+
+Both tests read their image path and warning text from `loadGoldenSetManifest()`, never a
+pasted literal. A manifest edit that changes the ground truth breaks the test right away.
+
+**The trap, confirmed and avoided.** `extractedWarning()`'s defaults are
+`prefix_casing: "ALL_CAPS"` and the canonical warning text. A standalone `tsx` script measured
+what those defaults do against case-08's real image. The script ran outside the repo and wrote
+no file. The result: `NEEDS_REVIEW`, reason `WARNING_MISMATCH`, note "Government Warning could
+not be read consistently" — not `MISMATCH`.
+
+The VLM channel reads the canonical, all-caps text. The real OCR channel reads the image's
+actual title-case text. The two disagree outright, so the code takes
+`reconcileDualChannel`'s disagree branch (`reconcile.ts:136-138`). Only the agree branch can
+return `MISMATCH`, and these two channels do not agree.
+
+The new tests avoid this trap. Each passes the case's own transcription and its real
+`prefix_casing`: `TITLE_CASE` for case-08, `ALL_CAPS` for case-10. Case-10's prefix is correct.
+Only clause (1)'s wording is off.
+
+**Evidence, measured this session.**
+
+| measurement | value |
+| -- | -- |
+| case-08, real pipeline, `pnpm test` | `MISMATCH`, "Government Warning must print in capital letters." |
+| case-08 wall clock | 296 ms (vitest run), 332 ms (standalone `tsx` script) |
+| case-08 with the ALL_CAPS trap (verification only, not shipped) | `NEEDS_REVIEW` / `WARNING_MISMATCH`, "Government Warning could not be read consistently." |
+| case-10, real pipeline, `pnpm test` | `MISMATCH`, "Government Warning wording differs from the required text." |
+| case-10 wall clock | 298 ms |
+
+**Not touched.** This ticket leaves `reconcile.ts`, `region-detect.ts`, `ocr.ts`, and
+`OCR_CONFIDENCE_FLOOR` unchanged. It adds tests. It fixes no production code.
+`reconcile.test.ts:59-63` and `:80-87` (the comparator-level title-case and reworded tests) stay
+untouched too. They remain the right unit tests. This ticket adds the missing integration proof
+beside them.
+
+**Effect on TH-R9.** This ticket meets INT-001's bar. A FAIL case now runs the real image
+pipeline. TH-R9 moves out of PARTIAL.
+
+**Rollback.** Revert this ticket's commits. They touch two files: this changelog entry and
+`src/server/warning/index.test.ts`. No schema change.
+
+## TRO-536 — LH-031b · Drop the apostrophe at normalizer step 6 (2026-08-12)
+
+**What changed.** Step 6 of `normalizeForFuzzyMatch` (`src/server/comparators/normalize.ts`)
+dropped every punctuation mark except an apostrophe and a hyphen. It now drops the apostrophe
+too and keeps only the hyphen. The function is renamed from
+`dropPunctuationExceptApostropheAndHyphen` to `dropPunctuationExceptHyphen`, and its
+trailing-trim regex simplifies from `/^['-]+|['-]+$/g` to `/^-+|-+$/g`.
+
+**Why.** case-15 (`STONES THROW` on the label, `Stone's Throw` on the application) expects
+PASS with `brand_name` MATCH. It returned REVIEW with `AMBIGUOUS_BRAND`. Every extraction field
+scored `correct: true` in `scripts/eval/results/eval-report.json` (measured
+2026-08-12T13:26:45.488Z, live, `claude-haiku-4-5`) — Haiku read the label right, so the defect
+was in the comparator. Step 6 kept the application's apostrophe, so the two brand strings
+normalized to `stone's throw` and `stones throw`, one character apart. `similarity()` scored
+0.923077, just under `BRAND_CLASS_MATCH_THRESHOLD` (0.95), so the field escalated to
+NEEDS_REVIEW and the label rolled up to REVIEW.
+
+**Measured on the corpus, not argued.** Replayed the production normalizer and similarity
+function over all 32 golden-set cases' `brand_name` and `class_type`, using Haiku's real
+extracted values from the measured run, once against the old step 6 and once against the
+patched one (read-only script, no repo file changed):
+
+| Case | Field | Before | After |
+|---|---|---|---|
+| case-15 | `brand_name` | 0.923077 | 1.000000 |
+| case-16 | `brand_name` | 0.423077 | 0.461538 |
+
+Exactly one score crosses the 0.95 threshold: case-15. case-16 stays below it and keeps its
+NEEDS_REVIEW field verdict, which its own expectation asks for (`brand.test.ts` pins this
+pair). No `class_type` score moves anywhere in the 32-case corpus. `extraction-scoring.ts`
+calls the same normalizer to score extraction correctness; zero extraction scores move, because
+dropping a character can only merge two strings, never split them.
+
+**A gap this closes.** `normalize.test.ts` already pinned a known gap: a curly apostrophe
+(U+2019, a stylized mark a real vision-model read can emit) and a straight apostrophe
+normalized to two different strings and scored ~0.923 similarity — just under MATCH. Both now
+normalize to the same punctuation-free string and score 1.0. The test that pinned the gap now
+pins it closed. Inverted the assertion instead of deleting the test, so the record of the
+change stays in the suite.
+
+**Honest limit.** TH-R8's own named acceptance test is `STONE'S THROW` vs `Stone's Throw`
+(`audit/requirements/inventory.md:79`), and case-14 carries that exact pair and already passed
+before this fix. This change does not repair a broken graded acceptance line — it extends the
+same graded rule (rubric vector V5) to a second carrier, case-15, that sits just beyond every
+document's own named example.
+
+**One accepted behavior change.** A possessive and a plural now fold together — `stone's` and
+`stones` normalize identically. This can produce a wrong MATCH. It cannot produce a wrong FAIL:
+`compareBrandOrClass` returns only `MATCH` or `NEEDS_REVIEW` (`brand.ts:60-62`, pinned by
+`brand.test.ts`). It never touches the government warning, which keeps its own exact-compare
+subsystem with no shared helpers (`normalize.ts:12-15`).
+
+**Checkpoint amendment, flagged for the record.** `docs/checkpoints/cp1-cascade-router-prompts.md`
+is a checkpoint-approved document. Three lines stated step 6 as "drop punctuation except
+internal apostrophes and hyphens" and printed the folded literal as `` stone's throw ``. Both
+went stale the moment step 6 changed. Updated the rule text and the worked example's folded
+literal, and added an inline, dated amendment note at the point of change. CP-1's outcome does
+not change: `STONE'S THROW` and `Stone's Throw` still fold to one string and still score 1.0 —
+only the folded spelling changed, from `stone's throw` to `stones throw`. This is a deviation
+from originally-approved checkpoint text, made without a fresh live walkthrough; it is on the
+record here for Troy, not a decision this ticket claims authority to make quietly.
+
+**Evidence.**
+
+- `pnpm test`: 1530/1530 passed, 138 test files. No test deleted, skipped, or quarantined.
+  Includes a direct assertion that `normalizeForFuzzyMatch("STONES THROW")` equals
+  `normalizeForFuzzyMatch("Stone's Throw")` (`normalize.test.ts`), alongside the
+  comparator-level case-15 test in `brand.test.ts`.
+- `pnpm typecheck`: clean.
+- `pnpm lint`: 0 errors (1 pre-existing warning in `DetailView.tsx`, unrelated to this change).
+- `pnpm golden:verify`: PASS, 32 cases — no manifest edit, so vector coverage is unchanged.
+- TDD: `brand.test.ts`'s new case-15 test was written first and observed failing
+  (`NEEDS_REVIEW`, not `MATCH`) against the pre-fix normalizer, for the documented reason
+  (0.923077 similarity below the 0.95 threshold), before the source change landed.
+- Live, one Haiku call: `pnpm eval:check -- --live --case=case-15-case-variant-brand-punctuation`.
+  Observed `actualLabelVerdict: "PASS"` and `brand_name` `actualVerdict: "MATCH"`. The router
+  now resolves the field itself, so `resolverCost` is `null` — no Sonnet call. Cost $0.00475.
+  **Correction to this ticket's own prediction:** the ticket expected exit code 1 with a
+  "stale coverage" message. The observed exit code was 0, with no such message.
+  `scripts/eval/check.ts:154-160` explains why: `--case=<id>` is a dedicated single-case debug
+  path. It prints the result and returns before the baseline-comparison logic ever runs, so it
+  never emits that message and never touches the committed report. Two checks confirm this: the
+  md5 of `scripts/eval/results/eval-report.json` is byte-identical before and after the run, and
+  `git status` shows that path clean. No restore was needed, though a backup was taken first
+  regardless.
+- `pnpm eval:check` (cheap mode, what gate G8 runs): PASS, exit 0, comparing the untouched
+  committed report against the committed baseline. **Stated honest limit:** this run does not
+  exercise this fix at all — it is scored against the same pre-fix committed numbers, so G8
+  proves nothing regressed, not that case-15 now passes. The live single-case run above is what
+  proves that.
+
+**How to run it.** `pnpm test`. Optional live check (one Haiku call, not part of the gate; copy
+`scripts/eval/results/eval-report.json` aside first — though `--case` mode does not write it):
+`pnpm eval:check -- --live --case=case-15-case-variant-brand-punctuation`.
+
+**Rollback.** Revert this commit range. `normalize.ts` step 6 goes back to keeping the
+apostrophe; `normalize.test.ts` and `brand.test.ts` go back to their pre-TRO-536 assertions;
+CP-1's three amended lines revert to their originally-approved text.
+
 ## TRO-479 — LH-053 · E2E suite (2026-08-12)
 
 **What this builds.** Real, executable Playwright specs for the three PRD §6 flows: verify,

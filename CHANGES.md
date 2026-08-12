@@ -50,9 +50,10 @@ gain or a net loss that cancels the other out.
 beside the existing beverage_type block. `pnpm eval:check -- --live --case=<id>` reads one
 case live. It never touches the committed report or baseline (`check.ts`'s own contract).
 
-**Rollback.** Run `git revert <ticket-commit>` for each ticket commit on
-`fix/lh-029-beverage-type-crosscheck`. The change is additive and local to one function in
-`src/server/router/index.ts`. A revert restores the old, unguarded string-equality check.
+**Rollback.** Run `git revert` on every commit `git log main..fix/lh-029-beverage-type-crosscheck`
+lists, oldest first. All the changes live in one file, `src/server/router/index.ts`: a new
+import, the `isKnownBeverageType` guard, and the vocabulary check inside `routeLabel`. A
+revert restores the old, unguarded string-equality check.
 
 **Related, not duplicated here.** TRO-502 owns override rule 1
 (`src/server/router/overrides.ts:134`) — a separate defect in the same field. This ticket

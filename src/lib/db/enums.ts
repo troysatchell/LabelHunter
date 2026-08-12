@@ -80,6 +80,30 @@ export type ReviewDisposition = (typeof REVIEW_DISPOSITIONS)[number];
 export const reviewDispositionEnum = pgEnum("review_disposition", REVIEW_DISPOSITIONS);
 
 /**
+ * Which logical sub-queue a `batch_queue_items` row belongs to (LH-041 /
+ * TRO-474, CP-3 batch-queue design §2.2/§2.3). One table serves both
+ * queues — `EXTRACT` rows carry `applicationId`/`labelImageId`; `RESOLVE`
+ * rows carry `verificationId`/`resolverInput` instead. Extract-workers and
+ * resolve-workers each claim only their own `kind` (CP-3 §3.1, §4.5) —
+ * Sonnet never sees a queue item outside the review sub-queue (TH-R19).
+ */
+export const BATCH_QUEUE_ITEM_KINDS = ["EXTRACT", "RESOLVE"] as const;
+export type BatchQueueItemKind = (typeof BATCH_QUEUE_ITEM_KINDS)[number];
+export const batchQueueItemKindEnum = pgEnum("batch_queue_item_kind", BATCH_QUEUE_ITEM_KINDS);
+
+/**
+ * The claim state machine for one `batch_queue_items` row (CP-3 §2.2,
+ * §3.1). `PENDING` is unclaimed (or released back for retry); `CLAIMED`
+ * holds a lease (`leaseExpiresAt`) a worker must still be honoring;
+ * `DONE`/`FAILED` are terminal — a row never leaves either. There is no
+ * separate "retrying" state: a retryable failure releases a row straight
+ * back to `PENDING` with `availableAt` pushed forward (CP-3 §5.2).
+ */
+export const BATCH_QUEUE_ITEM_STATUSES = ["PENDING", "CLAIMED", "DONE", "FAILED"] as const;
+export type BatchQueueItemStatus = (typeof BATCH_QUEUE_ITEM_STATUSES)[number];
+export const batchQueueItemStatusEnum = pgEnum("batch_queue_item_status", BATCH_QUEUE_ITEM_STATUSES);
+
+/**
  * Narrows an arbitrary string to a member of a closed set, or throws.
  *
  * Values entering these tables often start as loosely-typed strings — model

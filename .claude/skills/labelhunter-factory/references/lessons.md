@@ -132,6 +132,22 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     already-good result alongside it. Check every `await` after error-handling code has actually
     ended, not just the one the `try` block visibly wraps.
     (`unhandled-rejection`, 2 tickets: TRO-468, TRO-476.)
+30. **A `test.skip()` is not automatically the "weaken a test to get green" the non-negotiable
+    bans — check what it hides before treating the two as the same thing.** The rule exists to
+    stop hiding a real bug or a real coverage gap behind a disabled test. It does not cover a
+    skip whose condition is "this test's premise cannot exist here" — most concretely, a
+    fake-external-service-only test hook (an injected failure trigger, a canned error mode) that
+    has no live equivalent *by design*, because no real, security-conscious third-party API
+    would ever let a caller force it to fail on demand. Losing that specific artificial trigger
+    under a live-API run is not a coverage gap; the behavior it exists to test (e.g., does the
+    UI actually recover on a real failure) must still be fully covered by the default/fake path
+    the skip does not touch. Confirmed by Troy (TRO-479, 2026-08-12) after the agent correctly
+    declined to decide this alone or route around the gate's `.skip(` detection with different
+    syntax — same intent, different syntax, is still the thing the rule bans; an honest,
+    narrowly-scoped, documented skip is not. When this pattern recurs, cite this rule rather
+    than re-litigating the distinction from scratch: does the skip hide a real bug/gap (banned),
+    or does it drop only a test-only mechanism with no legitimate real-world counterpart
+    (not banned, but still narrow it and say so in `CHANGES.md`)?
 
 ## Mechanized (no longer prompt-dependent)
 

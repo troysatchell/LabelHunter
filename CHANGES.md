@@ -14,8 +14,9 @@ the literal brand name `"Old Tom Distillery"`. That text is TH-R11's canonical e
 `src/app/api/verify/route.test.ts` needs the exact words to get a real comparator
 `MATCH` against `WELL_FORMED_EXTRACTION_BODY`. Five of the nine files did not need the
 real text at all. Each one inserts a filler row and checks disposition, list membership,
-or display shaping — never a comparator match. Those five files now default to a new,
-file-scoped name instead. This matches the pattern already used in
+or display shaping — never a comparator match, and every lookup in those five files
+already used the row's own generated id, never the brand-name text. Those five files now
+default to a new, ticket-scoped name instead. This matches the pattern already used in
 `src/server/batch-queue/test-support.ts` and `src/server/review-queue/list.test.ts`:
 
 - `src/app/api/review-queue/test-support.ts` (`makeQueueItemFixture`, shared by both
@@ -26,9 +27,11 @@ file-scoped name instead. This matches the pattern already used in
 - `src/server/verification-detail/get-verification-detail.test.ts` → `"TRO-466 Test Fixture"`
 
 Each new name matches the file's own origin ticket — the same convention already used
-safely in its sibling files. `route.test.ts`'s own default stays `"Old Tom Distillery"`.
-TH-R11's coverage is not incidental test data. The ticket's own brief is explicit here: do
-not remove it, and do not rename it out of the suite.
+safely in its sibling files. `route.test.ts`'s own default stays `"Old Tom Distillery"`,
+the one fixture in the whole suite that still needs the real text, because it is the one
+place a real comparator runs against it. TH-R11's coverage is not incidental test data.
+The ticket's own brief is explicit here: do not remove it, and do not rename it out of
+the suite.
 
 **Problem 2: the actual reproducible cause.** Checking all nine files found only two
 places that looked a row up by brand-name VALUE, instead of by its own generated id. Both
@@ -56,12 +59,17 @@ Two changes close this gap:
 - `vitest.config.ts` sets `maxWorkers: 4`. This bounds how many forked processes — and so
   how many pools — one `pnpm test` run can open at once. An unbounded run scales with the
   host's CPU count instead.
-- `src/lib/db/index.ts` drops the pool's `max` from pg's default of 10 to 5. This halves
-  one pool's own worst-case connection footprint.
+- `src/lib/db/index.ts` drops the pool's `max` from pg's default of 10 to 5, but only
+  under a real Vitest run (`process.env.VITEST`, Vitest's own signal). The live Next.js
+  server and `scripts/batch-worker/run.ts` each run as one long-lived process with one
+  pool. Neither one hits the per-process multiplication a test run does, so production
+  keeps pg's own default capacity untouched (local review round 1).
 
 Combined worst case: 4 pools × 5 connections = 20 per worktree, down from an unbounded
-17 × 10 = 170. Four worktrees running at once now draw at most 80 of the shared 100
-connections. That leaves comfortable headroom. The old numbers left almost none.
+17 × 10 = 170. Nothing in this fix caps how many worktrees actually run at once — the
+factory's own concurrency limit, if any, lives elsewhere. As one illustration only: four
+worktrees running full suites at the same moment would now draw at most 80 of the shared
+100 connections, comfortable headroom, against the old numbers' 680, which left none.
 
 **Evidence.**
 
@@ -97,9 +105,9 @@ pressure, did not reproduce a failure, either before or after the fix. The mecha
 proven. The exact real-world trigger threshold is not measured.
 
 **Regression test.** `src/lib/db/index.test.ts` (new file) asserts the pool's own `max`
-stays at or below 5. It failed for the right reason before the fix (`expected 10 to be
-less than or equal to 5`, pg's default with `max` unset). It passed after the fix. Both
-runs were standalone.
+stays at or below 5, under this file's own real Vitest run. It failed for the right
+reason before the fix (`expected 10 to be less than or equal to 5`, pg's default with
+`max` unset). It passed after the fix. Both runs were standalone.
 
 **How to run it.** Source `.factory-env` first. Every file this ticket touches writes to
 a real Postgres database. `pnpm test` runs the whole suite. `pnpm test --

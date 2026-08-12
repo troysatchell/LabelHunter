@@ -75,6 +75,357 @@ warning subsystem's own work entirely. Noted in `measure.ts`'s own header commen
 `route.ts` to passing `warningResult: null`, `VerifyRouteDeps` to its five original fields,
 and `measure.ts` to its pre-TRO-514 `deps` object and header comment.
 
+## TRO-477 — LH-051: Imperfect-image handling (2026-08-11)
+
+**What changed.** TH-R10 sets one bar for a glare, rotation, or low-light label. The router
+must return a correct extraction. Or it must return an explicit `LOW_IMAGE_QUALITY` review.
+It must never return a confident wrong verdict. Investigation found the Validation Router
+(LH-012) already meets this bar. No router code changes here. This ticket adds proof.
+
+Two pieces already do the work. First, the Haiku extractor's prompt (LH-011,
+`src/server/extractor/prompt.ts` rule 6) tells the model to report low confidence when glare,
+blur, an angle, low light, a crop, or an obstruction blocks it. Second, the router
+(`src/server/router/label-blockers.ts`'s `isLowImageQuality`) already escalates a label to
+`LOW_IMAGE_QUALITY` review whenever the whole-image read is `"no"`, or `"partial"` with any
+required field below the Unusable confidence floor (0.60). Together, an honest extraction of
+a degraded photo already routes to review under the router's existing logic. This ticket did
+not need a new heuristic. It needed evidence the existing one covers the six glare/rotation/
+low-light golden-set cases.
+
+**Files.**
+- `src/server/router/golden-image-quality.test.ts` — new. One test per golden-set case,
+  case-17 through case-22 (`golden-set/manifest.json`'s `glare`, `rotation`, and `low-light`
+  categories — the complete set this ticket covers, not only the three
+  `docs/checkpoints/cp2-warning-subsystem.md` §9.1 names as warning-relevant). Each test
+  builds a `HaikuExtractionResult` shaped like an honest read of that case's documented photo
+  defect: glare over the brand name only, glare over the warning block only, a mild
+  15-degree tilt, an unreadable upside-down and blurred shot, dim light on the front label
+  only, and dim light on the warning block only. Each test then checks `routeLabel`'s output
+  against the golden-set manifest's own `expected` block — label verdict, headline reason,
+  and every field's verdict — pulled from the manifest directly, not retyped. Ground-truth
+  text (brand, class, ABV, net contents, warning) also comes from the manifest, the same
+  pattern `src/server/extractor/golden-case.test.ts` (LH-011) already uses for case-01.
+
+  The two warning-block cases (case-18, case-22) pass `warningResult: null`. That is
+  `route.ts`'s real value as of this writing: `route.ts` does not call LH-020 yet, even
+  though LH-020's own subsystem module has since merged (TRO-468, PR #19, mid-way through this
+  ticket's own work) — `route.ts`'s own file comment still says so, and `scripts/latency/
+  measure.ts`'s doc comment records the same gap from before LH-020 merged. Passing `null`
+  here proves this ticket's own mechanism carries the `LOW_IMAGE_QUALITY` headline on its
+  own — not a hypothetical future warning subsystem standing in for it, and not contingent on
+  exactly when `route.ts` starts calling one. An earlier draft of these two tests passed a
+  synthetic warning result instead. A mutation check (below) showed that draft passed even
+  with the router's own detection disabled — it was proving the test fixture, not the router.
+  Switched to `null` and reconfirmed.
+
+**Verification beyond a green test run.**
+- Mutation check, not shipped. Temporarily forced `isLowImageQuality` to always return
+  `false`, reran the suite, then always return `true`, reran again, then reverted both
+  changes (`git diff` confirmed zero lines each time). Forcing `false` failed the five
+  REVIEW-expecting cases (17, 18, 20, 21, 22) and left the PASS-expecting case (19) green.
+  Forcing `true` failed only case-19. Both directions show the new tests exercise real
+  router behavior, not a vacuous pass.
+- Confirmed all six images (`golden-set/images/case-17-*.jpg` through `case-22-*.jpg`) decode
+  through the real `preprocessImage` pipeline (LH-010) without rejection, at 800-1173px on
+  the long edge — above the 640px floor `isLowImageQuality` checks. This is a narrow, purely
+  technical claim about the decode step, not a claim about the golden-set manifest's own
+  `verified` field (still `false` on every case — no human has confirmed the images show what
+  their spec claims). It confirms the tests' default `PreprocessingSignal` fixture
+  (`rejected: false, longEdgePx: 1568`, `test-support.ts`'s existing convention) does not
+  paper over a real preprocessing-level rejection.
+
+**How to run it.** `source .factory-env` first — every test command needs `DATABASE_URL`
+pointed at this ticket's own worktree database, even though this specific suite touches no
+table. `pnpm test -- src/server/router/golden-image-quality.test.ts`. No live model call and
+no real money — every fixture is a hand-built, clearly-labeled stand-in for a Haiku response,
+not a live extraction.
+
+**Rollback.** Delete `src/server/router/golden-image-quality.test.ts`. No production code
+changed.
+
+**Not verified.** Whether the real `claude-haiku-4-5` model reports confidence and
+`image_quality.legible` the way this ticket's fixtures assume, for these six specific
+photographs. That needs a live API call against the committed images. It is outside this
+ticket's TDD scope on deterministic router logic (PRD §6), and outside LH-011's own already-
+Done, already-out-of-scope-here extractor work.
+
+## TRO-478 — local CodeRabbit review round 1: 3 findings, 3 fixed (2026-08-11)
+
+**What changed.** The gate's local CodeRabbit pass reviewed this branch once, before the PR
+opened. It found 3 issues. All were real. All are fixed.
+
+- `docs/error-states.md` (minor): a missing relative pronoun. "A UI a first-time user" read
+  wrong. It now reads "a UI that a first-time user."
+- `docs/error-states.md` (major): the outbound-dependency section claimed "exactly one
+  outbound dependency… nothing else calls another host," then carved out Postgres in the very
+  next paragraph. That is an internal inconsistency, not just loose wording. Postgres now has
+  its own row in the dependency table, with its real degradation behavior (503 SERVICE,
+  "could not save this verification") and an explicit note on why it is a different kind of
+  concern than a public vendor endpoint behind a firewall.
+- `src/app/api/verify/route.test.ts` (minor): the "no SDK detail leaks into the response"
+  assertion checked the error class name and errno-style strings, but not the literal SDK
+  message "Connection error." Added to the same check.
+
+Recorded in `factory/review-findings.jsonl` — categories `prose-style`, `doc-consistency`,
+`test-coverage`.
+
+**How to run it.** `pnpm test -- src/app/api/verify/route.test.ts`.
+
+**Rollback.** `git revert` this commit. Every change here is prose or a test assertion; no
+production code moved.
+
+## TRO-478 — LH-052: Designed error states (2026-08-11)
+
+**What changed.** This ticket covers four single-label designed error states (TH-R20):
+an unreadable image, an oversized file, an API failure or timeout with a retry
+affordance, and unreachable-endpoint degradation (TH-R7). Each gets a ticket-named
+regression test. `docs/error-states.md` is new — the error-path walkthrough TH-R20 asks
+for, and the outbound-dependency list TH-R7 asks for.
+
+Three of the four states already worked. LH-010's preprocessing pipeline and LH-015's
+verify screen built them first. No route-level test proved it for the unreadable-image
+and oversized-file cases, and no test used the Anthropic SDK's real connection-error
+class for the unreachable-endpoint case. This ticket adds that proof:
+
+- `src/app/api/verify/route.test.ts` — a corrupt/truncated image (a valid JPEG header,
+  damaged pixel data) returns 422 IMAGE, distinct from an unsupported format. Confirmed
+  the extractor is never reached.
+- `src/app/api/verify/route.test.ts` — a file over the 20 MB upload ceiling returns 422
+  IMAGE. Confirmed the extractor is never reached.
+- `src/app/api/verify/route.test.ts` — a real `Anthropic.APIConnectionError` (not a
+  generic stand-in `Error`) returns 503 SERVICE. Confirmed no SDK-internal detail leaks
+  into the response, and no application row is left behind.
+- The pre-existing route test titled "an unreadable image" was renamed. It tests garbage
+  bytes with no recognizable image format at all — a different state from a damaged file
+  with a real header. The new corrupt-image test above is the genuine unreadable-image
+  case.
+
+**The one real bug, fixed.** `verify-client.ts`'s request timeout did not stay live
+through the whole request. The old code cleared the timer in a `finally` block right
+after `fetch()` resolved — before the response body finished parsing. A response whose
+headers arrived quickly, but whose body then stalled past the 45-second budget, had no
+timeout protection at all once headers were in. `review-queue-client.ts` had this exact
+bug shape, found and fixed for TRO-476 (see that entry, below). This ticket applies the
+same fix here: the timer now clears only after the body read completes, in `finally`
+around `response.json()`, not around `fetch()` alone (standing rule 23).
+
+`src/app/_lib/verify-client.test.ts`'s new case proved the bug first: a manufactured slow
+body read resolved successfully instead of aborting, because the timer had already been
+cleared. It is green after the fix. `src/app/_components/VerifyForm.test.tsx` adds a
+second case: a SERVICE-classified failure shows the designed panel, and "Try again"
+resubmits and succeeds — the retry affordance TH-R20 asks for, proven at the component
+level too.
+
+**Deferred — four batch-scoped states, not attempted here.** LH-052's ticket text also
+names a malformed CSV, unpairable rows, a partial batch failure, and a rate-limit backoff
+notice. None of these exists to test yet. The batch pipeline they belong to — LH-040
+(CSV manifest + pairing) and LH-041 (job queue + worker pool) — is still in progress in
+sibling worktrees, not yet merged to `main`. Building throwaway error-state UI against a
+pipeline shape that has not landed would not reliably match what LH-040/LH-041 actually
+ship, and batch infrastructure is outside this ticket's file scope. `docs/error-states.md`
+names this deferral explicitly. These four states become buildable once LH-040 and LH-041
+merge; LH-042 (batch progress + results UI) is the natural ticket to carry them.
+
+**Tests.** `pnpm test -- src/app/api/verify/route.test.ts src/app/_lib/verify-client.test.ts
+src/app/_components/VerifyForm.test.tsx src/app/_components/ErrorPanel.test.tsx` — 4 files,
+all green.
+
+**How to run it.** Run `source .factory-env` first — `route.test.ts` uses this worktree's
+real database. Then run the command above, or `pnpm test` for the full suite.
+
+**Rollback.** `git revert` this ticket's commits. `verify-client.ts`'s timer fix is the
+only behavior change; reverting it restores the pre-existing (buggy) timeout-clearing
+order. No schema change, no migration.
+
+## TRO-472 — PR #18 review: GitHub CodeRabbit, 14 findings, 14 fixed (2026-08-11)
+
+**What changed.** GitHub's CodeRabbit reviewed PR #18's full branch diff — the design document
+plus the local review round below it — and posted 14 actionable comments, `CHANGES_REQUESTED`.
+This is a second, independent pass; several findings pushed past what the local round caught.
+All 14 were real. The three that most changed the design:
+
+- **The escalation cap could be raced past its own threshold, and its cost bound was wrong as a
+  result.** The check counted settled outcomes (`resolvedBySonnetCount + needsHumanCount`), which
+  a `RESOLVE` item that exhausts every retry never touches — a batch where every Sonnet attempt
+  failed could spend without limit while the cap read zero. Rebuilt around a new
+  `batch_jobs.sonnet_call_count` counter, reserved atomically (`UPDATE ... WHERE sonnet_call_count
+  < $cap RETURNING ...`) before *every* Sonnet call attempt, first try or retry. `$5.55` is now an
+  actual worst-case bound, not a no-race estimate; retries explicitly spend budget, which the
+  first draft never decided one way or the other.
+- **`claimed_by` alone could not fence a stale completion.** CodeRabbit's own simulation showed
+  it precisely: a worker-instance identifier is stable across a worker's whole lifetime, so it
+  cannot tell a claim episode a worker still holds from one it held earlier on the same row and
+  lost to a lease expiry. Added `claim_token`, generated fresh on every claim including a
+  reclaim by the same worker, required by every completion, retry-release, and failure write
+  alongside `claimed_by` (kept as the human-facing "which worker" identifier).
+- **`EXTRACT` enqueue had no idempotency guard.** Only the `RESOLVE` side did. A retried
+  batch-creation step could duplicate an `EXTRACT` row, and nothing in the schema — not
+  `batch_queue_items`, not `verifications` — would stop each copy from producing its own
+  `verifications` row for the same label. Added a matching partial unique index,
+  `(batch_job_id, application_id, label_image_id) WHERE kind = 'EXTRACT'`, and required
+  conflict-safe enqueue against it.
+
+Four more real gaps: the claim query never checked `batch_jobs.status = 'RUNNING'`, so a worker
+could claim before the batch's own warm-up step ran; the `RESOLVE` completion flow calls
+`resolveEscalatedLabel` — which writes `review_queue` internally — before this design's own
+completion guard ever runs, an asymmetry with the `EXTRACT` path that was true but unstated;
+a losing caller in the TOCTOU race (TRO-506, §3.3) had no defined recovery and would have thrown
+uncaught; and the whole-pool 429 cooldown (§5.3) assumed one worker-pool process without saying
+so. All four fixed: the claim query now joins `batch_jobs` and requires `RUNNING`; the asymmetry
+is now stated plainly, with a required (not optional) recovery — catch the unique-constraint
+conflict, load the winning row, complete idempotently, never mark a resolved label `FAILED`; and
+the single-process assumption is now explicit, with the multi-instance alternative named for a
+future deployment that needs it.
+
+The rest were accuracy fixes matching the local round's own pattern: the opening banner ran four
+distinct facts into one dense paragraph (split, ASD-STE100); the worked example's `resolver_input`
+snapshot omitted the `schemaVersion` its own requirement demands (added, `"1"`); and the worked
+example's final summary said "199 processed successfully" where `processedCount` — by this
+document's own definition two sections earlier — is 200, since a failed item still completed its
+`EXTRACT` phase (corrected; the outcome split is now a clearly separate, derived line).
+
+Every finding and its fix is recorded in `factory/review-findings.jsonl`.
+
+**How to run it.** No product build is required — still docs-only. Run
+`scripts/factory/gate.sh --fast` then the full `scripts/factory/gate.sh`; the `regression-test`
+failure both report is expected. Read `docs/checkpoints/cp3-batch-queue.md` §3 and §6 for the
+two sections this round changed most.
+
+**Rollback.** `git revert` this commit. The prior two commits' document is internally consistent
+on its own, just missing these corrections — reverting does not break anything downstream, since
+nothing outside this document depends on it yet.
+
+## TRO-472 — gate's local CodeRabbit pass: 13 findings, 13 fixed (2026-08-11)
+
+**What changed.** The full gate's CodeRabbit capture reviewed `cp3-batch-queue.md` and this
+file, found 13 issues, and all 13 were real. Three were genuine correctness gaps in the design
+itself, not writing nits:
+
+- **A double-counted `processedCount`.** The decision table incremented `processedCount` again
+  when a resolver call exhausted its retries, on a label that had already incremented it once
+  at `EXTRACT` `DONE`. Left in, this could push `processedCount` past `totalCount` and fail
+  `batch_jobs_processed_count_bounded` outright. Fixed, and the table now says in one sentence
+  what `processedCount` counts and does not count.
+- **No completion guard.** The design specified an atomic *claim* (§3.1) but not an atomic
+  *completion* — a worker whose lease expired mid-call could still write a stale result after
+  another worker reclaimed and finished the same item, with nothing stopping a duplicate
+  `verifications` row. Added a completion guard to §3.2, same shape as the claim: the write that
+  finishes an item is conditioned on still holding it.
+- **A missing schema constraint.** `batch_queue_items`'s columns had no rule tying which ones
+  apply to which `kind`, and no unique index stopping two `RESOLVE` rows for one verification.
+  Added both, mirroring constraints this schema already uses elsewhere for the same shape of
+  problem (`label_images_belongs_to_something`, `review_queue_verification_id_unique`).
+
+Two more findings, smaller but still real:
+
+- **The lease-release write was ambiguous.** A worker releasing an item after a retryable
+  failure could read as leaving the row `CLAIMED`. Fixed: the release is now one unconditional
+  write that clears `claimed_by`, `claimed_at`, and `lease_expires_at`, and sets `status`
+  back to `PENDING`.
+- **The escalation-cap check was a check-then-act race.** Two resolve-workers could both read
+  "under budget" and both proceed. Named, with the fix tied to the same reservation pattern
+  already recommended for TRO-506 (superseded by a full fix in the next round — see the entry
+  above this one).
+
+Six more findings were accuracy and prose fixes, each mapped to one finding in
+`factory/review-findings.jsonl`:
+
+1. A PASS/FAIL decision-table row read as if a router FAIL were "auto-verified," with no
+   caveat. Split the row and added the caveat.
+2. A rate-limit-utilization claim said "under a fifth." The document's own worst-case number is
+   24%. Corrected to "under a fifth for extraction, under a quarter for resolution."
+3. The backoff worked example said five waits totaling 31 seconds. Five attempts produce four
+   waits, totaling 15 seconds. Corrected.
+4. The `resolver_input` snapshot had no version tag. A code change between when a `RESOLVE` row
+   is written and read could misinterpret it. Added `schemaVersion`.
+5. The 25% escalation-cap threshold did not name its small-batch rounding edge. Named it.
+6. Two prose passages ran multiple facts into single sentences: a five-event sequence, and a
+   three-fact banner. Rewrote both as separated statements per this repo's ASD-STE100 rule.
+
+Every finding and its fix is recorded in `factory/review-findings.jsonl`.
+
+**How to run it.** No product build is required — this branch is still docs-only. Run
+`scripts/factory/gate.sh --fast` then the full `scripts/factory/gate.sh`; both must still run,
+and the `regression-test` failure they report is expected (see the walkthrough-material entry
+below). Read `docs/checkpoints/cp3-batch-queue.md` directly for the fixes themselves; every one
+above is in the section named.
+
+**Rollback.** `git revert` this commit; the prior commit's document is still internally
+consistent on its own, just missing these corrections.
+
+## TRO-472 — LH-CP3: ⛔ CHECKPOINT 3 walkthrough material (2026-08-11)
+
+**This entry does not clear a checkpoint.** It adds the material Troy reads at the checkpoint.
+One thing differs from CP-1 and CP-2's own entries. Troy's 2026-08-11 policy change (commit
+`c09250e`) removed the block on dispatch: LH-040, LH-041, and LH-042 can start once this
+material exists and Troy has been notified, without waiting for his reply. That change affects
+dispatch only. Troy's acknowledgment is still what makes this design one he accepts, not one an
+agent merely produced.
+
+**What changed.** One new document: `docs/checkpoints/cp3-batch-queue.md`. No product code, no
+`src/` change, no schema migration. It covers everything the ticket asks for — queue design,
+worker concurrency, backoff strategy, the Sonnet sub-queue, partial-failure semantics, a full
+worked example — plus a "defend it" Q&A and open questions (TH-R4, TH-R20, TH-R2, TH-R19,
+TH-R21, TH-R23).
+
+- **What's actually queuing, and why the existing schema can't answer that alone.**
+  `verifications` only records a *finished* cascade result — its own doc comment says so:
+  "there is no 'pending' state, because the row exists only once the cascade has produced a
+  result." The document designs a new table, `batch_queue_items`, LH-041's own migration, with
+  atomic-claim columns (`status`, `claimed_by`, `lease_expires_at`, `available_at`, `attempts`)
+  that a finished-only table cannot supply. The Sonnet sub-queue reuses `review_queue` instead
+  of a second table — it already has the right unique-per-verification constraint.
+- **TRO-506, read and answered concretely, not deferred again.** The Linear finding says two
+  concurrent workers can both pay for the same Sonnet call before either insert lands. The
+  document's atomic claim (`FOR UPDATE SKIP LOCKED`) makes that structurally impossible under
+  normal operation; a narrower residual window (lease expiry during a slow-but-alive worker) is
+  named precisely rather than claimed closed, with TRO-506's own recommended fix scoped as a
+  follow-up (it also touches the already-shipped review-queue UI's list query).
+- **The PRD's own "tuned to Anthropic rate limits" claim, tested against real numbers and found
+  not to hold — as a steady-state calculation, not a safety proof.** Anthropic's published
+  Start/Build/Scale rate limits for Haiku 4.5 and Sonnet 5 (retrieved live 2026-08-11) show a
+  5-worker pool using under a fifth of the Start-tier budget on every axis for extraction, and
+  under a quarter for resolution even under CP-1's own 40%-escalation stress case (24% OTPM, the
+  single highest figure computed). That arithmetic divides a minute's traffic by a minute's
+  budget; it says nothing about the token-bucket, shorter-interval, and acceleration limits
+  Anthropic's own page also documents, which can 429 a burst or a usage spike regardless of the
+  per-minute average. The real reasons for ~5 are named instead of a false safety margin: an
+  unquantified "Evaluation" tier the real account may sit in, unmeasured local-compute limits,
+  and blast-radius/cost discipline. The recommendation is to make the number an environment
+  variable, with jittered backoff, `retry-after` handling, and a pool-wide cooldown on 429s
+  (§5) as the actual defense against bursts and acceleration limits — not the headroom
+  arithmetic alone.
+- **CP-1's own open question 6, decided, and its cost bound corrected to a real one.** CP-1
+  deferred the per-batch Sonnet escalation cap to this document. It adopts CP-1 Q7's proposed
+  25% threshold, on a fixed `totalCount` denominator — but the first draft checked settled
+  outcomes (`resolvedBySonnetCount + needsHumanCount`), which a batch where every Sonnet attempt
+  failed could exceed without ever tripping the cap. Corrected in the review round above to an
+  atomic per-batch counter reserved before every Sonnet call attempt, including retries: `$5.55`
+  worst-case on a 300-label batch now holds as an actual bound, not a no-race estimate.
+- **A full decision table for partial-failure semantics**, plus a precise definition: a batch is
+  `COMPLETED` once every queue item reaches a terminal state, whatever that state is — not a
+  claim that everything passed. A worker crash mid-batch is explicitly not a job failure; it is
+  the case the persistent, leased queue exists to survive.
+- **One gap found outside this ticket's scope, named rather than silently fixed.** Single-label
+  REVIEW verdicts appear to have no automatic resolution trigger at all today — nothing outside
+  test files calls `resolveEscalatedLabel`. Flagged as an open question for a follow-up ticket,
+  not folded into this design.
+- **Six open questions**, each with a recommendation and the cost of choosing wrong — including
+  whether "~5" is one pool or two, and whether the TRO-506 hardening should land now or as its
+  own ticket.
+
+**How to run it.** Nothing to build, nothing to test — this branch adds no code. Read
+`docs/checkpoints/cp3-batch-queue.md` — about 40 minutes — and work the Appendix A checklist
+during the walkthrough. Appendix B names the live URL and the file:line citations behind every
+**verified** and **derived** claim.
+
+**Rollback.** `git revert` this commit. The document adds no code and nothing imports it.
+
+**Known limits.** Every worker-pool size, lease duration, and backoff parameter is **proposed**,
+not measured — LH-031's latency harness is what replaces them, the same pattern CP-1 and CP-2
+used for their own thresholds. The local-compute ceiling (§4.4) and the actual deployed
+account's rate-limit tier (§4.2) are both **not measured**.
+
 ## TRO-468 — LH-020: Warning subsystem (2026-08-11)
 
 **What changed.** This ticket builds the government-warning comparator (TH-R9) under

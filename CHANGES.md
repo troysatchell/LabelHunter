@@ -7,32 +7,32 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 ## TRO-544 — LH-039 · Report batch throughput, local number (2026-08-12)
 
 **What this builds.** PRD §3.8 promises this: "batch reports items/minute and per-item
-averages." Nothing computed that number before this ticket. Two pure functions now do —
+averages." Nothing computed that number before this ticket. Two pure functions do now:
 `computeBatchThroughput` and `computeAutoVerifiedShare`
 (`src/lib/utils/batch-throughput.ts`). Both read columns `batch_jobs` already has:
 `totalCount`, `startedAt`, `completedAt`, `autoVerifiedCount`, `processedCount`. No schema
 change.
 
 The batch progress screen (`BatchProgressSummary.tsx`) shows two new tiles. **Items per
-minute** shows the batch's real wall-clock rate, with the per-item average as a sub-note.
+minute** shows the batch's real wall-clock rate. A sub-note gives the per-item average.
 **Auto-verified share** shows CP-1 §4.5 step 3's own figure: "the share of labels finished
 without a resolver call." Both numbers travel the same path every other batch stat already
-uses: `get-batch-progress.ts` computes them, the `/api/batch/:id` route serializes them, the
-component renders them. Neither is a new number the UI invents on its own.
+uses. `get-batch-progress.ts` computes them. The `/api/batch/:id` route serializes them. The
+component renders them. Neither is a number the UI invents on its own.
 
 Items per minute is a DIFFERENT number from the existing "Average time per label" tile. That
-tile averages one label's own extraction time. It does not see the worker pool running five
-labels at once. Items per minute does. This run's own numbers show why both matter: the
-per-label average reads 3.71s; the whole-batch rate reads 1.19s per item, because concurrency
-moves faster than any one label's own time suggests.
+tile averages one label's own extraction time. It cannot see the worker pool running five
+labels at once. Items per minute can. This run's own numbers show why both matter. The
+per-label average reads 3.71s. The whole-batch rate reads 1.19s per item. Concurrency moves
+faster than any one label's own time suggests.
 
 **A real 32-item batch ran, start to finish, on a local dev workstation.** `pnpm
 batch:fixture` builds a CSV + image zip from the full golden set. A new harness, `pnpm
-batch:throughput` (`scripts/batch-throughput/measure.ts`), submits that fixture through the
-real running app (`pnpm dev`) and a real worker process (`pnpm worker`) — the same two HTTP
-routes the upload screen calls — then polls the batch's progress endpoint for a real status
-change until it finishes. Batch 124, 32 items, cross-checked against a direct read of the
-`batch_jobs` row:
+batch:throughput` (`scripts/batch-throughput/measure.ts`), runs the real thing. It submits
+that fixture through the real running app (`pnpm dev`). A real worker process (`pnpm worker`)
+processes it. Both are the same two HTTP routes the upload screen calls. The harness then
+polls the batch's progress endpoint. It waits for a real status change until the batch
+finishes. Batch 124, 32 items, cross-checked against a direct read of the `batch_jobs` row:
 
 | Figure | Value | N |
 |---|---|---|
@@ -44,34 +44,34 @@ change until it finishes. Batch 124, 32 items, cross-checked against a direct re
 | Derived cost | $0.2371 | 32 |
 
 **Host: local dev workstation, not deployed.** Apple M4 Pro, 14 CPU, Darwin arm64, Node
-v23.2.0. Worker concurrency: 5 extract, 2 resolve, 1 single-label resolve — the unchanged
-`scripts/batch-worker/run.ts` defaults. Models: `claude-haiku-4-5` (extractor),
+v23.2.0. Worker concurrency: 5 extract, 2 resolve, 1 single-label resolve. These are the
+unchanged `scripts/batch-worker/run.ts` defaults. Models: `claude-haiku-4-5` (extractor),
 `claude-sonnet-5` (resolver). Full artifact:
 `scripts/batch-throughput/results/local-batch-run.json`.
 
-**The escalation cap was hit.** CP-3 §6.1 caps Sonnet calls at `ceil(0.25 * totalCount)` — 8
-for 32 items. This run made exactly 8 Sonnet call attempts, then stopped. The remaining
-REVIEW-bound labels went straight to `needsHumanCount`, with no Sonnet call
-(`resolverSkipReason: "ESCALATION_CAP_EXCEEDED"`). A batch that stayed under the cap would
-spend more on Sonnet and show a different `resolvedBySonnetCount`/`needsHumanCount` split.
+**The escalation cap was hit.** CP-3 §6.1 caps Sonnet calls at `ceil(0.25 * totalCount)`. For
+32 items, that cap is 8. This run made exactly 8 Sonnet call attempts, then stopped. The
+remaining REVIEW-bound labels went straight to `needsHumanCount`, with no Sonnet call
+(`resolverSkipReason: "ESCALATION_CAP_EXCEEDED"`). A batch under the cap would spend more on
+Sonnet. It would show a different `resolvedBySonnetCount`/`needsHumanCount` split.
 
-**Cost is derived, not measured.** The batch worker records no per-call token usage — that
+**Cost is derived, not measured.** The batch worker records no per-call token usage. That
 seam exists only in the eval harness. The $0.2371 total multiplies this run's real call
-counts (32 Haiku calls, 8 Sonnet calls) by the eval harness's own measured mean per-call cost:
-Haiku $0.004668, resolver $0.010969
+counts — 32 Haiku calls, 8 Sonnet calls — by the eval harness's own measured mean per-call
+cost. Haiku averages $0.004668 per call; the resolver averages $0.010969
 (`scripts/eval/results/eval-report.json`, measured 2026-08-12T13:26:45.488Z). `pnpm
-batch:throughput` reads that file fresh on every run, so this figure moves if a newer eval
-run changes the means.
+batch:throughput` reads that file fresh on every run. This figure moves if a newer eval run
+changes the means.
 
 **Verdict correctness is a separate, already-tracked concern.** The golden set's ground truth
 expects 8 PASS / 10 FAIL / 14 REVIEW for these 32 cases. This run produced 11 PASS / 7 FAIL /
-14 REVIEW. The REVIEW count matches exactly; the PASS/FAIL split does not, for the same reason
-`docs/diagnostics/2026-08-12-verdict-miss-triage.md` already documents (21/32 measured verdict
-accuracy). This ticket reports throughput on whatever the cascade actually decides. It does
-not change what the cascade decides.
+14 REVIEW. The REVIEW count matches exactly. The PASS/FAIL split does not — the same reason
+already documented in `docs/diagnostics/2026-08-12-verdict-miss-triage.md` (21/32 measured
+verdict accuracy). This ticket reports throughput on whatever the cascade actually decides. It
+does not change what the cascade decides.
 
 **Not measured: deployed throughput.** TRO-518 blocks it. `render.yaml` runs the web and
-worker as separate Render services, each with its own disk. `local-file-storage.ts` writes an
+worker as separate Render services. Each has its own disk. `local-file-storage.ts` writes an
 uploaded image to whichever process saved it. A deployed batch run fails on every image today.
 No claim about deployed throughput appears anywhere in this entry, the code, or the artifact.
 
@@ -80,27 +80,41 @@ worker`, `pnpm batch:throughput`. Output lands at
 `scripts/batch-throughput/results/local-batch-run.json`. This costs real money — about
 $0.15-0.30 for the full 32-case fixture, at the eval harness's measured per-call rates.
 
-**Regression tests.** `src/lib/utils/batch-throughput.test.ts` — both null-input states, both
-`RangeError` paths, and exact arithmetic on known inputs. `src/lib/utils/format.test.ts`
-gained `formatPercent` coverage. `get-batch-progress.test.ts` and the `/api/batch/:id` route
-test each gained real-database cases: `throughput`/`autoVerifiedShare` compute correctly from
-a live `batch_jobs` row and serialize correctly over the wire. `BatchProgressSummary.test.tsx`
-gained six cases for the two new tiles, including a regression case proving a genuine 0%
-share renders as "0.0%," not as "Not measured yet" (a naive truthy check would get this
-wrong). `scripts/batch-throughput/args.test.ts` and `cost.test.ts` cover the harness's own
-pure CLI-parsing and cost-derivation logic.
+**Regression tests.** `src/lib/utils/batch-throughput.test.ts` covers both null-input states,
+both `RangeError` paths, and exact arithmetic on known inputs — including a case proving an
+impossible `(1, 0)` pair throws instead of silently reading as "not measured yet" (review
+finding, local review round 1). `src/lib/utils/format.test.ts` gained `formatPercent`
+coverage. `get-batch-progress.test.ts` and the `/api/batch/:id` route test each gained
+real-database cases. Both prove `throughput`/`autoVerifiedShare` compute correctly from a live
+`batch_jobs` row. Both prove the two fields serialize correctly over the wire.
+`BatchProgressSummary.test.tsx` gained six cases for the two new tiles. One is a regression
+case: a genuine 0% share must render as "0.0%," never as "Not measured yet." A naive truthy
+check on the fraction would get this wrong. `scripts/batch-throughput/args.test.ts` and
+`cost.test.ts` cover the harness's own pure CLI-parsing and cost-derivation logic.
 
-**Confirmed in a real browser, not just a component test.** Loaded `/batch/124` in a real
+**Confirmed in a real browser, not just a component test.** `/batch/124` loaded in a real
 headless Chromium session against the running app. Every new tile rendered with its real
-value: "AUTO-VERIFIED SHARE 56.3%" and "ITEMS PER MINUTE 50.48" with its "1.19s per label"
-sub-note, laid out in the same stat-tile grid as the five existing tiles.
+value. "AUTO-VERIFIED SHARE 56.3%" appeared. So did "ITEMS PER MINUTE 50.48" with its "1.19s
+per label" sub-note. Both sat in the same stat-tile grid as the five existing tiles.
+
+**Local CodeRabbit review triage (4 findings).** Fixed: `computeAutoVerifiedShare` now checks
+`autoVerifiedCount`'s bound before the `processedCount <= 0` early return, so an impossible
+`(1, 0)` pair throws `RangeError` instead of reading as unmeasured (minor). The harness's poll
+loop now bounds each request's own timeout by the time left in `--max-wait-ms`, not a flat
+30s, so one slow request cannot overshoot the documented budget (minor). This entry's own
+prose was tightened to ASD-STE100's sentence-length rule (minor). Skipped, with a reason
+recorded in `scripts/batch-throughput/types.ts`: reading worker concurrency live from the
+worker process itself (major) — `scripts/batch-worker/run.ts` has no HTTP server or IPC
+channel today, and building one just for a diagnostic field is new production surface, not a
+fix to an existing one. The harness already states this limitation plainly, both in the type
+and in the artifact's own `notes` field.
 
 **Do NOT.** No column was added to `batch_jobs` — every input already existed. No claim was
 extrapolated past this run's real 32 items to TH-R4's 200-300 label reference.
 
 **Rollback.** Revert this ticket's commits. `throughput` and `autoVerifiedShare` are additive
-response fields — nothing before this ticket reads or depends on them, so removing them
-touches no other ticket's code.
+response fields. Nothing before this ticket reads or depends on them. Removing them touches no
+other ticket's code.
 
 ## TRO-479 — LH-053 · E2E suite (2026-08-12)
 

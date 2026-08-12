@@ -185,7 +185,16 @@ async function pollUntilTerminal(
 ): Promise<BatchProgressResponse> {
   const deadline = Date.now() + maxWaitMs;
   for (;;) {
-    const response = await fetch(`${baseUrl}/api/batch/${batchJobId}`, { signal: AbortSignal.timeout(30_000) });
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      throw new Error(`measure.ts: batch ${batchJobId} did not reach a terminal state within ${maxWaitMs}ms`);
+    }
+    // Bound THIS request's own timeout by whatever budget is left, never a
+    // flat 30s (review finding, local review round 1) — a flat timeout
+    // could itself exceed a small --max-wait-ms, letting one slow request
+    // overshoot the documented budget by up to 30s before the deadline
+    // check below ever runs.
+    const response = await fetch(`${baseUrl}/api/batch/${batchJobId}`, { signal: AbortSignal.timeout(Math.min(30_000, remainingMs)) });
     if (!response.ok) {
       throw new Error(`measure.ts: GET /api/batch/${batchJobId} returned ${response.status}`);
     }

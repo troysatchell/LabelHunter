@@ -99,14 +99,20 @@ export function computeBatchThroughput(params: ComputeBatchThroughputParams): Ba
  * Throws `RangeError` when `autoVerifiedCount` is negative or exceeds
  * `processedCount` — the same bound `batch_jobs_auto_verified_count_bounded`
  * already enforces in the database (`schema.ts`); a value outside it here
- * means a caller passed mismatched counters, not a real batch state.
+ * means a caller passed mismatched counters, not a real batch state. This
+ * check runs BEFORE the `processedCount <= 0` null-return below (review
+ * finding, local review round 1): checking null first would let an
+ * impossible pair like `(1, 0)` — one auto-verified item out of zero
+ * processed — read as "not measured yet" instead of throwing. `(0, 0)`,
+ * the real "nothing processed yet" case, still returns `null`: `0` is
+ * never greater than `0`.
  */
 export function computeAutoVerifiedShare(autoVerifiedCount: number, processedCount: number): number | null {
-  if (processedCount <= 0) return null;
   if (autoVerifiedCount < 0 || autoVerifiedCount > processedCount) {
     throw new RangeError(
       `computeAutoVerifiedShare: autoVerifiedCount (${autoVerifiedCount}) must be between 0 and processedCount (${processedCount})`,
     );
   }
+  if (processedCount <= 0) return null;
   return autoVerifiedCount / processedCount;
 }

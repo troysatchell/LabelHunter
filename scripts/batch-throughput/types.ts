@@ -27,7 +27,15 @@ export interface BatchThroughputWorkerConcurrency {
    * the WORKER process's own concurrency; it reports what its own
    * environment says, which is only as trustworthy as "both processes
    * were started from the same sourced shell." Recorded plainly so a
-   * reader can judge that for themselves. */
+   * reader can judge that for themselves.
+   *
+   * A review pass (local review round 1) asked for a live read from the
+   * worker process itself instead. Not done: `scripts/batch-worker/run.ts`
+   * is a bare polling loop with no HTTP server or IPC channel of its own
+   * (`pool.ts`'s `startWorkerPool` never opens one) — building one just to
+   * report a diagnostic field would be new production surface for a
+   * measurement script, not a fix to an existing gap. The environment-echo
+   * approach here is a known, stated limitation, not a silent one. */
   readonly source: "environment override" | "scripts/batch-worker/run.ts defaults";
 }
 

@@ -84,4 +84,12 @@ describe("computeAutoVerifiedShare", () => {
   it("throws RangeError when autoVerifiedCount is negative", () => {
     expect(() => computeAutoVerifiedShare(-1, 10)).toThrow(RangeError);
   });
+
+  it("throws RangeError for an impossible (1, 0) pair rather than reading it as 'not measured yet' (review finding)", () => {
+    // Regression: checking `processedCount <= 0` before the bound check
+    // would return null here — silently hiding a caller bug (one
+    // auto-verified item out of zero processed cannot be real) behind the
+    // same null a genuinely empty batch produces.
+    expect(() => computeAutoVerifiedShare(1, 0)).toThrow(RangeError);
+  });
 });

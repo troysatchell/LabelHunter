@@ -4,6 +4,48 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-473 — local CodeRabbit review round 3: 4 findings, 4 fixed (2026-08-11)
+
+**What changed.** A full gate run against round 2's own fix commits captured 4 findings —
+one critical. All 4 were real. All are fixed.
+
+- `route.ts` (**critical**): `readLimitedBody` (round 2) accumulated every chunk, then
+  allocated a SECOND full-body-sized `Uint8Array` to merge them into — a request near the
+  cap briefly held roughly twice its own size in memory, on the exact route meant to bound
+  memory use. That second allocation also ran outside the function's `try`/`catch`, so a
+  real allocation failure would have propagated uncaught instead of reaching the designed
+  error response. Switched to `new Blob(chunks)` — verified empirically first that
+  `Response(blob, ...).formData()` re-parses identically, with no second full-size copy —
+  wrapped in its own `try`/`catch`. Also lowered `MAX_TOTAL_REQUEST_BYTES` from 2 GB to 1 GB:
+  this cap is now also a peak-memory bound, on a hosting instance this design cannot assume
+  is generously provisioned. A new test simulates a `Blob`-construction throw and confirms
+  the designed `VALIDATION` response, not an uncaught exception.
+- `constants.ts` (minor): `MAX_TOTAL_REQUEST_BYTES`'s own doc comment still claimed
+  `request.formData()` ran uncapped when `Content-Length` is absent — stale the moment round
+  2 added `readLimitedBody` to close exactly that gap. Rewritten to describe
+  `checkRequestSize` as the fast path and `readLimitedBody` as the authoritative check.
+- `pairing.ts` (major): zero-byte images were filtered out before duplicate detection ran, so
+  a row matching a filename with BOTH an empty and a non-empty upload silently matched the
+  non-empty one — the exact "guess instead of report" shape this module's own philosophy
+  refuses everywhere else. `imagesByFilename` is now built from every image, empty or not;
+  emptiness is checked per-image only after the duplicate question is settled, so an empty
+  duplicate correctly makes the pairing ambiguous — unmatched, both images reported — instead
+  of silently losing to its non-empty twin.
+- `pairing.test.ts` (trivial): added the suggested regression test directly — one row, two
+  uploads sharing its filename (one zero-byte, one real). Confirms no row matches and both
+  uploads are reported.
+
+Recorded in `factory/review-findings.jsonl` — categories `correctness` (2), `doc-accuracy`
+(1), `test-coverage` (1).
+
+**Tests.** `pnpm test -- src/server/batch/ src/app/api/batch/` — same 7 files, now 91 test
+cases (was 89), all green. `pnpm typecheck` and `pnpm lint` both clean.
+
+**How to run it.** `source .factory-env` first. `pnpm test -- src/server/batch/
+src/app/api/batch/`, or `pnpm test` for the full suite.
+
+**Rollback.** `git revert` this round's commits. No schema change, no migration.
+
 ## TRO-473 — local CodeRabbit review round 2: 2 findings, 2 fixed (2026-08-11)
 
 **What changed.** A second independent CodeRabbit pass, against round 1's own fix commits,

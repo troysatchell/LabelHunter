@@ -93,11 +93,15 @@ function printRunLine(caseId: string, repeatIndex: number, repeats: number, outc
     return;
   }
   const r = outcome.result!;
-  const verdictNote = r.verdict.labelVerdictCorrect
+  // cascadeVerdict, not routerVerdict (TRO-538 / LH-033's pre-resolution
+  // interim stage) -- the real end state a user sees, which is what a
+  // verdict-STABILITY question is actually about. Merge-integration
+  // decision, TRO-543 predates the routerVerdict/cascadeVerdict split.
+  const verdictNote = r.cascadeVerdict.labelVerdictCorrect
     ? "verdict OK"
-    : `verdict WRONG (expected ${r.verdict.expectedLabelVerdict}, got ${r.verdict.actualLabelVerdict})`;
+    : `verdict WRONG (expected ${r.cascadeVerdict.expectedLabelVerdict}, got ${r.cascadeVerdict.actualLabelVerdict})`;
   console.log(
-    `  ${caseId} [${repeatIndex}/${repeats}]: ${r.verdict.actualLabelVerdict}/${r.verdict.actualReviewReason ?? "null"}, ${verdictNote}, ` +
+    `  ${caseId} [${repeatIndex}/${repeats}]: ${r.cascadeVerdict.actualLabelVerdict}/${r.cascadeVerdict.actualReviewReason ?? "null"}, ${verdictNote}, ` +
       `haiku $${r.haikuCost.usd.toFixed(4)}`,
   );
 }

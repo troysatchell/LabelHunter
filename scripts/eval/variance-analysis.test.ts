@@ -44,7 +44,10 @@ function verdictScore(caseId: string, actualLabelVerdict: LabelVerdict, override
     expectedReviewReason,
     actualReviewReason,
     reviewReasonCorrect: expectedLabelVerdict !== "REVIEW" || expectedReviewReason === actualReviewReason,
-    fields: [{ field: "government_warning", expectedVerdict: "MATCH", actualVerdict: "MATCH", correct: true, actualReviewReason: null }],
+    warningChannel: null,
+    fields: [
+      { field: "government_warning", expectedVerdict: "MATCH", actualVerdict: "MATCH", correct: true, confidence: 0.95, actualReviewReason: null },
+    ],
     ...overrides,
   };
 }
@@ -286,17 +289,26 @@ function caseRun(
   opts: { haikuUsd?: number; resolverUsd?: number | null } = {},
 ): VarianceCaseRun {
   const resolverUsd = opts.resolverUsd ?? null;
+  // routerVerdict and cascadeVerdict both carry the SAME score here
+  // (TRO-538 / LH-033 merge-integration fix, TRO-543 predates the split):
+  // these fixtures test verdict STABILITY across repeats, not the
+  // router-vs-cascade distinction, so one shared verdictScore() per run
+  // is the least surprising fixture shape.
+  const verdict = verdictScore(caseId, actualLabelVerdict);
   return {
     caseId,
     category: "glare",
     repeatIndex,
     extraction: { caseId, category: "glare", fields: [] },
-    verdict: verdictScore(caseId, actualLabelVerdict),
+    routerVerdict: verdict,
+    cascadeVerdict: verdict,
     haikuCost: cost(opts.haikuUsd ?? 0.0046),
     resolverCost: resolverUsd !== null ? cost(resolverUsd) : null,
     resolverOutcome: resolverUsd !== null ? "resolved" : null,
     resolverError: null,
     resolverDurationMs: resolverUsd !== null ? 1200 : null,
+    imageQuality: { legible: "yes", issues: [], confidence: 0.95 },
+    beverageType: { value: "wine", evidence: "wine", confidence: 0.95 },
   };
 }
 
@@ -399,7 +411,7 @@ describe("buildVarianceReport", () => {
     const report = buildVarianceReport({ ...baseInput, caseIds: ["case-17"], repeats: 1, runs, failures: [] });
     const c17 = report.summary.accuracySpread.perRun[0];
     expect(c17.labelVerdictAccuracy).toEqual({ total: 1, correct: 1, rate: 1 });
-    const reason: ReviewReason | null = runs[0].verdict.actualReviewReason;
+    const reason: ReviewReason | null = runs[0].cascadeVerdict.actualReviewReason;
     expect(reason).toBe("AMBIGUOUS_BRAND");
   });
 

@@ -43,7 +43,14 @@ import type { AccuracySummary, CascadeCaseResult, EvalCaseFailure, VerdictCaseSc
 
 /** One case's result from one repeat of the sweep. `repeatIndex` is
  * 1-based (1..K), matching how `--repeats=<k>` is described to an
- * operator, not a 0-based array index. */
+ * operator, not a 0-based array index.
+ *
+ * `verdict` is always `CascadeCaseResult.cascadeVerdict` — the real
+ * end state a user sees, not `routerVerdict` (TRO-538 / LH-033's
+ * pre-resolution interim stage). Merge-integration decision (TRO-543
+ * predates TRO-538's split; this ticket measures whether the system's
+ * FINAL answer is stable, so the post-resolution number is the one
+ * that question is actually about). */
 export interface RepeatedVerdict {
   readonly repeatIndex: number;
   readonly verdict: VerdictCaseScore;
@@ -377,11 +384,11 @@ export function buildVarianceReport(input: BuildVarianceReportInput): VarianceRe
   const byRepeat = new Map<number, VerdictCaseScore[]>();
   for (const run of input.runs) {
     const caseRepeats = byCase.get(run.caseId) ?? [];
-    caseRepeats.push({ repeatIndex: run.repeatIndex, verdict: run.verdict });
+    caseRepeats.push({ repeatIndex: run.repeatIndex, verdict: run.cascadeVerdict });
     byCase.set(run.caseId, caseRepeats);
 
     const repeatScores = byRepeat.get(run.repeatIndex) ?? [];
-    repeatScores.push(run.verdict);
+    repeatScores.push(run.cascadeVerdict);
     byRepeat.set(run.repeatIndex, repeatScores);
   }
 

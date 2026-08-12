@@ -17,17 +17,19 @@
  * pinned npm packages (TRO-505), not system-font names. This build no
  * longer depends on which fonts the running machine has installed.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { loadGoldenSetManifest } from "../../src/lib/golden-set/loader";
 import type { GoldenSetCase } from "../../src/lib/golden-set/types";
+import { compositeLabelOntoBackdrop } from "./compositeBackdrop";
 import { applyDegradation } from "./degrade";
 import { createLabelRenderer, renderLabelImage, type LabelRenderer } from "./render";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const IMAGES_DIR = resolve(REPO_ROOT, "golden-set/images");
+const BACKDROPS_DIR = resolve(REPO_ROOT, "golden-set/backdrops");
 
 /**
  * Resolves `imagePath` and confirms it lands inside `golden-set/images/`.
@@ -64,15 +66,50 @@ interface BuildResult {
   readonly path: string;
 }
 
-async function buildCase(
-  caseSpec: GoldenSetCase,
-  renderer: LabelRenderer,
-): Promise<BuildResult> {
+/** The original render-and-degrade path, unchanged — pulled into its own function only so `buildCase` can dispatch on provenance. */
+async function buildRenderedCase(caseSpec: GoldenSetCase, renderer: LabelRenderer): Promise<Buffer> {
   let image = await renderLabelImage(caseSpec, renderer.page);
-
   for (const degradation of caseSpec.degradations ?? []) {
     image = await applyDegradation(image, degradation);
   }
+  return image;
+}
+
+/**
+ * Builds a `rendered+ai-backdrop` case: renders the label (same exact-text
+ * guarantee as every other case), loads the case's committed backdrop
+ * photo, and warps the label into the case's recorded `labelPlacement`
+ * (design doc §5/§6). No network call — the backdrop was already
+ * generated and committed by a prior, separate `pnpm golden:imagen` run;
+ * this only re-runs the deterministic parts, matching `rendered+degraded`
+ * cases' own determinism contract.
+ */
+export async function buildAiBackdropCase(
+  caseSpec: GoldenSetCase,
+  renderer: LabelRenderer,
+  backdropsDir: string = BACKDROPS_DIR,
+): Promise<Buffer> {
+  if (!caseSpec.labelPlacement) {
+    throw new RangeError(
+      `build: case "${caseSpec.caseId}" has provenance "rendered+ai-backdrop" but no labelPlacement — ` +
+        `run pnpm golden:imagen and fold its .meta.json output into the manifest entry first`,
+    );
+  }
+  const labelImage = await renderLabelImage(caseSpec, renderer.page);
+  const backdropPath = resolve(backdropsDir, `${caseSpec.caseId}.png`);
+  const backdropImage = readFileSync(backdropPath);
+  return compositeLabelOntoBackdrop(backdropImage, labelImage, caseSpec.labelPlacement);
+}
+
+async function buildCase(
+  caseSpec: GoldenSetCase,
+  renderer: LabelRenderer,
+  backdropsDir: string = BACKDROPS_DIR,
+): Promise<BuildResult> {
+  const image =
+    caseSpec.provenance === "rendered+ai-backdrop"
+      ? await buildAiBackdropCase(caseSpec, renderer, backdropsDir)
+      : await buildRenderedCase(caseSpec, renderer);
 
   // Flattens any alpha onto white before the JPEG encode, matching
   // pipeline.ts's own reasoning for its `.flatten()` calls. sharp's JPEG

@@ -1,6 +1,6 @@
 {
   "ticket": "TRO-471 / LH-031",
-  "measuredAt": "2026-08-11T17:45:48.353Z",
+  "measuredAt": "2026-08-12T02:17:14.475Z",
   "model": "claude-haiku-4-5",
   "goldenSetCase": {
     "caseId": "case-01-clean-match-spirits",
@@ -8,7 +8,7 @@
     "beverageType": "spirits",
     "imagePath": "golden-set/images/case-01-clean-match-spirits.jpg"
   },
-  "pipelineScope": "Preprocess (sharp) -> Haiku extraction (claude-haiku-4-5, real API call) -> deterministic Validation Router -> DB writes, via handleVerifyRequest in-process (not a real HTTP round-trip). No OCR/warning-subsystem comparator (LH-020 not merged -- warningResult is always null) and no Sonnet resolver (LH-014 not merged) -- every run below is the fast path only; Sonnet never runs on the happy path (TH-R19).",
+  "pipelineScope": "Preprocess (sharp) -> Haiku extraction (claude-haiku-4-5, real API call) -> deterministic Validation Router -> DB writes, via handleVerifyRequest in-process (not a real HTTP round-trip). No OCR/warning-subsystem comparator (LH-020 not merged -- warningResult is always null). LH-014's Sonnet resolver has merged to main, but route.ts never calls it inline -- every run below is the fast path only; Sonnet resolution, when it happens, runs asynchronously off the review queue, never inside this request (TH-R19).",
   "machine": {
     "platform": "darwin",
     "arch": "arm64",
@@ -24,11 +24,11 @@
   },
   "summaryMs": {
     "count": 20,
-    "min": 3459,
-    "max": 5277,
-    "mean": 4252,
-    "p50": 4232,
-    "p95": 4763
+    "min": 3418,
+    "max": 4662,
+    "mean": 3766,
+    "p50": 3690,
+    "p95": 4339
   },
   "budget": {
     "p50TargetMs": 5000,
@@ -42,7 +42,16 @@
   "runs": [
     {
       "index": 1,
-      "durationMs": 4757,
+      "durationMs": 3775,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "REVIEW",
+      "headlineReason": "LOW_MODEL_CONFIDENCE",
+      "applicationId": 1
+    },
+    {
+      "index": 2,
+      "durationMs": 3903,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "REVIEW",
@@ -50,8 +59,8 @@
       "applicationId": 2
     },
     {
-      "index": 2,
-      "durationMs": 4074,
+      "index": 3,
+      "durationMs": 3609,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "REVIEW",
@@ -59,8 +68,8 @@
       "applicationId": 3
     },
     {
-      "index": 3,
-      "durationMs": 4356,
+      "index": 4,
+      "durationMs": 3727,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "REVIEW",
@@ -68,8 +77,8 @@
       "applicationId": 4
     },
     {
-      "index": 4,
-      "durationMs": 3571,
+      "index": 5,
+      "durationMs": 4339,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "REVIEW",
@@ -77,8 +86,8 @@
       "applicationId": 5
     },
     {
-      "index": 5,
-      "durationMs": 4143,
+      "index": 6,
+      "durationMs": 4662,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "REVIEW",
@@ -86,8 +95,8 @@
       "applicationId": 6
     },
     {
-      "index": 6,
-      "durationMs": 4006,
+      "index": 7,
+      "durationMs": 3505,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "REVIEW",
@@ -95,8 +104,8 @@
       "applicationId": 7
     },
     {
-      "index": 7,
-      "durationMs": 5277,
+      "index": 8,
+      "durationMs": 4073,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "REVIEW",
@@ -104,8 +113,8 @@
       "applicationId": 8
     },
     {
-      "index": 8,
-      "durationMs": 4535,
+      "index": 9,
+      "durationMs": 3697,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "REVIEW",
@@ -113,8 +122,8 @@
       "applicationId": 9
     },
     {
-      "index": 9,
-      "durationMs": 4382,
+      "index": 10,
+      "durationMs": 3595,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "REVIEW",
@@ -122,8 +131,8 @@
       "applicationId": 10
     },
     {
-      "index": 10,
-      "durationMs": 4763,
+      "index": 11,
+      "durationMs": 3466,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "REVIEW",
@@ -131,8 +140,8 @@
       "applicationId": 11
     },
     {
-      "index": 11,
-      "durationMs": 4205,
+      "index": 12,
+      "durationMs": 3549,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "REVIEW",
@@ -140,8 +149,8 @@
       "applicationId": 12
     },
     {
-      "index": 12,
-      "durationMs": 4232,
+      "index": 13,
+      "durationMs": 3882,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "REVIEW",
@@ -149,8 +158,8 @@
       "applicationId": 13
     },
     {
-      "index": 13,
-      "durationMs": 4700,
+      "index": 14,
+      "durationMs": 3802,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "REVIEW",
@@ -158,8 +167,8 @@
       "applicationId": 14
     },
     {
-      "index": 14,
-      "durationMs": 4082,
+      "index": 15,
+      "durationMs": 3657,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "REVIEW",
@@ -167,8 +176,8 @@
       "applicationId": 15
     },
     {
-      "index": 15,
-      "durationMs": 4248,
+      "index": 16,
+      "durationMs": 3820,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "REVIEW",
@@ -176,8 +185,8 @@
       "applicationId": 16
     },
     {
-      "index": 16,
-      "durationMs": 4254,
+      "index": 17,
+      "durationMs": 3545,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "REVIEW",
@@ -185,8 +194,8 @@
       "applicationId": 17
     },
     {
-      "index": 17,
-      "durationMs": 3533,
+      "index": 18,
+      "durationMs": 3609,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "REVIEW",
@@ -194,8 +203,8 @@
       "applicationId": 18
     },
     {
-      "index": 18,
-      "durationMs": 3991,
+      "index": 19,
+      "durationMs": 3418,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "REVIEW",
@@ -203,22 +212,13 @@
       "applicationId": 19
     },
     {
-      "index": 19,
-      "durationMs": 4477,
+      "index": 20,
+      "durationMs": 3690,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "REVIEW",
       "headlineReason": "LOW_MODEL_CONFIDENCE",
       "applicationId": 20
-    },
-    {
-      "index": 20,
-      "durationMs": 3459,
-      "ok": true,
-      "httpStatus": 200,
-      "labelVerdict": "REVIEW",
-      "headlineReason": "LOW_MODEL_CONFIDENCE",
-      "applicationId": 21
     }
   ]
 }

@@ -19,6 +19,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx src/lib/db/seed.ts",
     "golden:build": "tsx scripts/golden/build.ts",
+    "golden:imagen": "tsx scripts/golden/imagen.ts",
     "latency:check": "tsx scripts/latency/measure.ts"
   },
   "dependencies": {
@@ -34,6 +35,7 @@
     "@fontsource/dancing-script": "^5.3.0",
     "@fontsource/inter": "^5.3.0",
     "@fontsource/unifrakturmaguntia": "^5.3.0",
+    "@google/genai": "^2.16.0",
     "@playwright/test": "1.62.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^7.0.1",

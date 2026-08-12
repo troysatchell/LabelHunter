@@ -22,6 +22,13 @@ function summary(overrides: Partial<EvalReportSummary> = {}): EvalReportSummary 
       government_warning: rate,
     },
     reviewReasonAccuracy: rate,
+    warningSegmentation: {
+      total: 10,
+      clean: { count: 8, rate: 0.8 },
+      trueMismatch: { count: 1, rate: 0.1 },
+      resolutionSuspect: { count: 1, rate: 0.1 },
+      notFound: { count: 0, rate: 0 },
+    },
     ...overrides,
   };
 }

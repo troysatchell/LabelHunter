@@ -195,7 +195,22 @@ export function rollUpResolverResolution(
     }
     const { verdict, reviewReason } = rollUpOneField(resolved, application, comparators);
     if (reviewReason) reasons.add(reviewReason);
-    return { field: routerField, verdict };
+    // ActualVerdict["fields"] is a discriminated union on `verdict`
+    // (TRO-469 / LH-021, verdict-scoring.ts's `ActualFieldOutcome`):
+    // `reviewReason` is required exactly when `verdict` is
+    // `"NEEDS_REVIEW"`, matching rollUpOneField's own real invariant
+    // (every one of its branches pairs "NEEDS_REVIEW" with a non-null
+    // reason — see rollUpJudgedField/rollUpCorrectionField/
+    // rollUpGovernmentWarning above) — asserted here, not assumed, so a
+    // future branch that breaks the pairing fails loudly instead of
+    // silently constructing an invalid ActualFieldOutcome.
+    if (verdict !== "NEEDS_REVIEW") return { field: routerField, verdict };
+    if (!reviewReason) {
+      throw new Error(
+        `rollUpResolverResolution: field "${routerField}" rolled up to NEEDS_REVIEW with no reviewReason — rollUpOneField's own invariant violated.`,
+      );
+    }
+    return { field: routerField, verdict, reviewReason };
   });
 
   const labelVerdict = rollupLabelVerdict(

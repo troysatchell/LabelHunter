@@ -4,6 +4,80 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-499 — LH-006: Golden set verify gate + CI smoke (2026-08-11)
+
+**What changed.** `scripts/golden/verify.ts` is the golden set's health check. It checks one
+thing: whether `golden-set/manifest.json`, the ticket's own "consumer interface for
+eval/latency harnesses," is trustworthy right now. Run it with `pnpm golden:verify`. It calls
+no model and makes no network call (TH-R7). Every check reads only the manifest and local
+files.
+
+It checks five things:
+1. The manifest loads and passes schema validation. This check calls
+   `src/lib/golden-set/loader.ts` directly, instead of checking the shape a second, separate
+   way. The verified-before-eval rule for `ai-generated` and `rendered+ai-backdrop` cases
+   already lives there.
+2. Every case's `imagePath` resolves to a real, non-empty file.
+3. Every file under `golden-set/images/` resolves back to some case's `imagePath`. This
+   catches an orphan in either direction, not just a manifest entry with a missing file.
+4. Every `rendered+ai-backdrop` case's backdrop file must exist, at
+   `golden-set/backdrops/<caseId>.png`. Its `referenceBottle` must resolve to a real, valid
+   bottle reference JSON (`src/lib/golden-set/bottleReference.ts` checks that schema too).
+   That JSON's own `referencePhoto` must exist as well. The realistic-corpus design doc asks
+   for this exact check
+   (`docs/superpowers/specs/2026-08-11-realistic-corpus-gemini-design.md` §6).
+5. Every `audit/rubric.md` Appendix A vector V1–V10 has at least one covering case.
+
+**The vector-coverage design decision.** Two vectors have zero coverage today. This is
+documented, existing repo state. This ticket did not introduce it.
+`golden-set/README.md` and `src/lib/golden-set/loader.test.ts` (TRO-497/LH-004) already name
+both gaps:
+- V7 is a net-contents format match, for example `"750 mL"` vs `"750ml"`. No case isolates
+  that difference yet.
+- V10 is a batch of 20 or more cases. That is a property of the whole manifest, not a tag on
+  one case.
+
+`verify.ts` mirrors that same tracked-not-silent pattern instead of inventing a second one.
+V10 counts as covered once the manifest holds 20 or more cases — it holds 29 today. V7 is a
+named exception: `KNOWN_VECTOR_GAPS` in `verify.ts`. The CLI reports it as a known gap, never
+as a failure. Any other vector still fails the gate if it loses its only covering case. If V7
+gains a case but `verify.ts` still lists the exception, the gate fails the other way. This
+catches drift in both directions — the same guarantee `loader.test.ts` already makes for
+itself.
+
+Closing V7 for real means adding a golden-set case whose distinguishing feature is a
+net-contents format difference. That is new manifest content. It falls outside this ticket's
+scope: a verify gate and a CI smoke test, not new test cases. This entry flags it as a real
+follow-up. It does not paper over the gap.
+
+**Files.**
+- `scripts/golden/verify.ts` — `verifyGoldenSet()`, the five checks above, plus a CLI `main`
+  guarded by the `import.meta.url` check (`scripts/golden/imagen.ts`'s existing pattern).
+  Importing this file for its exports never runs the CLI as a side effect.
+- `scripts/golden/verify.test.ts` — 20 tests. 19 of them each build a small, isolated
+  manifest and image tree, one failure mode per test. The last test calls `verifyGoldenSet()`
+  with no overrides. It checks the real, committed golden set and confirms that set still
+  passes today.
+- `scripts/golden/renderSmoke.ts`, `renderSmoke.test.ts` — the "one headless render smoke"
+  CI needs (design doc §7: "render one label headlessly, then run verify.ts"). It renders the
+  first renderable case through the real `render.ts` pipeline, then checks the result decodes
+  at the fixed canvas size. This check is narrower and faster than `render.test.ts`'s full
+  determinism-and-font suite, which still runs inside `pnpm test`.
+- `package.json` — added `golden:verify` and `golden:render-smoke` scripts, matching the
+  existing `golden:build` and `golden:imagen` naming.
+- `.github/workflows/ci.yml` — two new steps, "Golden set verify" and "Golden set render
+  smoke," placed after Lint and before Build. Neither needs Postgres or a full `pnpm build`,
+  so both fail fast, before the slower steps run.
+- `golden-set/README.md` — updated the two sentences that said `verify.ts` "will eventually"
+  check the realistic-corpus track and vector coverage. It does now. This documents how.
+
+**How to run it.** `pnpm golden:verify` (fast, no browser). `pnpm golden:render-smoke`
+(launches Chromium once, ~1-2s). Both now run in CI, before `pnpm build`.
+
+**Rollback.** `git revert` this ticket's commits. That removes `scripts/golden/verify.ts` and
+`renderSmoke.ts`, their tests, the two `package.json` scripts, and the two CI steps.
+`golden-set/manifest.json` itself is untouched. Nothing else depends on this ticket yet.
+
 ## TRO-468 — LH-020: Warning subsystem (2026-08-11)
 
 **What changed.** This ticket builds the government-warning comparator (TH-R9) under

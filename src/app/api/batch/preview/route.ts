@@ -30,21 +30,30 @@ function errorResponse(status: number, kind: BatchPreviewErrorKind, message: str
   return NextResponse.json({ error: { kind, message } }, { status });
 }
 
+function tooLargeMessage(maxBytes: number): string {
+  const limitGb = (maxBytes / (1024 * 1024 * 1024)).toFixed(1);
+  return `This upload is too large. The limit is ${limitGb} GB. Split it into smaller batches.`;
+}
+
 /**
  * Rejects a request whose declared `Content-Length` alone already exceeds
- * `maxBytes`, before `request.formData()` ever runs (review finding) —
- * buffering a multi-gigabyte body just to discover it is too large is
- * exactly the cost this check exists to skip. Exported so it is directly
- * unit-testable against a `Request`'s headers alone, without needing a
- * real oversized body to prove the rejection.
+ * `maxBytes`, before anything reads a byte of the body — a fast path that
+ * skips buffering a multi-gigabyte body just to discover it is too large.
+ * Exported so it is directly unit-testable against a `Request`'s headers
+ * alone, without needing a real oversized body to prove the rejection.
  *
- * A request with no `Content-Length` header at all — for example,
- * chunked transfer-encoding, or (confirmed empirically) Node's own
- * `Request` implementation for a `FormData` body, which never sets one —
- * is NOT rejected here. This check defends the case where the header is
- * present and honest; it is not a guarantee against every request shape
- * a client could send, and every per-field check later in this route
- * (`parse-request.ts`, `zip.ts`) still runs regardless.
+ * **This is a fast path, not the authoritative check** (review finding).
+ * A request with no `Content-Length` header at all — chunked transfer-
+ * encoding, or (confirmed empirically) Node's own `Request`
+ * implementation for a `FormData` body, which never sets one — passes
+ * this check with `{ ok: true }` every time, honest or not. That case is
+ * not a hypothetical: it is this route's own normal shape in
+ * production, since a real `FormData` upload commonly arrives with no
+ * `Content-Length` header at all. `readLimitedBody`, below, is what
+ * actually enforces the cap for every request, with or without this
+ * header — this function only saves the cost of reading anything at all
+ * for the common case where the header is present and already reveals
+ * the request is too large.
  */
 export function checkRequestSize(
   request: Request,
@@ -54,19 +63,91 @@ export function checkRequestSize(
   if (raw === null) return { ok: true };
   const declaredBytes = Number(raw);
   if (!Number.isFinite(declaredBytes) || declaredBytes <= maxBytes) return { ok: true };
-  const limitGb = (maxBytes / (1024 * 1024 * 1024)).toFixed(1);
-  return { ok: false, message: `This upload is too large. The limit is ${limitGb} GB. Split it into smaller batches.` };
+  return { ok: false, message: tooLargeMessage(maxBytes) };
 }
 
-export async function handleBatchPreviewRequest(request: Request): Promise<Response> {
-  const sizeCheck = checkRequestSize(request);
+/**
+ * Reads `request`'s REAL body bytes, aborting the read the moment more
+ * than `maxBytes` has actually arrived — measured, not declared. This is
+ * the authoritative cap `checkRequestSize` above cannot be on its own: a
+ * request with a missing, understated, or absent `Content-Length` header
+ * sails straight through that check, and previously sailed straight
+ * into an uncapped `request.formData()` too (review finding — the gap
+ * this function closes). `Request.body` is only readable once, so the
+ * bytes this function collects are what the rest of the route re-parses
+ * as `FormData` — see the `Response(...).formData()` call below, which
+ * re-parses the SAME bytes rather than a second read of the original
+ * (already-consumed) stream.
+ */
+export async function readLimitedBody(
+  request: Request,
+  maxBytes: number = MAX_TOTAL_REQUEST_BYTES,
+): Promise<{ ok: true; body: Uint8Array } | { ok: false; message: string }> {
+  if (!request.body) {
+    return { ok: true, body: new Uint8Array(0) };
+  }
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {});
+        return { ok: false, message: tooLargeMessage(maxBytes) };
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return { ok: false, message: "LabelHunter could not read this upload. Try again." };
+  }
+
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { ok: true, body };
+}
+
+export interface HandleBatchPreviewLimits {
+  maxTotalRequestBytes?: number;
+}
+
+export async function handleBatchPreviewRequest(
+  request: Request,
+  limits: HandleBatchPreviewLimits = {},
+): Promise<Response> {
+  const maxTotalRequestBytes = limits.maxTotalRequestBytes ?? MAX_TOTAL_REQUEST_BYTES;
+
+  const sizeCheck = checkRequestSize(request, maxTotalRequestBytes);
   if (!sizeCheck.ok) {
     return errorResponse(400, "VALIDATION", sizeCheck.message);
   }
 
+  const bodyResult = await readLimitedBody(request, maxTotalRequestBytes);
+  if (!bodyResult.ok) {
+    return errorResponse(400, "VALIDATION", bodyResult.message);
+  }
+
   let formData: FormData;
   try {
-    formData = await request.formData();
+    // Re-parses the SAME bytes readLimitedBody already collected — the
+    // original request's own body stream is already fully consumed by
+    // now, and can only ever be read once.
+    //
+    // The cast below is a type-only gap, not a behavioral one: `Response`
+    // accepts a `Uint8Array` as `BodyInit` at runtime (every test in this
+    // file exercises exactly that), but this TypeScript/DOM-lib version's
+    // `BodyInit` type does not list `Uint8Array` among its members —
+    // `route.test.ts`'s sibling file (`verify/route.test.ts`) documents
+    // the identical gap for `Buffer`/`BlobPart`.
+    const contentType = request.headers.get("content-type") ?? "";
+    formData = await new Response(bodyResult.body as unknown as BodyInit, { headers: { "content-type": contentType } }).formData();
   } catch {
     return errorResponse(400, "VALIDATION", "LabelHunter could not read this upload. Try again.");
   }

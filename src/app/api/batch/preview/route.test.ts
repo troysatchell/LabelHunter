@@ -179,7 +179,7 @@ describe("handleBatchPreviewRequest", () => {
     expect(formDataWasCalled).toBe(false);
   });
 
-  it("does not reject a request with no Content-Length header (e.g. chunked bodies) at this check", async () => {
+  it("still succeeds for a small, legitimate request with no Content-Length header (e.g. chunked bodies)", async () => {
     const csvText = [HEADER, "beer,Hopyard Co,IPA,5,355,mL,can-01.jpg"].join("\n");
     const fd = new FormData();
     fd.set("manifest", csvFile(csvText));
@@ -188,6 +188,40 @@ describe("handleBatchPreviewRequest", () => {
     expect(request.headers.get("content-length")).toBeNull(); // confirms this case is real, not assumed
 
     const response = await handleBatchPreviewRequest(request);
+    expect(response.status).toBe(200);
+  });
+
+  it("rejects an oversized request even with NO Content-Length header, by measuring the real bytes as they stream in (review finding)", async () => {
+    // The header-based check (finding #1, previous round) only catches a
+    // request that HONESTLY declares its size. Node's own FormData-body
+    // Request never sets Content-Length at all (confirmed empirically,
+    // and by the test above), so this is not a hypothetical gap -- it is
+    // this exact route's own normal request shape. A small injectable
+    // cap proves the real-byte enforcement without allocating a
+    // multi-gigabyte body.
+    const csvText = [HEADER, "beer,Hopyard Co,IPA,5,355,mL,can-01.jpg"].join("\n");
+    const fd = new FormData();
+    fd.set("manifest", csvFile(csvText));
+    fd.append("images", imageFile("can-01.jpg", "x".repeat(500)));
+    const request = requestWith(fd);
+    expect(request.headers.get("content-length")).toBeNull(); // no header to catch this — the real-byte cap must
+
+    const response = await handleBatchPreviewRequest(request, { maxTotalRequestBytes: 100 });
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as BatchPreviewErrorResponse;
+    expect(body.error.kind).toBe("VALIDATION");
+    expect(body.error.message).toMatch(/too large/i);
+  });
+
+  it("accepts a request under the real-byte cap even with no Content-Length header", async () => {
+    const csvText = [HEADER, "beer,Hopyard Co,IPA,5,355,mL,can-01.jpg"].join("\n");
+    const fd = new FormData();
+    fd.set("manifest", csvFile(csvText));
+    fd.append("images", imageFile("can-01.jpg"));
+    const request = requestWith(fd);
+
+    // A cap comfortably above this small request's own real byte size.
+    const response = await handleBatchPreviewRequest(request, { maxTotalRequestBytes: 100_000 });
     expect(response.status).toBe(200);
   });
 });

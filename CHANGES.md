@@ -4,6 +4,65 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-509 — Compositor silently truncated the label on trapezoid quads (2026-08-11)
+
+**What changed.** `compositeLabelOntoBackdrop` (`scripts/golden/compositeBackdrop.ts`) built
+its destination bounding box from all 4 detected quad corners, including `bottomRight`. The
+warp itself, `solveLinearMap`, is a 3-point affine map. It uses only `topLeft`, `topRight`, and
+`bottomLeft`. `bottomRight` never feeds the warp. That gap is a known, accepted approximation —
+the file's own docstring names it, and so does the design doc (§11).
+
+A real bottle-label photo detects as a genuine trapezoid, not a parallelogram. Camera
+perspective moves the detected `bottomRight` somewhere the 3-point affine map would not reach
+on its own. The affine map's own implied 4th corner is `topRight + bottomLeft − topLeft`. The
+detected `bottomRight` can sit inside that implied corner. When it does, the old bounding box
+was smaller than the parallelogram the warp actually draws. The pixel loop only visits pixels
+inside the bounding box. Pixels between the two corners never got visited. They stayed raw
+backdrop. They never received label content.
+
+The renderer's `LABEL_REGIONS.warning` region sits in the label's bottom band. A trapezoid quad
+with this shape can truncate the statutory government-warning text. The pipeline would still
+report `governmentWarning: MATCH` — the comparator never sees the pixels that went missing.
+
+**The fix.** `compositeLabelOntoBackdrop` (`scripts/golden/compositeBackdrop.ts:85-90`) now
+builds `xs`/`ys` from `topLeft`, `topRight`, `bottomLeft`, and the computed implied 4th corner —
+not the detected `bottomRight`. This bounding box always covers the whole parallelogram the
+warp draws. Clamping to the backdrop image's bounds is unchanged. Only the corner set feeding
+it was wrong.
+
+**Tests.** `scripts/golden/compositeBackdrop.test.ts` gained a new block:
+`compositeLabelOntoBackdrop — genuine trapezoid quad (TRO-509)`. It reuses the exact corner
+values from this ticket's own measured reproduction: `topLeft(100,100)`, `topRight(400,120)`,
+`bottomLeft(130,500)`, `bottomRight(370,470)`.
+
+- The first test checks one destination pixel, `(420, 510)`. That pixel sits inside the
+  affine-drawn parallelogram and inside the corrected bounding box. It sits outside the old,
+  bug-produced one. Confirmed red first: before the fix, the pixel read as raw backdrop color
+  (green channel 10, the backdrop's own value). After the fix, it reads as the solid test
+  label's own color (green channel 180).
+- The second test scans every interior point of the affine-drawn parallelogram: 110,041 points.
+  The scan stays a small margin back from the exact geometric edge, so the check does not
+  depend on nearest-neighbor rounding at a sub-pixel boundary — that rounding is expected
+  behavior, not this defect. Confirmed red first: before the fix, 4,167 of those 110,041 points
+  (3.79%) read as raw backdrop. After the fix, zero do.
+- Both counts are measured, from this branch's own commits. The margin-inset interior scan
+  above found 4,167 of 110,041 missing (3.79%). A wider check — the full parallelogram,
+  including its edge, at the ticket's own reproduction label size — found 7,744 of 119,400
+  missing (6.49% missing, 93.51% drawn). That figure matches the ticket brief's own cited
+  numbers exactly.
+
+**How to run it.** Source `.factory-env` first. `pnpm test -- scripts/golden/compositeBackdrop.test.ts`
+runs this file alone: 5 tests, all pass. `pnpm test -- scripts/golden` runs the full golden
+pipeline suite: 83 tests, all pass. `pnpm typecheck` is clean.
+
+**Not fixed here.** No `rendered+ai-backdrop` manifest case exists yet. No real bottle
+reference photo has been supplied. This fix has no golden-set image to re-render. It closes the
+defect before the first real pilot batch can reach it, per the ticket brief.
+
+**Rollback.** `git revert` this ticket's commit(s). Reverting restores the detected-corner
+bounding box and removes both new tests. No image, migration, or other file depends on this
+change.
+
 ## TRO-468 — LH-020: Warning subsystem (2026-08-11)
 
 **What changed.** This ticket builds the government-warning comparator (TH-R9) under

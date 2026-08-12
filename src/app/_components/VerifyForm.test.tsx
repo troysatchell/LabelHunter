@@ -157,6 +157,30 @@ describe("VerifyForm — designed error states (TH-R20)", () => {
     expect(submit).toHaveBeenCalledTimes(2);
   });
 
+  it("shows the SERVICE error panel on an API failure/timeout (TRO-478), and 'Try again' resubmits", async () => {
+    const user = userEvent.setup();
+    const submit = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new VerifyClientError("SERVICE", "LabelHunter took too long to respond. Check your connection and try again."),
+      )
+      .mockResolvedValueOnce(SUCCESS_RESULT);
+    render(<VerifyForm submit={submit} />);
+
+    await fillRequiredFields(user);
+    await user.click(screen.getByRole("button", { name: "Verify" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Something went wrong");
+    expect(alert).toHaveTextContent("took too long to respond");
+    expect(submit).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(await screen.findByTestId("label-verdict-banner")).toBeInTheDocument();
+    expect(submit).toHaveBeenCalledTimes(2);
+  });
+
   it("classifies a rejection that is not a VerifyClientError as SERVICE, never as a raw crash", async () => {
     const user = userEvent.setup();
     const submit = vi.fn().mockRejectedValue(new Error("unexpected"));

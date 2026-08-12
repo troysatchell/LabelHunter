@@ -1,0 +1,306 @@
+import { describe, expect, it } from "vitest";
+import type { LabelVerdict, ReviewReason } from "../../src/server/router/types";
+import type { MeasuredCost, VerdictCaseScore } from "./types";
+import {
+  buildVarianceReport,
+  computeAccuracySpread,
+  computeCaseStability,
+  computeCorpusStability,
+  type RepeatedVerdict,
+  type VarianceCaseFailure,
+  type VarianceCaseRun,
+} from "./variance-analysis";
+
+/**
+ * A `VerdictCaseScore` fixture shaped exactly like the real case-17
+ * finding this ticket measures: category "glare", expects REVIEW /
+ * LOW_IMAGE_QUALITY, and — when it actually escalates — comes back
+ * REVIEW / AMBIGUOUS_BRAND (the real headline reason five committed runs
+ * produced; see this ticket's `CHANGES.md` entry). Includes a
+ * `government_warning` field row because `computeAccuracySpread` reuses
+ * `summarizeVerdict`, which reuses `segmentWarningCheckOutcomes`, which
+ * throws on a case missing one (`warning-segmentation.ts`'s
+ * `findWarningOutcome` — the same requirement `summary.test.ts`'s own
+ * `verdictCase` fixture documents).
+ */
+function verdictScore(caseId: string, actualLabelVerdict: LabelVerdict, overrides: Partial<VerdictCaseScore> = {}): VerdictCaseScore {
+  // Resolve expectedLabelVerdict FIRST (honoring a caller override) so
+  // every other derived field below — labelVerdictCorrect above all —
+  // is computed against the value this fixture will actually carry, not
+  // a hardcoded "REVIEW" assumption a caller's override would silently
+  // invalidate.
+  const expectedLabelVerdict: LabelVerdict = overrides.expectedLabelVerdict ?? "REVIEW";
+  const expectedReviewReason: ReviewReason | null = expectedLabelVerdict === "REVIEW" ? "LOW_IMAGE_QUALITY" : null;
+  const actualReviewReason: ReviewReason | null = actualLabelVerdict === "REVIEW" ? "AMBIGUOUS_BRAND" : null;
+  return {
+    caseId,
+    category: "glare",
+    expectedLabelVerdict,
+    actualLabelVerdict,
+    labelVerdictCorrect: actualLabelVerdict === expectedLabelVerdict,
+    expectedReviewReason,
+    actualReviewReason,
+    reviewReasonCorrect: expectedLabelVerdict !== "REVIEW" || expectedReviewReason === actualReviewReason,
+    fields: [{ field: "government_warning", expectedVerdict: "MATCH", actualVerdict: "MATCH", correct: true, actualReviewReason: null }],
+    ...overrides,
+  };
+}
+
+function repeat(repeatIndex: number, actualLabelVerdict: LabelVerdict, caseId = "case-x"): RepeatedVerdict {
+  return { repeatIndex, verdict: verdictScore(caseId, actualLabelVerdict) };
+}
+
+describe("computeCaseStability", () => {
+  it("is stable when every repeat returns the identical verdict", () => {
+    const repeats = [repeat(1, "REVIEW"), repeat(2, "REVIEW"), repeat(3, "REVIEW")];
+    const result = computeCaseStability("case-a", repeats);
+    expect(result).toMatchObject({
+      caseId: "case-a",
+      runCount: 3,
+      modalVerdict: "REVIEW",
+      modalCount: 3,
+      stabilityRate: 1,
+      stable: true,
+    });
+  });
+
+  it("reproduces the real case-17 finding: 3 REVIEW / 2 PASS across 5 repeats is unstable, modal REVIEW", () => {
+    // Same chronological order as the five committed runs this ticket's
+    // CHANGES.md entry reports: REVIEW, PASS, REVIEW, REVIEW, PASS.
+    const repeats = [
+      repeat(1, "REVIEW", "case-17-glare-front-label"),
+      repeat(2, "PASS", "case-17-glare-front-label"),
+      repeat(3, "REVIEW", "case-17-glare-front-label"),
+      repeat(4, "REVIEW", "case-17-glare-front-label"),
+      repeat(5, "PASS", "case-17-glare-front-label"),
+    ];
+    const result = computeCaseStability("case-17-glare-front-label", repeats);
+    expect(result.runCount).toBe(5);
+    expect(result.modalVerdict).toBe("REVIEW");
+    expect(result.modalCount).toBe(3);
+    expect(result.stabilityRate).toBe(0.6);
+    expect(result.stable).toBe(false);
+    expect(result.verdicts).toEqual(["REVIEW", "PASS", "REVIEW", "REVIEW", "PASS"]);
+    // PASS repeats carry no headline reason; REVIEW repeats carry the real
+    // one the fixture models (AMBIGUOUS_BRAND) — paired per-repeat, not
+    // shuffled.
+    expect(result.headlineReasons).toEqual(["AMBIGUOUS_BRAND", null, "AMBIGUOUS_BRAND", "AMBIGUOUS_BRAND", null]);
+  });
+
+  it("orders verdicts and headlineReasons by repeatIndex, not input order", () => {
+    const repeats = [repeat(3, "FAIL"), repeat(1, "PASS"), repeat(2, "REVIEW")];
+    const result = computeCaseStability("case-b", repeats);
+    expect(result.verdicts).toEqual(["PASS", "REVIEW", "FAIL"]);
+  });
+
+  it("breaks a tie deterministically: PASS beats REVIEW at equal counts", () => {
+    const repeats = [repeat(1, "PASS"), repeat(2, "REVIEW"), repeat(3, "PASS"), repeat(4, "REVIEW")];
+    const result = computeCaseStability("case-c", repeats);
+    expect(result.modalVerdict).toBe("PASS");
+    expect(result.modalCount).toBe(2);
+    expect(result.stable).toBe(false);
+  });
+
+  it("breaks a tie deterministically: FAIL beats REVIEW at equal counts", () => {
+    const repeats = [repeat(1, "FAIL"), repeat(2, "REVIEW")];
+    const result = computeCaseStability("case-d", repeats);
+    expect(result.modalVerdict).toBe("FAIL");
+    expect(result.modalCount).toBe(1);
+  });
+
+  it("breaks a three-way tie by the fixed PASS/FAIL/REVIEW order", () => {
+    const repeats = [repeat(1, "REVIEW"), repeat(2, "FAIL"), repeat(3, "PASS")];
+    const result = computeCaseStability("case-e", repeats);
+    expect(result.modalVerdict).toBe("PASS");
+    expect(result.modalCount).toBe(1);
+    expect(result.stabilityRate).toBeCloseTo(1 / 3);
+  });
+
+  it("throws on zero repeats", () => {
+    expect(() => computeCaseStability("case-f", [])).toThrow(/zero repeats/);
+  });
+
+  it("throws when two repeats share a repeatIndex", () => {
+    const repeats = [repeat(1, "PASS"), repeat(1, "REVIEW")];
+    expect(() => computeCaseStability("case-g", repeats)).toThrow(/sharing repeatIndex 1/);
+  });
+
+  it("a single repeat is trivially stable (runCount 1, stabilityRate 1)", () => {
+    const result = computeCaseStability("case-h", [repeat(1, "PASS")]);
+    expect(result).toMatchObject({ runCount: 1, modalCount: 1, stabilityRate: 1, stable: true });
+  });
+});
+
+describe("computeCorpusStability", () => {
+  it("computes the '28 of 29'-style corpus rate: mostly-stable cases plus one unstable case", () => {
+    const byCase = new Map<string, RepeatedVerdict[]>([
+      ["case-01", [repeat(1, "PASS", "case-01"), repeat(2, "PASS", "case-01")]],
+      ["case-02", [repeat(1, "FAIL", "case-02"), repeat(2, "FAIL", "case-02")]],
+      ["case-03", [repeat(1, "REVIEW", "case-03"), repeat(2, "REVIEW", "case-03")]],
+      ["case-17", [repeat(1, "REVIEW", "case-17"), repeat(2, "PASS", "case-17")]],
+    ]);
+    const result = computeCorpusStability(byCase);
+    expect(result.stableCaseRate).toEqual({ total: 4, correct: 3, rate: 0.75 });
+    expect(result.perCase.find((c) => c.caseId === "case-17")!.stable).toBe(false);
+  });
+
+  it("sorts perCase by caseId regardless of Map insertion order", () => {
+    const byCase = new Map<string, RepeatedVerdict[]>([
+      ["case-z", [repeat(1, "PASS", "case-z")]],
+      ["case-a", [repeat(1, "PASS", "case-a")]],
+      ["case-m", [repeat(1, "PASS", "case-m")]],
+    ]);
+    const result = computeCorpusStability(byCase);
+    expect(result.perCase.map((c) => c.caseId)).toEqual(["case-a", "case-m", "case-z"]);
+  });
+
+  it("returns an empty, zeroed summary for an empty map", () => {
+    const result = computeCorpusStability(new Map());
+    expect(result.perCase).toEqual([]);
+    expect(result.stableCaseRate).toEqual({ total: 0, correct: 0, rate: 0 });
+  });
+});
+
+describe("computeAccuracySpread", () => {
+  it("computes lowest/highest label-verdict accuracy across runs, reusing summarizeVerdict", () => {
+    const byRepeat = new Map<number, VerdictCaseScore[]>([
+      [1, [verdictScore("a", "REVIEW"), verdictScore("b", "PASS"), verdictScore("c", "PASS")]], // 1/3 correct (only "a" expects REVIEW)
+      [2, [verdictScore("a", "REVIEW")]], // 1/1 correct
+    ]);
+    const result = computeAccuracySpread(byRepeat);
+    expect(result.perRun).toEqual([
+      { repeatIndex: 1, labelVerdictAccuracy: { total: 3, correct: 1, rate: 1 / 3 } },
+      { repeatIndex: 2, labelVerdictAccuracy: { total: 1, correct: 1, rate: 1 } },
+    ]);
+    expect(result.lowestRate).toBeCloseTo(1 / 3);
+    expect(result.highestRate).toBe(1);
+  });
+
+  it("reproduces the two-run 62.1% / 65.5% shape this ticket's CHANGES.md already reports by hand", () => {
+    // 29 cases, all expecting PASS for simplicity — 18 correct in run 1,
+    // 19 correct in run 2 (one case flips, exactly the case-17 shape).
+    function runOf(correctCount: number): VerdictCaseScore[] {
+      return Array.from({ length: 29 }, (_, i) => verdictScore(`case-${i}`, i < correctCount ? "PASS" : "FAIL", { expectedLabelVerdict: "PASS" }));
+    }
+    const byRepeat = new Map<number, VerdictCaseScore[]>([
+      [1, runOf(18)],
+      [2, runOf(19)],
+    ]);
+    const result = computeAccuracySpread(byRepeat);
+    expect(result.lowestRate).toBeCloseTo(18 / 29);
+    expect(result.highestRate).toBeCloseTo(19 / 29);
+  });
+
+  it("a single run has lowest === highest", () => {
+    const byRepeat = new Map<number, VerdictCaseScore[]>([[1, [verdictScore("a", "REVIEW")]]]);
+    const result = computeAccuracySpread(byRepeat);
+    expect(result.lowestRate).toBe(result.highestRate);
+  });
+
+  it("returns an empty perRun and 0/0 lowest/highest on an empty map", () => {
+    const result = computeAccuracySpread(new Map());
+    expect(result.perRun).toEqual([]);
+    expect(result.lowestRate).toBe(0);
+    expect(result.highestRate).toBe(0);
+  });
+
+  it("sorts perRun by repeatIndex regardless of Map insertion order", () => {
+    const byRepeat = new Map<number, VerdictCaseScore[]>([
+      [3, [verdictScore("a", "REVIEW")]],
+      [1, [verdictScore("a", "REVIEW")]],
+      [2, [verdictScore("a", "REVIEW")]],
+    ]);
+    const result = computeAccuracySpread(byRepeat);
+    expect(result.perRun.map((r) => r.repeatIndex)).toEqual([1, 2, 3]);
+  });
+});
+
+function cost(usd: number): MeasuredCost {
+  return { model: "test-model", inputTokens: 1000, outputTokens: 200, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, usd };
+}
+
+function caseRun(
+  caseId: string,
+  repeatIndex: number,
+  actualLabelVerdict: LabelVerdict,
+  opts: { haikuUsd?: number; resolverUsd?: number | null } = {},
+): VarianceCaseRun {
+  const resolverUsd = opts.resolverUsd ?? null;
+  return {
+    caseId,
+    category: "glare",
+    repeatIndex,
+    extraction: { caseId, category: "glare", fields: [] },
+    verdict: verdictScore(caseId, actualLabelVerdict),
+    haikuCost: cost(opts.haikuUsd ?? 0.0046),
+    resolverCost: resolverUsd !== null ? cost(resolverUsd) : null,
+    resolverOutcome: resolverUsd !== null ? "resolved" : null,
+    resolverError: null,
+    resolverDurationMs: resolverUsd !== null ? 1200 : null,
+  };
+}
+
+describe("buildVarianceReport", () => {
+  const baseInput = {
+    ticket: "TRO-543 / LH-038",
+    measuredAt: "2026-08-12T00:00:00.000Z",
+    haikuModel: "claude-haiku-4-5",
+    sonnetModel: "claude-sonnet-5",
+    manifestVersion: "1.0.0",
+    manifestContentHash: null,
+    commitSha: "deadbeef",
+    requestedFull: false,
+  };
+
+  it("assembles a full report: sums real measured cost and computes stability + spread together", () => {
+    const runs: VarianceCaseRun[] = [
+      caseRun("case-01", 1, "PASS", { haikuUsd: 0.004 }),
+      caseRun("case-01", 2, "PASS", { haikuUsd: 0.005 }),
+      caseRun("case-17", 1, "REVIEW", { haikuUsd: 0.004, resolverUsd: 0.011 }),
+      caseRun("case-17", 2, "PASS", { haikuUsd: 0.004 }),
+    ];
+    const report = buildVarianceReport({ ...baseInput, caseIds: ["case-17", "case-01"], repeats: 2, runs, failures: [] });
+
+    expect(report.mode).toBe("live");
+    expect(report.ticket).toBe("TRO-543 / LH-038");
+    expect(report.commitSha).toBe("deadbeef");
+    expect(report.manifestContentHash).toBeNull();
+    expect(report.caseIds).toEqual(["case-01", "case-17"]); // sorted, not input order
+    expect(report.repeats).toBe(2);
+    expect(report.summary.caseCount).toBe(2);
+    expect(report.summary.nominalRepeats).toBe(2);
+    expect(report.summary.stableCaseRate).toEqual({ total: 2, correct: 1, rate: 0.5 });
+    expect(report.totalCostUsd).toBeCloseTo(0.004 + 0.005 + 0.004 + 0.011 + 0.004);
+    expect(report.runs).toHaveLength(4);
+    expect(report.failures).toEqual([]);
+  });
+
+  it("keeps a case's stability computed only from its OWN completed repeats when a sibling repeat failed (the ragged-grid case)", () => {
+    const runs: VarianceCaseRun[] = [caseRun("case-17", 1, "REVIEW")];
+    const failures: VarianceCaseFailure[] = [{ caseId: "case-17", repeatIndex: 2, error: "transient API error" }];
+    const report = buildVarianceReport({ ...baseInput, caseIds: ["case-17"], repeats: 2, runs, failures });
+
+    expect(report.failures).toHaveLength(1);
+    expect(report.failures[0]).toEqual({ caseId: "case-17", repeatIndex: 2, error: "transient API error" });
+    // Only one repeat completed for case-17 -- runCount reflects that
+    // honestly (1), not the nominal K (2).
+    expect(report.summary.accuracySpread.perRun).toEqual([{ repeatIndex: 1, labelVerdictAccuracy: { total: 1, correct: 1, rate: 1 } }]);
+  });
+
+  it("returns a zeroed summary when every repeat failed (no runs at all)", () => {
+    const failures: VarianceCaseFailure[] = [{ caseId: "case-17", repeatIndex: 1, error: "boom" }];
+    const report = buildVarianceReport({ ...baseInput, caseIds: ["case-17"], repeats: 1, runs: [], failures });
+    expect(report.summary.caseCount).toBe(0);
+    expect(report.summary.stableCaseRate).toEqual({ total: 0, correct: 0, rate: 0 });
+    expect(report.totalCostUsd).toBe(0);
+  });
+
+  it("passes the reviewReason for headline text through to per-repeat scoring correctly (headline reason lives in verdict.actualReviewReason)", () => {
+    const runs: VarianceCaseRun[] = [caseRun("case-17", 1, "REVIEW")];
+    const report = buildVarianceReport({ ...baseInput, caseIds: ["case-17"], repeats: 1, runs, failures: [] });
+    const c17 = report.summary.accuracySpread.perRun[0];
+    expect(c17.labelVerdictAccuracy).toEqual({ total: 1, correct: 1, rate: 1 });
+    const reason: ReviewReason | null = runs[0].verdict.actualReviewReason;
+    expect(reason).toBe("AMBIGUOUS_BRAND");
+  });
+});

@@ -40,14 +40,23 @@ import {
   type PreprocessedImage,
 } from "../../src/server/preprocessing";
 import { productionComparators } from "../../src/server/comparators";
-import { routeLabel } from "../../src/server/router";
-import type { ApplicationRecord as RouterApplicationRecord, LabelRouterResult, WarningComparatorResult } from "../../src/server/router/types";
+import { pickHeadlineReason, routeLabel, rollupLabelVerdict } from "../../src/server/router";
+import type {
+  ApplicationRecord as RouterApplicationRecord,
+  FieldComparators,
+  LabelRouterResult,
+  ReviewReason,
+  WarningComparatorResult,
+} from "../../src/server/router/types";
 import { resolveEscalatedLabel, SONNET_RESOLVER_MODEL } from "../../src/server/resolver";
+import type { ResolverResolution } from "../../src/server/resolver";
 import { compareGovernmentWarningFromImage as defaultCompareGovernmentWarning } from "../../src/server/warning";
 import { saveLabelImage as defaultSaveLabelImage } from "../../src/server/storage/local-file-storage";
 import { buildFlaggedFieldsForEscalatedLabel } from "./flagged-fields";
 import { scoreExtraction } from "./extraction-scoring";
 import { parseFullVerifySuccessBody } from "./response-validation";
+import { rollUpOneField } from "./resolver-rollup";
+import { ROUTER_FIELD_KEYS } from "./types";
 import { buildMeasuredCost, createUsageCapturingClient, HAIKU_4_5_PRICING, selectSonnetPricing } from "./usage";
 import { scoreVerdict, type ActualFieldOutcome, type ActualVerdict } from "./verdict-scoring";
 import type { CascadeCaseResult, EvalCaseFailure } from "./types";
@@ -166,6 +175,92 @@ async function cleanupApplicationRow(
 function toActualFieldOutcome(f: FullVerifyFieldResult): ActualFieldOutcome {
   if (f.verdict !== "NEEDS_REVIEW") return { field: f.field, verdict: f.verdict };
   return { field: f.field, verdict: "NEEDS_REVIEW", reviewReason: f.reviewReason };
+}
+
+/**
+ * Merges a resolver resolution into the router's own field rows, producing
+ * the cascade's END STATE verdict (TRO-538 / LH-033). A resolved field
+ * OVERRIDES its router row; a router row the resolver did NOT flag carries
+ * through unchanged — `buildFlaggedFieldsForEscalatedLabel` flags a
+ * per-field subset for a field-specific reason, or every field for a
+ * label-level blocker (that function's own doc comment), so either shape is
+ * a normal input here, not a special case this function has to detect.
+ *
+ * Reuses `resolver-rollup.ts`'s own per-disposition mapping
+ * (`rollUpOneField` — judged fields: the resolver's disposition IS the
+ * verdict, TH-R8; correction fields: the resolver's reading re-runs the
+ * SAME deterministic comparator, CP-1 §6.5) and the router's own
+ * `rollupLabelVerdict`/`pickHeadlineReason`, so this arm's rollup rule
+ * cannot drift from either the Sonnet-only arm's or the router's own.
+ *
+ * OPEN DESIGN QUESTION, decided here, flagged for Troy to confirm (see the
+ * TRO-538 PR body's "Open design question" section): this function ALWAYS
+ * rolls up with `labelLevelBlocker: false` — it never reads
+ * `routerResult.labelVerdict` or `.headlineReason` at all, only `.fields`.
+ * The router's own LOW_IMAGE_QUALITY/CONFLICTING_EXTRACTION blocker
+ * therefore never survives into the cascade end state. Rationale: a
+ * label-level blocker's whole justification is "the fields under it are
+ * not trustworthy" — and `buildFlaggedFieldsForEscalatedLabel` already
+ * guarantees that whenever the blocker fired with no field individually
+ * carrying its own reason (the common shape), EVERY field gets sent to
+ * Sonnet, so the distrust the blocker asserted has been independently
+ * checked, not merely repeated. This is the same choice
+ * `resolver-rollup.ts`'s Sonnet-only arm already makes (there: because that
+ * arm has no router pass to take a blocker FROM at all).
+ *
+ * HONEST LIMIT: `buildFlaggedFieldsForEscalatedLabel` flags a PARTIAL field
+ * set whenever at least one field already carries its OWN reviewReason —
+ * reachable even alongside a label-level blocker (e.g. one field's own
+ * override rejection sets CONFLICTING_EXTRACTION on that field AND the
+ * label, while an unrelated field's clean MATCH never gets a second Sonnet
+ * look). On that path, "blocker dropped" does not mean "every field was
+ * independently re-verified" — only that every FLAGGED field was; an
+ * un-flagged field still carries the router's own, blocker-era verdict into
+ * this merged result. This is a real, unresolved gap in the evidence, not a
+ * design choice — see the PR body.
+ *
+ * A SECOND HONEST LIMIT, specific to `government_warning`: `rollUpOneField`
+ * dispatches a resolved warning through `rollUpGovernmentWarning`, which —
+ * exactly like the Sonnet-only arm — has no OCR channel to corroborate a
+ * deviation with, so it can only ever return MATCH or NEEDS_REVIEW, never
+ * MISMATCH (`resolver-rollup.ts`'s own doc comment). A router-level warning
+ * MISMATCH that gets swept into a label-level "flag all five" resolver call
+ * therefore cannot survive into the cascade end state as a MISMATCH — it
+ * downgrades to NEEDS_REVIEW / WARNING_MISMATCH, an honest reason in place
+ * of a suppressed one, not the router's original, dual-channel-corroborated
+ * verdict. See this file's own test suite (`cascade-runner.test.ts`) for a
+ * worked example.
+ */
+export function mergeResolutionIntoActualVerdict(
+  routerResult: LabelRouterResult,
+  resolution: ResolverResolution,
+  application: RouterApplicationRecord,
+  comparators: FieldComparators,
+): ActualVerdict {
+  const routerByField = new Map(routerResult.fields.map((row) => [row.field, row]));
+  const resolvedByField = new Map(resolution.fields.map((field) => [field.field, field]));
+
+  const reasons = new Set<ReviewReason>();
+  const fields: ActualVerdict["fields"] = ROUTER_FIELD_KEYS.map((field) => {
+    const resolved = resolvedByField.get(field);
+    if (resolved) {
+      const { verdict, reviewReason } = rollUpOneField(resolved, application, comparators);
+      if (reviewReason) reasons.add(reviewReason);
+      return verdict === "NEEDS_REVIEW" ? { field, verdict, reviewReason } : { field, verdict };
+    }
+    const row = routerByField.get(field);
+    if (!row) {
+      throw new Error(
+        `mergeResolutionIntoActualVerdict: router result has no row for field "${field}" — router invariant violated (routeLabel always returns all five rows).`,
+      );
+    }
+    const verdict = row.verdict;
+    if (row.reviewReason) reasons.add(row.reviewReason);
+    return verdict === "NEEDS_REVIEW" ? { field, verdict, reviewReason: row.reviewReason } : { field, verdict };
+  });
+
+  const labelVerdict = rollupLabelVerdict(false, fields.map((f) => f.verdict));
+  return { labelVerdict, headlineReason: pickHeadlineReason(reasons), fields };
 }
 
 export interface CaseRunOutcome {
@@ -301,13 +396,19 @@ export async function runOneCase(
       headlineReason: body.headlineReason,
       fields: body.fields.map(toActualFieldOutcome),
     };
-    const verdictScore = scoreVerdict(caseSpec, actualVerdict);
+    const routerVerdictScore = scoreVerdict(caseSpec, actualVerdict, capturedExtraction);
     const haikuCost = buildMeasuredCost(HAIKU_EXTRACTOR_MODEL, haikuUsage, HAIKU_4_5_PRICING);
 
     let resolverCost: CascadeCaseResult["resolverCost"] = null;
     let resolverOutcome: CascadeCaseResult["resolverOutcome"] = null;
     let resolverDurationMs: CascadeCaseResult["resolverDurationMs"] = null;
     let resolverError: CascadeCaseResult["resolverError"] = null;
+    // Hoisted to this scope (TRO-538 / LH-033), not declared inside the
+    // `if` block below: `mergeResolutionIntoActualVerdict` needs the full
+    // resolution object AFTER that block ends, to build the cascade's
+    // post-resolution end-state verdict — not just `resolution.outcome`,
+    // which is all the pre-existing code below ever read.
+    let resolution: ResolverResolution | null = null;
     if (routerResult.labelVerdict === "REVIEW") {
       // handleVerifyRequest's own transaction already inserted a
       // review_queue row for this verification (route.ts: "if
@@ -340,7 +441,6 @@ export async function runOneCase(
       const resolverUsageCapture = createUsageCapturingClient(new Anthropic(DI_CLIENT_OPTIONS));
       const flaggedFields = buildFlaggedFieldsForEscalatedLabel(routerResult);
       const resolverStart = Date.now();
-      let resolution: Awaited<ReturnType<typeof resolveEscalatedLabel>> | null = null;
       try {
         resolution = await resolveEscalatedLabel(
           {
@@ -368,17 +468,41 @@ export async function runOneCase(
       }
     }
 
+    // The cascade's END STATE (TRO-538 / LH-033): identical to the router's
+    // own verdict when nothing escalated (nothing to merge) — a real
+    // resolver call, even a failed one, is the only thing that can move
+    // this away from `routerVerdictScore`. `resolverError` deliberately
+    // does NOT gate this: a failed resolver call leaves `resolution` `null`,
+    // so the `: routerVerdictScore` branch below already runs — the cascade
+    // end state honestly falls back to "whatever the router alone decided"
+    // when Sonnet's own evidence is missing, the same "uncertain beats
+    // wrong" posture as every other stage in this pipeline.
+    const cascadeVerdictScore = resolution
+      ? scoreVerdict(
+          caseSpec,
+          mergeResolutionIntoActualVerdict(routerResult, resolution, application, productionComparators),
+          capturedExtraction,
+        )
+      : routerVerdictScore;
+
     return {
       result: {
         caseId: caseSpec.caseId,
         category: caseSpec.category,
         extraction: extractionScore,
-        verdict: verdictScore,
+        routerVerdict: routerVerdictScore,
+        cascadeVerdict: cascadeVerdictScore,
         haikuCost,
         resolverCost,
         resolverOutcome,
         resolverError,
         resolverDurationMs,
+        imageQuality: capturedExtraction.image_quality,
+        beverageType: {
+          value: capturedExtraction.beverage_type.value,
+          evidence: capturedExtraction.beverage_type.evidence,
+          confidence: capturedExtraction.beverage_type.confidence,
+        },
       },
       failure: null,
       rawExtraction: capturedExtraction,

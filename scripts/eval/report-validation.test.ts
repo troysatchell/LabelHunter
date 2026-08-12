@@ -9,13 +9,16 @@ const VALID_WARNING_SEGMENTATION = {
   resolutionSuspect: { count: 1, rate: 0.1 },
   notFound: { count: 0, rate: 0 },
 };
+const VALID_RELIABILITY_DIAGRAM = Array.from({ length: 10 }, (_, decile) => ({ decile, n: 0, correct: 0, rate: 0 }));
 const VALID_SUMMARY = {
   extractionAccuracy: RATE,
   extractionAccuracyByField: {},
-  labelVerdictAccuracy: RATE,
+  routerVerdictAccuracy: RATE,
   fieldVerdictAccuracyByField: {},
   reviewReasonAccuracy: RATE,
   warningSegmentation: VALID_WARNING_SEGMENTATION,
+  cascadeVerdictAccuracy: RATE,
+  extractionReliabilityDiagram: VALID_RELIABILITY_DIAGRAM,
 };
 
 function validBaseline(overrides: Record<string, unknown> = {}) {
@@ -23,6 +26,7 @@ function validBaseline(overrides: Record<string, unknown> = {}) {
     ticket: "TRO-470",
     establishedAt: "2026-08-12T00:00:00.000Z",
     manifestVersion: "1.0.0",
+    manifestContentHash: "abc123",
     caseIds: ["case-01"],
     summary: VALID_SUMMARY,
     ...overrides,
@@ -35,6 +39,7 @@ function validReport(overrides: Record<string, unknown> = {}) {
     measuredAt: "2026-08-12T00:00:00.000Z",
     mode: "live",
     manifestVersion: "1.0.0",
+    manifestContentHash: "abc123",
     caseIds: ["case-01"],
     summary: VALID_SUMMARY,
     cases: [],
@@ -65,8 +70,23 @@ describe("validateEvalBaseline", () => {
   });
 
   it("rejects a summary missing a required AccuracySummary", () => {
-    const { labelVerdictAccuracy: _drop, ...summaryRest } = VALID_SUMMARY;
+    const { routerVerdictAccuracy: _drop, ...summaryRest } = VALID_SUMMARY;
     expect(() => validateEvalBaseline(validBaseline({ summary: summaryRest }), "baseline.json")).toThrow(/summary/);
+  });
+
+  it("rejects a summary missing cascadeVerdictAccuracy (TRO-538 / LH-033)", () => {
+    const { cascadeVerdictAccuracy: _drop, ...summaryRest } = VALID_SUMMARY;
+    expect(() => validateEvalBaseline(validBaseline({ summary: summaryRest }), "baseline.json")).toThrow(/summary/);
+  });
+
+  it("rejects a summary missing extractionReliabilityDiagram (TRO-538 / LH-033)", () => {
+    const { extractionReliabilityDiagram: _drop, ...summaryRest } = VALID_SUMMARY;
+    expect(() => validateEvalBaseline(validBaseline({ summary: summaryRest }), "baseline.json")).toThrow(/summary/);
+  });
+
+  it("rejects a missing manifestContentHash (TRO-538 / LH-033)", () => {
+    const { manifestContentHash: _drop, ...rest } = validBaseline();
+    expect(() => validateEvalBaseline(rest, "baseline.json")).toThrow(/manifestContentHash/);
   });
 
   it("rejects an AccuracySummary with an out-of-range rate", () => {

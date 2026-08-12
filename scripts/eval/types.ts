@@ -14,6 +14,7 @@
  * module that makes a network call.
  */
 import type { GoldenSetCategory, LabelVerdict } from "../../src/lib/golden-set/types";
+import type { ExtractedImageQuality } from "../../src/server/extractor/types";
 import type { FieldVerdict, ReviewReason, RouterFieldKey } from "../../src/server/router/types";
 
 /** The router's five field keys, in one place — `response-validation.ts`,
@@ -47,6 +48,13 @@ export interface ExtractionFieldScore {
   correct: boolean;
   expected: string;
   actual: string;
+  /** Haiku's own self-reported confidence for this field (0.00-1.00),
+   * captured from the SAME `HaikuExtractionResult` `correct` was already
+   * scored against — no second API call, no database read (TRO-538 /
+   * LH-033). CP-1 §4.5 step 1: "Record `confidence` and correctness for
+   * every field." Feeds `EvalReportSummary.extractionReliabilityDiagram`
+   * (step 2's reliability diagram). */
+  confidence: number;
   /** One line, ASD-STE100 style, explaining the result. */
   detail: string;
 }
@@ -66,6 +74,13 @@ export interface VerdictFieldScore {
   expectedVerdict: FieldVerdict;
   actualVerdict: FieldVerdict;
   correct: boolean;
+  /** Haiku's own self-reported extraction confidence for this field — the
+   * SAME source `ExtractionFieldScore.confidence` uses (TRO-538 / LH-033),
+   * even on the cascade (post-resolution) verdict score: this number always
+   * answers "how confident was the EXTRACTION," never "how confident was
+   * whichever stage (router or resolver) produced the final `actualVerdict`
+   * on this row." */
+  confidence: number;
   /** The real system's own `reviewReason` for this field, carried through
    * unscored (the golden set has no per-field expected reviewReason — see
    * `verdict-scoring.ts`'s `ActualFieldOutcome`). Non-null exactly when
@@ -135,7 +150,24 @@ export interface CascadeCaseResult {
   caseId: string;
   category: GoldenSetCategory;
   extraction: ExtractionCaseScore;
-  verdict: VerdictCaseScore;
+  /** RENAMED from `verdict` (TRO-538 / LH-033) — the Validation Router's
+   * OWN verdict, scored from the `/api/verify` response body BEFORE any
+   * resolver call, on every case, escalated or not. This is the number CP-1
+   * §4.5 step 3's "auto-verified rate" (the share of labels finished
+   * without a resolver call) is built from — see `cascadeVerdict` below for
+   * the number that number is NOT. */
+  routerVerdict: VerdictCaseScore;
+  /** NEW (TRO-538 / LH-033) — the cascade's END STATE. Identical to
+   * `routerVerdict` when the router did not escalate this case (nothing to
+   * merge). When it did escalate, this is the router's own field rows with
+   * every RESOLVER-FLAGGED field overridden by the resolver's own
+   * disposition, rolled up fresh — see `cascade-runner.ts`'s
+   * `mergeResolutionIntoActualVerdict` for the merge rule, the per-field
+   * mapping it reuses from `resolver-rollup.ts`, and its own doc comment
+   * for the open design decision on the router's label-level blocker.
+   * `benchmark.ts` compares THIS number against the Sonnet-only arm's —
+   * never `routerVerdict`, which measures an earlier pipeline stage. */
+  cascadeVerdict: VerdictCaseScore;
   haikuCost: MeasuredCost;
   /** `null` when the router did not escalate this case (Sonnet never runs
    * then, TH-R19) OR when it escalated but the real resolver call itself
@@ -159,6 +191,21 @@ export interface CascadeCaseResult {
    * (Haiku extraction, preprocessing, and DB I/O are not included), a
    * narrower, more precisely named number than "total" would suggest. */
   resolverDurationMs: number | null;
+  /** NEW (TRO-538 / LH-033) — the whole `image_quality` object Haiku's
+   * extraction produced for this case: `legible`, `issues`, `confidence`
+   * (`src/server/extractor/types.ts`'s `ExtractedImageQuality`). Recorded
+   * as evidence, not scored — no table in the schema keeps this today
+   * (`src/lib/db/schema.ts`), so the committed report is the only place
+   * this value survives past the run that produced it. */
+  imageQuality: ExtractedImageQuality;
+  /** NEW (TRO-538 / LH-033) — `beverage_type`'s raw extractor reading,
+   * recorded as evidence, never scored: no golden label prints its
+   * category word, so no label ground truth exists to score against (see
+   * `docs/diagnostics/2026-08-12-verdict-miss-triage.md` §3C, and this
+   * ticket's own "Do NOT add beverage_type to the extraction-accuracy
+   * denominator"). Case-11's diagnosis needs these recorded values, not a
+   * score. */
+  beverageType: { value: string | null; evidence: string; confidence: number };
 }
 
 /** One class's count in the PRD §3.7 / CP-2 §8.4 warning-check-outcome
@@ -205,16 +252,58 @@ export interface WarningSegmentationSummary {
   readonly notFound: WarningSegmentCount;
 }
 
+/**
+ * One confidence-decile bucket of CP-1 §4.5 step 2's reliability diagram:
+ * every scored EXTRACTION field (`ExtractionFieldScore`, not
+ * `VerdictFieldScore` — CP-1 §4.5 step 1 says "run the EXTRACTOR over the
+ * golden set," an extraction-correctness question) grouped by its own
+ * Haiku confidence, rounded down to the nearest tenth (TRO-538 / LH-033).
+ * `n` rides beside `rate` deliberately: 160 field scores over ten deciles
+ * gives some buckets a handful of members (some may be empty), and a rate
+ * with no `n` beside it invites over-reading a thin sample as a real trend.
+ */
+export interface ReliabilityBucket {
+  /** 0-9. Bucket `k` covers confidence in `[k/10, (k+1)/10)`, except bucket
+   * 9, which is `[0.9, 1.0]` (closed at 1.0 — a field confidence of exactly
+   * 1.0 must land somewhere). */
+  decile: number;
+  n: number;
+  correct: number;
+  /** `correct / n`, or `0` when `n` is `0` (an empty decile — same
+   * empty-population convention as `AccuracySummary.rate`). */
+  rate: number;
+}
+
 export interface EvalReportSummary {
   extractionAccuracy: AccuracySummary;
   /** Per-`ExtractionFieldKey` breakdown — TH-R17's "field by field". */
   extractionAccuracyByField: Record<ExtractionFieldKey, AccuracySummary>;
-  labelVerdictAccuracy: AccuracySummary;
-  /** Per-`RouterFieldKey` breakdown of field-verdict accuracy. */
+  /** RENAMED from `labelVerdictAccuracy` (TRO-538 / LH-033) — the
+   * Validation Router's OWN verdict accuracy, scored BEFORE any resolver
+   * call. CP-1 §4.5 step 3's "auto-verified rate" denominator. See
+   * `cascadeVerdictAccuracy` below for the number this is NOT — the two
+   * are deliberately named apart so a reader cannot confuse a router-stage
+   * number with a cascade-end-state one. */
+  routerVerdictAccuracy: AccuracySummary;
+  /** Per-`RouterFieldKey` breakdown of field-verdict accuracy — scored at
+   * the ROUTER stage, same stage as `routerVerdictAccuracy`. */
   fieldVerdictAccuracyByField: Record<RouterFieldKey, AccuracySummary>;
+  /** Scored at the ROUTER stage — see `routerVerdictAccuracy`'s own doc
+   * comment. */
   reviewReasonAccuracy: AccuracySummary;
-  /** PRD §3.7's warning upgrade-ladder segmentation (TRO-469 / LH-021). */
+  /** PRD §3.7's warning upgrade-ladder segmentation (TRO-469 / LH-021) —
+   * scored at the ROUTER stage, same stage as `routerVerdictAccuracy`. */
   warningSegmentation: WarningSegmentationSummary;
+  /** NEW (TRO-538 / LH-033) — the cascade's END STATE label-verdict
+   * accuracy: `routerVerdictAccuracy` for a non-escalated case, the merged
+   * router+resolver verdict for an escalated one (`CascadeCaseResult.cascadeVerdict`).
+   * This is the number to compare against the Sonnet-only benchmark arm —
+   * see `benchmark.ts`. */
+  cascadeVerdictAccuracy: AccuracySummary;
+  /** NEW (TRO-538 / LH-033) — CP-1 §4.5 step 2's reliability diagram, built
+   * from every scored extraction field's own confidence. Always exactly 10
+   * entries (deciles 0-9), even when a decile's `n` is 0. */
+  extractionReliabilityDiagram: ReliabilityBucket[];
 }
 
 /** The committed evidence artifact `pnpm eval:check -- --live` writes
@@ -231,6 +320,12 @@ export interface EvalReport {
   /** `golden-set/manifest.json`'s own `version` field — a report is only
    * comparable to a baseline built from the same manifest schema version. */
   manifestVersion: string;
+  /** SHA-256 of `golden-set/manifest.json`'s raw file content at the time
+   * this run measured (TRO-538 / LH-033, `manifest-hash.ts`) — moves with
+   * every edit, unlike `manifestVersion`, which seven straight
+   * manifest-editing commits left at `"1.0.0"`
+   * (`docs/diagnostics/2026-08-12-verdict-miss-triage.md` §5 S5). */
+  manifestContentHash: string;
   /** Sorted case IDs this report actually ran — `baseline-compare.ts`'s
    * staleness check needs this to know whether a report has at least the
    * coverage a baseline was built from. */
@@ -261,6 +356,12 @@ export interface EvalBaseline {
   ticket: string;
   establishedAt: string;
   manifestVersion: string;
+  /** SHA-256 of `golden-set/manifest.json`'s raw content when this baseline
+   * was established (TRO-538 / LH-033) — see `EvalReport.manifestContentHash`'s
+   * own doc comment. `baseline-compare.ts` rejects a comparison whose
+   * current run's hash disagrees with this one, catching a golden-set edit
+   * `manifestVersion` alone would miss. */
+  manifestContentHash: string;
   caseIds: string[];
   summary: EvalReportSummary;
 }

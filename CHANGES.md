@@ -4,6 +4,215 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-479 — LH-053 · E2E suite (2026-08-12)
+
+**What this builds.** Real, executable Playwright specs for the three PRD §6 flows: verify,
+batch, and review queue. Every spec runs against a real, live app and a real background worker
+(`playwright.config.ts`'s `webServer`) — real preprocessing, the real deterministic router, real
+persistence. The one exception is named up front, not buried: by default, the Anthropic API
+itself is faked (see "Real model calls or fakes" below). This entry's earlier draft claimed
+"none run against a mocked server," which was flatly wrong given the very next section —
+corrected here (CodeRabbit finding, TRO-479 local review round 2).
+
+- `e2e/verify.spec.ts` — the verify happy path (a real golden-set image, a full per-field
+  checklist, click-through to detail), plus three error states: unreadable image, oversized
+  file, and an API failure with a retry affordance that genuinely recovers, not just appears.
+- `e2e/batch.spec.ts` — manifest upload → pairing preview → run → live progress → results
+  table → click-through to detail, plus two error states: malformed CSV and unpairable
+  rows/images.
+- `e2e/review-queue.spec.ts` — a needs-human item with its reason visible; both Approve and
+  Reject record a disposition.
+- `e2e/health.spec.ts` — unchanged (LH-001's own scaffold spec).
+
+**Scope cut, stated explicitly.** Two of the seven PRD §5 error states are not built as E2E
+specs: partial batch failure and the rate-limit backoff notice. Both already have precise,
+deterministic unit coverage (`src/server/batch-progress/get-batch-progress.test.ts`). That
+coverage does not depend on timing. A true E2E repro of partial failure needs a
+deliberately-broken item inside an otherwise-good batch. A true E2E repro of the backoff notice
+needs a live 429 racing a real `available_at` timestamp against the browser's own poll window.
+Both are exactly the shape of timing-dependent state that makes an E2E test flaky. Both would
+add only marginal signal beyond what the unit suite already proves deterministically. Five of
+seven is the real, honest count — not a silently dropped two.
+
+**Real model calls or fakes — decided, and load-bearing.** Every existing HTTP-level test in
+this repo (`src/app/api/verify/route.test.ts` and its siblings) injects a fake Anthropic client
+by dependency injection. A live browser test has no such seam into a separate server process.
+`scripts/e2e/fake-anthropic-server.ts` is a small, real HTTP server standing in for
+`api.anthropic.com`. `getDefaultExtractorClient()` and the resolver's own default client
+(`src/server/extractor/index.ts`, `src/server/resolver/index.ts`) both fall back to
+`process.env.ANTHROPIC_BASE_URL` when no client is injected. Production code already has that
+same seam, for the same reason. `playwright.config.ts` points the app's and the worker's
+`webServer` processes at this fake server by default. An E2E run never spends real API money.
+`E2E_LIVE=1 pnpm test:e2e` runs the real cascade against the real API instead. This mirrors
+`scripts/eval/check.ts --live`'s own shape: cheap by default, an explicit flag pays for the real
+thing. Every other part of the cascade stays 100% real in every mode: preprocessing, the
+deterministic router and comparators, the warning subsystem (real tesseract.js OCR against the
+real uploaded photo, included), and persistence.
+
+The fake server's default response is `WELL_FORMED_EXTRACTION_BODY`
+(`src/server/extractor/test-support.ts`), the same fixture the unit suite already trusts. It is
+also the verified ground truth for `golden-set/images/case-01-clean-match-spirits.jpg`. Every
+spec that needs a working extraction uploads that real, committed image (TH-R12). The fake
+response and the real photo describe the same label. A spec that needs a specific failure or a
+REVIEW verdict gets one a different way: it chooses a deliberately mismatched application value,
+or uploads a deliberately tiny synthetic "trigger" image (`scripts/e2e/fixtures.ts`). Neither
+needs a shared, racy "current scenario" control endpoint. The whole suite stays safe to run
+fully in parallel (`fullyParallel: true`, unchanged from LH-001's own scaffold).
+
+**A real production bug found and fixed, in scope for this ticket.** The first real
+`next build && next start` run that uploaded a real photo crashed the whole app server process:
+`Cannot find module '.../tesseract.js/src/worker-script/node/index.js'`. That was an
+`uncaughtException`, and it killed every request after it, not only the one that triggered it.
+Next's production build traces server-side `require()` calls to decide what ships. tesseract.js
+resolves its own Node worker-thread entry point at call time — a path Next's static trace cannot
+see. Nothing before this ticket ever exercised this path. The unit suite runs OCR directly in
+Node, with no Next bundler involved at all. No prior ticket ran a production build with a real
+image through the warning subsystem. Fixed with `serverExternalPackages: ["tesseract.js"]`
+in `next.config.ts` — Next's own documented escape hatch for a package whose runtime module
+resolution a static trace cannot follow. This is exactly the class of bug real E2E against a
+real production server exists to catch. It would have hit the real deployed Render instance
+too, not only this suite.
+
+**Confirmed each spec exercises the real flow, not a vacuous green run.** Six separate
+break/restore trials, each against a different mechanism the suite depends on: the checklist's
+own MATCH text, the batch progress testid the live-polling assertion waits on, the review
+queue's `AMBIGUOUS_BRAND` reason text, `ErrorPanel`'s `role="alert"`, the fake server's own
+failure-trigger threshold, and the pairing module's unmatched-row reason text. Every trial
+followed the same steps: break it, watch the affected spec fail for the right reason, restore
+it, watch the suite go green again. One trial caught a real gap in the test itself, not in the
+app. The unpairable-rows assertion originally checked the whole problems panel against one
+regex, and either reported problem could satisfy it. It stayed green even with the row-specific
+message broken, because the (unbroken) image-specific message alone still matched the pattern.
+Fixed by asserting each reported problem against its own list item, not the panel as a whole.
+
+**Local CodeRabbit review triage, round 1 (4 findings, 3 fixed, 1 kept as-is with reasoning).**
+- `scripts/e2e/fake-anthropic-server.ts` (major): an unrecognized `model` silently fell through
+  to the extraction response. Fixed — now a loud 400, since this app is the only caller and any
+  other value means a caller bug or real drift from the two model constants (standing rule 13).
+- CHANGES.md (major): several sentences in this entry ran well past ASD-STE100's 25-word
+  guidance. Fixed by splitting them — this pass.
+- CHANGES.md (minor): the fenced `bash` block below was missing a blank line on each side
+  (MD031). Fixed.
+- `playwright.config.ts` (major): a suggestion to set `reuseExistingServer: false` on the
+  fake-model and app `webServer` entries, so a stale local process can never mask a fix. Kept
+  `!process.env.CI` instead, unchanged, on both. That is the same value this file's own
+  pre-existing app entry already used before this ticket (LH-001's scaffold), and it is
+  Playwright's own documented convention for this flag. Forcing a full rebuild on every local
+  run has a real, everyday cost: slower iteration, and it breaks the common "point Playwright at
+  an already-running `pnpm dev`" workflow. In exchange, it only guards against a self-inflicted
+  mistake — an orphaned local process — that CI's own `!process.env.CI` already covers where it
+  actually matters. Recorded in the review ledger as reviewed, not applied.
+
+**Local CodeRabbit review triage, round 2 — post-merge with TRO-480 (5 findings, all fixed).**
+Run by the orchestrator against the merged state — this branch plus TRO-480's UX-polish changes.
+The orchestrator read the actual code before sending each finding. All five held up, and all
+five are fixed here; none dismissed.
+- CHANGES.md (major): a real self-contradiction. "What this builds" claimed "None run against a
+  mocked server," directly contradicted two paragraphs later by "Real model calls or fakes"
+  explaining that the Anthropic API is faked by default. Fixed — the opening paragraph now names
+  the one exception up front instead of denying it exists.
+- `e2e/verify.spec.ts` (major): the happy-path test asserted exact evidence text from the fake
+  server's own canned fixture (`WELL_FORMED_EXTRACTION_BODY`). Under the documented, callable
+  `E2E_LIVE=1` path, a real model reads the real photo for itself. Its evidence text is not
+  guaranteed to match a hardcoded fixture byte for byte. Every one of those assertions was
+  foreseeably broken under a real live run, for a reason that has nothing to do with an actual
+  bug. Fixed: the exact-text checks now run only when `!E2E_LIVE` (`e2e/helpers.ts`'s new
+  `E2E_LIVE` export); the MATCH-badge checks, which hold under either mode for this genuinely
+  clean-match label, stay unconditional. The "API failure" test's own failure-injection trigger
+  has no live-API equivalent at all — the real API does not fail on demand for a small image.
+  That whole test now uses `test.skip(E2E_LIVE, ...)` with the reason stated inline. This is a
+  deliberate mode-scoping decision, not a weakened assertion: the retry affordance it proves
+  stays fully exercised in the default mode, which is also what the gate runs. Verified the
+  branching itself fires correctly — skip triggers, remaining assertions still pass — without any
+  real API spend. Proved this by hardcoding the flag in the test file only.
+  `playwright.config.ts`'s own real `ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY` overrides were never
+  touched for this check.
+- `e2e/helpers.ts` (major): `submitVerifyFormAndWait` used a raw, unfiltered
+  `page.getByRole("alert")`. It should have used the `errorPanel(page)` helper, built
+  specifically to filter out Next's own always-present route announcer
+  (`__next-route-announcer__`). `.or(...)` resolves as soon as either side matches. A stale,
+  non-empty announcer left over from an earlier client-side navigation could let this function
+  return before the real result ever rendered. Fixed: now uses `errorPanel(page)`.
+  Regression-tested directly. A new spec (`e2e/verify.spec.ts`, "helper correctness") writes
+  stale text into the announcer before submitting. It then checks the checklist with a
+  non-auto-retrying `isVisible()` call, deliberately not an auto-waiting `expect` — an
+  auto-retrying check would have silently papered over the bug, the same way it almost always
+  does. Confirmed failing against the old, unfiltered code before restoring the fix: the old code
+  returned control before the real checklist had rendered, exactly as predicted.
+- CHANGES.md (minor): the "true E2E repro of either state" sentence (scope-cut paragraph) still
+  ran to 37 words after round 1's own pass. Split into two sentences, one per state.
+- `scripts/e2e/fixtures.ts` (minor): `csvField`'s special-character check, `/[",\n]/`, quoted a
+  comma, a double quote, or a newline, but not a bare carriage return — RFC 4180 requires quoting
+  for `\r` too. Fixed: `/[",\r\n]/`. Added a regression case.
+
+**Local CodeRabbit review triage, round 3 — the same automated CLI, run fresh by
+`scripts/factory/gate.sh` itself against round 2's fixes (4 findings, 3 fixed, 1 acknowledged as
+already handled).**
+- `e2e/verify.spec.ts` (major): re-flagged the G5 gate exception this entry already documents
+  below — asked to remove the skip or obtain an approved exception. Already handled: the case is
+  recorded in this entry's own "flagged gate exception" section, not silently ignored. No further
+  code change; noted here so the recurrence is visible, not dropped.
+- CHANGES.md (major): more sentences past the 25-word guidance, this time flagged broadly rather
+  than by line. Found several genuine ones round 1 and round 2 missed, including one 65-word,
+  semicolon-joined sentence in the round-2 triage bullets. Fixed by splitting them across the
+  affected paragraphs.
+- `scripts/e2e/fake-anthropic-server.test.ts` (minor): the resolver-field test used
+  `expect.arrayContaining([...six names])`, which only proves "at least these six are present."
+  It would stay green even if a stray seventh field name were added to `RESOLVER_BODY` by
+  accident. Fixed: compares the sorted field-name array against the exact six, no more, no
+  fewer.
+- `e2e/helpers.ts` (major): `errorPanel()`'s non-empty-text filter is only a proxy for "not the
+  announcer" — if the real announcer is ALSO non-empty at the same moment a real `ErrorPanel` is
+  showing, that filter alone cannot tell them apart. Fixed: now also excludes the announcer by
+  its own stable id (`:not(#__next-route-announcer__)`), independent of its text content.
+  Regression-tested — and the regression test itself needed a second attempt. Next's real
+  announcer turns out to mount and remount on its own schedule (confirmed directly:
+  `document.getElementById(...)` sometimes reports it absent at a point Playwright's own
+  accessibility query finds it moments later), so a first version of this test that tried to
+  read or mutate the live element passed even against the deliberately-reverted, buggy
+  `errorPanel()` — a vacuous proof. The fixed version creates its own decoy element sharing the
+  announcer's exact id, fully under the test's control, and proves the exclusion is genuinely
+  by id. Confirmed failing against the old filter-only code (three consecutive runs, no flake)
+  before restoring the fix.
+
+All thirteen findings across three rounds recorded in `factory/review-findings.jsonl`.
+
+**A flagged gate exception — read before merging.** `scripts/factory/gate.sh`'s G5
+(`tests:not-weakened`) fails on this branch: one new `test.skip(E2E_LIVE, ...)` line, added by
+the fix above for round-2 finding 2. G5's own comment says this is deliberate on the gate's
+part. Its exact words: "`.skip`/`.todo` stays an unconditional fail: no added assertion offsets
+a disabled test." This project's own non-negotiables list is just as direct: "never weaken a
+test... to get a gate green," with no stated carve-out. Read literally, this skip trips that
+rule. Here is the case for why it is not the thing that rule means to stop. `E2E_LIVE` is off by
+default. Neither the gate nor CI ever sets it. This test runs and passes normally in the mode
+the gate actually exercises — confirmed: 11/11 E2E specs pass in the default run. The skip fires
+only under the opt-in, rarely-run live mode. It applies to a test whose entire mechanism — the
+fake server's own byte-length failure trigger — has no live-API equivalent to run at all. This
+is not a real assertion this branch is ducking. No other `.skip`/`.todo` was added anywhere
+else. This was not silently routed around: no syntax was chosen to dodge G5's grep while keeping
+the same behavior. The gate's real, unedited output is reported as-is, not claimed as a clean
+pass it is not. The call on whether this specific exception is acceptable is left to the
+orchestrator's, and ultimately Troy's, own judgment — per gate.sh's own "justify in the PR or
+revert" instruction.
+
+**How to run it.**
+
+```bash
+source .factory-env       # or your own .env.local — no ANTHROPIC_API_KEY needed by default
+pnpm db:migrate            # once, if this worktree is not already current
+pnpm test:e2e               # fakes the Anthropic API — no spend, ~12s once servers are warm
+E2E_LIVE=1 pnpm test:e2e    # the real cascade, real API spend — needs a real ANTHROPIC_API_KEY
+```
+
+`scripts/factory/gate.sh` does not run `pnpm test:e2e` itself. G4 only runs `pnpm test`, the
+vitest unit suite. That is unchanged by this ticket. Run `pnpm test:e2e` as a separate check,
+exactly as this ticket's own brief asked for.
+
+**Rollback.** `git revert` this ticket's commits. `next.config.ts`'s `serverExternalPackages`
+line is safe, and worth keeping, independently of the rest of this PR. Reverting it
+re-introduces a real production crash the next time a real photo reaches the warning subsystem
+in a production build.
+
 ## TRO-480 — LH-054: UX polish pass — heuristic review record (2026-08-12)
 
 **What this is.** A heuristic UX audit against TH-R3's own quote ("something my mother could

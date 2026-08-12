@@ -15,6 +15,50 @@ loadEnv({ path: ".env.local" });
 const PORT = process.env.APP_PORT ?? process.env.PORT ?? "3000";
 const baseURL = `http://localhost:${PORT}`;
 
+/**
+ * TRO-479 (LH-053): real model calls or a fake server, decided here.
+ *
+ * Default (E2E_LIVE unset): every spec runs against a FAKE Anthropic API
+ * (`scripts/e2e/fake-anthropic-server.ts`) — the app's and the worker's
+ * `webServer` processes below both get `ANTHROPIC_BASE_URL` pointed at it,
+ * plus a placeholder `ANTHROPIC_API_KEY` (the fake server never checks the
+ * key; the Anthropic SDK just requires some value to construct a client).
+ * This is the same "cheap by default" shape `scripts/eval/check.ts`
+ * already established for its own `--live` flag (see that file's header
+ * comment) — E2E runs are expected to run often (every `gate.sh`-adjacent
+ * check, every local iteration), and burning real API spend on each one
+ * is not the intent PRD §6 describes.
+ *
+ * `E2E_LIVE=1 pnpm test:e2e` runs the real cascade against the real
+ * Anthropic API instead — no fake server is started, and
+ * ANTHROPIC_BASE_URL/ANTHROPIC_API_KEY are left unset here so the app and
+ * worker processes fall back to whatever `.env.local` (or the real CI/
+ * deploy environment) provides. Needs a real ANTHROPIC_API_KEY. This mode
+ * is for a deliberate, human-or-agent-invoked confidence check, not part
+ * of the normal inner loop — matching `scripts/eval/check.ts --live`'s own
+ * "expensive, deliberate, never automatic" posture.
+ */
+const E2E_LIVE = process.env.E2E_LIVE === "1";
+
+// Deliberately derived from PORT, not a fixed literal: two ticket
+// worktrees can run `pnpm test:e2e` at the same time
+// (scripts/factory/worktree.sh gives each its own APP_PORT), and deriving
+// this port the same way keeps their fake model servers out of each
+// other's way too.
+const FAKE_MODEL_PORT = String(Number(PORT) + 1000);
+const FAKE_MODEL_BASE_URL = `http://localhost:${FAKE_MODEL_PORT}`;
+
+// Merged into both the app's and the worker's webServer `env` below —
+// every real outbound call either process makes to Anthropic
+// (src/server/extractor/index.ts, src/server/resolver/index.ts) reads
+// these two variables and no others to decide where it goes.
+const modelEnv: Record<string, string> = E2E_LIVE
+  ? {}
+  : {
+      ANTHROPIC_BASE_URL: FAKE_MODEL_BASE_URL,
+      ANTHROPIC_API_KEY: "sk-ant-e2e-fake-key-not-a-real-credential",
+    };
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
@@ -25,19 +69,50 @@ export default defineConfig({
     baseURL,
     trace: "on-first-retry",
   },
-  webServer: {
-    // `pnpm start -- -p ${PORT}` looks tempting but is broken: pnpm forwards
-    // a literal "--" to the script (npm strips it; pnpm does not), which
-    // `next start` then misparses as a positional project-directory arg.
-    // `next start`/`next dev` both honor the PORT env var directly, so pass
-    // it that way instead — see scripts/run-tests.cjs for the same pnpm
-    // quirk hitting `pnpm test -- --reporter=json ...`.
-    command: "pnpm build && pnpm start",
-    url: baseURL,
-    env: { PORT },
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
+  webServer: [
+    // Only started in the default (fake) mode — E2E_LIVE has nothing for
+    // it to do, and starting a server no spec will ever talk to is just
+    // noise in the run's own log output.
+    ...(E2E_LIVE
+      ? []
+      : [
+          {
+            // `tsx` (already a devDependency) runs the TS file directly —
+            // same mechanism `pnpm worker` already uses below for
+            // scripts/batch-worker/run.ts.
+            command: "pnpm e2e:fake-model",
+            env: { FAKE_MODEL_PORT },
+            port: Number(FAKE_MODEL_PORT),
+            reuseExistingServer: !process.env.CI,
+            timeout: 30_000,
+          },
+        ]),
+    {
+      // `pnpm start -- -p ${PORT}` looks tempting but is broken: pnpm forwards
+      // a literal "--" to the script (npm strips it; pnpm does not), which
+      // `next start` then misparses as a positional project-directory arg.
+      // `next start`/`next dev` both honor the PORT env var directly, so pass
+      // it that way instead — see scripts/run-tests.cjs for the same pnpm
+      // quirk hitting `pnpm test -- --reporter=json ...`.
+      command: "pnpm build && pnpm start",
+      url: baseURL,
+      env: { PORT, ...modelEnv },
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+    {
+      // The batch happy-path spec needs this actually running the cascade
+      // (PRD §3.6: "Next.js app + worker" — the review-queue and batch
+      // screens have nothing to show without it). No HTTP endpoint of its
+      // own to poll — `wait.stdout` instead, matching this process's own
+      // real startup log line (scripts/batch-worker/run.ts).
+      command: "pnpm worker",
+      env: { ...modelEnv },
+      wait: { stdout: /\[batch-worker\] starting/ },
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+    },
+  ],
   projects: [
     {
       name: "chromium",

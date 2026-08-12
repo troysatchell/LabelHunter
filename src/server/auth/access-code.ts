@@ -24,19 +24,22 @@
  * ever logged: this module has no logging of its own, and the callers
  * below never pass a candidate value to `console.*`.
  *
- * **Constant-time comparison.** `constantTimeEquals` hashes both operands
- * (SHA-256, via Node's built-in `crypto`) before comparing, so the
- * comparison always runs on two fixed-length 32-byte buffers regardless of
- * the candidate's own length — `crypto.timingSafeEqual` itself requires
- * equal-length inputs and throws otherwise, so hashing first is what makes
- * it usable against a candidate of unknown, attacker-controlled length,
- * and it prevents a naive `===`'s character-by-character short-circuit
- * from leaking how many leading characters matched via response timing.
- * A real judgment call for a take-home prototype's stakes, not a
- * mechanical default — worth doing here because it costs a few lines and
- * one already-available Node built-in, no new dependency.
+ * **Constant-time comparison, and why it is async.** `constantTimeEquals`
+ * hashes both operands (SHA-256) before comparing, so the comparison
+ * always runs over two fixed-length 32-byte digests regardless of the
+ * candidate's own (attacker-controlled) length, and it prevents a naive
+ * `===`'s character-by-character short-circuit from leaking how many
+ * leading characters matched via response timing. `src/proxy.ts`
+ * (formerly `middleware.ts` — TRO-482 built this after Next 16's rename;
+ * `npx @next/codemod middleware-to-proxy` confirmed the new convention)
+ * runs in Next's Edge Runtime, which does NOT support `node:crypto`
+ * (confirmed empirically: `pnpm build` throws "A Node.js module is loaded
+ * ('node:crypto')... which is not supported in the Edge Runtime" the
+ * first time this file imported it). The Web Crypto API
+ * (`crypto.subtle`), a global in both the Edge Runtime and Node.js 20+,
+ * works in both places — the cost is that `SubtleCrypto.digest` is
+ * Promise-based, so every function in this file that hashes is async too.
  */
-import { createHash, timingSafeEqual } from "node:crypto";
 
 export const ACCESS_CODE_COOKIE_NAME = "lh_access_code";
 export const ACCESS_CODE_HEADER_NAME = "x-access-code";
@@ -46,11 +49,27 @@ export const ACCESS_CODE_HEADER_NAME = "x-access-code";
  * re-enter the code on every visit for the life of the review. */
 export const ACCESS_CODE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
-/** Constant-time string equality — see this file's header comment. */
-export function constantTimeEquals(a: string, b: string): boolean {
-  const hashA = createHash("sha256").update(a, "utf8").digest();
-  const hashB = createHash("sha256").update(b, "utf8").digest();
-  return timingSafeEqual(hashA, hashB);
+async function sha256(text: string): Promise<Uint8Array> {
+  const bytes = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return new Uint8Array(digest);
+}
+
+/**
+ * Constant-time string equality — see this file's header comment. Hashes
+ * both operands to a fixed 32-byte digest first (`sha256`), then compares
+ * every byte unconditionally (XOR-accumulate, never short-circuiting on
+ * the first mismatch) — the standard hash-then-compare pattern for
+ * secrets of unknown/attacker-controlled length under the Web Crypto API,
+ * which has no `timingSafeEqual` primitive of its own.
+ */
+export async function constantTimeEquals(a: string, b: string): Promise<boolean> {
+  const [hashA, hashB] = await Promise.all([sha256(a), sha256(b)]);
+  let diff = 0;
+  for (let i = 0; i < hashA.length; i++) {
+    diff |= hashA[i] ^ hashB[i];
+  }
+  return diff === 0;
 }
 
 /**
@@ -62,7 +81,7 @@ export function constantTimeEquals(a: string, b: string): boolean {
  * deployment misconfiguration into an open, unprotected public endpoint,
  * exactly the failure mode this whole ticket exists to prevent.
  */
-export function isValidAccessCode(candidate: string | null | undefined): boolean {
+export async function isValidAccessCode(candidate: string | null | undefined): Promise<boolean> {
   const configured = process.env.ACCESS_CODE;
   if (!configured) return false;
   if (!candidate) return false;
@@ -99,12 +118,12 @@ export function readCookieValue(cookieHeader: string | null, name: string): stri
  * `true` when `request` carries a valid access code, by either credential
  * — the `x-access-code` header OR the `lh_access_code` cookie. Works with
  * a plain `Request` (this file's own tests, and any route handler) and
- * with Next's `NextRequest` (`src/middleware.ts`), since `NextRequest`
- * extends `Request` and this function only reads `.headers`.
+ * with Next's `NextRequest` (`src/proxy.ts`), since `NextRequest` extends
+ * `Request` and this function only reads `.headers`.
  */
-export function hasValidAccessCode(request: Request): boolean {
+export async function hasValidAccessCode(request: Request): Promise<boolean> {
   const headerValue = request.headers.get(ACCESS_CODE_HEADER_NAME);
-  if (isValidAccessCode(headerValue)) return true;
+  if (await isValidAccessCode(headerValue)) return true;
   const cookieValue = readCookieValue(request.headers.get("cookie"), ACCESS_CODE_COOKIE_NAME);
   return isValidAccessCode(cookieValue);
 }

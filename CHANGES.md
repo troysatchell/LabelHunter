@@ -4,6 +4,194 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-472 — PR #18 review: GitHub CodeRabbit, 14 findings, 14 fixed (2026-08-11)
+
+**What changed.** GitHub's CodeRabbit reviewed PR #18's full branch diff — the design document
+plus the local review round below it — and posted 14 actionable comments, `CHANGES_REQUESTED`.
+This is a second, independent pass; several findings pushed past what the local round caught.
+All 14 were real. The three that most changed the design:
+
+- **The escalation cap could be raced past its own threshold, and its cost bound was wrong as a
+  result.** The check counted settled outcomes (`resolvedBySonnetCount + needsHumanCount`), which
+  a `RESOLVE` item that exhausts every retry never touches — a batch where every Sonnet attempt
+  failed could spend without limit while the cap read zero. Rebuilt around a new
+  `batch_jobs.sonnet_call_count` counter, reserved atomically (`UPDATE ... WHERE sonnet_call_count
+  < $cap RETURNING ...`) before *every* Sonnet call attempt, first try or retry. `$5.55` is now an
+  actual worst-case bound, not a no-race estimate; retries explicitly spend budget, which the
+  first draft never decided one way or the other.
+- **`claimed_by` alone could not fence a stale completion.** CodeRabbit's own simulation showed
+  it precisely: a worker-instance identifier is stable across a worker's whole lifetime, so it
+  cannot tell a claim episode a worker still holds from one it held earlier on the same row and
+  lost to a lease expiry. Added `claim_token`, generated fresh on every claim including a
+  reclaim by the same worker, required by every completion, retry-release, and failure write
+  alongside `claimed_by` (kept as the human-facing "which worker" identifier).
+- **`EXTRACT` enqueue had no idempotency guard.** Only the `RESOLVE` side did. A retried
+  batch-creation step could duplicate an `EXTRACT` row, and nothing in the schema — not
+  `batch_queue_items`, not `verifications` — would stop each copy from producing its own
+  `verifications` row for the same label. Added a matching partial unique index,
+  `(batch_job_id, application_id, label_image_id) WHERE kind = 'EXTRACT'`, and required
+  conflict-safe enqueue against it.
+
+Four more real gaps: the claim query never checked `batch_jobs.status = 'RUNNING'`, so a worker
+could claim before the batch's own warm-up step ran; the `RESOLVE` completion flow calls
+`resolveEscalatedLabel` — which writes `review_queue` internally — before this design's own
+completion guard ever runs, an asymmetry with the `EXTRACT` path that was true but unstated;
+a losing caller in the TOCTOU race (TRO-506, §3.3) had no defined recovery and would have thrown
+uncaught; and the whole-pool 429 cooldown (§5.3) assumed one worker-pool process without saying
+so. All four fixed: the claim query now joins `batch_jobs` and requires `RUNNING`; the asymmetry
+is now stated plainly, with a required (not optional) recovery — catch the unique-constraint
+conflict, load the winning row, complete idempotently, never mark a resolved label `FAILED`; and
+the single-process assumption is now explicit, with the multi-instance alternative named for a
+future deployment that needs it.
+
+The rest were accuracy fixes matching the local round's own pattern: the opening banner ran four
+distinct facts into one dense paragraph (split, ASD-STE100); the worked example's `resolver_input`
+snapshot omitted the `schemaVersion` its own requirement demands (added, `"1"`); and the worked
+example's final summary said "199 processed successfully" where `processedCount` — by this
+document's own definition two sections earlier — is 200, since a failed item still completed its
+`EXTRACT` phase (corrected; the outcome split is now a clearly separate, derived line).
+
+Every finding and its fix is recorded in `factory/review-findings.jsonl`.
+
+**How to run it.** No product build is required — still docs-only. Run
+`scripts/factory/gate.sh --fast` then the full `scripts/factory/gate.sh`; the `regression-test`
+failure both report is expected. Read `docs/checkpoints/cp3-batch-queue.md` §3 and §6 for the
+two sections this round changed most.
+
+**Rollback.** `git revert` this commit. The prior two commits' document is internally consistent
+on its own, just missing these corrections — reverting does not break anything downstream, since
+nothing outside this document depends on it yet.
+
+## TRO-472 — gate's local CodeRabbit pass: 13 findings, 13 fixed (2026-08-11)
+
+**What changed.** The full gate's CodeRabbit capture reviewed `cp3-batch-queue.md` and this
+file, found 13 issues, and all 13 were real. Three were genuine correctness gaps in the design
+itself, not writing nits:
+
+- **A double-counted `processedCount`.** The decision table incremented `processedCount` again
+  when a resolver call exhausted its retries, on a label that had already incremented it once
+  at `EXTRACT` `DONE`. Left in, this could push `processedCount` past `totalCount` and fail
+  `batch_jobs_processed_count_bounded` outright. Fixed, and the table now says in one sentence
+  what `processedCount` counts and does not count.
+- **No completion guard.** The design specified an atomic *claim* (§3.1) but not an atomic
+  *completion* — a worker whose lease expired mid-call could still write a stale result after
+  another worker reclaimed and finished the same item, with nothing stopping a duplicate
+  `verifications` row. Added a completion guard to §3.2, same shape as the claim: the write that
+  finishes an item is conditioned on still holding it.
+- **A missing schema constraint.** `batch_queue_items`'s columns had no rule tying which ones
+  apply to which `kind`, and no unique index stopping two `RESOLVE` rows for one verification.
+  Added both, mirroring constraints this schema already uses elsewhere for the same shape of
+  problem (`label_images_belongs_to_something`, `review_queue_verification_id_unique`).
+
+Two more findings, smaller but still real:
+
+- **The lease-release write was ambiguous.** A worker releasing an item after a retryable
+  failure could read as leaving the row `CLAIMED`. Fixed: the release is now one unconditional
+  write that clears `claimed_by`, `claimed_at`, and `lease_expires_at`, and sets `status`
+  back to `PENDING`.
+- **The escalation-cap check was a check-then-act race.** Two resolve-workers could both read
+  "under budget" and both proceed. Named, with the fix tied to the same reservation pattern
+  already recommended for TRO-506 (superseded by a full fix in the next round — see the entry
+  above this one).
+
+Six more findings were accuracy and prose fixes, each mapped to one finding in
+`factory/review-findings.jsonl`:
+
+1. A PASS/FAIL decision-table row read as if a router FAIL were "auto-verified," with no
+   caveat. Split the row and added the caveat.
+2. A rate-limit-utilization claim said "under a fifth." The document's own worst-case number is
+   24%. Corrected to "under a fifth for extraction, under a quarter for resolution."
+3. The backoff worked example said five waits totaling 31 seconds. Five attempts produce four
+   waits, totaling 15 seconds. Corrected.
+4. The `resolver_input` snapshot had no version tag. A code change between when a `RESOLVE` row
+   is written and read could misinterpret it. Added `schemaVersion`.
+5. The 25% escalation-cap threshold did not name its small-batch rounding edge. Named it.
+6. Two prose passages ran multiple facts into single sentences: a five-event sequence, and a
+   three-fact banner. Rewrote both as separated statements per this repo's ASD-STE100 rule.
+
+Every finding and its fix is recorded in `factory/review-findings.jsonl`.
+
+**How to run it.** No product build is required — this branch is still docs-only. Run
+`scripts/factory/gate.sh --fast` then the full `scripts/factory/gate.sh`; both must still run,
+and the `regression-test` failure they report is expected (see the walkthrough-material entry
+below). Read `docs/checkpoints/cp3-batch-queue.md` directly for the fixes themselves; every one
+above is in the section named.
+
+**Rollback.** `git revert` this commit; the prior commit's document is still internally
+consistent on its own, just missing these corrections.
+
+## TRO-472 — LH-CP3: ⛔ CHECKPOINT 3 walkthrough material (2026-08-11)
+
+**This entry does not clear a checkpoint.** It adds the material Troy reads at the checkpoint.
+One thing differs from CP-1 and CP-2's own entries. Troy's 2026-08-11 policy change (commit
+`c09250e`) removed the block on dispatch: LH-040, LH-041, and LH-042 can start once this
+material exists and Troy has been notified, without waiting for his reply. That change affects
+dispatch only. Troy's acknowledgment is still what makes this design one he accepts, not one an
+agent merely produced.
+
+**What changed.** One new document: `docs/checkpoints/cp3-batch-queue.md`. No product code, no
+`src/` change, no schema migration. It covers everything the ticket asks for — queue design,
+worker concurrency, backoff strategy, the Sonnet sub-queue, partial-failure semantics, a full
+worked example — plus a "defend it" Q&A and open questions (TH-R4, TH-R20, TH-R2, TH-R19,
+TH-R21, TH-R23).
+
+- **What's actually queuing, and why the existing schema can't answer that alone.**
+  `verifications` only records a *finished* cascade result — its own doc comment says so:
+  "there is no 'pending' state, because the row exists only once the cascade has produced a
+  result." The document designs a new table, `batch_queue_items`, LH-041's own migration, with
+  atomic-claim columns (`status`, `claimed_by`, `lease_expires_at`, `available_at`, `attempts`)
+  that a finished-only table cannot supply. The Sonnet sub-queue reuses `review_queue` instead
+  of a second table — it already has the right unique-per-verification constraint.
+- **TRO-506, read and answered concretely, not deferred again.** The Linear finding says two
+  concurrent workers can both pay for the same Sonnet call before either insert lands. The
+  document's atomic claim (`FOR UPDATE SKIP LOCKED`) makes that structurally impossible under
+  normal operation; a narrower residual window (lease expiry during a slow-but-alive worker) is
+  named precisely rather than claimed closed, with TRO-506's own recommended fix scoped as a
+  follow-up (it also touches the already-shipped review-queue UI's list query).
+- **The PRD's own "tuned to Anthropic rate limits" claim, tested against real numbers and found
+  not to hold — as a steady-state calculation, not a safety proof.** Anthropic's published
+  Start/Build/Scale rate limits for Haiku 4.5 and Sonnet 5 (retrieved live 2026-08-11) show a
+  5-worker pool using under a fifth of the Start-tier budget on every axis for extraction, and
+  under a quarter for resolution even under CP-1's own 40%-escalation stress case (24% OTPM, the
+  single highest figure computed). That arithmetic divides a minute's traffic by a minute's
+  budget; it says nothing about the token-bucket, shorter-interval, and acceleration limits
+  Anthropic's own page also documents, which can 429 a burst or a usage spike regardless of the
+  per-minute average. The real reasons for ~5 are named instead of a false safety margin: an
+  unquantified "Evaluation" tier the real account may sit in, unmeasured local-compute limits,
+  and blast-radius/cost discipline. The recommendation is to make the number an environment
+  variable, with jittered backoff, `retry-after` handling, and a pool-wide cooldown on 429s
+  (§5) as the actual defense against bursts and acceleration limits — not the headroom
+  arithmetic alone.
+- **CP-1's own open question 6, decided, and its cost bound corrected to a real one.** CP-1
+  deferred the per-batch Sonnet escalation cap to this document. It adopts CP-1 Q7's proposed
+  25% threshold, on a fixed `totalCount` denominator — but the first draft checked settled
+  outcomes (`resolvedBySonnetCount + needsHumanCount`), which a batch where every Sonnet attempt
+  failed could exceed without ever tripping the cap. Corrected in the review round above to an
+  atomic per-batch counter reserved before every Sonnet call attempt, including retries: `$5.55`
+  worst-case on a 300-label batch now holds as an actual bound, not a no-race estimate.
+- **A full decision table for partial-failure semantics**, plus a precise definition: a batch is
+  `COMPLETED` once every queue item reaches a terminal state, whatever that state is — not a
+  claim that everything passed. A worker crash mid-batch is explicitly not a job failure; it is
+  the case the persistent, leased queue exists to survive.
+- **One gap found outside this ticket's scope, named rather than silently fixed.** Single-label
+  REVIEW verdicts appear to have no automatic resolution trigger at all today — nothing outside
+  test files calls `resolveEscalatedLabel`. Flagged as an open question for a follow-up ticket,
+  not folded into this design.
+- **Six open questions**, each with a recommendation and the cost of choosing wrong — including
+  whether "~5" is one pool or two, and whether the TRO-506 hardening should land now or as its
+  own ticket.
+
+**How to run it.** Nothing to build, nothing to test — this branch adds no code. Read
+`docs/checkpoints/cp3-batch-queue.md` — about 40 minutes — and work the Appendix A checklist
+during the walkthrough. Appendix B names the live URL and the file:line citations behind every
+**verified** and **derived** claim.
+
+**Rollback.** `git revert` this commit. The document adds no code and nothing imports it.
+
+**Known limits.** Every worker-pool size, lease duration, and backoff parameter is **proposed**,
+not measured — LH-031's latency harness is what replaces them, the same pattern CP-1 and CP-2
+used for their own thresholds. The local-compute ceiling (§4.4) and the actual deployed
+account's rate-limit tier (§4.2) are both **not measured**.
 ## TRO-468 — LH-020: Warning subsystem (2026-08-11)
 
 **What changed.** This ticket builds the government-warning comparator (TH-R9) under

@@ -4,6 +4,138 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-468 — LH-020: Warning subsystem (2026-08-11)
+
+**What changed.** This ticket builds the government-warning comparator (TH-R9) under
+`src/server/warning/`. CP-2 (`docs/checkpoints/cp2-warning-subsystem.md`) is the
+Troy-approved design. This ticket implements it as written.
+
+The comparator checks one thing. Does the label's government warning match 27 CFR part 16,
+word for word? It checks a second thing too. Does `GOVERNMENT WARNING` print in capital
+letters? Two independent readers feed the check. A vision model transcribes the label. A
+local OCR engine, tesseract.js, reads the same block again. Code compares both readings
+against the statutory text. No model ever judges whether the warning "looks right." That
+split is CP-2's whole argument.
+
+This ticket calls no model. It consumes the vision model's transcription, which the
+extractor (LH-011) already produced. It runs its own OCR pass and its own region detection.
+
+**Files.**
+- `canonical.ts` — the statutory text, retrieved live from the eCFR API on 2026-08-11 and
+  cross-checked against a committed XML fixture (`fixtures/ecfr-16-21.xml`). A future edit to
+  the constant that drifts from the source fails a test. It does not ship silently.
+- `normalize.ts` — `normalizeTransport`, the six CP-2 §5.2 rules in their fixed order. Unicode
+  NFC, not NFKC. Four named space characters map to a plain space. Zero-width characters
+  strip out. A hyphen at a line break joins, before line breaks collapse to spaces. Case never
+  changes here. `foldCase` is a separate, later step.
+- `caps.ts` — `checkCapitalPositions`. Four positions, hard-enforced. `GOVERNMENT` and
+  `WARNING` need every letter capitalized (27 CFR 16.22(a)(2)). `Surgeon` and `General` need
+  only their first letter capitalized (TTB's own label checklist).
+- `distance.ts` — a Levenshtein implementation local to this module. It does not import
+  `../comparators/similarity.ts`. The judgment regime (TH-R8) and the exact regime (TH-R9)
+  share no helpers. Not even a generic algorithm.
+- `wording-compare.ts` — `evaluateCandidate`, CP-2 §3.3's per-candidate algorithm, plus the
+  §5.5 near-miss band. A distance of 1 or 2 after normalization returns REVIEW, not FAIL.
+- `reconcile.ts` — `reconcileWarningChannels`. CP-2 §4.5's dual- and single-channel decision
+  tables. CP-2 §7.1's cross-check against the model's own `prefix_casing` report. Produces
+  `../router/types.ts`'s `WarningComparatorResult`.
+- `ocr.ts` — `runWarningOcr`, the tesseract.js wrapper. Crop-only. `PSM.SINGLE_BLOCK`,
+  confirmed against the installed library, not guessed.
+- `tessdata/eng.traineddata.gz` — the English language file, committed to the repo so
+  recognition never reaches the network (TH-R7). 2.8 MB. The LSTM-only variant, matching
+  tesseract.js's own default engine mode.
+- `ocr-network-guard.cjs`, `ocr-startup.test.ts` — the "network disabled" startup test CP-2
+  §4.3 requires by name. A fresh Node process runs with `fetch`/`http`/`https` blocked.
+  Recognition still succeeds, using only the committed file.
+- `region-detect.ts` — `detectWarningRegionClassical` (primary) and
+  `detectWarningRegionByBandSearch` (fallback). Classical detection finds the warning by its
+  shape: a dense, several-line block of small print. It runs in milliseconds and needs no
+  OCR, so OCR can still start at the same time as the Haiku call. `cropForOcr` outputs PNG,
+  never JPEG — tesseract needs no re-encode, and JPEG compression would hurt exactly the
+  small print this channel exists to read.
+- `index.ts` — the module's public entry point. `compareGovernmentWarningFromImage` ties
+  region detection, cropping, OCR, and `reconcileWarningChannels` together against a real
+  image.
+
+**Load-bearing decisions.** CP-2 §11 lists ten open questions with a recommendation each.
+"Cp2 is good" means implement the recommendation. This ticket did, and names each one here.
+
+- Four checked capitalization positions, all adopted (open question 1): `GOVERNMENT`,
+  `WARNING`, `Surgeon`, `General`. Case folds everywhere else in the body.
+- The near-miss band, adopted at N = 2 (open question 2). A distance of 1 or 2 returns
+  REVIEW. The band never touches capitalization, and never turns a FAIL into a PASS.
+- Classical detection first, band search second (open question 3). A model-reported box was
+  rejected. It cannot exist before the Haiku call returns, which breaks the concurrency
+  requirement.
+- `WarningComparatorResult`'s union stays as CP-1 defined it (open question 4). Channel
+  disagreement routes as `WARNING_MISMATCH`. `CONFLICTING_EXTRACTION` and
+  `LOW_MODEL_CONFIDENCE` never come out of this comparator.
+- One bold flag, kept for the prototype (open question 5). The second bold rule in 27 CFR
+  16.22(a)(2) — the body must NOT print bold — stays named as unchecked, in the limitation
+  comment `wording-compare.ts` and `reconcile.ts` carry, not silently dropped.
+- The OCR crop skips the JPEG re-encode (open question 6). `cropForOcr` is this module's own
+  function. It does not call `../preprocessing/pipeline.ts`'s `cropRegion`, which always
+  encodes JPEG.
+- The OCR confidence floor stays at 60 (open question 7), Tesseract's own 0-100 scale. Below
+  it, the OCR reading is discarded and the comparator runs single-channel.
+- A single channel may PASS at VLM confidence 0.90 or above (open question 10). A single
+  channel may never FAIL. "We never accuse on one channel" is CP-2's own line for this.
+- The two-element canonical constant (open question 8): `CANONICAL_WARNING_PARAGRAPHS` is a
+  tuple, not one 283-character literal. It matches the two `<P>` elements eCFR itself renders.
+- One decision beyond the ten open questions: CP-2 §7.1 says the model's `prefix_casing`
+  report is "a cross-check, not the source of truth," and that a disagreement between it and
+  the derived caps result routes to REVIEW. CP-2 does not spell out the exact rule. This
+  ticket's reading: derived-ALL-CAPS and reported-ALL_CAPS must agree, treating `TITLE_CASE`,
+  `OTHER`, and `NOT_VISIBLE` alike as "not ALL_CAPS." A disagreement can only downgrade an
+  already-decided PASS or FAIL to REVIEW. It never upgrades a REVIEW to anything else.
+
+**Regression tests.** `src/server/warning/*.test.ts` — 11 files, 115 cases, all written
+before their implementation. Every file's first run failed on a missing module, confirmed
+before any implementation code existed.
+
+Named cases: `case-08` and `case-09` (title-case prefix, TH-R9's acceptance evidence) MISMATCH
+on capitalization; `case-10` and `case-11` (reworded clauses, measured distance 38 and 24)
+MISMATCH on wording; the canonical text itself PASSes; `surgeon general` in lower case and a
+missing comma after `General` (both named common mistakes in TTB's own brewer training deck)
+are covered directly, since no golden-set image can isolate them yet — that is LH-021's job.
+Channel disagreement has its own synthetic test suite, `reconcile.test.ts`, since CP-2 §9.2
+finding 3 is right: no photograph can exercise two readers disagreeing.
+
+`golden-case.test.ts` loads `golden-set/manifest.json` directly and checks this comparator's
+verdict against each case's own expected verdict, not a hand-copied string.
+
+`region-detect.test.ts` and `index.test.ts` both run the real pipeline — real image, real
+OCR, real region detection — against `case-01-clean-match-spirits.jpg`, not only synthetic
+fixtures. Measured while building this ticket, not assumed: six real golden-set label images
+with a warning present are all correctly located and read back at 90-95% confidence (54% on
+the one case with deliberately tiny print, which is below the OCR confidence floor and
+therefore correctly discarded); two images with no warning correctly return no region at all.
+
+**How to run it.** `pnpm test -- src/server/warning` runs 11 files. `pnpm typecheck` and
+`pnpm lint` both run clean.
+
+**Known limits.**
+- `src/app/api/verify/route.ts` still passes `warningResult: null` to `routeLabel`, exactly
+  as it did before this ticket. This ticket was scoped to the comparator itself — CP-2's own
+  "own component" framing, and the ticket's list of existing code to build on names
+  `region.ts`, `pipeline.ts`, `constants.ts`, and `router/types.ts`, not `route.ts`. Wiring
+  `compareGovernmentWarningFromImage` into the live request path needs `route.ts` to start
+  region detection and OCR before it awaits the Haiku call, not after — a real control-flow
+  change to a file with its own extensive test suite, not a drive-by fix. This is real,
+  scoped-out follow-up work, not an oversight.
+- The full golden set's OCR/detection accuracy is not measured. LH-030's eval-harness sweep
+  is the ticket that measures it, per CP-2 §12.
+- The live drift check CP-2 §2.7 describes (a scheduled or manual re-fetch of the eCFR text,
+  reporting a difference for a human to read) is not built. The deterministic, offline half —
+  the constant checked against a committed fixture — is built and gated. The doc is explicit
+  that the two are separate mechanisms; only the first is a CI concern.
+- Bold detection stays exactly the documented limitation CP-2 §7.3 drafted: an advisory
+  three-valued signal from the vision model, never checked, never changing a verdict.
+
+**Rollback.** `git revert` this ticket's commits on `feat/lh-020-warning-subsystem`.
+`src/server/warning/*.ts` and `*.test.ts`, `tessdata/`, and the `tesseract.js` dependency are
+removed. No other module imports from `src/server/warning/` yet, so nothing else breaks.
+
 ## TRO-476 — PR #16 review round 2: 34 CodeRabbit findings, 30 fixed, 1 filed, 3 dismissed (2026-08-11)
 
 **What changed.** CodeRabbit reviewed PR #16 six times. The GitHub PR review reported 11

@@ -12,6 +12,8 @@ import { extractLabel } from "../../../server/extractor";
 import { makeMockMessage, WELL_FORMED_EXTRACTION_BODY } from "../../../server/extractor/test-support";
 import { MAX_UPLOAD_BYTES, preprocessImage } from "../../../server/preprocessing";
 import { productionComparators } from "../../../server/comparators";
+import type { WarningComparatorResult } from "../../../server/router";
+import type { CompareGovernmentWarningFromImageInput } from "../../../server/warning";
 import { saveLabelImage } from "../../../server/storage/local-file-storage";
 import { handleVerifyRequest, type VerifyRouteDeps } from "./route";
 import type { VerifyErrorResponse, VerifySuccessResponse } from "./types";
@@ -88,11 +90,27 @@ async function buildFormData(overrides: FormOverrides = {}): Promise<FormData> {
   return fd;
 }
 
+/**
+ * `government_warning` is out of scope for most of this file's tests —
+ * they exercise brand/class/ABV/net-contents wiring (LH-013) and the
+ * router's own precedence rules, not the warning subsystem (LH-020, wired
+ * into this route by TRO-514). This stub keeps every other test's warning
+ * field a stable NEEDS_REVIEW/WARNING_MISMATCH row: never MATCH, never
+ * MISMATCH, so it can never silently flip an unrelated test's labelVerdict
+ * into PASS or FAIL behind that test's back. The "government warning
+ * wiring" describe block below overrides `compareGovernmentWarning`
+ * explicitly to exercise the real MATCH/MISMATCH/failure behavior.
+ */
+async function warningNeedsReviewStub(): Promise<WarningComparatorResult> {
+  return { verdict: "NEEDS_REVIEW", reviewReason: "WARNING_MISMATCH" };
+}
+
 function makeDeps(overrides: Partial<VerifyRouteDeps> = {}): VerifyRouteDeps {
   return {
     db,
     preprocessImage,
     extractLabel,
+    compareGovernmentWarning: warningNeedsReviewStub,
     saveLabelImage: (bytes, originalFilename) => saveLabelImage(bytes, originalFilename, { baseDir: scratchDir }),
     comparators: productionComparators,
     ...overrides,
@@ -125,9 +143,12 @@ describe("POST /api/verify — happy path", () => {
       expect(row.reason.length).toBeGreaterThan(0);
     }
 
-    // No warning comparator has landed yet (LH-020) — the route passes
-    // `null` honestly, so the warning field always needs review today.
-    // See route.ts's file comment.
+    // The warning comparator (LH-020) is wired into this route for real
+    // now (TRO-514) — `makeDeps()`'s default `compareGovernmentWarning` is
+    // a deliberately neutral NEEDS_REVIEW stub, not evidence the wiring is
+    // missing. This test's own focus is the other four fields; see the
+    // "government warning wiring" describe block below for MATCH/MISMATCH/
+    // failure coverage of the real behavior.
     expect(byField.get("government_warning")?.verdict).toBe("NEEDS_REVIEW");
     expect(body.labelVerdict).toBe("REVIEW");
     expect(body.headlineMessage).toMatch(/^Needs review — /);
@@ -197,9 +218,10 @@ describe("POST /api/verify — happy path", () => {
 
     const abvRow = body.fields.find((row) => row.field === "alcohol_content");
     expect(abvRow?.verdict).toBe("MISMATCH");
-    // The label-level verdict still isn't a clean FAIL: the government
-    // warning has no comparator yet (LH-020) and always needs review today
-    // (see route.ts's file comment) — REVIEW outranks FAIL in the rollup.
+    // The label-level verdict still isn't a clean FAIL: `makeDeps()`'s
+    // default warning stub is NEEDS_REVIEW (TRO-514's own dedicated tests
+    // below cover a real MATCH/MISMATCH warning result) — REVIEW outranks
+    // FAIL in the rollup.
     expect(body.labelVerdict).toBe("REVIEW");
   });
 
@@ -289,13 +311,22 @@ describe("POST /api/verify — designed error states (TH-R20)", () => {
   it("extraction failure (malformed model response): 502 EXTRACTION, the honest 'could not read the label' state — never a fake verdict", async () => {
     const deps = makeDeps({ anthropicClient: fakeAnthropicClient(async () => makeMockMessage("{not valid json")) });
 
-    const response = await post(await buildFormData(), deps);
+    // A brand name unique to this test (TRO-514, same fix TRO-478 already
+    // applied below for the same reason) — not the shared "Old Tom
+    // Distillery" default other tests in this file, and other files run in
+    // parallel against this same worktree database, also use and
+    // successfully persist. Querying by the shared name raced against those
+    // unrelated concurrent tests' own rows: this exact test failed
+    // intermittently in the full suite (not standalone) with `rows.length`
+    // 1 instead of 0, confirmed not a defect in this ticket's own change.
+    const brandName = "TRO-514 Extraction Failure Probe";
+    const response = await post(await buildFormData({ brandName }), deps);
     expect(response.status).toBe(502);
     const body = (await response.json()) as VerifyErrorResponse;
     expect(body.error.kind).toBe("EXTRACTION");
     expect(body.error.message).toBe("LabelHunter could not read this label. Take a clearer photo and try again.");
 
-    const rows = await db.select().from(applications).where(eq(applications.brandName, "Old Tom Distillery"));
+    const rows = await db.select().from(applications).where(eq(applications.brandName, brandName));
     // No verification row was left behind by a failed extraction.
     expect(rows).toHaveLength(0);
   });
@@ -371,5 +402,176 @@ describe("POST /api/verify — designed error states (TH-R20)", () => {
     const body = (await response.json()) as VerifyErrorResponse;
     expect(body.error.kind).toBe("SERVICE");
     expect(body.error.message).toMatch(/could not save this verification/i);
+  });
+});
+
+describe("POST /api/verify — government warning wiring (TRO-514, TH-R9)", () => {
+  it("starts the warning comparator before the Haiku extraction call resolves (PRD §3.8 / CP-2 §4.4 — concurrent, not serial)", async () => {
+    const callOrder: string[] = [];
+    let releaseExtraction!: () => void;
+    const extractionGate = new Promise<void>((resolve) => {
+      releaseExtraction = resolve;
+    });
+
+    // The real `extractLabel` (this file's default), fed by a fake
+    // Anthropic client whose response stays pending until this test
+    // releases it — the same `fakeAnthropicClient` helper every other test
+    // in this file uses, just deliberately held open here.
+    const anthropicClient = fakeAnthropicClient(async () => {
+      callOrder.push("extractLabel:called");
+      await extractionGate;
+      callOrder.push("extractLabel:resolved");
+      return makeMockMessage(JSON.stringify(WELL_FORMED_EXTRACTION_BODY));
+    });
+
+    let markWarningCalled!: () => void;
+    const warningCalled = new Promise<void>((resolve) => {
+      markWarningCalled = resolve;
+    });
+    const compareGovernmentWarning: VerifyRouteDeps["compareGovernmentWarning"] = async () => {
+      callOrder.push("compareGovernmentWarning:called");
+      // The concurrency requirement itself: this must run BEFORE
+      // extractLabel's own promise has resolved, never after. Written as
+      // an assertion here (not just below) so a serial implementation
+      // fails inside the very call this test is timing, not only via the
+      // `warningCalled` promise never settling.
+      expect(callOrder).not.toContain("extractLabel:resolved");
+      markWarningCalled();
+      return { verdict: "MATCH" };
+    };
+
+    const deps = makeDeps({ anthropicClient, compareGovernmentWarning });
+    const responsePromise = post(await buildFormData(), deps);
+
+    // Observable event, not a sleep (standing rule 8): waits only until the
+    // comparator has actually been invoked. Under the old serial code
+    // (`await extractLabel(...)` before calling the warning comparator),
+    // this promise never resolves, because extractLabel is held open by
+    // `extractionGate` and nothing has released it yet — the test times
+    // out instead of passing, which is still a correct "fails for the
+    // right reason" outcome for a concurrency regression.
+    await warningCalled;
+    expect(callOrder).toContain("compareGovernmentWarning:called");
+    expect(callOrder).not.toContain("extractLabel:resolved");
+
+    releaseExtraction();
+    const response = await responsePromise;
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as VerifySuccessResponse;
+    createdApplicationIds.push(body.applicationId);
+    expect(callOrder).toContain("extractLabel:resolved");
+  });
+
+  it("a compliant warning (MATCH) contributes to a clean PASS label verdict", async () => {
+    const deps = makeDeps({
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      compareGovernmentWarning: async () => ({ verdict: "MATCH", note: "Government Warning matches the required text." }),
+    });
+    const response = await post(await buildFormData(), deps);
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as VerifySuccessResponse;
+    createdApplicationIds.push(body.applicationId);
+
+    const warningRow = body.fields.find((row) => row.field === "government_warning");
+    expect(warningRow?.verdict).toBe("MATCH");
+    // Every other field in WELL_FORMED_EXTRACTION_BODY already MATCHes the
+    // default application (the existing happy-path test above) — a
+    // compliant warning is the only thing standing between that fixture
+    // and a clean PASS. This is the ticket's headline proof: TH-R9's
+    // check now actually contributes to the label verdict.
+    expect(body.labelVerdict).toBe("PASS");
+    expect(body.headlineReason).toBeNull();
+  });
+
+  it("a non-compliant warning (MISMATCH) contributes a FAIL label verdict", async () => {
+    const deps = makeDeps({
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      compareGovernmentWarning: async () => ({
+        verdict: "MISMATCH",
+        note: "Government Warning wording differs from the required text.",
+      }),
+    });
+    const response = await post(await buildFormData(), deps);
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as VerifySuccessResponse;
+    createdApplicationIds.push(body.applicationId);
+
+    const warningRow = body.fields.find((row) => row.field === "government_warning");
+    expect(warningRow?.verdict).toBe("MISMATCH");
+    expect(body.labelVerdict).toBe("FAIL");
+  });
+
+  it("a warning-comparator failure degrades that field to NEEDS_REVIEW instead of crashing the request (CP-2 §4.4 rule 3)", async () => {
+    let wasCalled = false;
+    const deps = makeDeps({
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      compareGovernmentWarning: async () => {
+        wasCalled = true;
+        throw new Error("region-detect: sharp exploded");
+      },
+    });
+    const response = await post(await buildFormData(), deps);
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as VerifySuccessResponse;
+    createdApplicationIds.push(body.applicationId);
+
+    // Proves the comparator actually ran and its rejection was caught —
+    // not merely that the field happens to default to REVIEW some other
+    // way (e.g. the dependency never being called at all).
+    expect(wasCalled).toBe(true);
+    const warningRow = body.fields.find((row) => row.field === "government_warning");
+    expect(warningRow?.verdict).toBe("NEEDS_REVIEW");
+    expect(body.labelVerdict).toBe("REVIEW");
+  });
+
+  it("a SYNCHRONOUS throw from the warning comparator also degrades gracefully, not just a rejected promise", async () => {
+    let wasCalled = false;
+    const deps = makeDeps({
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      compareGovernmentWarning: () => {
+        wasCalled = true;
+        throw new Error("boom, synchronously, before returning any promise at all");
+      },
+    });
+    const response = await post(await buildFormData(), deps);
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as VerifySuccessResponse;
+    createdApplicationIds.push(body.applicationId);
+
+    expect(wasCalled).toBe(true);
+    const warningRow = body.fields.find((row) => row.field === "government_warning");
+    expect(warningRow?.verdict).toBe("NEEDS_REVIEW");
+  });
+
+  it("passes the ORIGINAL full-resolution image to the warning comparator, never the resized Haiku variant (CP-2 §8.3)", async () => {
+    const originalMarker = Buffer.from("ORIGINAL-FULL-RES-MARKER-not-a-real-jpeg");
+    let capturedHaikuVariant: Buffer | undefined;
+    let capturedInput: CompareGovernmentWarningFromImageInput | undefined;
+
+    const deps = makeDeps({
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      preprocessImage: async (upload) => {
+        const real = await preprocessImage(upload);
+        capturedHaikuVariant = real.haikuVariant;
+        return { ...real, original: originalMarker };
+      },
+      compareGovernmentWarning: async (input) => {
+        capturedInput = input;
+        return { verdict: "MATCH" };
+      },
+    });
+    const response = await post(await buildFormData(), deps);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as VerifySuccessResponse;
+    createdApplicationIds.push(body.applicationId);
+
+    expect(capturedInput).toBeDefined();
+    expect(capturedInput!.originalImage.equals(originalMarker)).toBe(true);
+    expect(capturedHaikuVariant).toBeDefined();
+    expect(capturedInput!.originalImage.equals(capturedHaikuVariant!)).toBe(false);
   });
 });

@@ -83,6 +83,151 @@ this changelog, the only existing files touched are `package.json` and `pnpm-loc
 (the new `fflate` dependency, used only by `zip.ts`) — every other file this ticket adds is
 new.
 
+## TRO-514 — Wire the warning comparator into the live verify route (2026-08-11)
+
+**What changed.** `src/app/api/verify/route.ts` now calls LH-020's real warning comparator
+(`compareGovernmentWarningFromImage`, `src/server/warning`) on every request. TH-R9's
+word-for-word government-warning check is live: a compliant warning contributes to a PASS
+label verdict, a non-compliant one contributes to a FAIL, and the field-level verdict is a
+real answer, not a permanent `NEEDS_REVIEW` placeholder. This closes the gap TRO-468's own
+"Known limits" section named.
+
+**Concurrency (PRD §3.8, CP-2 §4.4 rule 1).** The comparator starts before the Haiku call
+resolves, not after. `route.ts` passes the extraction as a still-pending `Promise`
+(`extractionPromise.then((r) => r.government_warning)`) — the same contract
+`compareGovernmentWarningFromImage`'s own file comment documents. Region detection and OCR
+now run alongside the Haiku call, instead of adding their own time after it.
+
+**Failure handling (CP-2 §4.4 rule 3).** A REVIEW outcome is the comparator's normal return
+value, not a thrown error — `reconcileWarningChannels` is pure and synchronous, and its OCR
+half already turns its own failures into `{ available: false }`. A thrown error means a real
+infrastructure failure. `resolveWarningOrDegrade` (`route.ts`) catches it — a rejected
+promise or a synchronous throw, either one — and passes `null` for that one field, exactly
+today's "uncertain beats wrong" behavior. `resolveGovernmentWarningField` already routes a
+`null` result to `NEEDS_REVIEW`; it never fabricates a match. The request still returns 200.
+
+**Image source (CP-2 §8.3).** The comparator reads `preprocessed.original`, the
+full-resolution image — never the resized `haikuVariant`. The resized variant falls below
+Tesseract's usable x-height floor at the statute's legal minimum print size (1 mm).
+
+**`VerifyRouteDeps` extended.** `compareGovernmentWarning` joins the existing
+dependency-injection fields (`db`, `preprocessImage`, `extractLabel`, `saveLabelImage`,
+`comparators`). Production gets the real `compareGovernmentWarningFromImage`. Every test in
+`route.test.ts` supplies its own fake, the same pattern the other fields already use. The
+latency harness (`scripts/latency/measure.ts`, TRO-471) wires in the real function too — its
+own header comment now says the warning subsystem is part of what it measures, not excluded.
+
+**Regression tests.** `src/app/api/verify/route.test.ts`, a new "government warning wiring"
+describe block, 6 cases — every one confirmed to fail for the right reason before this
+ticket's implementation code existed (a value mismatch against the old hardcoded `null`
+behavior, a `wasCalled`/`capturedInput` flag proving the dependency was never invoked, or a
+5-second timeout for the concurrency case, since the old code never called it at all):
+- A compliant warning (`MATCH`) rolls the label verdict up to a clean `PASS`.
+- A non-compliant warning (`MISMATCH`) rolls the label verdict up to `FAIL`.
+- A comparator that rejects its promise degrades that field to `NEEDS_REVIEW` — the request
+  still returns 200, not a 500.
+- A comparator that throws synchronously, before returning any promise at all, degrades the
+  same way — `resolveWarningOrDegrade`'s `try`/`await`/`catch` catches both failure shapes.
+- The comparator receives `preprocessed.original`, proven against a distinguishable marker
+  buffer, never the resized `haikuVariant`.
+- The comparator is invoked, and is provably still running, before the Haiku call's own
+  promise resolves — a fake Anthropic client holds its response open on a gate the test
+  controls, and the test awaits an observable "the comparator was called" signal, never a
+  fixed sleep.
+
+Two pre-existing tests' comments — not their assertions — were also corrected: the
+happy-path test and the `alcohol_content` MISMATCH test each explained their own
+`government_warning` field staying `NEEDS_REVIEW` as "no comparator yet." That reason is now
+false. It stays `NEEDS_REVIEW` in those two tests because `makeDeps()`'s default
+`compareGovernmentWarning` is a deliberately neutral stub, not because the wiring is missing.
+
+**How to run it.** `pnpm test -- src/app/api/verify/route.test.ts`. `pnpm typecheck` and
+`pnpm lint` both run clean.
+
+**Not measured.** No new latency number is reported here. This ticket wires the comparator
+in; TRO-471's harness (`pnpm latency:check`) is the tool that would measure the effect, and
+running it costs a real, live Anthropic API call per run. A number captured before this
+ticket and a number captured after it are not comparable — the earlier one excluded the
+warning subsystem's own work entirely. Noted in `measure.ts`'s own header comment.
+
+**Rollback.** `git revert` this ticket's commits on `feat/wire-warning-into-route`. Reverts
+`route.ts` to passing `warningResult: null`, `VerifyRouteDeps` to its five original fields,
+and `measure.ts` to its pre-TRO-514 `deps` object and header comment.
+
+## TRO-477 — LH-051: Imperfect-image handling (2026-08-11)
+
+**What changed.** TH-R10 sets one bar for a glare, rotation, or low-light label. The router
+must return a correct extraction. Or it must return an explicit `LOW_IMAGE_QUALITY` review.
+It must never return a confident wrong verdict. Investigation found the Validation Router
+(LH-012) already meets this bar. No router code changes here. This ticket adds proof.
+
+Two pieces already do the work. First, the Haiku extractor's prompt (LH-011,
+`src/server/extractor/prompt.ts` rule 6) tells the model to report low confidence when glare,
+blur, an angle, low light, a crop, or an obstruction blocks it. Second, the router
+(`src/server/router/label-blockers.ts`'s `isLowImageQuality`) already escalates a label to
+`LOW_IMAGE_QUALITY` review whenever the whole-image read is `"no"`, or `"partial"` with any
+required field below the Unusable confidence floor (0.60). Together, an honest extraction of
+a degraded photo already routes to review under the router's existing logic. This ticket did
+not need a new heuristic. It needed evidence the existing one covers the six glare/rotation/
+low-light golden-set cases.
+
+**Files.**
+- `src/server/router/golden-image-quality.test.ts` — new. One test per golden-set case,
+  case-17 through case-22 (`golden-set/manifest.json`'s `glare`, `rotation`, and `low-light`
+  categories — the complete set this ticket covers, not only the three
+  `docs/checkpoints/cp2-warning-subsystem.md` §9.1 names as warning-relevant). Each test
+  builds a `HaikuExtractionResult` shaped like an honest read of that case's documented photo
+  defect: glare over the brand name only, glare over the warning block only, a mild
+  15-degree tilt, an unreadable upside-down and blurred shot, dim light on the front label
+  only, and dim light on the warning block only. Each test then checks `routeLabel`'s output
+  against the golden-set manifest's own `expected` block — label verdict, headline reason,
+  and every field's verdict — pulled from the manifest directly, not retyped. Ground-truth
+  text (brand, class, ABV, net contents, warning) also comes from the manifest, the same
+  pattern `src/server/extractor/golden-case.test.ts` (LH-011) already uses for case-01.
+
+  The two warning-block cases (case-18, case-22) pass `warningResult: null`. That is
+  `route.ts`'s real value as of this writing: `route.ts` does not call LH-020 yet, even
+  though LH-020's own subsystem module has since merged (TRO-468, PR #19, mid-way through this
+  ticket's own work) — `route.ts`'s own file comment still says so, and `scripts/latency/
+  measure.ts`'s doc comment records the same gap from before LH-020 merged. Passing `null`
+  here proves this ticket's own mechanism carries the `LOW_IMAGE_QUALITY` headline on its
+  own — not a hypothetical future warning subsystem standing in for it, and not contingent on
+  exactly when `route.ts` starts calling one. An earlier draft of these two tests passed a
+  synthetic warning result instead. A mutation check (below) showed that draft passed even
+  with the router's own detection disabled — it was proving the test fixture, not the router.
+  Switched to `null` and reconfirmed.
+
+**Verification beyond a green test run.**
+- Mutation check, not shipped. Temporarily forced `isLowImageQuality` to always return
+  `false`, reran the suite, then always return `true`, reran again, then reverted both
+  changes (`git diff` confirmed zero lines each time). Forcing `false` failed the five
+  REVIEW-expecting cases (17, 18, 20, 21, 22) and left the PASS-expecting case (19) green.
+  Forcing `true` failed only case-19. Both directions show the new tests exercise real
+  router behavior, not a vacuous pass.
+- Confirmed all six images (`golden-set/images/case-17-*.jpg` through `case-22-*.jpg`) decode
+  through the real `preprocessImage` pipeline (LH-010) without rejection, at 800-1173px on
+  the long edge — above the 640px floor `isLowImageQuality` checks. This is a narrow, purely
+  technical claim about the decode step, not a claim about the golden-set manifest's own
+  `verified` field (still `false` on every case — no human has confirmed the images show what
+  their spec claims). It confirms the tests' default `PreprocessingSignal` fixture
+  (`rejected: false, longEdgePx: 1568`, `test-support.ts`'s existing convention) does not
+  paper over a real preprocessing-level rejection.
+
+**How to run it.** `source .factory-env` first — every test command needs `DATABASE_URL`
+pointed at this ticket's own worktree database, even though this specific suite touches no
+table. `pnpm test -- src/server/router/golden-image-quality.test.ts`. No live model call and
+no real money — every fixture is a hand-built, clearly-labeled stand-in for a Haiku response,
+not a live extraction.
+
+**Rollback.** Delete `src/server/router/golden-image-quality.test.ts`. No production code
+changed.
+
+**Not verified.** Whether the real `claude-haiku-4-5` model reports confidence and
+`image_quality.legible` the way this ticket's fixtures assume, for these six specific
+photographs. That needs a live API call against the committed images. It is outside this
+ticket's TDD scope on deterministic router logic (PRD §6), and outside LH-011's own already-
+Done, already-out-of-scope-here extractor work.
+
 ## TRO-478 — local CodeRabbit review round 1: 3 findings, 3 fixed (2026-08-11)
 
 **What changed.** The gate's local CodeRabbit pass reviewed this branch once, before the PR
@@ -170,6 +315,7 @@ real database. Then run the command above, or `pnpm test` for the full suite.
 **Rollback.** `git revert` this ticket's commits. `verify-client.ts`'s timer fix is the
 only behavior change; reverting it restores the pre-existing (buggy) timeout-clearing
 order. No schema change, no migration.
+
 ## TRO-472 — PR #18 review: GitHub CodeRabbit, 14 findings, 14 fixed (2026-08-11)
 
 **What changed.** GitHub's CodeRabbit reviewed PR #18's full branch diff — the design document
@@ -358,6 +504,7 @@ during the walkthrough. Appendix B names the live URL and the file:line citation
 not measured — LH-031's latency harness is what replaces them, the same pattern CP-1 and CP-2
 used for their own thresholds. The local-compute ceiling (§4.4) and the actual deployed
 account's rate-limit tier (§4.2) are both **not measured**.
+
 ## TRO-468 — LH-020: Warning subsystem (2026-08-11)
 
 **What changed.** This ticket builds the government-warning comparator (TH-R9) under
@@ -521,6 +668,8 @@ therefore correctly discarded); two images with no warning correctly return no r
   it awaits the Haiku call, not after, to keep PRD §3.8's concurrency requirement. That is a
   real control-flow change, not a one-line import swap, so this ticket leaves it named here
   as follow-up work rather than folding it in.
+  **Closed by TRO-514** (entry below): `route.ts` now calls `compareGovernmentWarningFromImage`
+  concurrently with the Haiku call, exactly as this bullet specified.
 - The full golden set's OCR/detection accuracy is not measured. LH-030's eval-harness sweep
   is the ticket that measures it, per CP-2 §12.
 - The live drift check CP-2 §2.7 describes (a scheduled or manual re-fetch of the eCFR text,

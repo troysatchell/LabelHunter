@@ -4,6 +4,275 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-476 — PR #16 review round 2: 34 CodeRabbit findings, 30 fixed, 1 filed, 3 dismissed (2026-08-11)
+
+**What changed.** CodeRabbit reviewed PR #16 six times. The GitHub PR review reported 11
+findings. The gate's local CLI capture then ran five more times, once against each new
+commit. Those five rounds reported 9, then 4, then 4, then 3, then 3 more findings. The
+orchestrator checked every finding against the current code, not on trust. All 34 findings
+named a real issue or a legitimate duplicate. Thirty are fixed here. One is real but out of
+this PR's scope; it is filed as TRO-507. Three are dismissed, with reasons stated below.
+`factory/review-findings.jsonl` is the final, authoritative count from here — CodeRabbit's
+own review of a commit that restates this count necessarily reviews a commit one count behind
+itself, so this paragraph stops chasing the exact number past this point.
+
+**Buttons stayed live after a conflict.** A 409 conflict left the Approve and Reject buttons
+enabled. A retry could only ever 409 again. TH-R3 asks for no hidden actions. A dead action
+is one kind of hidden action. A conflict now disables both buttons for good. The fix first
+missed one case: a 409 body with no specific `conflictDisposition` field still fell through
+to the retryable branch. The local CLI pass caught it. Every `CONFLICT` is terminal now,
+named decision or not.
+
+**A callback failure could look like a record failure.** `onResolved` ran inside the same
+`try` block as the network call. A failure in the caller's own callback, for example a
+failed `router.push`, was reported as "could not record this decision." The server had
+already recorded it. `onResolved` now runs only after the success state is committed, and
+its own errors are caught and logged, not left to reject an unobserved promise.
+
+**A manual refresh unmounted the list.** The reviewer lost their scroll position on every
+refresh. This file's own comment names a queue a reviewer can churn through smoothly as the
+whole point of the control. A refresh now keeps the rows mounted. The button reads
+"Refreshing…" while the request is in flight.
+
+**Neither review-queue request had a timeout.** A hung connection left the queue loading and
+the action buttons disabled with no way out. Both requests now abort after 15 seconds. This
+matches `verify-client.ts`'s own pattern, sized down: neither call here reaches a model. The
+first version of this fix cleared the timer right after the fetch resolved, so a response
+whose body never finished parsing had no timeout protection at all. The timer now stays live
+through the body read too.
+
+**A malformed timestamp could render as "Invalid Date UTC."** `createdAt` and `disposedAt`
+were checked as strings, not as timestamps that parse. Both now require `new Date(value)` to
+succeed.
+
+**Wire IDs were checked as numbers, not as the server's own contract.** The server route
+rejects a zero, negative, or fractional id. The client accepted any number as a valid wire
+id. The client now requires the same positive-integer shape the server enforces.
+
+**The list query took no floor or ceiling on its own `limit` argument.** Nothing today calls
+it with anything but the default, so this is a boundary hardened before it is exercised, not
+a fix to an active bug. `listUnresolvedReviewQueue` now rejects a limit outside 1 through 100
+before it reaches `.limit()`.
+
+**Both review-queue routes discarded the caught error before their 503.** An operator seeing
+repeated 503 responses had no signal to diagnose. Both routes now log the cause first.
+`console.error` is `db/index.ts`'s own existing pattern. CodeRabbit named `verify/route.ts`
+instead; that file binds its caught error for type-checking, not for logging. It sets no
+precedent to follow.
+
+**Every row's link shared one accessible name.** A screen-reader user listing the page's
+links could not tell rows apart. The name now includes the brand. The timestamp now sits
+inside a `<time dateTime=…>` element.
+
+**The success banner had no live-region role.** A screen reader never announced it. Added
+`role="status"`, matching the error panel's existing `role="alert"`.
+
+**Three test gaps closed.** A 409 response missing `disposition` had no coverage. A test
+titled "without touching the database" asserted only the response, not the claim in its own
+name — it now injects a `db` that throws on any access. `ReviewQueueList.test.tsx` matched
+any link name loosely; it now requires the exact name and checks the `<time>` element's
+`dateTime` attribute.
+
+**`route.test.ts` and `[reviewQueueId]/route.test.ts` duplicated the same fixture and
+cleanup helpers.** Both now import them from a new `test-support.ts`.
+
+**A failed manual refresh replaced a working list with a bare error panel.** The reviewer
+lost the rows they already had on screen. A refresh failure now keeps the rows mounted and
+shows the error alongside them, the same principle as the earlier in-flight-refresh fix. That
+fix itself missed one case: retrying after a failed refresh checked only whether the previous
+attempt had *succeeded* before deciding to keep the rows mounted. Retrying after a *failed*
+refresh fell through to the bare loading state and unmounted the list again. Both cases now
+keep the rows mounted.
+
+**The PATCH response's `id` field used a weaker check than the list response's items.** Both
+now require the same positive-integer shape the server route itself enforces. A shape check
+alone does not confirm a response is even about the item just requested — `submitDisposition`
+now also requires the response's own `id` to match the `reviewQueueId` that was sent.
+
+**The review-queue action route and detail page both validated ids with `Number.isInteger`,
+not `Number.isSafeInteger`.** Same class this session's own `verify/[verificationId]/page.tsx`
+fix already addressed elsewhere: precision loss above `Number.MAX_SAFE_INTEGER` can round a
+long digit string to a different, smaller integer and silently address the wrong row. Both
+now use `isSafeInteger`.
+
+**Dismissed: `format-timestamp.ts`'s minute-level precision.** A reviewer suggested
+second-level precision for the "waiting since" timestamp. This is a triage cue for a human
+scanning a queue, not a legal-record field. The file's own doc comment already states the
+accuracy rationale for an absolute UTC timestamp. Minute-level is the correct grain for that
+purpose. Not changed.
+
+**Filed as TRO-507, not fixed here.** CodeRabbit tagged it a "Heavy lift." The list endpoint
+defaults to 100 rows. It has no pagination past that limit. CHANGES.md's own claim below
+("returns every unresolved item") is corrected in place to state the current, accurate
+limit. Two later local rounds re-flagged the same gap against later commits. Both dismissed
+as duplicates of TRO-507, not fixed a second or third time.
+
+**Tests.** `pnpm test -- src/app/_components/ReviewActions.test.tsx
+src/app/_components/ReviewQueueBrowser.test.tsx src/app/_lib/review-queue-client.test.ts
+src/app/api/review-queue src/server/review-queue` — every fix above has a new or extended
+case that failed before the fix and passes after.
+
+**How to run it.** Point `DATABASE_URL` at this worktree's own database first — schema
+provisioning resets it. `source .factory-env`, then `pnpm test`, `pnpm typecheck`, `pnpm
+lint`, `pnpm build`.
+
+**Rollback.** `git revert` this commit. The two TRO-476 entries below stand on their own;
+this round only tightens them.
+
+## TRO-476 — local CodeRabbit review round 1: 6 findings, 6 fixed (2026-08-11)
+
+**What changed.** `scripts/factory/gate.sh`'s local CodeRabbit CLI reviewed this branch
+against `main`. It reported 6 findings. This entry checked each one against the current
+code, not on trust. All 6 named a real, narrow defect. This round fixes all 6.
+
+- **`review-queue-client.ts` — the list response's `items` array was checked for shape, not
+  its contents.** `isReviewQueueListResponse` confirmed `items` was an array. It never
+  checked what was inside. A malformed entry would have reached `ReviewQueueList.tsx` as if
+  it were real. `isReviewQueueListItemWire` now checks every field of every entry, enum
+  fields included, against the real closed set — not just "is a string."
+- **`get-item.test.ts` — a defensive branch ran on every test but no test checked it.** This
+  file's fixture inserts only two of five `field_results` rows. The other three always hit
+  `get-item.ts`'s "no result was recorded" fallback. No assertion ever looked at that
+  fallback's shape. One test now checks it directly.
+- **`types.ts` — `ResolverSuggestedField` used two fields that only made sense some of the
+  time.** `disposition` was only ever set on a `"judged"` field. `needsHuman` was only ever
+  set on a `"correction"` field. CLAUDE.md's own standing rule 19 asks for a discriminated
+  union in exactly this case, not two independently-optional fields. `ResolverSuggestedField`
+  is now a proper union, keyed on `kind`.
+- **`types.ts` — one doc comment explained the wrong field.** The comment above
+  `ReviewQueueItemDetail.disposition` was really about `resolverOutput` and
+  `resolveEscalatedLabel`. That explanation now sits with `resolverNote`, the field it
+  actually describes. `disposition`'s own comment is about `disposition` only.
+- **`record-disposition.test.ts` — a test helper's own fallback error could get swallowed by
+  its own `catch` block.** `expectCheckConstraintViolation` threw its "nothing threw" error
+  inside the same `try` block that awaited the real promise. Its own `catch` then caught
+  that error and asserted on an undefined `.cause` — a confusing failure, not the intended
+  one. The fallback error now throws after the `try`/`catch`, not inside it. A new test
+  proves the helper reports the right message.
+- **`list.ts` — no limit, and no tiebreaker for two rows sharing one `createdAt`.**
+  `listUnresolvedReviewQueue` read every unresolved row with no bound. A large, real queue
+  would read all of it on every page load. Two rows created in the same instant had no
+  guaranteed order between them. `listUnresolvedReviewQueue` now takes an optional `limit`
+  (default 100) and orders by `createdAt` then `id`, so ties resolve the same way every time.
+
+**Tests.** `pnpm test -- src/server/review-queue src/app/_lib/review-queue-client.test.ts
+src/app/_components/ReviewItemDetail.test.tsx` runs 5 files and 34 cases (up from 30 before
+this round). Every new case in this round was checked against the pre-fix code by reasoning
+through the code path, not run against a deliberately-broken copy — each is explained above
+in terms of exactly what the old code did wrong.
+
+**How to run it.** `source .factory-env` first. `pnpm test -- src/server/review-queue
+src/app/_lib/review-queue-client.test.ts src/app/_components/ReviewItemDetail.test.tsx`.
+`pnpm test` for the full suite. `pnpm typecheck` and `pnpm lint` are both clean.
+
+**Rollback.** `git revert` this commit. The TRO-476 entry below stands on its own; this
+round only tightens it.
+
+## TRO-476 — LH-050: Review queue UI (2026-08-11)
+
+**What changed.** This ticket builds the review queue (PRD §5). A person uses this screen
+to approve or reject a label. The router or the resolver could not decide that label alone.
+
+**This is TH-R22's differentiator.** LabelHunter routes every label through a
+confidence-based cascade:
+
+1. Haiku extracts the label's fields.
+2. Code routes each field deterministically.
+3. Sonnet resolves an escalation.
+4. A human makes the final call on what is still uncertain.
+
+The review queue is the visible end of that chain. It turns "uncertain beats wrong" from an
+internal rule into a real screen. A TTB reviewer can act on it directly. The
+escalation-to-human-review loop is the differentiated idea. It is not a UI detail added on
+top.
+
+- **List endpoint.** `GET /api/review-queue` (`src/app/api/review-queue/route.ts`) returns
+  unresolved items, oldest first, up to `listUnresolvedReviewQueue`'s default 100-row limit
+  (round 1's own fix, above). It does not paginate past that limit yet — see round 2, below.
+  Its `WHERE` clause matches `review_queue_unresolved_idx` (`schema.ts`), the partial index
+  built for this query.
+  `EXPLAIN` against this worktree's database confirms the index serves the filter. The
+  table was empty during that check. This is not a claim about a larger, real-world table.
+  See `src/server/review-queue/list.ts`'s own comment for the exact, honest result.
+- **Action endpoint.** `PATCH /api/review-queue/:reviewQueueId`
+  (`src/app/api/review-queue/[reviewQueueId]/route.ts`) records `APPROVED` or `REJECTED`.
+  `recordDisposition` (`src/server/review-queue/record-disposition.ts`) sets `disposition`
+  and `disposedAt` together, in one guarded `UPDATE … WHERE disposition IS NULL`. Two
+  reviewers acting on the same item cannot both win this way. A second call returns 409. It
+  carries whichever decision already won, so the client can show "Someone already rejected
+  this item" instead of a bare conflict message.
+- **Queue list page** (`/review-queue`, `ReviewQueueBrowser.tsx` + `ReviewQueueList.tsx`).
+  Each row shows the reason, brief context (brand, class/type), and a link to the item. A
+  manual refresh button re-fetches the list. An empty queue shows one designed message: "No
+  items need review right now."
+- **Review/detail page** (`/review-queue/:id`, `ReviewItemWorkspace.tsx` +
+  `ReviewItemDetail.tsx` + `ReviewActions.tsx`). It shows the reason, the full per-field
+  extracted-vs-application comparison, and the resolver's suggestion when one exists. Two
+  large Approve/Reject buttons record the decision.
+- **`resolverOutput` null is the normal case, not an error state.** Nothing in this running
+  system calls the Sonnet resolver off a `review_queue` row yet. `route.ts` writes the row.
+  The consumer that would call `resolveEscalatedLabel` against it is LH-041's job, behind
+  CP-3. It does not exist yet. Every item reachable through the app's real request path
+  today shows its reason. A human decides with no resolver suggestion present. This is the
+  case this ticket designed for, not a fallback case. `get-item.ts` also reads a populated
+  `resolverOutput` correctly, for whenever LH-041 lands or a test fixture supplies one.
+- **No verdict mutation.** PRD §5 says "approve/reject records disposition." It does not say
+  a disposition changes `verifications.verdict`. This ticket records the disposition only.
+  Whether a later ticket should also update the verdict is an open question. This entry
+  flags it; it does not answer it.
+- **No reviewer identity anywhere.** TH-R6 and `schema.ts`'s own comment on `review_queue`
+  are explicit about this rule. This ticket adds no reviewer-identity column and no such
+  field.
+
+**On LH-016 (TRO-466, the Detail view) — a premise correction.** This ticket's brief assumed
+two files were already merged into this branch's base:
+`src/server/verification-detail/get-verification-detail.ts` and `DetailView.tsx`. They are
+not. PR #15 (`feat/lh-016-detail-view`) is still open. `factory/tickets.md`'s own LH-050
+entry lists it as "Blocked by LH-014" only, not LH-016. This ticket does not depend on that
+PR merging first.
+
+`src/server/review-queue/get-item.ts` reads the same database tables independently. It
+reuses two things that are actually merged: `ResultsChecklist.tsx`'s CSS classes, and
+`src/server/router/index.ts`'s own wording (lines 227 and 252) for an unfiled optional field
+and for the government warning's application-side text. It does not show the label image.
+That route is also LH-016's, also unmerged. PRD §5's review-queue line does not ask for a
+photo. `src/app/_components/ReviewItemDetail.tsx` uses a `review-field*` CSS prefix, not
+`detail-field*`, to avoid a name collision with `DetailView.tsx`'s own rules once that PR
+lands.
+
+**Tests.** Written first. Each one failed for the right reason before implementation. All
+are green now.
+
+- `src/lib/db/enums.test.ts` — `toReviewDisposition`.
+- `src/server/review-queue/list.test.ts`, `get-item.test.ts`, `record-disposition.test.ts` —
+  against this worktree's real database. Two tests try to violate
+  `review_queue_disposition_disposed_at_consistency` directly, with an `UPDATE` and an
+  `INSERT`, in both column directions. Both confirm the database itself rejects the write,
+  not only this module's own code.
+- `src/app/api/review-queue/route.test.ts` and
+  `src/app/api/review-queue/[reviewQueueId]/route.test.ts` — the two HTTP endpoints,
+  including the 400/404/409 error paths.
+- `src/app/_lib/format-timestamp.test.ts` and `review-queue-client.test.ts`.
+- `src/app/_components/ReviewQueueList.test.tsx`, `ReviewItemDetail.test.tsx`,
+  `ReviewActions.test.tsx`, and `ReviewQueueBrowser.test.tsx`.
+
+This command runs 12 files and 67 cases, all new or touched by this ticket:
+
+`pnpm test -- src/server/review-queue src/app/api/review-queue src/app/_lib/review-queue-client.test.ts src/app/_lib/format-timestamp.test.ts src/app/_components/Review src/lib/db/enums.test.ts`
+
+**How to run it.** Run `source .factory-env` first. Several of these tests need
+`DATABASE_URL` pointed at a migrated worktree database. Then run the command above, or run
+`pnpm test` for the full suite (646 cases pass). `pnpm typecheck`, `pnpm lint`, and
+`pnpm build` are all clean. `pnpm build` shows `/review-queue` prerendered as a static
+shell. Its data comes from the client-side `GET /api/review-queue` call, marked dynamic, not
+from anything baked in at build time. `pnpm build` shows `/review-queue/:id` server-rendered
+on demand. Both match this ticket's design.
+
+**Rollback.** Run `git revert` on this ticket's commits, in reverse order. This ticket makes
+no schema change and no migration, so there is nothing to roll back at the database level.
+`src/lib/db/enums.ts`'s `toReviewDisposition` is additive. No other ticket uses it yet, so
+reverting it is safe.
+
 ## TRO-466 — PR #15 review round 2: 3 findings, 1 fixed, 2 dismissed (2026-08-11)
 
 **Fixed.** `src/app/api/label-images/[labelImageId]/route.ts` treated any `readLabelImage`

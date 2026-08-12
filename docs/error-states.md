@@ -173,20 +173,45 @@ a generic stand-in `Error`, and asserts no SDK-internal detail
 (`APIConnectionError`, `ECONNREFUSED`, `ENOTFOUND`) leaks into the response,
 and that no application/verification row is left behind.
 
-## Not built here — deferred batch-scoped states
+## The four batch-scoped states, built in LH-042
 
-LH-052's ticket text also names four batch-pipeline states: malformed CSV,
-unpairable rows, partial batch failure, and a rate-limit backoff notice.
-None is built or tested here.
+LH-052's ticket text named four batch-pipeline states — malformed CSV,
+unpairable rows, partial batch failure, and a rate-limit backoff notice —
+and deferred all four, unbuilt, to whoever built the batch UI once LH-040
+and LH-041 landed. LH-042 (TRO-475) is that ticket. All four are real and
+tested, not just described:
 
-The batch pipeline these states belong to is still in progress: LH-040
-(CSV manifest + pairing) and LH-041 (job queue + worker pool). Both are in
-sibling worktrees, not yet merged to `main`.
+1. **Malformed CSV.** `POST /api/batch/preview` and `POST /api/batch/start`
+   both return 422, `kind: "MALFORMED_CSV"`, for a manifest that fails to
+   parse structurally (missing a required column, a row with the wrong
+   cell count). `BatchUploadForm.tsx` shows the server's own plain-English
+   message inline. Test: `src/app/api/batch/start/route.test.ts` —
+   "returns 422 MALFORMED_CSV for a manifest missing a required column."
+2. **Unpairable rows.** A row with no matching image, an image with no
+   matching row, or a row that fails field-level validation is data inside
+   a successful preview, not a request failure (`unmatchedRows`/
+   `unmatchedImages`/`invalidRows`) — the preview screen lists each one by
+   name and reason before the user decides whether to start the batch.
+   Test: `src/app/_components/BatchUploadForm.test.tsx` — "reports
+   unmatched rows, unmatched images, and invalid rows — never silently
+   dropped."
+3. **Partial batch failure.** One bad image fails only that label, never
+   the job (PRD §3.5) — `src/server/batch-start/start-batch.ts`'s own
+   per-pairing try/catch, and (once a batch is running) LH-041's own
+   non-retryable-failure path. The progress screen shows a count and, per
+   row, the stored `batch_queue_items.last_error` as the reason (CP-3
+   §7.3). Test: `src/server/batch-progress/get-batch-progress.test.ts` —
+   "includes a FAILED EXTRACT item... with its stored last_error as status
+   detail."
+4. **Rate-limit backoff notice.** LH-041's own real backoff state (an item
+   released back to `PENDING` with `available_at` pushed into the future
+   after a retryable failure, CP-3 §5.2) is read, not recomputed —
+   `src/server/batch-progress/get-batch-progress.ts`'s `rateLimitBackoff`
+   field. The notice never claims to know the retry was specifically a
+   rate limit rather than some other transient error; that distinction is
+   not observable from the queue rows alone. Test:
+   `src/server/batch-progress/get-batch-progress.test.ts` — "reports
+   rateLimitBackoff.active only when a PENDING item is genuinely waiting
+   out a scheduled retry."
 
-A throwaway batch error-state UI, built against a pipeline shape that has
-not landed, would likely not match what LH-040 and LH-041 actually ship.
-Batch infrastructure is also outside this ticket's file scope.
-
-These four states become buildable and testable once LH-040 and LH-041
-merge. LH-042 (batch progress + results UI) is the natural ticket to carry
-them.
+See `CHANGES.md`'s TRO-475 entry for the full build.

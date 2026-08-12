@@ -1,0 +1,100 @@
+# render.yaml — Render Blueprint for LabelHunter (TRO-481 / LH-060, TH-R16).
+#
+# Defines the three resources PRD §3.6 names: a Next.js web service, a
+# background worker (scripts/batch-worker/run.ts, LH-041/TRO-474), and a
+# Postgres database. All three omit `region`, so Render puts them all in
+# its default region (oregon) — same region keeps the web/worker-to-Postgres
+# connection on Render's private network, not the public internet.
+#
+# What this file does NOT do: create the service. Connecting this repo to
+# Render, and typing in the two real secret values below, is Troy's own
+# manual step — see docs/deploy.md. Deploying a real Anthropic key to a
+# third-party platform is a hard stop this factory does not cross on its
+# own (.claude/skills/labelhunter-factory/references/escalation.md item 4).
+#
+# Plan tier note (a default, not a Troy-confirmed budget decision — change
+# below or in the dashboard if this is wrong): Render has no free-tier
+# option for `type: worker` services at all, and a free Postgres database
+# auto-deletes 30 days after creation. Since the worker already forces a
+# paid plan, every resource below defaults to the cheapest paid tier
+# instead of free, so the deployed instance does not quietly disappear
+# during the window evaluators might revisit it.
+#
+# Regression check for this file's own shape: scripts/deploy/render-yaml.test.ts.
+
+services:
+  - type: web
+    name: labelhunter-web
+    runtime: node
+    plan: starter
+    branch: main
+    # Redeploy only a commit whose GitHub Actions checks (.github/workflows/
+    # ci.yml) already passed — the same green-CI bar the factory's own merge
+    # policy already requires, applied a second time at the deploy step.
+    autoDeployTrigger: checksPass
+    buildCommand: pnpm install --frozen-lockfile && pnpm build
+    startCommand: pnpm start
+    # Applies pending Drizzle migrations before the new code starts serving
+    # traffic (Render's release-phase hook — runs after build, before
+    # start). Lives on this service only, not the worker below too: running
+    # the same migration from two services on the same deploy risks a race
+    # between them. `pnpm db:migrate` is idempotent against already-applied
+    # migrations, but not against two concurrent first applications of the
+    # same one.
+    preDeployCommand: pnpm db:migrate
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: labelhunter-db
+          property: connectionString
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+        # Not read by any src/ runtime path — only scripts/golden/imagen.ts
+        # (dev-time golden-set image generation; see .env.local.example's
+        # own comment: "The running app never calls Google") reads it.
+        # Included anyway so an operator can run golden-set scripts from a
+        # Render shell if that is ever wanted. Leaving it blank in the
+        # dashboard does not affect anything the deployed app serves.
+
+  - type: worker
+    name: labelhunter-worker
+    runtime: node
+    plan: starter # Render has no free instance type for `type: worker`.
+    branch: main
+    autoDeployTrigger: checksPass
+    # No `pnpm build` here — `pnpm worker` runs scripts/batch-worker/run.ts
+    # directly through tsx; it never reads the `.next` build Next.js
+    # produces, so building it would only spend build minutes on an output
+    # this service never uses.
+    buildCommand: pnpm install --frozen-lockfile
+    startCommand: pnpm worker
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: labelhunter-db
+          property: connectionString
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # Pool-size knobs scripts/batch-worker/run.ts already reads via
+      # envPositiveInt() — that file's own header comment: "the one lever
+      # available to correct a wrong default is a config change, not a
+      # redeploy." Values below match its in-code defaults exactly; edit
+      # in the Render dashboard to tune either pool with no code change and
+      # no redeploy.
+      - key: BATCH_WORKER_CONCURRENCY
+        value: "5"
+      - key: BATCH_RESOLVE_WORKER_CONCURRENCY
+        value: "2"
+      - key: BATCH_WORKER_SHUTDOWN_TIMEOUT_MS
+        value: "30000"
+
+databases:
+  - name: labelhunter-db
+    plan: basic-256mb # cheapest paid tier — see the plan-tier note above.
+    postgresMajorVersion: "16" # matches postgres:16-alpine, the version
+      # this repo already runs in CI (.github/workflows/ci.yml) and local
+      # dev (.env.local.example) — keeps migrations tested against the
+      # same major version they run against in production.

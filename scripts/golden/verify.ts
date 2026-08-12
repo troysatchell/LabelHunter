@@ -16,8 +16,9 @@
  * 4. Every `rendered+ai-backdrop` case's backdrop input file
  *    (`golden-set/backdrops/<caseId>.png`) exists.
  * 5. Every `audit/rubric.md` Appendix A vector V1-V10 is covered by at
- *    least one case, except the two tracked gaps this run already knows
- *    about (see `KNOWN_VECTOR_GAPS` below).
+ *    least one case. V10 is a manifest-wide property (see
+ *    `MIN_BATCH_SIZE_FOR_V10` below), not a per-case tag. `KNOWN_VECTOR_GAPS`
+ *    below tracks any other vector with no covering case yet — empty today.
  *
  * Deliberately does no image decoding, no rendering, and no network call —
  * that split is intentional (design doc §7): decoding/size/format checks
@@ -71,6 +72,17 @@ export interface VerifyOptions {
   readonly imagesDir?: string;
   readonly backdropsDir?: string;
   readonly referencesDir?: string;
+  /**
+   * Overrides `KNOWN_VECTOR_GAPS` below. Test-only: `main()` never passes
+   * this, so production always checks the manifest against the real,
+   * current tracked-gap set. Exists so a test can exercise the known-gap /
+   * drift mechanism with a fixture vector, independent of which vector (if
+   * any) is a genuine gap in the committed manifest right now — the real
+   * set's membership changes over time (TRO-515 emptied it; a future ticket
+   * may add to it again) and a unit test should not need to change every
+   * time it does.
+   */
+  readonly knownVectorGaps?: ReadonlySet<RubricVector>;
 }
 
 const ALL_VECTORS: readonly RubricVector[] = [
@@ -78,16 +90,23 @@ const ALL_VECTORS: readonly RubricVector[] = [
 ];
 
 /**
- * V7 (net-contents format match, e.g. "750 mL" vs "750ml") has no dedicated
- * case yet — a real, documented gap (`golden-set/README.md`,
- * `src/lib/golden-set/loader.test.ts`). Tracked here, not silently ignored:
- * `verifyGoldenSet` still fails if V7 STOPS being a gap without this set
- * getting updated in the same change (see the drift check below), and it
- * still fails if any OTHER vector loses coverage. Closing V7 for real means
- * adding a covering case AND deleting it from this set together — deleting
- * it alone, with no covering case, fails the coverage check instead.
+ * Rubric vectors (`audit/rubric.md` Appendix A) tracked as having no
+ * covering case, so `verifyGoldenSet` reports them as a known gap instead
+ * of a failure. Empty today: V7 (net-contents format match, e.g. "750 mL"
+ * vs "750ml") was the last entry here — TRO-515 closed it with
+ * `case-30-clean-match-net-contents-alt-format`
+ * (`golden-set/manifest.json`), and removed the entry in the same change,
+ * as this file's own drift check requires.
+ *
+ * The set stays here empty, rather than the mechanism being deleted,
+ * because the next vector that genuinely loses its only covering case
+ * needs somewhere to be tracked. The check stays symmetric either way: a
+ * vector listed here that gains a case fails the drift check below; a
+ * vector NOT listed here that has no covering case fails the coverage
+ * check. `VerifyOptions.knownVectorGaps` overrides this constant for tests
+ * that exercise the mechanism itself.
  */
-const KNOWN_VECTOR_GAPS: ReadonlySet<RubricVector> = new Set(["V7"]);
+const KNOWN_VECTOR_GAPS: ReadonlySet<RubricVector> = new Set();
 
 /** audit/rubric.md Appendix A, V10: "Batch of >=20 mixed pass/fail applications." A manifest-wide property, not a per-case tag. */
 const MIN_BATCH_SIZE_FOR_V10 = 20;
@@ -222,6 +241,7 @@ export function verifyGoldenSet(options: VerifyOptions = {}): VerifyReport {
   // except the tracked known gaps. V10 is special: audit/rubric.md Appendix
   // A defines it as a property of the manifest as a whole (a batch of
   // >=20), not something one case can individually claim.
+  const knownVectorGaps = options.knownVectorGaps ?? KNOWN_VECTOR_GAPS;
   const covered = new Set(manifest.cases.flatMap((c) => c.vectors));
   const knownGaps: string[] = [];
   for (const vector of ALL_VECTORS) {
@@ -237,7 +257,7 @@ export function verifyGoldenSet(options: VerifyOptions = {}): VerifyReport {
       continue;
     }
 
-    const isKnownGap = KNOWN_VECTOR_GAPS.has(vector);
+    const isKnownGap = knownVectorGaps.has(vector);
     const isCovered = covered.has(vector);
     if (isCovered && isKnownGap) {
       problems.push({

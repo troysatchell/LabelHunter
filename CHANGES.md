@@ -93,6 +93,312 @@ dropping them. `scripts/batch-worker/run.ts` reverts to two pools. No other ship
 changes — the verify route's response shape and its immediate `review_queue` visibility are
 unchanged either way.
 
+## TRO-481 — LH-060: Render deploy config (2026-08-12)
+
+**What changed.** This ticket builds the deploy config that PRD §3.6 and §8
+describe. `render.yaml`, at the repo root, wires three resources: a `web`
+service (the Next.js app), a `worker` service (the batch worker —
+LH-041/TRO-474's `scripts/batch-worker/run.ts`), and a Postgres database.
+All three deploy from `main`. This advances TH-R16 — a deployed URL an
+evaluator can open and test.
+
+This ticket does not create a live deployment. Troy must still give Render
+his real Anthropic key by hand. Deploying that key to a third-party platform
+is a hard stop — the factory does not do this on its own
+(`.claude/skills/labelhunter-factory/references/escalation.md`, item 4).
+Instead, this ticket builds the config for Troy's own first deploy — no
+further code change needed — plus the runbook for that manual step
+(`docs/deploy.md`).
+
+**Design decisions.**
+- Every secret (`ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`) is `sync: false`.
+  This is Render's own convention: the operator fills the value in by hand,
+  once, in the dashboard. Neither key, nor a placeholder shaped like one,
+  appears anywhere in `render.yaml`.
+- `DATABASE_URL` is wired through `fromDatabase`, never a literal connection
+  string.
+- Migrations run as a `preDeployCommand` on the web service only
+  (`pnpm db:migrate`) — Render's release-phase hook: it runs after build,
+  before the new code starts serving traffic. Not duplicated on the worker:
+  running the same migration from two services on one deploy risks a race
+  between them.
+- The worker's `buildCommand` skips `pnpm build`. It runs
+  `scripts/batch-worker/run.ts` directly through `tsx`, never the Next.js
+  build output, so building it would spend build minutes on nothing.
+- The worker's pool-size env vars (`BATCH_WORKER_CONCURRENCY`,
+  `BATCH_RESOLVE_WORKER_CONCURRENCY`, `BATCH_WORKER_SHUTDOWN_TIMEOUT_MS`)
+  are plain, non-secret env vars, set to `run.ts`'s own in-code defaults.
+  That file's own header comment names this as the intended lever for
+  tuning the pools with no redeploy, once the real deployed key's
+  rate-limit tier is known.
+- Every resource defaults to a paid plan tier (`starter` / `starter` /
+  `basic-256mb`), not free. Render has no free-tier option for `type:
+  worker` services at all. A free Postgres database also auto-deletes 30
+  days after creation — a real risk for a submission evaluators may revisit
+  past that window. `render.yaml`'s own comment and `docs/deploy.md` both
+  flag this as a default, not a Troy-confirmed budget decision.
+- `autoDeployTrigger: checksPass`: Render will not deploy a commit until its
+  GitHub Actions checks (`.github/workflows/ci.yml`) pass. This is the same
+  green-CI bar this repo's merge policy already requires, applied a second
+  time at the deploy step.
+
+**Flagged, not fixed: batch image storage does not survive the web/worker
+split.** `src/server/storage/local-file-storage.ts`'s own header comment
+already names local disk as "a prototype-appropriate stand-in, not a
+durable object store." `POST /api/batch/start` (LH-042/TRO-475, merged to
+`main` after this branch started) saves a batch's images this way, on the
+`web` service. The `worker` service (`extract-worker.ts`, `resolve-worker.ts`)
+reads them back the same way. Once both are real, separate Render services —
+exactly what this ticket wires up — they are two different disks. A real
+batch run will fail to read every image it queues. Single-label verify is
+unaffected: one process saves the image and, later, reads that same file
+back. This needs a shared or durable store before batch is real on Render.
+Documented in `docs/deploy.md`'s "Known limitations." Not fixed here — out
+of this ticket's scope, and it touches application code this ticket does
+not own.
+
+**Flagged, not fixed: no deploy-ordering guarantee between the migration
+and the worker.** Render deploys `labelhunter-web` and `labelhunter-worker`
+independently, so nothing guarantees the web service's `preDeployCommand`
+finishes migrating before the worker starts polling. Render's Blueprint
+spec has no documented field for cross-service deploy ordering — this
+ticket did not omit a setting; Render does not currently offer one. Only a
+deploy that adds a migration is exposed, and `run.ts`'s own error handling
+does not crash the worker on one failed claim. Documented in
+`docs/deploy.md`'s "Known limitations." Closing it needs either a
+Render-wide migration step or a worker-side readiness check; neither is
+built here.
+
+**Regression test.** `scripts/deploy/render-yaml.test.ts` (23 cases) parses
+`render.yaml` with `js-yaml` and checks its real structure: exactly one
+`web` service, one `worker` service, and one database named
+`labelhunter-db`; both services redeploy only after CI checks pass
+(`autoDeployTrigger: checksPass`); every build, start, and migrate command
+matches a real `package.json` script (a drift between the two files fails
+this test); `DATABASE_URL` references that same database resource, by name
+and by connection property; every secret-shaped env var is `sync: false`
+with no literal `value`; and the file's raw text contains no string shaped
+like a real Anthropic key. Confirmed failing for the right reason:
+temporarily hardcoding a fake `sk-ant-...` value in place of `sync: false`
+failed 3 cases — the two structural secret checks and the raw-text scan,
+all naming the injected value — before the fix was reverted.
+
+**How to run it.** `pnpm test -- scripts/deploy/render-yaml.test.ts` runs
+the regression suite. It needs no `DATABASE_URL` — it only reads
+`render.yaml` and `package.json` from disk. `pnpm typecheck` and `pnpm lint`
+both run clean across the whole repo.
+
+**Observed.** `pnpm install --frozen-lockfile && pnpm build` — the web
+service's exact `buildCommand` — exits 0. `PORT=3791 pnpm start` — the web
+service's exact `startCommand`; `APP_PORT` from `.factory-env` stands in for
+Render's own injected `PORT` — serves `GET /api/health` at HTTP 200 with
+`{"status":"ok", ...}`, and `GET /` at HTTP 200. `pnpm worker` — the
+worker's exact `startCommand` — starts both pools with zero errors across
+several 2-second poll cycles against this worktree's real database, then
+shuts down cleanly on `SIGTERM` ("stopped cleanly", matching `run.ts`'s own
+shutdown log).
+
+**Derived.** `render.yaml`'s field names and service types match Render's
+currently-documented Blueprint spec (`services[].type`: `web` / `worker` /
+`pserv` / `cron` / `keyvalue`; `runtime: node`; `envVars[].sync` /
+`fromDatabase`; `databases[].plan`), and its free-tier and Postgres-expiry
+behavior, both checked against Render's own docs during this ticket, not
+recalled from memory.
+
+**Not verified.** A real Render deployment. No Render account was available
+to this ticket — that is Troy's own step, documented in `docs/deploy.md`.
+
+**Rollback.** `git revert` this ticket's commits. This deletes `render.yaml`,
+`docs/deploy.md`, and `scripts/deploy/render-yaml.test.ts`, and drops the
+`js-yaml` / `@types/js-yaml` devDependencies (run `pnpm install` after
+reverting, to sync `node_modules`). No other file in the repo references
+any of these three, so nothing else breaks.
+
+## TRO-515 — Golden set: rubric vector V7 (net-contents format match) has zero coverage (2026-08-12)
+
+**What changed.** `golden-set/manifest.json` gains one new case:
+`case-30-clean-match-net-contents-alt-format`. Its label prints net contents as `750ml` — no
+space, lowercase unit. Its application states the same quantity as `750 mL`, the structured,
+canonical form the eval harness always synthesizes from `netContentsValue` + `netContentsUnit`.
+Every other field matches `case-01-clean-match-spirits` exactly, so the format difference is
+the case's one isolated variable — the same pattern `case-04-clean-match-spirits-alt-format`
+already uses for V6's ABV format difference. Expected verdict: MATCH, per `audit/rubric.md`
+Appendix A's V7 definition. Checked against the real comparator, not just asserted:
+`src/server/comparators/net-contents.ts`'s `parseNetContents` reads `750ml` and `750 mL` as the
+identical `{ value: 750, unit: "ml" }` — the normalizer lowercases and trims whitespace before
+matching a unit, so spacing and case never affect the result.
+
+`scripts/golden/verify.ts`'s `KNOWN_VECTOR_GAPS` no longer lists V7 — it is now an empty set.
+The check is symmetric (LH-006/TRO-499): a manifest that covers a tracked vector without the
+tracking entry being removed fails `vector-coverage-drift`. Adding the case without removing
+the entry would fail the same way, checked directly (see Evidence below) before the entry was
+removed. Both changes land in this one PR.
+
+**Closing the gap broke five tests, not just two.** Two tests check the real committed manifest
+directly: `verify.test.ts`'s "the real committed golden set" block, and `loader.test.ts`'s
+vector-coverage test. Both now expect zero remaining gaps instead of `["V7"]`.
+
+Three more tests broke for a less obvious reason. They build a synthetic fixture and use V7 as
+a worked example of "a tracked gap." `KNOWN_VECTOR_GAPS` is a private, hardcoded constant, so
+these tests had no way to supply their own example vector. Once the real constant went empty,
+V7 stopped being a gap, and the tests had nothing left to demonstrate.
+
+Rather than delete tests that prove the drift check works, `VerifyOptions` gained a new
+optional field, `knownVectorGaps`. `main()` (the CLI entry point) never sets it, so a real
+`pnpm golden:verify` run still checks the manifest against the real `KNOWN_VECTOR_GAPS`. The
+three mechanism tests now pass `knownVectorGaps: new Set(["V7"])` directly. They no longer
+depend on which vector, if any, is a genuine gap in the committed manifest.
+
+Two more tests needed the same fix for an unrelated reason. Both build their fixture from
+`validManifestCases()`, which always leaves V7 uncovered by construction, and both assert
+`report.problems` comes back completely empty: an ai-generated "passes" case, and a
+rendered+ai-backdrop "passes" case. Both get the same `knownVectorGaps` override.
+
+`golden-set/README.md`'s known-gap note is rewritten: V7 is closed; V10 remains the one
+property that stays manifest-wide, not per-case. Image count and total size move from 29 /
+about 1.08 MB to 30 / about 1.14 MB (measured: `du -sh golden-set/images/` after a fresh `pnpm
+golden:build`), and the clean-match category count moves from 4 to 5.
+
+**New regression coverage.** `src/lib/golden-set/loader.test.ts` gains one new test —
+"includes the net-contents format-variant case required by rubric vector V7 (TRO-515)" — that
+finds the new case by ID, checks its label and application values differ only in format, and
+checks its expected `netContents` verdict is MATCH. Confirmed red for the right reason first:
+loaded the pre-ticket manifest directly (`git show HEAD:golden-set/manifest.json`) through the
+real loader and re-ran the same assertion — 29 cases, no `case-30-...` entry, V7 not in the
+covered-vectors set. `scripts/golden/verify.test.ts` gains one new test covering the DEFAULT
+(no-override) path with a fixture that has no genuine gap, proving the empty-`KNOWN_VECTOR_GAPS`
+case reports cleanly.
+
+**Files.**
+- `golden-set/manifest.json` — new case-30, appended after case-29.
+- `golden-set/images/case-30-clean-match-net-contents-alt-format.jpg` — rendered through
+  `pnpm golden:build` (Playwright/Chromium, the existing render pipeline), not hand-crafted.
+  Every one of the other 29 committed images came out byte-identical from the same build run
+  (`git diff --stat golden-set/images/` showed zero changes to any tracked file) — the
+  pipeline's determinism claim, checked here, not assumed.
+- `scripts/golden/verify.ts` — `KNOWN_VECTOR_GAPS` now empty; `VerifyOptions` gained
+  `knownVectorGaps` as a test-only override.
+- `scripts/golden/verify.test.ts` — 3 existing tests updated to pass `knownVectorGaps`
+  explicitly; 2 more `validManifestCases()`-based "passes" tests get the same override for the
+  unrelated fixture reason above; the real-committed-golden-set test now expects zero known
+  gaps; 1 new test for the default (no-override) path.
+- `src/lib/golden-set/loader.test.ts` — the "8 of 10 vectors" test becomes "9 of 10" (V10
+  only); 1 new test for the case-30 shape.
+- `golden-set/README.md` — known-gap section rewritten; image count/size and clean-match
+  category count updated to the measured current values.
+
+**Evidence.**
+- `pnpm golden:verify`, case-30 added and rendered but `KNOWN_VECTOR_GAPS` not yet touched:
+  `FAIL: 1 problem(s) found. [vector-coverage-drift] V7 is now covered by at least one case,
+  but scripts/golden/verify.ts still lists it in KNOWN_VECTOR_GAPS — remove it there (and
+  update golden-set/README.md's gap note) in this change.` The symmetric check, firing exactly
+  as LH-006/TRO-499 designed it to.
+- `pnpm golden:verify` after removing V7 from `KNOWN_VECTOR_GAPS`: `PASS: golden set is
+  consistent.` Zero problems, zero known gaps reported.
+- `pnpm test -- scripts/golden/ src/lib/golden-set/ scripts/eval/`: 278 tests, all green.
+- `pnpm typecheck`: clean.
+
+**How to run it.** `source .factory-env` first. `pnpm golden:verify` for the gate check itself;
+`pnpm test -- scripts/golden/ src/lib/golden-set/` for the full test suite covering this
+change; `pnpm golden:build` regenerates `golden-set/images/` from the manifest (deterministic,
+no network call) if an image is ever lost or needs rebuilding.
+
+**Rollback.** `git revert` this change's commit(s). `golden-set/manifest.json` drops case-30 —
+also delete `golden-set/images/case-30-clean-match-net-contents-alt-format.jpg` by hand if the
+revert leaves it behind (it is a new file, not a modified one, so reverting the commit that
+added it removes it in the normal case). Restore the `["V7"]` entry in `scripts/golden/
+verify.ts`'s `KNOWN_VECTOR_GAPS` in the same revert: a manifest without the case, combined with
+an empty `KNOWN_VECTOR_GAPS`, fails `vector-coverage` instead of passing clean.
+
+## TRO-475 — LH-042: batch progress + results UI (2026-08-12)
+
+**What changed.** This ticket builds the two screens PRD §5 names: "manifest upload → pairing
+preview → run → live progress summary → results table." `/batch` uploads a CSV manifest and
+label images, previews the pairing, and starts the batch. `/batch/:id` polls the batch live
+and shows the results table.
+
+**The missing connection.** LH-040's preview endpoint never started a job. LH-041's queue and
+worker pool had no caller yet. Both said so in their own file comments. `POST /api/batch/start`
+(`src/app/api/batch/start/route.ts`) is that caller. It re-parses the same manifest-and-images
+upload `POST /api/batch/preview` accepts. It resolves real image bytes for every matched
+pairing, including — for the first time — real bytes pulled out of a zip
+(`src/server/batch-start/extract-zip-bytes.ts`). The preview step never decompresses a zip
+entry, by design; this ticket is the first that needs the real bytes, not just a filename and a
+declared size. `startBatchFromPairings` (`src/server/batch-start/start-batch.ts`) then creates
+`applications` and `label_images` rows, and calls LH-041's own `enqueueExtractItems` and
+`startBatchJob`, untouched. One unreadable image skips only that label. It never fails the whole
+batch. If every image in a batch is unreadable, the batch is marked `FAILED` outright — never
+left `RUNNING` with nothing in it, forever.
+
+**The polling endpoint.** `GET /api/batch/:batchJobId` (`src/app/api/batch/[batchJobId]/route.ts`)
+reads a live summary straight off `batch_jobs`, `batch_queue_items`, and `verifications` — no
+separate cached counters of its own. The counts match PRD §3.5's own words: processed,
+auto-verified, resolved-by-Sonnet, needs-human, plus average and p95 latency computed from each
+label's own claim-to-done gap (`src/lib/utils/latency-stats.ts`). CP-3 §7.1 flags that
+"auto-verified" bundles PASS and FAIL together. The summary shows the real split too, computed
+straight from `verifications.verdict`, so a batch with real compliance problems never reads as
+though everything passed.
+
+**The results table.** Label / Brand / ABV / Net / Warning / Status, one row per label — the
+same ✓ / ✗ / ⚠ vocabulary the single-label checklist already uses, for the same four fields
+Sarah's own interview quote names one at a time ("Brand name matches? Check. ABV is correct?
+Check. Government warning is there? Check."). A row with a finished verdict links to the
+existing single-label detail view (`/verify/:verificationId`). A still-queued, processing, or
+failed row links nowhere — there is nothing to open yet.
+
+**The four batch-scoped designed states (TH-R20), all real and tested, not just described:**
+- Malformed CSV / malformed zip — the upload screen shows the exact plain-English error the
+  preview endpoint already produces.
+- Unpairable rows — unmatched rows, unmatched images, and invalid rows are each listed by name
+  and reason on the same screen. Nothing is silently dropped.
+- Partial batch failure — the progress screen shows a count, and each failed row's own status
+  detail is read straight from `batch_queue_items.last_error` — CP-3 §7.3's own instruction for
+  where that text lives.
+- Rate-limit backoff notice — LH-041's own backoff state is read, not recomputed. An item
+  pushed back to `PENDING`, with `available_at` still in the future and at least one prior
+  attempt, means a retry is genuinely scheduled. The notice never names a specific cause. A
+  rate limit and any other transient error look identical from the queue rows alone — standing
+  rule 12 says uncertain beats wrong.
+
+**How to run it.** Source `.factory-env` first.
+`pnpm test -- src/server/batch-start src/server/batch-progress src/app/api/batch src/lib/utils/latency-stats.test.ts src/app/_lib/batch-client.test.ts`
+runs this ticket's own suite. `pnpm test` runs the full suite. `pnpm dev`, then open `/batch` to
+upload a manifest and images, or open `/` and follow "Start a batch."
+
+**Rollback.** `git revert` this ticket's commits. No schema change — every table this ticket
+writes to already existed before it.
+
+**Observed.** Every new server, API, and component file has a red-before-green test. Each test
+runs against a real Postgres database or a real DOM render. The full suite passes:
+1409 tests across 128 files. `pnpm typecheck`, `pnpm lint`, and `pnpm build`
+are all clean.
+
+This ticket's own flow also ran once against a live `pnpm dev` server, over real HTTP with
+`curl`. The run posted a real CSV manifest and two real JPEGs to `POST /api/batch/preview`. It
+then called `POST /api/batch/start`, which created a real batch job and returned its id.
+`GET /api/batch/:id` showed both labels as queued. `/batch` and `/batch/:id` both rendered with
+status 200. `/batch/abc` returned 404 for a malformed id. A well-formed but nonexistent id
+returned 200 and showed the client-side NOT_FOUND state, not a hard page 404. The test batch job
+and its uploaded files were deleted afterward. They never reached this branch's history.
+
+A local CodeRabbit review pass on this ticket's own diff found 9 real issues, all fixed here, not
+described and left for later: two real bugs (a stale/overlapping-poll race in
+`BatchProgressBrowser.tsx`, and every network failure in `batch-client.ts` showing the timeout
+message instead of its own — traced back to a hardcoded `true` two commits up), one accessibility
+fix (a `<p>` inside a `<dl>`'s `<div>`, outside the `<dt>`/`<dd>` content model that spec allows),
+one real UX gap (changing a file input after previewing left a stale "Start batch" button that
+would have submitted a different, unpreviewed upload), and five test-quality findings (an
+assertion inside a mock that would have been swallowed as a network error, an anchored regex that
+could never match its own target string, three added assertions and one added case tightening
+coverage this ticket's own tests already claimed but did not fully prove). See
+`factory/review-findings.jsonl` for the full record.
+
+**Not measured.** Real multi-hundred-image batch-start latency — `startBatchFromPairings`
+processes matched images sequentially, a deliberate simplicity-over-throughput trade-off stated
+in that file's own comment, not benchmarked against this project's 200-300-label scale
+reference. A live-browser click-through of the results table into the detail view — this repo's
+established convention is HTTP-handler-level and component-level testing, not a live browser.
+
 ## TRO-517 — Wire the warning comparator into the batch extract-worker (2026-08-12)
 
 **What changed.** `src/server/batch-queue/extract-worker.ts` now calls LH-020's real warning

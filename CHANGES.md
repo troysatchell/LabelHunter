@@ -4,6 +4,79 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-474 — LH-041: job queue + worker pool (2026-08-11)
+
+**What changed.** This ticket builds the batch queue that CP-3 designed: a Postgres-backed
+job queue, two worker pools, backoff, and a hard cap on Sonnet spend. It advances TH-R4
+(batch upload of 200-300 labels, each processed and reported on its own).
+
+A new table, `batch_queue_items`, holds two logical queues in one place — `EXTRACT` rows
+run the Haiku-extract-then-route cascade for one label; `RESOLVE` rows run the Sonnet
+resolver for one escalated label. A worker claims a row with one atomic SQL statement
+(`FOR UPDATE SKIP LOCKED`) and mints a fresh `claim_token` on every claim. A completion
+write checks that token before it commits. A worker whose lease expired mid-call — the
+process died, or the call just ran long — loses that check. The transaction discards its
+result instead of double-applying it. `claim.test.ts` and `complete.test.ts` fire ten
+workers at one row and prove exactly one wins; they also force a lease to expire mid-claim
+and prove the late worker's write touches nothing.
+
+Two separate worker pools run the two queues — 5 extract-workers, 2 resolve-workers,
+both proposed defaults from CP-3 §4.4, both environment variables
+(`BATCH_WORKER_CONCURRENCY`, `BATCH_RESOLVE_WORKER_CONCURRENCY`), not hard-coded numbers.
+A retryable failure (a 429, a 5xx, a network drop) releases its item for a later retry with
+exponential backoff and jitter; a non-retryable one (a bad request, a corrupt image) fails
+the item on the first try. The worker never sleeps holding a claim — it releases and moves
+on. A 429 also opens a short, whole-pool cooldown, so four other workers do not immediately
+re-discover the same throttled endpoint.
+
+The Sonnet escalation cap (CP-1's own deferred question, settled by CP-3 §6) reserves one
+unit of a batch's call budget before every Sonnet attempt, first try or retry alike — not
+after a settled outcome, which an earlier design round found could never trip the cap on a
+batch where every attempt happened to fail. Once a batch's budget (25% of its label count,
+rounded up) runs out, further escalations skip Sonnet and go straight to the human queue,
+recorded as such — never silently dropped, never charged for a call that never happened.
+
+`resolver/queue.ts` gains `insertSkippedReviewQueueEntry` for that skip case, and
+`review_queue` gains a `resolver_skip_reason` column so a `NULL` resolver output means
+exactly one thing (Sonnet has not run yet) rather than two different things at once.
+`batch_jobs` gains `sonnet_call_count`. Both are their own numbered migration
+(`drizzle/migrations/0002_batch_queue.sql`).
+
+One bad image fails only that item. `batch_queue_items.last_error` holds the reason. The
+batch itself finishes once every item reaches `DONE` or `FAILED`, no matter the mix. A
+batch's own `RUNNING` status gates every claim, so no worker can start on a batch that has
+not begun, or one that was cancelled.
+
+**TRO-506: the required stopgap, not the full fix.** `resolveEscalatedLabel` can, under
+lease expiry, still have two workers reach its own Sonnet call for the same label. The
+atomic claim makes this narrow — reachable only when a lease expires while a call is
+genuinely still in flight — but not zero. This ticket's resolve-worker catches the
+resulting unique-constraint conflict on `review_queue` and completes using the winning
+worker's own outcome. The loser reports a real result, not a false failure. The same
+catch-and-recover path also handles a second, related race this design adds beyond
+TRO-506's own text: two cap-skip attempts, or a cap-skip and a real resolution, landing on
+the same row. The `ON CONFLICT DO NOTHING` reservation that would close the TRO-506 window
+entirely is a recommended follow-up, not built here. CP-3 §3.3 scopes it out because it
+also needs a small, coordinated change to `review-queue/list.ts`, a file this ticket does
+not own.
+
+A small worker entry point, `scripts/batch-worker/run.ts` (`pnpm worker`), starts both
+pools and runs until `SIGINT`/`SIGTERM`. Wiring it into `render.yaml` is LH-060's job, not
+this one's.
+
+**How to run it.** `pnpm db:migrate` applies the new table and columns.
+`pnpm test -- src/server/batch-queue src/server/resolver/queue.test.ts` runs this ticket's
+suite (91 new test cases across 11 files — counted from the diff, not estimated). `pnpm worker`
+starts a worker process against `DATABASE_URL`; a manual run against a real batch (documented
+in this PR) processed one label through both the extractor and the resolver, real Anthropic
+calls, in about 16 seconds (04:03:31.003 to 04:03:46.995, observed from `batch_jobs.startedAt`/
+`completedAt`).
+
+**Rollback.** Revert this commit, then run `pnpm db:migrate` again on the reverted branch
+(drizzle will not auto-generate a down migration; dropping `batch_queue_items`,
+`batch_jobs.sonnet_call_count`, and `review_queue.resolver_skip_reason` by hand is the
+manual undo if the migration itself must come out).
+
 ## TRO-478 — local CodeRabbit review round 1: 3 findings, 3 fixed (2026-08-11)
 
 **What changed.** The gate's local CodeRabbit pass reviewed this branch once, before the PR

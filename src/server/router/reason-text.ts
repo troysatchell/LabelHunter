@@ -9,7 +9,7 @@ const REASON_TEXT_BY_REVIEW_REASON: Record<ReviewReason, string> = {
   LOW_IMAGE_QUALITY: "The image is not clear enough to read this field with confidence.",
   CONFLICTING_EXTRACTION: "The extracted evidence does not support this value. A human must check it.",
   MISSING_REQUIRED_FIELD: "This field is required. The label did not show it.",
-  WARNING_MISMATCH: "The government warning needs a closer look.",
+  WARNING_MISMATCH: "A reviewer must check the government warning against the label.",
   AMBIGUOUS_ABV: "A reviewer must check the alcohol content against the label.",
   AMBIGUOUS_NET_CONTENTS: "A reviewer must check the net contents against the label.",
   AMBIGUOUS_BRAND: "A reviewer must check the brand name or class and type against the label.",
@@ -31,6 +31,6 @@ export function buildFieldReasonText(
 ): string {
   if (comparatorNote) return comparatorNote;
   if (reviewReason) return REASON_TEXT_BY_REVIEW_REASON[reviewReason];
-  if (verdict === "NEEDS_REVIEW") return "This field needs a closer look.";
+  if (verdict === "NEEDS_REVIEW") return "A reviewer must check this field.";
   return verdict === "MISMATCH" ? "Does not match the application." : "Matches the application.";
 }

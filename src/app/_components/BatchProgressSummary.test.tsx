@@ -46,6 +46,11 @@ describe("BatchProgressSummary", () => {
     const autoVerified = screen.getByTestId("batch-stat-auto-verified");
     expect(autoVerified).toHaveTextContent("2 matched.");
     expect(autoVerified).toHaveTextContent("1 did not.");
+    // TRO-480: the caveat's own closing line must say WHAT "auto-verified"
+    // means (decided with no Sonnet call and no human), never the vague
+    // "needs a closer look" this line originally read (standing rule 26).
+    expect(autoVerified).toHaveTextContent("Neither needed a person to check it.");
+    expect(autoVerified.textContent).not.toMatch(/closer look/i);
   });
 
   it("shows avg and p95 latency formatted, once measured", () => {

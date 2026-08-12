@@ -29,7 +29,7 @@ const PASS_DETAIL: VerificationDetail = {
       labelValue: "GOVERNMENT WARNING: (1) text",
       evidence: "GOVERNMENT WARNING: (1) text",
       applicationValue: "the statutory warning required by 27 CFR part 16",
-      reason: "The government warning needs a closer look.",
+      reason: "A reviewer must check the government warning against the label.",
     },
   ],
 };

@@ -76,7 +76,7 @@ const NOTE = {
   wordingMismatch: "Government Warning wording differs from the required text.",
   prefixCapsMismatch: "Government Warning must print in capital letters.",
   surgeonGeneralCapsMismatch: "Surgeon General must print with capital letters.",
-  nearMiss: "Government Warning differs by a single character — needs a closer look.",
+  nearMiss: "Government Warning differs by a single character. A reviewer must confirm the exact wording.",
   channelsInconsistent: "Government Warning could not be read consistently.",
   lowImageQuality: "Government Warning is not clear enough in this image.",
   // CP-2 §6.1 does not draft a string for "single channel, not an exact

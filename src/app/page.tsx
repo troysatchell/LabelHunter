@@ -11,8 +11,8 @@ export default function Home() {
     <main className="page">
       <h1 className="page__title">Verify a label</h1>
       <p className="page__intro">
-        Add a label photo and the application details below. LabelHunter checks each field and flags anything that
-        needs a closer look.
+        Add a label photo and the application details below. LabelHunter checks each field and marks any that need a
+        person to review.
       </p>
       <VerifyForm />
       <p className="page__nav-links">

@@ -26,6 +26,27 @@ describe("buildFieldReasonText", () => {
     // NEEDS_REVIEW, reviewReason null, no comparator note. A verdict-only
     // fallback that only checks for "MISMATCH" would print "Matches the
     // application." here, which is wrong.
-    expect(buildFieldReasonText("NEEDS_REVIEW", null, undefined)).toBe("This field needs a closer look.");
+    expect(buildFieldReasonText("NEEDS_REVIEW", null, undefined)).toBe("A reviewer must check this field.");
+  });
+
+  it("never falls back to the vague 'needs a closer look' wording (TRO-480, standing rule 26)", () => {
+    // Every REASON_TEXT_BY_REVIEW_REASON entry, plus the verdict-only
+    // fallback above, used to end in "needs a closer look" — a phrase that
+    // names no field and no action. Checked across every ReviewReason, not
+    // just one, so a single re-added entry cannot slip through unnoticed.
+    const reviewReasons = [
+      "LOW_IMAGE_QUALITY",
+      "CONFLICTING_EXTRACTION",
+      "MISSING_REQUIRED_FIELD",
+      "WARNING_MISMATCH",
+      "AMBIGUOUS_ABV",
+      "AMBIGUOUS_NET_CONTENTS",
+      "AMBIGUOUS_BRAND",
+      "LOW_MODEL_CONFIDENCE",
+    ] as const;
+    for (const reason of reviewReasons) {
+      expect(buildFieldReasonText("NEEDS_REVIEW", reason, undefined)).not.toMatch(/closer look/i);
+    }
+    expect(buildFieldReasonText("NEEDS_REVIEW", null, undefined)).not.toMatch(/closer look/i);
   });
 });

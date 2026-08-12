@@ -19,7 +19,7 @@ describe("normalizeForFuzzyMatch — CP-1 §5.3's 6-step pipeline, in order", ()
 
   it("step 2 (casefold): CP-1's own worked example — STONE'S THROW = Stone's Throw", () => {
     expect(normalizeForFuzzyMatch("STONE'S THROW")).toBe(normalizeForFuzzyMatch("Stone's Throw"));
-    expect(normalizeForFuzzyMatch("STONE'S THROW")).toBe("stone's throw");
+    expect(normalizeForFuzzyMatch("STONE'S THROW")).toBe("stones throw");
   });
 
   it("step 2 (casefold): German ß folds to 'ss' — toLowerCase() alone does not do this (TRO-504 item 2)", () => {
@@ -48,10 +48,10 @@ describe("normalizeForFuzzyMatch — CP-1 §5.3's 6-step pipeline, in order", ()
   });
 
   it("step 5 (whitespace): collapses runs of internal whitespace and trims the ends", () => {
-    expect(normalizeForFuzzyMatch("  Stone's   Throw  ")).toBe("stone's throw");
+    expect(normalizeForFuzzyMatch("  Stone's   Throw  ")).toBe("stones throw");
   });
 
-  it("step 6 (punctuation): drops punctuation other than internal apostrophes and hyphens", () => {
+  it("step 6 (punctuation): drops punctuation, including apostrophes, other than an internal hyphen", () => {
     expect(normalizeForFuzzyMatch("Old Tom, Distillery Inc.")).toBe("old tom distillery inc");
   });
 
@@ -68,20 +68,23 @@ describe("normalizeForFuzzyMatch — CP-1 §5.3's 6-step pipeline, in order", ()
   });
 });
 
-describe("normalizeForFuzzyMatch — a known, documented gap: the typographic right single quote", () => {
-  it("does NOT fold U+2019 (’) — it is not one of CP-1 §5.3's three named apostrophe variants", () => {
-    // CP-1 names exactly three variants: the straight apostrophe, the
-    // backtick, and the acute accent. A real vision-model extraction may
-    // emit U+2019 RIGHT SINGLE QUOTATION MARK as a stylized apostrophe
-    // instead — implementing the quoted rule as written (lesson 15) means
-    // this character stays unfolded, not silently added to the fold set.
-    // This test pins the measured consequence rather than hiding it: the
-    // pair lands at ~0.923 similarity (see `brand.ts`'s 0.95 threshold),
-    // just below MATCH — a real gap, flagged in this ticket's final report,
-    // not fixed here without CP-1's own sign-off on widening the rule.
+describe("normalizeForFuzzyMatch — the typographic right single quote, a gap TRO-536 closed", () => {
+  it("folds U+2019 (’) to the same result as the straight apostrophe (') — case-15, TRO-536", () => {
+    // CP-1 §5.3's step 3 names exactly three variants to fold: the straight
+    // apostrophe, the backtick, and the acute accent. U+2019 RIGHT SINGLE
+    // QUOTATION MARK — a stylized apostrophe a real vision-model extraction
+    // may emit — is still not one of them, so step 3 still does not touch
+    // it (lesson 15: implement the quoted rule as written, not a widened
+    // paraphrase).
+    // Before TRO-536 that left a real gap. Step 6 dropped U+2019 as
+    // ordinary punctuation but kept the straight apostrophe. The two
+    // readings normalized to different strings and scored ~0.923
+    // similarity (see `brand.ts`'s 0.95 threshold) — just below MATCH.
+    // TRO-536 closed the gap from the other side: step 6 now drops the
+    // straight apostrophe too, so both readings converge on one string.
     const withCurlyApostrophe = normalizeForFuzzyMatch("Stone’s Throw");
     const withStraightApostrophe = normalizeForFuzzyMatch("Stone's Throw");
-    expect(withCurlyApostrophe).not.toBe(withStraightApostrophe);
+    expect(withCurlyApostrophe).toBe(withStraightApostrophe);
     expect(withCurlyApostrophe).toBe("stones throw"); // the curly mark is dropped as ordinary punctuation, not folded
   });
 });

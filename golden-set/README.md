@@ -28,16 +28,54 @@ The pipeline is the render-first hybrid design doc §2 lays out:
 - **`scripts/golden/build.ts`** — orchestrates render → degrade for every case, and writes
   the committed JPEG at its manifest path. Run it with `pnpm golden:build`.
 
-**Still not done:** design doc §5 describes about 5 fully `ai-generated` "wild" labels.
-LH-005 owns that work. LH-005 makes the Gemini API call and gets the human `verified: true`
-sign-off. No case in this manifest has `provenance: "ai-generated"` yet. When LH-005 adds
-one, its image starts out absent — the same way every case here started before this ticket.
-LH-005 must land the image and set `verified: true` in the same manifest change. The loader
-already rejects a `verified: false` `ai-generated` case at load time. But the loader checks
-only the schema shape, not whether the file actually exists. `scripts/golden/images.test.ts`
-checks that second part. It starts failing the moment an `ai-generated` case claims
-`verified: true` with no matching file.
-`scripts/golden/verify.ts` (LH-006: the consistency and coverage CI gate) is also still open.
+**Still not done — `ai-generated` wild labels.** Design doc §5 describes about 5 fully
+`ai-generated` "wild" labels (text included). No case in this manifest has `provenance:
+"ai-generated"` yet. When a future ticket adds one, its image starts out absent — the same way
+every case here started before LH-004. That ticket must land the image and set `verified: true`
+in the same manifest change. The loader rejects a `verified: false` `ai-generated` case at load time. It checks the schema
+shape only, not whether the file exists. `scripts/golden/images.test.ts` checks that the file
+exists.
+
+**Still not done — the realistic-corpus track.** A newer design doc supersedes the rest of the
+original §5 scope: `docs/superpowers/specs/2026-08-11-realistic-corpus-gemini-design.md`.
+
+Under this design, Gemini generates a realistic bottle photograph from a real reference photo.
+Each photo shows one camera condition: steady, motion-blur, or camera-shake. `build.ts`
+composites the renderer's exact-text label onto the photo. This step removes the warning-text
+transcription risk that an `ai-generated` case carries.
+
+The tooling exists now. Synthetic fixtures test the tooling:
+`scripts/golden/{imagenPrompt,blankRegionDetector,compositeBackdrop,imagen}.ts`.
+
+`assets/golden/references/` is still empty. No case in this manifest has provenance
+`"rendered+ai-backdrop"` yet.
+
+A future ticket adds the first one, once real bottle photos exist. Follow these steps:
+
+1. Add a bottle reference JSON file and its photo under `assets/golden/references/`. The
+   schema is `src/lib/golden-set/bottleReference.ts`.
+2. Run `pnpm golden:imagen`. For every `(scene, cameraCondition)` combination, the tooling
+   writes a backdrop PNG and a `.meta.json` sidecar to `golden-set/backdrops/`. The sidecar
+   records the detected `labelPlacement` and `generationMetadata`. The tooling never edits
+   `manifest.json`.
+3. Check the sidecar's `labelPlacement` value. If automatic detection fails, the sidecar
+   shows `labelPlacement: null` for that case. `pnpm golden:imagen` also prints "needs
+   manual placement" as a reminder. When this happens, measure a valid label-placement
+   quadrilateral by hand. Use it instead of the null value.
+4. Hand-author the case's manifest entry: ground truth, category, and vectors, the same as
+   every other case. Fold in the sidecar's `referenceBottle`, `scene`, `cameraCondition`,
+   `labelPlacement`, and `generationMetadata`.
+5. Keep `verified: false` until two conditions both hold. First, the entry's
+   `labelPlacement` holds the real, measured quadrilateral — it is never the null
+   placeholder. Second, a human confirms the composited label is legible and correctly
+   placed. Do not re-transcribe the warning text — the renderer already guarantees that
+   text is exact.
+6. Run `pnpm golden:build`. This command composites the label onto the committed backdrop.
+   The command is deterministic and makes no network call.
+
+`scripts/golden/verify.ts` (LH-006, not yet built) will eventually check this track's
+consistency too. Until then, the loader already enforces the schema shape:
+`src/lib/golden-set/loader.ts`.
 
 Every case's `verified` field stays `false`, even though its image is now real. `verified`
 records a **human** sign-off (design doc §3). That is CP-2's review, not this ticket's.

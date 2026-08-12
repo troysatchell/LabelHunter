@@ -493,6 +493,174 @@ describe("validateManifest", () => {
       expect(problems.length).toBeGreaterThan(1);
     }
   });
+
+  describe("validateManifest — rendered+ai-backdrop provenance", () => {
+    const aiBackdropCase = (overrides: Partial<GoldenSetCase> = {}): GoldenSetCase =>
+      validCase({
+        caseId: "case-ai-backdrop-amber-whiskey-01-bar-counter-steady",
+        imagePath: "golden-set/images/case-ai-backdrop-amber-whiskey-01-bar-counter-steady.jpg",
+        provenance: "rendered+ai-backdrop",
+        verified: true,
+        referenceBottle: "amber-whiskey-01",
+        scene: "bar-counter",
+        cameraCondition: "steady",
+        labelPlacement: {
+          topLeft: { x: 120, y: 90 },
+          topRight: { x: 420, y: 100 },
+          bottomLeft: { x: 130, y: 380 },
+          bottomRight: { x: 430, y: 390 },
+        },
+        generationMetadata: {
+          model: "gemini-3.1-flash-image",
+          resolution: "1K",
+          promptVersion: "v1",
+          generatedAt: "2026-08-11T00:00:00.000Z",
+        },
+        ...overrides,
+      });
+
+    it("accepts a well-formed rendered+ai-backdrop case", () => {
+      const result = validateManifest(manifest([aiBackdropCase()]));
+      expect(result.cases).toHaveLength(1);
+    });
+
+    it("rejects rendered+ai-backdrop with verified: false", () => {
+      expect(() => validateManifest(manifest([aiBackdropCase({ verified: false })]))).toThrow(
+        GoldenSetValidationError,
+      );
+    });
+
+    it("rejects rendered+ai-backdrop missing referenceBottle", () => {
+      const broken = manifest([aiBackdropCase()]);
+      // referenceBottle is an optional field on GoldenSetCase (valid on any
+      // provenance at the type level — the "only on rendered+ai-backdrop"
+      // rule is manifest-level, not a type constraint), so deleting it here
+      // is not a type error and needs no @ts-expect-error.
+      delete broken.cases[0].referenceBottle;
+      try {
+        validateManifest(broken);
+        expect.unreachable("validateManifest should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(GoldenSetValidationError);
+        expect((err as GoldenSetValidationError).problems.some((p) => p.includes("referenceBottle"))).toBe(
+          true,
+        );
+      }
+    });
+
+    it("rejects rendered+ai-backdrop missing labelPlacement entirely", () => {
+      const broken = manifest([aiBackdropCase()]);
+      // Distinct from "rejects labelPlacement with a non-numeric corner"
+      // below: this deletes the key entirely rather than malforming its
+      // value, exercising checkCase's `if ("labelPlacement" in raw)` branch
+      // instead of checkLabelPlacement.
+      delete broken.cases[0].labelPlacement;
+      try {
+        validateManifest(broken);
+        expect.unreachable("validateManifest should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(GoldenSetValidationError);
+        expect(
+          (err as GoldenSetValidationError).problems.some((p) => p.includes("labelPlacement")),
+        ).toBe(true);
+      }
+    });
+
+    it("rejects rendered+ai-backdrop missing generationMetadata entirely", () => {
+      const broken = manifest([aiBackdropCase()]);
+      // Distinct from "rejects generationMetadata missing promptVersion"
+      // below: this deletes the whole object, exercising checkCase's
+      // `if ("generationMetadata" in raw)` branch instead of
+      // checkGenerationMetadata's own field checks.
+      delete broken.cases[0].generationMetadata;
+      try {
+        validateManifest(broken);
+        expect.unreachable("validateManifest should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(GoldenSetValidationError);
+        expect(
+          (err as GoldenSetValidationError).problems.some((p) => p.includes("generationMetadata")),
+        ).toBe(true);
+      }
+    });
+
+    it("rejects an invalid cameraCondition value", () => {
+      expect(() =>
+        validateManifest(
+          // @ts-expect-error -- intentionally invalid enum value for the red-first test
+          manifest([aiBackdropCase({ cameraCondition: "underwater" })]),
+        ),
+      ).toThrow(GoldenSetValidationError);
+    });
+
+    it("rejects labelPlacement with a non-numeric corner", () => {
+      expect(() =>
+        validateManifest(
+          manifest([
+            aiBackdropCase({
+              // @ts-expect-error -- intentionally malformed input for the red-first test
+              labelPlacement: { topLeft: { x: "left", y: 0 }, topRight: { x: 1, y: 0 }, bottomLeft: { x: 0, y: 1 }, bottomRight: { x: 1, y: 1 } },
+            }),
+          ]),
+        ),
+      ).toThrow(GoldenSetValidationError);
+    });
+
+    it("rejects generationMetadata missing promptVersion", () => {
+      const broken = manifest([aiBackdropCase()]);
+      // @ts-expect-error -- intentionally malformed input for the red-first test
+      delete broken.cases[0].generationMetadata.promptVersion;
+      expect(() => validateManifest(broken)).toThrow(GoldenSetValidationError);
+    });
+
+    it("rejects a generationMetadata.generatedAt that is not a parseable ISO-8601 timestamp", () => {
+      const broken = manifest([
+        aiBackdropCase({
+          generationMetadata: {
+            model: "gemini-3.1-flash-image",
+            resolution: "1K",
+            promptVersion: "v1",
+            generatedAt: "unknown",
+          },
+        }),
+      ]);
+      try {
+        validateManifest(broken);
+        expect.unreachable("validateManifest should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(GoldenSetValidationError);
+        expect(
+          (err as GoldenSetValidationError).problems.some((p) => p.includes("generatedAt")),
+        ).toBe(true);
+      }
+    });
+
+    it("rejects a generationMetadata.generatedAt that parses but is not the canonical toISOString format", () => {
+      // Missing milliseconds -- new Date(...) parses this fine, but
+      // toISOString() would always add ".000Z", so it round-trips to a
+      // DIFFERENT string. isNonEmptyString alone would have accepted this.
+      const broken = manifest([
+        aiBackdropCase({
+          generationMetadata: {
+            model: "gemini-3.1-flash-image",
+            resolution: "1K",
+            promptVersion: "v1",
+            generatedAt: "2026-08-11T00:00:00Z",
+          },
+        }),
+      ]);
+      expect(() => validateManifest(broken)).toThrow(GoldenSetValidationError);
+    });
+
+    it("rejects referenceBottle set on a rendered (non-ai-backdrop) case", () => {
+      // referenceBottle is type-valid on any GoldenSetCase regardless of
+      // provenance (same reasoning as above) — this is a manifest-level
+      // rule, so no @ts-expect-error is expected here either.
+      expect(() =>
+        validateManifest(manifest([validCase({ referenceBottle: "amber-whiskey-01" })])),
+      ).toThrow(GoldenSetValidationError);
+    });
+  });
 });
 
 describe("loadGoldenSetManifest", () => {

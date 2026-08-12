@@ -159,6 +159,168 @@ edge case.)
 **Rollback.** `git revert` this commit. `scripts/eval/results/eval-report.json`,
 `scripts/eval/baseline.json`, and `scripts/eval/results/benchmark-report.json` revert to their
 pre-TRO-538 shape along with the code; no other file depends on the new fields.
+## TRO-537 — LH-032 · Prove the government warning FAIL path on a real image (2026-08-12)
+
+**What this proves.** TH-R9 names three acceptance cases. One passes. Two fail. Until this
+ticket, only the PASS case ran the real pipeline — case-01 in
+`src/server/warning/index.test.ts`. Both FAIL cases ran only against hand-built strings. Both
+went straight to `reconcileWarningChannels` (`reconcile.test.ts:59-63`, `:80-87`). That gap
+mattered. CP-2 §4.5's rule: "we never accuse on one channel." A single readable channel
+returns `NEEDS_REVIEW`, never `MISMATCH`. Comparator-level proof does not show that the live
+path reaches the same answer. Troy ruled on this (INT-001,
+`audit/requirements/interpretations.md:9-24`): comparator-level proof does not satisfy TH-R9.
+
+**Two new tests, one file.** Both live in `src/server/warning/index.test.ts`, in the existing
+"real image, real OCR, real region detection" `describe` block, beside the case-01 test they
+mirror. Neither passes a `deps` argument to `compareGovernmentWarningFromImage` — region
+detection, cropping, and OCR all run for real.
+
+- **case-08** (the case INT-001 requires): real pipeline against
+  `golden-set/images/case-08-title-case-warning-prefix-only.jpg`. Verdict `MISMATCH`, note
+  "Government Warning must print in capital letters."
+- **case-10** (optional under INT-001, added anyway — nearly free, and it closes TH-R9's third
+  acceptance shape on a real image): real pipeline against
+  `golden-set/images/case-10-reworded-warning-clause-one.jpg`. Verdict `MISMATCH`, note
+  "Government Warning wording differs from the required text."
+
+Both tests read their image path and warning text from `loadGoldenSetManifest()`, never a
+pasted literal. A manifest edit that changes the ground truth breaks the test right away.
+
+**The trap, confirmed and avoided.** `extractedWarning()`'s defaults are
+`prefix_casing: "ALL_CAPS"` and the canonical warning text. A standalone `tsx` script measured
+what those defaults do against case-08's real image. The script ran outside the repo and wrote
+no file. The result: `NEEDS_REVIEW`, reason `WARNING_MISMATCH`, note "Government Warning could
+not be read consistently" — not `MISMATCH`.
+
+The VLM channel reads the canonical, all-caps text. The real OCR channel reads the image's
+actual title-case text. The two disagree outright, so the code takes
+`reconcileDualChannel`'s disagree branch (`reconcile.ts:136-138`). Only the agree branch can
+return `MISMATCH`, and these two channels do not agree.
+
+The new tests avoid this trap. Each passes the case's own transcription and its real
+`prefix_casing`: `TITLE_CASE` for case-08, `ALL_CAPS` for case-10. Case-10's prefix is correct.
+Only clause (1)'s wording is off.
+
+**Evidence, measured this session.**
+
+| measurement | value |
+| -- | -- |
+| case-08, real pipeline, `pnpm test` | `MISMATCH`, "Government Warning must print in capital letters." |
+| case-08 wall clock | 296 ms (vitest run), 332 ms (standalone `tsx` script) |
+| case-08 with the ALL_CAPS trap (verification only, not shipped) | `NEEDS_REVIEW` / `WARNING_MISMATCH`, "Government Warning could not be read consistently." |
+| case-10, real pipeline, `pnpm test` | `MISMATCH`, "Government Warning wording differs from the required text." |
+| case-10 wall clock | 298 ms |
+
+**Not touched.** This ticket leaves `reconcile.ts`, `region-detect.ts`, `ocr.ts`, and
+`OCR_CONFIDENCE_FLOOR` unchanged. It adds tests. It fixes no production code.
+`reconcile.test.ts:59-63` and `:80-87` (the comparator-level title-case and reworded tests) stay
+untouched too. They remain the right unit tests. This ticket adds the missing integration proof
+beside them.
+
+**Effect on TH-R9.** This ticket meets INT-001's bar. A FAIL case now runs the real image
+pipeline. TH-R9 moves out of PARTIAL.
+
+**Rollback.** Revert this ticket's commits. They touch two files: this changelog entry and
+`src/server/warning/index.test.ts`. No schema change.
+
+## TRO-536 — LH-031b · Drop the apostrophe at normalizer step 6 (2026-08-12)
+
+**What changed.** Step 6 of `normalizeForFuzzyMatch` (`src/server/comparators/normalize.ts`)
+dropped every punctuation mark except an apostrophe and a hyphen. It now drops the apostrophe
+too and keeps only the hyphen. The function is renamed from
+`dropPunctuationExceptApostropheAndHyphen` to `dropPunctuationExceptHyphen`, and its
+trailing-trim regex simplifies from `/^['-]+|['-]+$/g` to `/^-+|-+$/g`.
+
+**Why.** case-15 (`STONES THROW` on the label, `Stone's Throw` on the application) expects
+PASS with `brand_name` MATCH. It returned REVIEW with `AMBIGUOUS_BRAND`. Every extraction field
+scored `correct: true` in `scripts/eval/results/eval-report.json` (measured
+2026-08-12T13:26:45.488Z, live, `claude-haiku-4-5`) — Haiku read the label right, so the defect
+was in the comparator. Step 6 kept the application's apostrophe, so the two brand strings
+normalized to `stone's throw` and `stones throw`, one character apart. `similarity()` scored
+0.923077, just under `BRAND_CLASS_MATCH_THRESHOLD` (0.95), so the field escalated to
+NEEDS_REVIEW and the label rolled up to REVIEW.
+
+**Measured on the corpus, not argued.** Replayed the production normalizer and similarity
+function over all 32 golden-set cases' `brand_name` and `class_type`, using Haiku's real
+extracted values from the measured run, once against the old step 6 and once against the
+patched one (read-only script, no repo file changed):
+
+| Case | Field | Before | After |
+|---|---|---|---|
+| case-15 | `brand_name` | 0.923077 | 1.000000 |
+| case-16 | `brand_name` | 0.423077 | 0.461538 |
+
+Exactly one score crosses the 0.95 threshold: case-15. case-16 stays below it and keeps its
+NEEDS_REVIEW field verdict, which its own expectation asks for (`brand.test.ts` pins this
+pair). No `class_type` score moves anywhere in the 32-case corpus. `extraction-scoring.ts`
+calls the same normalizer to score extraction correctness; zero extraction scores move, because
+dropping a character can only merge two strings, never split them.
+
+**A gap this closes.** `normalize.test.ts` already pinned a known gap: a curly apostrophe
+(U+2019, a stylized mark a real vision-model read can emit) and a straight apostrophe
+normalized to two different strings and scored ~0.923 similarity — just under MATCH. Both now
+normalize to the same punctuation-free string and score 1.0. The test that pinned the gap now
+pins it closed. Inverted the assertion instead of deleting the test, so the record of the
+change stays in the suite.
+
+**Honest limit.** TH-R8's own named acceptance test is `STONE'S THROW` vs `Stone's Throw`
+(`audit/requirements/inventory.md:79`), and case-14 carries that exact pair and already passed
+before this fix. This change does not repair a broken graded acceptance line — it extends the
+same graded rule (rubric vector V5) to a second carrier, case-15, that sits just beyond every
+document's own named example.
+
+**One accepted behavior change.** A possessive and a plural now fold together — `stone's` and
+`stones` normalize identically. This can produce a wrong MATCH. It cannot produce a wrong FAIL:
+`compareBrandOrClass` returns only `MATCH` or `NEEDS_REVIEW` (`brand.ts:60-62`, pinned by
+`brand.test.ts`). It never touches the government warning, which keeps its own exact-compare
+subsystem with no shared helpers (`normalize.ts:12-15`).
+
+**Checkpoint amendment, flagged for the record.** `docs/checkpoints/cp1-cascade-router-prompts.md`
+is a checkpoint-approved document. Three lines stated step 6 as "drop punctuation except
+internal apostrophes and hyphens" and printed the folded literal as `` stone's throw ``. Both
+went stale the moment step 6 changed. Updated the rule text and the worked example's folded
+literal, and added an inline, dated amendment note at the point of change. CP-1's outcome does
+not change: `STONE'S THROW` and `Stone's Throw` still fold to one string and still score 1.0 —
+only the folded spelling changed, from `stone's throw` to `stones throw`. This is a deviation
+from originally-approved checkpoint text, made without a fresh live walkthrough; it is on the
+record here for Troy, not a decision this ticket claims authority to make quietly.
+
+**Evidence.**
+
+- `pnpm test`: 1530/1530 passed, 138 test files. No test deleted, skipped, or quarantined.
+  Includes a direct assertion that `normalizeForFuzzyMatch("STONES THROW")` equals
+  `normalizeForFuzzyMatch("Stone's Throw")` (`normalize.test.ts`), alongside the
+  comparator-level case-15 test in `brand.test.ts`.
+- `pnpm typecheck`: clean.
+- `pnpm lint`: 0 errors (1 pre-existing warning in `DetailView.tsx`, unrelated to this change).
+- `pnpm golden:verify`: PASS, 32 cases — no manifest edit, so vector coverage is unchanged.
+- TDD: `brand.test.ts`'s new case-15 test was written first and observed failing
+  (`NEEDS_REVIEW`, not `MATCH`) against the pre-fix normalizer, for the documented reason
+  (0.923077 similarity below the 0.95 threshold), before the source change landed.
+- Live, one Haiku call: `pnpm eval:check -- --live --case=case-15-case-variant-brand-punctuation`.
+  Observed `actualLabelVerdict: "PASS"` and `brand_name` `actualVerdict: "MATCH"`. The router
+  now resolves the field itself, so `resolverCost` is `null` — no Sonnet call. Cost $0.00475.
+  **Correction to this ticket's own prediction:** the ticket expected exit code 1 with a
+  "stale coverage" message. The observed exit code was 0, with no such message.
+  `scripts/eval/check.ts:154-160` explains why: `--case=<id>` is a dedicated single-case debug
+  path. It prints the result and returns before the baseline-comparison logic ever runs, so it
+  never emits that message and never touches the committed report. Two checks confirm this: the
+  md5 of `scripts/eval/results/eval-report.json` is byte-identical before and after the run, and
+  `git status` shows that path clean. No restore was needed, though a backup was taken first
+  regardless.
+- `pnpm eval:check` (cheap mode, what gate G8 runs): PASS, exit 0, comparing the untouched
+  committed report against the committed baseline. **Stated honest limit:** this run does not
+  exercise this fix at all — it is scored against the same pre-fix committed numbers, so G8
+  proves nothing regressed, not that case-15 now passes. The live single-case run above is what
+  proves that.
+
+**How to run it.** `pnpm test`. Optional live check (one Haiku call, not part of the gate; copy
+`scripts/eval/results/eval-report.json` aside first — though `--case` mode does not write it):
+`pnpm eval:check -- --live --case=case-15-case-variant-brand-punctuation`.
+
+**Rollback.** Revert this commit range. `normalize.ts` step 6 goes back to keeping the
+apostrophe; `normalize.test.ts` and `brand.test.ts` go back to their pre-TRO-536 assertions;
+CP-1's three amended lines revert to their originally-approved text.
 
 ## TRO-479 — LH-053 · E2E suite (2026-08-12)
 

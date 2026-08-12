@@ -11,13 +11,16 @@ warning upgrade ladder (its own open question 6 is decided here), §3.8 the late
 > An agent wrote it; an agent cannot clear the gate — only Troy can, in his own words, recorded
 > as a comment.
 >
-> **One difference from CP-1 and CP-2's own banners, stated plainly.** Those two documents said
-> "no agent starts \[the next wave\] until Troy acknowledges." That sentence is no longer true
-> for CP-3. Troy's session on 2026-08-11 (commit `c09250e`) removed the block on dispatch:
-> "material must exist and Troy must be notified before dispatch, but do not wait for his
-> reply." The *purpose* of this document has not changed — Troy must still be able to defend
-> every decision below live, in an interview — only the mechanics of when LH-040/041/042 start
-> have changed. Do not read a dispatched ticket as a substitute for Troy's review.
+> **One difference from CP-1 and CP-2's own banners, stated plainly, in four separate facts.**
+>
+> 1. Troy's session on 2026-08-11 (commit `c09250e`) grants one specific permission: LH-040,
+>    LH-041, and LH-042 may start once this material exists and Troy has been notified.
+> 2. That permission does not require Troy's reply first. CP-1 and CP-2's own banners required
+>    it — "no agent starts \[the next wave\] until Troy acknowledges." CP-3 does not.
+> 3. Troy's acceptance of the *design* is a separate, unchanged requirement. Only Troy can accept
+>    it, in his own words, recorded as a comment — the same rule CP-1 and CP-2 stated.
+> 4. Dispatch is not a substitute for that acceptance. A ticket starting does not mean Troy
+>    reviewed or agreed with what is in this document.
 
 ## How to use this document
 
@@ -124,7 +127,8 @@ schema changes are numbered migrations, never a direct edit).
 | `verification_id` | FK → `verifications`, nullable | Set for `RESOLVE` rows once the `EXTRACT` phase has produced a `verifications` row with `verdict = REVIEW`. Null for `EXTRACT` rows — there is no verification yet. |
 | `resolver_input` | jsonb, nullable | `RESOLVE` rows only. See §2.3 — this is not optional. |
 | `status` | enum `PENDING` \| `CLAIMED` \| `DONE` \| `FAILED` | The claim state machine, §3. |
-| `claimed_by` | text, nullable | An opaque worker-instance identifier (process id + hostname, or a UUID assigned at worker startup). For diagnosing a stuck claim, not for authorization. |
+| `claimed_by` | text, nullable | An opaque worker-instance identifier (process id + hostname, or a UUID assigned at worker startup). Identifies *which worker*, for logs and diagnosis. Not the fencing mechanism — see `claim_token`. |
+| `claim_token` | uuid, nullable | Generated fresh on **every** claim, including a reclaim by the same `claimed_by`. The fencing mechanism (§3.1, §3.2) — completion, retry-release, and failure updates all require it to match. |
 | `claimed_at` | timestamp, nullable | |
 | `lease_expires_at` | timestamp, nullable | Past this time, a `CLAIMED` row is eligible for reclaim by any worker. §3.2. |
 | `available_at` | timestamp, not null, default now() | A row is only claimable once this time has passed. Defaults to "now" at insert; a retryable failure pushes it forward by the backoff delay (§5) instead of blocking the worker that hit the failure. |
@@ -153,10 +157,23 @@ CHECK (
 )
 ```
 
-And a partial unique index, `UNIQUE (verification_id) WHERE kind = 'RESOLVE'` — the same
-one-row-per-verification guarantee `review_queue_verification_id_unique`
-(`schema.ts:348-350`) already gives that table, applied here too, so a retried or duplicated
-`EXTRACT` transaction cannot enqueue two `RESOLVE` rows for the same escalation.
+Two partial unique indexes, one per `kind`, both closing the same class of gap: a retried
+enqueue must not create a second row for work already queued.
+
+- `UNIQUE (verification_id) WHERE kind = 'RESOLVE'` — the same one-row-per-verification
+  guarantee `review_queue_verification_id_unique` (`schema.ts:348-350`) already gives that
+  table, applied here too, so a retried or duplicated `EXTRACT` transaction cannot enqueue two
+  `RESOLVE` rows for the same escalation.
+- `UNIQUE (batch_job_id, application_id, label_image_id) WHERE kind = 'EXTRACT'` — the matching
+  guarantee on the enqueue side. Nothing elsewhere in the schema stops two `EXTRACT` rows for
+  the same pairing: `verifications` carries no unique constraint on
+  `(applicationId, labelImageId)` either, so two `EXTRACT` rows for one label would not just
+  waste a claim slot — each could run its own extraction and insert its own `verifications`
+  row, silently doubling that label in every downstream count and in LH-042's results table.
+  **Enqueue must be conflict-safe against this index** — `INSERT ... ON CONFLICT
+  (batch_job_id, application_id, label_image_id) WHERE kind = 'EXTRACT' DO NOTHING` — so a
+  retried batch-creation step (LH-040's own upload handler, retried by a client timeout or a
+  partial failure) reuses the existing row instead of duplicating it.
 
 **What neither constraint checks: that `application_id`, `label_image_id`, and (transitively,
 for a `RESOLVE` row) `verification_id` all belong to the *same* `batch_job_id`.** That needs a
@@ -201,9 +218,13 @@ later deserializes it, rebuilds `application` and `image` cheaply, and calls
 **The snapshot needs a version tag, named as a requirement rather than left implicit.** A batch
 can sit in the queue for as long as the batch itself takes to drain — long enough for a code
 deploy to land between the `EXTRACT` worker that wrote a snapshot and the resolve-worker that
-reads it, if `ResolverInput`'s own shape ever changes. A resolve-worker that receives a
-`resolver_input` payload at a `schemaVersion` it does not recognize must reject the row —
-`FAILED`, `last_error` naming the version mismatch — never guess at a compatible reading. This
+reads it, if `ResolverInput`'s own shape ever changes. **`schemaVersion: "1"` is the one
+supported value as of this document** — matching `ResolverInput`'s fields as read above
+(`extraction`, `router`, `flaggedFields`, plus `application` and `image` rebuilt rather than
+snapshotted) at the time this design was written. A resolve-worker that receives a
+`resolver_input` payload at
+any other `schemaVersion`, including a missing one, must reject the row — `FAILED`, `last_error`
+naming the version mismatch — never guess at a compatible reading. This
 is the same "reject, never clamp or guess" boundary this codebase already applies to untyped
 input elsewhere (`findExistingReviewQueueEntry`'s own refusal to reuse a `resolverOutput` shape
 it cannot validate, `src/server/resolver/queue.ts:173-189`), applied here to a payload this
@@ -243,16 +264,19 @@ is one statement, using Postgres's own row-locking:
 UPDATE batch_queue_items
 SET status = 'CLAIMED',
     claimed_by = $workerId,
+    claim_token = gen_random_uuid(),   -- fresh every claim, including a reclaim by $workerId
     claimed_at = now(),
     lease_expires_at = now() + $leaseSeconds * interval '1 second',
     attempts = attempts + 1
 WHERE id = (
-  SELECT id FROM batch_queue_items
-  WHERE kind = $kind
-    AND available_at <= now()
-    AND (status = 'PENDING' OR (status = 'CLAIMED' AND lease_expires_at < now()))
-  ORDER BY id
-  FOR UPDATE SKIP LOCKED
+  SELECT bqi.id FROM batch_queue_items bqi
+  JOIN batch_jobs bj ON bj.id = bqi.batch_job_id
+  WHERE bqi.kind = $kind
+    AND bj.status = 'RUNNING'
+    AND bqi.available_at <= now()
+    AND (bqi.status = 'PENDING' OR (bqi.status = 'CLAIMED' AND bqi.lease_expires_at < now()))
+  ORDER BY bqi.id
+  FOR UPDATE OF bqi SKIP LOCKED
   LIMIT 1
 )
 RETURNING *;
@@ -265,6 +289,28 @@ at the same instant against the same table cannot land on the same row — Postg
 enforces that, not application code. This is the primary defence, and it is structural: nothing
 downstream has to trust that two workers behaved correctly, because the database made it
 impossible for two workers to both succeed on the same row.
+
+**`bj.status = 'RUNNING'` is not decoration — without it, claiming can start before the batch
+has.** §8's own worked example creates all 200 `EXTRACT` rows (`status = 'PENDING'`, step 1)
+*before* `batch_jobs.status` flips to `RUNNING` (step 2). A claim query that reads only queue-
+item fields cannot tell that apart from a batch that is genuinely running, so a worker polling
+continuously could claim item #1 before the warm-up request (step 2, CP-1 §7.3's own
+recommendation) has fired — silently defeating the one thing that ordering exists to guarantee.
+Joining `batch_jobs` and requiring `RUNNING` makes the step 1 → step 2 → step 3 ordering in §8
+an enforced precondition, not a hoped-for convention.
+
+**`claim_token`, not `claimed_by` alone, is what completion checks — and the difference is real,
+not pedantic.** `claimed_by` names a worker *instance*, which can live for a batch's entire
+duration and claim hundreds of items across it. It is not unique *per claim*. Consider: worker A
+claims row X (`claimed_by = 'A'`), the call runs long, the lease passes, and — through whatever
+path, a retry loop, a redeploy that reuses a stable identifier, a bug — worker A (still that same
+identifier) ends up claiming row X *again*, later, as a genuinely separate episode. A completion
+predicate that only checks `claimed_by = 'A'` cannot tell the *first* episode's now-stale result
+from the *second* episode's real one — both carry the identical `claimed_by`. `claim_token` is
+generated fresh on every claim, first or reclaimed, by the same worker or a different one, so a
+stale episode's token never matches the row's current one, however the staleness arose. §3.2's
+completion guard requires it alongside `claimed_by`, which stays as the human-facing "which
+worker" identifier for logs — additive, not a replacement.
 
 `kind = $kind` is what makes this one query serve two independently-sized pools: extract-workers
 run it with `$kind = 'EXTRACT'`, resolve-workers with `$kind = 'RESOLVE'`. Same statement, same
@@ -304,19 +350,33 @@ conditioned on still holding it**, not unconditional.
 ```sql
 UPDATE batch_queue_items
 SET status = 'DONE'   -- or the PENDING/FAILED release from §5.2
-WHERE id = $id AND claimed_by = $workerId AND status = 'CLAIMED'
+WHERE id = $id AND claim_token = $myClaimToken AND status = 'CLAIMED'
 RETURNING id;
 ```
 
 Run this **first**, inside the same transaction that writes `verifications` / `field_results` /
-`review_queue`. Zero rows returned means this worker's lease is already gone — someone else
-reclaimed and, most likely, already finished this item. The transaction rolls back without
-writing anything else, and the worker's own extraction or resolution result is discarded, not
-reconciled. That is a real cost — the model call that produced the discarded result was not
+`review_queue`. Zero rows returned means this worker's own claim episode is no longer the current
+one — its lease expired, someone (possibly this same worker, under the same `claimed_by`, on a
+later episode) reclaimed the row, and most likely already finished it. The transaction rolls back
+without writing anything else, and the worker's own extraction or resolution result is discarded,
+not reconciled. That is a real cost — the model call that produced the discarded result was not
 free — but it is the same trade this document already makes in §3.3 for the Sonnet case: waste
 money rather than risk corrupting data. §7's decision table and §8's worked example both assume
 this guard runs on every completion write, for both queue kinds, not only where §3.3 discusses
 it explicitly.
+
+**Why `claim_token`, not `claimed_by`, is the predicate here:** §3.1 already makes the case in
+full. The short version is that `claimed_by` is stable across a worker's whole lifetime, so it
+cannot distinguish this worker's *current* claim on row X from a *stale* one it held earlier on
+the same row — `claim_token` can, because a fresh one is minted on every claim.
+
+**LH-041's own test suite must cover the lost-lease case directly, not only as a paragraph in this
+document.** A worker claims an item, its lease is made to expire mid-call (simulated, not
+awaited for real), a second claim reassigns `claimed_by`/`claim_token`, and the first worker's
+completion attempt is asserted to affect zero rows and write nothing. This is the regression test
+for the exact race this section exists to close — CP-2 named comparable named cases (`STONE'S
+THROW`, Jenny's title-case catch) for its own load-bearing checks, and this one earns the same
+treatment.
 
 ### 3.3 Can two workers double-process the same item?
 
@@ -343,6 +403,18 @@ for it, and the TOCTOU window inside that function is never exercised by the bat
 not because the window closed, but because the batch design never lets two callers reach it
 concurrently in the first place.
 
+**One asymmetry between the two queue kinds, stated plainly rather than left for a reader to
+infer.** For an `EXTRACT` item, §3.2's completion guard genuinely gates everything: the worker
+controls the whole transaction, so the guard, the `verifications` insert, and the `review_queue`
+insert (when the router says REVIEW) either all commit together or none do. For a `RESOLVE`
+item, that is **not** true. `resolveEscalatedLabel` calls Sonnet and then calls
+`insertReviewQueueEntry` — the write that actually creates the `review_queue` row — entirely
+inside itself, before this worker's own `batch_queue_items` completion guard ever runs. §3.2's
+guard, run afterward, protects the `batch_queue_items` row and the `verifications.resolutionPath`
+update from a stale worker double-writing them. It does **not** gate the `review_queue` insert,
+because that insert already happened, inside a function this design calls but does not
+restructure. That gap is exactly what the rest of this section names.
+
 **The residual risk, named precisely rather than waved away.** A lease is a timeout, not a proof
 of death. Here is the exact sequence that reopens TRO-506's race, one event at a time:
 
@@ -363,14 +435,31 @@ Money is wasted. Data is not corrupted — the unique constraint still holds. Th
 the residual gap: **narrower than "any two workers, any time" — reachable only through lease
 expiry during a call that is slow but still alive — but real.**
 
+**Required now, regardless of whether the follow-up below ever ships: the losing caller must
+recover, not throw.** Step 6 above ends with "the second insert hits the table's own unique
+constraint and throws, uncaught." That throw propagates out of `resolveEscalatedLabel` to
+whichever resolve-worker called it — and today, nothing in this design says what that
+resolve-worker should do about it. It must not mark its own `RESOLVE` queue item `FAILED`: the
+verification genuinely *is* resolved, just by the other worker, and reporting a failure for a
+label that was in fact handled would be a false alarm, and a false alarm the batch summary would
+then have to explain away. The resolve-worker's own call site — code this design owns, not
+`resolver/queue.ts` — must catch the Postgres unique-violation (`23505`) on `verification_id`
+specifically, call the already-exported `findExistingReviewQueueEntry` (`resolver/index.ts`'s own
+public surface, §2.4's table) to load the row the *other* worker wrote, and complete its
+`RESOLVE` queue item using that data: `DONE`, the same `verifications.resolutionPath` update,
+the same counter increment the winning outcome implies. This is buildable inside LH-041 today —
+it changes no shipped file — and it is required, not optional, because leaving the exception
+uncaught would surface as an unexplained item failure for a label that actually succeeded.
+
 **The recommended fix, adopting TRO-506's own suggestion, as a follow-up — not a blocker.**
 TRO-506 recommends replacing the check-then-insert with an atomic reservation:
 `INSERT INTO review_queue (verification_id, reason) VALUES (...) ON CONFLICT (verification_id)
 DO NOTHING RETURNING id`, run *before* the Sonnet call. A returned row means this caller won the
 reservation and should proceed; no row returned means someone else already has it, and this
-caller should not call Sonnet at all. This closes even the lease-expiry window, because the
-reservation — unlike a lease — is not time-bound; it is a fact in the database the instant it
-commits.
+caller should not call Sonnet at all — the recovery paragraph above still applies, just triggered
+earlier, before the wasted call rather than after it. This closes even the lease-expiry window,
+because the reservation — unlike a lease — is not time-bound; it is a fact in the database the
+instant it commits.
 
 **Why this document does not fold that fix into LH-041's required scope.** Adopting it changes
 `review_queue`'s own shape mid-flight: a reserved-but-unresolved row would carry
@@ -386,10 +475,14 @@ UI — but it would render as "no resolver suggestion yet" indistinguishably fro
 deliberate escalation-cap skip, which is a real state the UI cannot tell apart from "wait a few
 seconds and refresh." Making TRO-506's fix land cleanly needs a small, coordinated change to
 that list query too. That is a five-line fix, but it touches a file this ticket's brief says
-not to touch, on a ticket (LH-050 / TRO-476) that has already merged. **Recommendation:** file
-it as its own small follow-up ticket, owned jointly by whoever revisits LH-041 and LH-050,
-rather than pulled into this one. §12 lists it as an open question with that recommendation and
-its cost.
+not to touch, on a ticket (LH-050 / TRO-476) that has already merged. A second question the
+follow-up ticket must decide, not this document: `review_queue` has no lease or expiry of its
+own, so a reservation left behind by a worker that crashes *between* reserving and calling
+Sonnet has nothing to reclaim it — the follow-up needs its own answer, whether that is a
+lease on the reservation itself or a rule that piggybacks on `batch_queue_items`' own lease
+expiry for the same `RESOLVE` item. **Recommendation:** file it as its own small follow-up
+ticket, owned jointly by whoever revisits LH-041 and LH-050, rather than pulled into this one.
+§12 lists it as an open question with that recommendation and its cost.
 
 **Answering the brief's own question directly:** yes, under lease expiry during a slow-but-alive
 worker, two workers can currently reach the point of both calling Sonnet for the same
@@ -441,6 +534,14 @@ Three facts from the same page matter as much as the table:
    kind of account this caveat describes. Every number in §4.3 below assumes Start tier or
    better; if the real account sits in Evaluation tier, the actual headroom could be smaller.
    §4.4's recommendation accounts for this.
+4. **The published RPM/ITPM/OTPM ceilings are not the only way to get a 429.** The same page
+   names two further mechanisms §4.3's steady-state arithmetic cannot see: the token-bucket
+   enforcement itself can reject a burst that arrives faster than the bucket refills even while
+   the per-minute average stays under the limit ("a rate of 60 requests per minute might be
+   enforced as 1 request per second... short bursts... can exceed the limit"), and a separate
+   **acceleration limit** can trigger on a sharp increase in usage even under the published
+   ceilings, independent of them. Neither has a published number to compute against — both are
+   named here so §4.3's conclusion is not read as stronger than it is.
 
 ### 4.3 The arithmetic
 
@@ -479,14 +580,28 @@ instantly).
 Even CP-1's own stress case — Q7's 40% escalation blowout — arrives at 120 × 40% = 48 calls per
 minute: 5% RPM, 16% ITPM, 24% OTPM. Still nowhere near the ceiling.
 
-**The honest conclusion: at Start tier — the lowest tier Anthropic's own page quantifies — a
-5-worker extraction pool uses under a fifth of the published budget on every axis, and its
-resolve sub-queue stays under a quarter even under CP-1's own worst-case, 40% escalation
-assumption (the single highest figure computed above is 24% OTPM, not the 9–18% typical of the
-other rows).** No figure in either table approaches saturating even the lowest published tier.
-The PRD's "tuned to Anthropic rate limits" is not literally true against the numbers Anthropic
-itself publishes. Anthropic's org-level limits allow far more parallelism than 5, at any tier
-this document could verify a number for.
+**The honest conclusion, and the qualifier it needs: at Start tier — the lowest tier Anthropic's
+own page quantifies — a 5-worker extraction pool uses under a fifth of the published budget on
+every axis, and its resolve sub-queue stays under a quarter even under CP-1's own worst-case,
+40% escalation assumption (the single highest figure computed above is 24% OTPM, not the 9–18%
+typical of the other rows).** No figure in either table approaches saturating even the lowest
+published tier. The PRD's "tuned to Anthropic rate limits" is not literally true against the
+numbers Anthropic itself publishes. Anthropic's org-level limits allow far more parallelism than
+5, at any tier this document could verify a number for.
+
+**This is a steady-state calculation, not a safety proof, and the two are not the same claim.**
+Every number above divides a minute's worth of traffic by a minute's worth of budget. It says
+nothing about §4.2's own point 4 — a burst that front-loads five workers' first calls into the
+same second, or an organization-level acceleration trigger neither this document nor Anthropic's
+published page can size in advance. A 429 under this design is not evidence the arithmetic was
+wrong; it is the expected, occasional cost of running real traffic against limits that are
+enforced more finely than a per-minute average. That is precisely why §5 exists as its own
+section rather than an afterthought: jittered backoff (§5.2) absorbs an individual burst,
+`retry-after` (§5.1) tells a worker exactly how long the bucket needs, and the pool-wide cooldown
+(§5.3) stops all five workers from re-discovering the same throttle independently. The
+recommendation to make concurrency an environment variable (§4.4) is not only about the
+Evaluation-tier uncertainty — it is also the lever to pull if 429s from either mechanism in §4.2
+point 4 show up in practice and backoff alone is not absorbing them.
 
 ### 4.4 So why 5, if not rate limits?
 
@@ -596,6 +711,22 @@ worker sees a 429, that every worker's claim loop checks before attempting a new
 `kind`. This is a coordination refinement on top of §5.2's per-item backoff, not a replacement
 for it — the per-item delay still applies to that one item once the pool-wide cooldown lifts.
 
+**This assumes one worker-pool process, and the assumption is worth stating rather than leaving
+implicit.** An in-memory timestamp coordinates workers that share memory — threads or async
+tasks inside one process. It coordinates nothing across two separate processes or container
+instances, each running its own pool: each would keep its own cooldown clock, oblivious to the
+other's, and the organization-level budget would be exactly as exposed as if no cooldown existed
+at all. PRD §3.6 names one "background worker" process, singular, which is the deployment this
+recommendation fits, and the one this whole document assumes throughout. **If a future
+deployment runs more than one worker-pool process against the same organization's rate-limit
+budget, the in-memory signal stops being sufficient** — the coordination needs to move somewhere
+every process can see: a shared row in Postgres this design already has open (a `cooldown_until`
+column, checked and set the same way `available_at` already is, §2.2), or reading Anthropic's own
+per-response rate-limit headers (`anthropic-ratelimit-*`, verified present on every response, §4)
+and reacting per-process without needing a shared signal at all. Neither is required for the
+single-process deployment this document specifies; naming the fork now means a future move to
+multiple processes does not silently reopen the exact race this section closes.
+
 ### 5.4 This was half-decided already
 
 Both already-merged model clients — `getDefaultExtractorClient`
@@ -644,38 +775,77 @@ Sonnet call happens before it engages, never zero.
 
 ### 6.2 What happens when it trips
 
-The check runs at claim time, on the `RESOLVE` side, before calling Sonnet:
-`resolvedBySonnetCount + needsHumanCount >= ceil(0.25 * totalCount)`. Once true for a batch, it
-stays true — both counters only increase, so the cap cannot un-trip mid-batch.
+**The check counts Sonnet call attempts, not settled outcomes — a correction from the first
+draft, worth stating as one because the difference is load-bearing.** An earlier version of this
+section checked `resolvedBySonnetCount + needsHumanCount >= ceil(0.25 * totalCount)`. That
+undercounts real spend in exactly the case the cap exists to bound: a `RESOLVE` item that
+exhausts every retry (§5.1) increments only `failedCount` — never `resolvedBySonnetCount` or
+`needsHumanCount` — so a batch where every Sonnet attempt happens to fail could burn through its
+full `maxAttempts` budget on every escalated label, at real dollar cost per attempt, while the
+threshold above stays at zero and never trips. The cap must bound *calls*, because calls are what
+cost money, not *settled outcomes*.
 
-When it trips, the resolve-worker does not call Sonnet for that item. It writes a `review_queue`
-row directly — `reason` from the router's original `headlineReason`, `resolver_output: NULL` —
-and increments `needsHumanCount`, matching PRD §12's own risk mitigation almost verbatim:
-"further REVIEW labels go straight to the human queue without a resolver call." The batch's
-live progress summary (LH-042) must say so, not leave a human to infer it from a suspiciously
-high `needsHumanCount`.
+**The corrected design: a per-batch call-attempt budget, reserved atomically before every Sonnet
+call — first attempt and every retry alike.** A new counter, `batchJobs.sonnetCallCount`
+(integer, not null, default 0 — its own migration on the existing `batch_jobs` table, alongside
+`batch_queue_items`' own), incremented by exactly this statement, run immediately before *any*
+call to Sonnet for this batch:
 
-**The check itself is approximate under concurrency, and that is worth saying plainly rather
-than implying an exact cap.** Two resolve-workers checking `resolvedBySonnetCount +
-needsHumanCount` at nearly the same instant can both read a value just under the threshold and
-both proceed to call Sonnet — the same check-then-act shape §3.3 names for TRO-506, applied
-here to a counter instead of a row. The overshoot this can cause is bounded by the resolve
-pool's own size (proposed at 2, §4.5): at most one extra Sonnet call past the nominal cap, not
-an unbounded one, and the batch is finite, so it cannot compound. An exact cap would need the
-same fix already recommended in §3.3 and §12 — reserving capacity atomically as part of the
-claim, rather than checking a counter that a completed item updates later. This document treats
-that as the same open follow-up, not a second, unrelated problem.
+```sql
+UPDATE batch_jobs
+SET sonnet_call_count = sonnet_call_count + 1
+WHERE id = $batchJobId AND sonnet_call_count < $capThreshold
+RETURNING sonnet_call_count;
+```
+
+A returned row means this attempt has budget and may proceed to call Sonnet. Zero rows means the
+budget is exhausted — this attempt does not call Sonnet, regardless of how many of *this item's
+own* `maxAttempts` remain. The resolve-worker instead writes a `review_queue` row directly —
+`reason` from the router's original `headlineReason`, `resolver_output: NULL` — and increments
+`needsHumanCount`, matching PRD §12's own risk mitigation almost verbatim: "further REVIEW labels
+go straight to the human queue without a resolver call." The batch's live progress summary
+(LH-042) must say so, not leave a human to infer it from a suspiciously high `needsHumanCount`.
+`$capThreshold` is `ceil(0.25 * totalCount)`, the same formula §6.1 already decided — only its
+meaning changes, from "distinct escalated labels" to "total Sonnet calls, however distributed
+across labels and retries."
+
+**This closes the exact race the first draft had, because it is the same atomic-reservation
+shape §3.1's claim and §3.3's recommended follow-up both use.** `UPDATE ... WHERE ... RETURNING`
+is a single statement Postgres serializes — two resolve-workers racing this check cannot both
+read "under budget" and both proceed, the way two workers could race a plain `SELECT` against
+`resolvedBySonnetCount + needsHumanCount`. There is no overshoot left to bound; the cap is exact.
+
+**Retries consume additional budget, explicitly, by design — the question CP-1 left unasked.**
+Every attempt reserves one unit, whether it is a label's first try or its fourth. This is the
+conservative reading: reserving before the call, rather than after a successful one, means a
+request that fails before ever reaching Anthropic still spends a unit of budget. That slightly
+overcharges the rare pre-flight failure and never undercounts a real charge — the same asymmetry
+this document chose everywhere else money and correctness trade off (§5.5's near-miss band is
+the same shape of choice, in CP-2's own document).
+
+**This is a different reservation from §3.3's, not a restatement of it — both are worth having,
+neither substitutes for the other.** §3.3's `ON CONFLICT DO NOTHING` (recommended follow-up)
+answers "has *this specific verification* already been resolved" — a per-verification question.
+This section's `sonnet_call_count` reservation answers "does *this batch* still have call budget
+left" — a per-batch question, entirely blind to which verification is asking. A batch could
+adopt one, the other, or both; adopting this one does not require touching `resolver/queue.ts`
+the way §3.3's does, so it is in scope for LH-041 now rather than deferred.
 
 ### 6.3 The cost arithmetic
 
-CP-1 §7.2's own numbers, extended: a 300-label batch at the assumed 15% escalation rate costs
-about $4.05 (derived, CP-1 §7.1/§7.2: 300 × $0.006 + 45 × $0.05). At the cap, a pathological
-batch — say, 90% of items escalating — costs at most 300 × $0.006 + 75 × $0.05 (25% of 300 = 75)
-= $1.80 + $3.75 = **$5.55**, not the $15.30 an uncapped run at 90% escalation would cost
-(300 × $0.006 + 270 × $0.05). Uncapped, a pathological batch can cost more than running Sonnet
-on every single label ($15.00, CP-1 §7.2) — because it pays for *both* Haiku and Sonnet on
-nearly everything. The cap turns an unbounded, silent overspend into a bounded, visible one, and
-names the cost of the items it declines to resolve rather than hiding it.
+CP-1 §7.2's own numbers, extended: a 300-label batch at the assumed 15% escalation rate, with
+every escalation resolving on its first attempt, costs about $4.05 (derived, CP-1 §7.1/§7.2:
+300 × $0.006 + 45 × $0.05). **With the atomic reservation above, the cap bounds total Sonnet call
+*attempts* for the batch at `ceil(0.25 × 300) = 75`, full stop — regardless of how many distinct
+labels those 75 calls cover, and regardless of how many are first attempts versus retries.** The
+worst case is therefore 300 × $0.006 + 75 × $0.05 = $1.80 + $3.75 = **$5.55**, and this number
+now holds as an actual upper bound, not the no-race estimate an earlier draft of this section
+computed under a check that could be raced past it. Uncapped, the same 75 calls could instead be
+part of an unbounded retry storm — every one of 300 escalated items exhausting `maxAttempts`
+attempts against a persistently failing endpoint costs up to 300 × 5 × $0.05 = $75 in Sonnet
+calls alone, on top of the $1.80 of Haiku extraction, with no ceiling from this design. The cap
+turns that unbounded, silent overspend into a bounded, visible one, and names the cost of the
+items it declines to resolve rather than hiding it.
 
 ### 6.4 A type gap this decision exposes
 
@@ -707,15 +877,24 @@ absence stand in for it.
 | Extraction succeeds, router **FAIL** | `EXTRACT` row → `DONE` | `processedCount++`, `autoVerifiedCount++` | none — see the note below the table before reading this row as "compliant" |
 | Extraction succeeds, router REVIEW, resolver resolves it | `EXTRACT` → `DONE`, `RESOLVE` → `DONE` | `processedCount++` (at `EXTRACT` `DONE`), `resolvedBySonnetCount++` (at `RESOLVE` `DONE`) | none |
 | Extraction succeeds, router REVIEW, resolver says needs-human | `EXTRACT` → `DONE`, `RESOLVE` → `DONE` | `processedCount++`, `needsHumanCount++` | none |
-| Extraction succeeds, router REVIEW, escalation cap already tripped (§6) | `EXTRACT` → `DONE`, `RESOLVE` → `DONE`, no Sonnet call | `processedCount++`, `needsHumanCount++` | none — batch summary shows the cap message |
-| Extraction throws a retryable error, attempts < cap | Row released to `PENDING`, `available_at` pushed forward | no change yet | none |
-| Extraction throws a retryable error, attempts exhausted | `EXTRACT` → `FAILED`, `last_error` set | `processedCount++`, `failedCount++` | none — other items continue |
+| Resolve-worker about to call Sonnet (first attempt or a retry), `sonnet_call_count` reservation returns zero rows (§6.2) | `RESOLVE` → `DONE`, no Sonnet call this attempt or ever for this item | `processedCount++` already counted at `EXTRACT` `DONE`; `needsHumanCount++` | none — batch summary shows the cap message |
+| Extraction throws a retryable error, attempts < `maxAttempts` | Row released to `PENDING`, `available_at` pushed forward | no change yet | none |
+| Extraction throws a retryable error, attempts = `maxAttempts` | `EXTRACT` → `FAILED`, `last_error` set | `processedCount++`, `failedCount++` | none — other items continue |
 | Extraction throws a non-retryable error (corrupt image) | `EXTRACT` → `FAILED` immediately | `processedCount++`, `failedCount++` | none |
-| Resolver call throws, attempts < cap | `RESOLVE` row released to `PENDING` | no change yet | none |
-| Resolver call throws, attempts exhausted | `RESOLVE` → `FAILED` | `failedCount++` **only** — `processedCount` already incremented when this label's `EXTRACT` item reached `DONE` (the row above); incrementing it again here would double-count one label and could push `processedCount` past `totalCount`, which `batch_jobs_processed_count_bounded` (`schema.ts:112-115`) would then reject | none — the `verifications` row from the `EXTRACT` phase still exists with `verdict = REVIEW`; a human can review the extracted fields even without a resolver suggestion |
+| Resolver call throws, attempts < `maxAttempts` | `RESOLVE` row released to `PENDING` | no change yet | none |
+| Resolver call throws, attempts = `maxAttempts` | `RESOLVE` → `FAILED` | `failedCount++` **only** — `processedCount` already incremented when this label's `EXTRACT` item reached `DONE` (the row above); incrementing it again here would double-count one label and could push `processedCount` past `totalCount`, which `batch_jobs_processed_count_bounded` (`schema.ts:112-115`) would then reject | none — the `verifications` row from the `EXTRACT` phase still exists with `verdict = REVIEW`; a human can review the extracted fields even without a resolver suggestion |
 | Worker process crashes mid-claim | Lease expires, another worker reclaims it (§3.2) | no change | none — invisible to the batch except a latency delay |
 | Whole-batch setup fails before `RUNNING` (should not happen — LH-040 validates the manifest first) | n/a | n/a | `batchJobs.status = FAILED` |
 | Every queue item for the batch reaches `DONE` or `FAILED` | n/a | n/a | `batchJobs.status = COMPLETED`, `completedAt` set |
+
+**Two different things both got called "cap" before this round, and the table above now keeps
+them apart by name.** `maxAttempts` (§5.2) bounds how many times *one item* retries after a
+transient failure — a per-item concern, unrelated to money except in aggregate. The escalation
+cap (§6) bounds how many Sonnet calls *the whole batch* may attempt, across every item and every
+retry — a per-batch spend concern. An item can exhaust its own `maxAttempts` with the batch-wide
+cap nowhere near full, and the batch-wide cap can stop an item's Sonnet call before that item's
+own `maxAttempts` is anywhere close to exhausted (the new row above). Both are real, both matter,
+and conflating them under one word is exactly the ambiguity this table no longer has.
 
 **`processedCount` counts `EXTRACT`-phase conclusions, exactly once per label — never a second
 time for whatever the label's own `RESOLVE` phase later does.** It answers "how many labels has
@@ -774,10 +953,13 @@ not a repurposed one.
    CP-1 §7.3's own recommendation, carried forward here — so the first real claim does not pay
    the structured-output schema's one-time compilation cost (CP-1 §7.3: cached 24 hours once
    paid).
-3. **Steady state.** Five extract-workers each run §3.1's claim query, moving five rows to
-   `CLAIMED`; 195 remain `PENDING`. As each worker finishes a label, it runs §3.2's completion
-   guard — the conditional `UPDATE ... WHERE claimed_by = $self AND status = 'CLAIMED'` — and
-   only on a successful guard does the same transaction write `verifications` + `field_results`
+3. **Steady state.** The claim query's own `bj.status = 'RUNNING'` join (§3.1) means none of
+   this could start before step 2 set it — the ordering above is enforced, not assumed. Five
+   extract-workers each run §3.1's claim query, moving five rows to `CLAIMED`, each with its own
+   fresh `claim_token`; 195 remain `PENDING`. As each worker finishes a label, it runs §3.2's
+   completion guard — the conditional `UPDATE ... WHERE claim_token = $myClaimToken AND
+   status = 'CLAIMED'` — and only on a successful guard does the same transaction write
+   `verifications` + `field_results`
    (+ `review_queue` and a new `RESOLVE` `batch_queue_items` row, if the router said REVIEW),
    mark its `EXTRACT` row `DONE`, and update `batchJobs` counters, all atomically. The worker
    then claims the next available row. A guard that returns zero rows — this worker's lease
@@ -799,17 +981,19 @@ not a repurposed one.
    (`resolutionPath: "EXTRACTOR_ONLY"`, matching `verify/route.ts`'s own pattern — see §7.3 for
    why that value is correct even here) and `field_results`, and inserts a new
    `batch_queue_items` row (`kind = RESOLVE`, `verification_id` = the new row's id,
-   `resolver_input` = the snapshotted `{ extraction, router, flaggedFields }`, §2.3). The
-   `EXTRACT` item is marked `DONE`; `processedCount` increments. The escalation itself has not
-   resolved yet — that is a separate unit of work.
-6. **Resolution.** One of the (proposed) two resolve-workers claims label #112's `RESOLVE` row.
-   `resolvedBySonnetCount + needsHumanCount` for this batch is well under the 25% cap (§6.2's own
-   caveat: checked, not reserved — with only two resolve-workers the possible overshoot is at
-   most one item, and this is not it), so the worker rebuilds `ResolverInput` from the snapshot,
-   calls `resolveEscalatedLabel`, and — inside that already-built function —
-   `findExistingReviewQueueEntry` finds nothing (this is the first attempt), Sonnet runs, and
-   `insertReviewQueueEntry` writes the `review_queue` row with the real `resolverOutput`. The
-   worker then runs §3.2's completion guard against its `RESOLVE` row; it succeeds (this worker
+   `resolver_input` = the snapshotted `{ schemaVersion: "1", extraction, router, flaggedFields }`,
+   §2.3). The `EXTRACT` item is marked `DONE`; `processedCount` increments. The escalation itself
+   has not resolved yet — that is a separate unit of work.
+6. **Resolution.** One of the (proposed) two resolve-workers claims label #112's `RESOLVE` row —
+   its own fresh `claim_token`, same as any other claim. Before calling Sonnet, it runs §6.2's
+   atomic reservation (`UPDATE batch_jobs SET sonnet_call_count = sonnet_call_count + 1 WHERE
+   id = $batchJobId AND sonnet_call_count < $capThreshold RETURNING sonnet_call_count`) — this
+   batch is nowhere near its 75-call budget, so the reservation succeeds. The worker rebuilds
+   `ResolverInput` from the `schemaVersion: "1"` snapshot, calls `resolveEscalatedLabel`, and —
+   inside that already-built function — `findExistingReviewQueueEntry` finds nothing (this is
+   the first attempt for this verification), Sonnet runs, and `insertReviewQueueEntry` writes the
+   `review_queue` row with the real `resolverOutput`. The worker then runs §3.2's completion
+   guard against its `RESOLVE` row, keyed to its own `claim_token`; it succeeds (this worker
    still holds the lease), so in the same transaction it updates `verifications.resolutionPath`
    to `"EXTRACTOR_RESOLVER"` (the value's own evident purpose, per `verify/route.ts:225-227`'s
    comment: "LH-014's resolver updates this once it consumes the review_queue row") and marks
@@ -819,9 +1003,12 @@ not a repurposed one.
 7. **Completion.** Once all 200 `EXTRACT` items and every `RESOLVE` item they spawned have
    reached `DONE` or `FAILED` — some number of items PASS or FAIL outright, some escalate and
    resolve, label #47 sits `FAILED` with a reason, label #112 sits resolved — `batchJobs.status →
-   COMPLETED`, `completedAt` set. The summary LH-042 shows: 200 total, 199 processed
-   successfully in some combination of auto-verified/resolved/needs-human, 1 failed, with label
-   #47's failure reason one click away.
+   COMPLETED`, `completedAt` set. `processedCount = 200`: every one of the 200 labels' `EXTRACT`
+   phase concluded, label #47's included (§7.1's own point — a failed item still counts as
+   processed). `failedCount = 1`. The remaining 199 split across `autoVerifiedCount`,
+   `resolvedBySonnetCount`, and `needsHumanCount` however the batch actually resolved — that
+   split is a separate, derived summary LH-042 computes for its results table, not a restatement
+   of `processedCount`, and label #47's failure reason is one click away.
 
 ---
 
@@ -972,11 +1159,19 @@ place to record why (§7.3) — a second, independent reason a view alone does n
 **Q8. What is the actual cost exposure of a pathological batch, with the escalation cap in
 place?**
 
-About $5.55 for a 300-label batch, worst case, versus $15.30 uncapped at the same pathological
-90% escalation rate — both derived in §6.3 from CP-1's own per-label cost assumptions. The cap
-does not eliminate the cost of a bad batch; it bounds it, and it converts silent overspend into
-a visible count of items the tool declined to spend further on, with the batch summary saying
-so (§6.2) — matching PRD §12's own stated mitigation almost word for word.
+About $5.55 for a 300-label batch, worst case — capped at `ceil(0.25 × 300) = 75` Sonnet call
+attempts by §6.2's atomic reservation, however those 75 calls split across distinct labels and
+retries. Uncapped, an unbounded retry storm (every escalated item exhausting `maxAttempts = 5`
+against a persistently failing endpoint) reaches $76.80, not a smaller number an earlier draft of
+this document computed by assuming one attempt per escalated label and ignoring retries — both
+figures derived in §6.3 and Appendix B from CP-1's own per-label cost assumptions. $5.55 is an
+actual bound, not an estimate: §6.2's atomic reservation counts every Sonnet call attempt,
+including retries, so there is no longer a race that lets total calls exceed the threshold — an
+earlier draft of this section checked settled outcomes instead, which a batch where every attempt
+happened to fail could have driven arbitrarily high. The cap does not eliminate the cost of a bad
+batch; it bounds it, and it converts silent overspend into a visible count of items the tool
+declined to spend further on, with the batch summary saying so (§6.2) — matching PRD §12's own
+stated mitigation almost word for word.
 
 ---
 
@@ -1010,19 +1205,23 @@ prevent.
 **2. Should the `ON CONFLICT DO NOTHING` reservation hardening (§3.3) land now, alongside
 LH-041, or as its own follow-up ticket?**
 *Recommendation:* its own ticket, because it also requires a small, coordinated change to
-`review_queue/list.ts`, on a UI that already merged (LH-050). Bundling it into LH-041 risks
-either skipping the UI-side fix (leaving a real, if brief, display gap) or growing LH-041 beyond
-"job queue + worker pool." *Cost of choosing wrong:* deferred, the residual TOCTOU window from
-§3.3 stays open — narrow, but real, and it is exactly the shape of thing this checkpoint exists
-to catch rather than defer indefinitely.
+`review_queue/list.ts`, on a UI that already merged (LH-050), and because LH-041 now ships a
+required, in-scope stopgap that changes what "deferred" costs: a resolve-worker that loses the
+check-then-insert race must catch the conflict and complete idempotently from the winner's row
+(§3.3), so the residual gap left open by deferring is "two Sonnet calls get paid for," not "an
+item is wrongly reported failed." *Cost of choosing wrong:* deferred, the wasted-money window
+from §3.3 stays open — narrow, but real, and still exactly the shape of thing this checkpoint
+exists to catch rather than defer indefinitely, even though the required stopgap keeps it from
+corrupting a result.
 
 **3. Is 25% the right escalation-cap threshold?**
-§6.1 adopts CP-1 Q7's own proposed number rather than inventing a new one. *Recommendation:*
-keep it, and let it become a measured, evidence-backed number the same way the confidence
-thresholds and the OCR floor are meant to. *Cost of choosing wrong:* too low, and a batch with a
-genuinely hard image set (glare, low light — TH-R10's own territory) gets routed to humans more
-than it needs to; too high, and the cost protection in §6.3 weakens toward the uncapped
-worst case.
+§6.1 adopts CP-1 Q7's own proposed number rather than inventing a new one; §6.2's rework changed
+what the number bounds (Sonnet call attempts, not distinct escalated labels) without changing its
+value. *Recommendation:* keep it, and let it become a measured, evidence-backed number the same
+way the confidence thresholds and the OCR floor are meant to. *Cost of choosing wrong:* too low,
+and a batch with a genuinely hard image set (glare, low light — TH-R10's own territory) burns
+through the call budget on retries alone before every escalated label gets even one attempt; too
+high, and the cost protection in §6.3 weakens toward the uncapped worst case.
 
 **4. Should the worker-pool sizes be environment variables from day one, or hard-coded
 constants with a follow-up ticket to externalize them?**
@@ -1123,12 +1322,18 @@ reproduces every percentage in §4.3's two tables. This is arithmetic over state
 the token counts it starts from.
 
 **The escalation-cap cost arithmetic (§6.3).** Same method as CP-1 §7.2's own 300-label-batch
-derivation, extended to the capped case: `300 * $0.006 + min(escalated_count, 0.25 * 300) *
-$0.05`. At `escalated_count = 270` (90% of 300), the capped term is `min(270, 75) = 75`,
-giving `$1.80 + $3.75 = $5.55`; uncapped, the same batch is `$1.80 + $13.50 = $15.30`. Both
-numbers are **derived** from CP-1's own per-call cost estimates, which are themselves derived
-from published prices over assumed token counts — two layers removed from a measurement, and
-labelled that way throughout this document rather than presented as more certain than they are.
+derivation, extended to the capped case: `300 * $0.006 + min(sonnet_call_attempts, ceil(0.25 *
+300)) * $0.05`, where `sonnet_call_attempts` counts every reserved call — first attempts and
+retries alike (§6.2) — not distinct escalated labels. `ceil(0.25 * 300) = 75` is the hard ceiling
+§6.2's atomic reservation enforces, so the capped term is `min(sonnet_call_attempts, 75)`, which
+is at most `75` by construction: `$1.80 + $3.75 = $5.55`. Uncapped, an unbounded retry storm —
+every one of 300 escalated items exhausting `maxAttempts = 5` — reaches `$1.80 + 300 * 5 *
+$0.05 = $76.80`, not the $15.30 figure an earlier draft of this appendix computed by assuming one
+attempt per escalated label; that assumption undercounted exactly the retries §5's own backoff
+design allows. Every number here is **derived** from CP-1's own per-call cost estimates, which
+are themselves derived from published prices over assumed token counts — two layers removed from
+a measurement, and labelled that way throughout this document rather than presented as more
+certain than they are.
 
 **Existing code cited by file and line, for re-checking:**
 

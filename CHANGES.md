@@ -78,6 +78,370 @@ photographs. That needs a live API call against the committed images. It is outs
 ticket's TDD scope on deterministic router logic (PRD §6), and outside LH-011's own already-
 Done, already-out-of-scope-here extractor work.
 
+## TRO-472 — PR #18 review: GitHub CodeRabbit, 14 findings, 14 fixed (2026-08-11)
+
+**What changed.** GitHub's CodeRabbit reviewed PR #18's full branch diff — the design document
+plus the local review round below it — and posted 14 actionable comments, `CHANGES_REQUESTED`.
+This is a second, independent pass; several findings pushed past what the local round caught.
+All 14 were real. The three that most changed the design:
+
+- **The escalation cap could be raced past its own threshold, and its cost bound was wrong as a
+  result.** The check counted settled outcomes (`resolvedBySonnetCount + needsHumanCount`), which
+  a `RESOLVE` item that exhausts every retry never touches — a batch where every Sonnet attempt
+  failed could spend without limit while the cap read zero. Rebuilt around a new
+  `batch_jobs.sonnet_call_count` counter, reserved atomically (`UPDATE ... WHERE sonnet_call_count
+  < $cap RETURNING ...`) before *every* Sonnet call attempt, first try or retry. `$5.55` is now an
+  actual worst-case bound, not a no-race estimate; retries explicitly spend budget, which the
+  first draft never decided one way or the other.
+- **`claimed_by` alone could not fence a stale completion.** CodeRabbit's own simulation showed
+  it precisely: a worker-instance identifier is stable across a worker's whole lifetime, so it
+  cannot tell a claim episode a worker still holds from one it held earlier on the same row and
+  lost to a lease expiry. Added `claim_token`, generated fresh on every claim including a
+  reclaim by the same worker, required by every completion, retry-release, and failure write
+  alongside `claimed_by` (kept as the human-facing "which worker" identifier).
+- **`EXTRACT` enqueue had no idempotency guard.** Only the `RESOLVE` side did. A retried
+  batch-creation step could duplicate an `EXTRACT` row, and nothing in the schema — not
+  `batch_queue_items`, not `verifications` — would stop each copy from producing its own
+  `verifications` row for the same label. Added a matching partial unique index,
+  `(batch_job_id, application_id, label_image_id) WHERE kind = 'EXTRACT'`, and required
+  conflict-safe enqueue against it.
+
+Four more real gaps: the claim query never checked `batch_jobs.status = 'RUNNING'`, so a worker
+could claim before the batch's own warm-up step ran; the `RESOLVE` completion flow calls
+`resolveEscalatedLabel` — which writes `review_queue` internally — before this design's own
+completion guard ever runs, an asymmetry with the `EXTRACT` path that was true but unstated;
+a losing caller in the TOCTOU race (TRO-506, §3.3) had no defined recovery and would have thrown
+uncaught; and the whole-pool 429 cooldown (§5.3) assumed one worker-pool process without saying
+so. All four fixed: the claim query now joins `batch_jobs` and requires `RUNNING`; the asymmetry
+is now stated plainly, with a required (not optional) recovery — catch the unique-constraint
+conflict, load the winning row, complete idempotently, never mark a resolved label `FAILED`; and
+the single-process assumption is now explicit, with the multi-instance alternative named for a
+future deployment that needs it.
+
+The rest were accuracy fixes matching the local round's own pattern: the opening banner ran four
+distinct facts into one dense paragraph (split, ASD-STE100); the worked example's `resolver_input`
+snapshot omitted the `schemaVersion` its own requirement demands (added, `"1"`); and the worked
+example's final summary said "199 processed successfully" where `processedCount` — by this
+document's own definition two sections earlier — is 200, since a failed item still completed its
+`EXTRACT` phase (corrected; the outcome split is now a clearly separate, derived line).
+
+Every finding and its fix is recorded in `factory/review-findings.jsonl`.
+
+**How to run it.** No product build is required — still docs-only. Run
+`scripts/factory/gate.sh --fast` then the full `scripts/factory/gate.sh`; the `regression-test`
+failure both report is expected. Read `docs/checkpoints/cp3-batch-queue.md` §3 and §6 for the
+two sections this round changed most.
+
+**Rollback.** `git revert` this commit. The prior two commits' document is internally consistent
+on its own, just missing these corrections — reverting does not break anything downstream, since
+nothing outside this document depends on it yet.
+
+## TRO-472 — gate's local CodeRabbit pass: 13 findings, 13 fixed (2026-08-11)
+
+**What changed.** The full gate's CodeRabbit capture reviewed `cp3-batch-queue.md` and this
+file, found 13 issues, and all 13 were real. Three were genuine correctness gaps in the design
+itself, not writing nits:
+
+- **A double-counted `processedCount`.** The decision table incremented `processedCount` again
+  when a resolver call exhausted its retries, on a label that had already incremented it once
+  at `EXTRACT` `DONE`. Left in, this could push `processedCount` past `totalCount` and fail
+  `batch_jobs_processed_count_bounded` outright. Fixed, and the table now says in one sentence
+  what `processedCount` counts and does not count.
+- **No completion guard.** The design specified an atomic *claim* (§3.1) but not an atomic
+  *completion* — a worker whose lease expired mid-call could still write a stale result after
+  another worker reclaimed and finished the same item, with nothing stopping a duplicate
+  `verifications` row. Added a completion guard to §3.2, same shape as the claim: the write that
+  finishes an item is conditioned on still holding it.
+- **A missing schema constraint.** `batch_queue_items`'s columns had no rule tying which ones
+  apply to which `kind`, and no unique index stopping two `RESOLVE` rows for one verification.
+  Added both, mirroring constraints this schema already uses elsewhere for the same shape of
+  problem (`label_images_belongs_to_something`, `review_queue_verification_id_unique`).
+
+Two more findings, smaller but still real:
+
+- **The lease-release write was ambiguous.** A worker releasing an item after a retryable
+  failure could read as leaving the row `CLAIMED`. Fixed: the release is now one unconditional
+  write that clears `claimed_by`, `claimed_at`, and `lease_expires_at`, and sets `status`
+  back to `PENDING`.
+- **The escalation-cap check was a check-then-act race.** Two resolve-workers could both read
+  "under budget" and both proceed. Named, with the fix tied to the same reservation pattern
+  already recommended for TRO-506 (superseded by a full fix in the next round — see the entry
+  above this one).
+
+Six more findings were accuracy and prose fixes, each mapped to one finding in
+`factory/review-findings.jsonl`:
+
+1. A PASS/FAIL decision-table row read as if a router FAIL were "auto-verified," with no
+   caveat. Split the row and added the caveat.
+2. A rate-limit-utilization claim said "under a fifth." The document's own worst-case number is
+   24%. Corrected to "under a fifth for extraction, under a quarter for resolution."
+3. The backoff worked example said five waits totaling 31 seconds. Five attempts produce four
+   waits, totaling 15 seconds. Corrected.
+4. The `resolver_input` snapshot had no version tag. A code change between when a `RESOLVE` row
+   is written and read could misinterpret it. Added `schemaVersion`.
+5. The 25% escalation-cap threshold did not name its small-batch rounding edge. Named it.
+6. Two prose passages ran multiple facts into single sentences: a five-event sequence, and a
+   three-fact banner. Rewrote both as separated statements per this repo's ASD-STE100 rule.
+
+Every finding and its fix is recorded in `factory/review-findings.jsonl`.
+
+**How to run it.** No product build is required — this branch is still docs-only. Run
+`scripts/factory/gate.sh --fast` then the full `scripts/factory/gate.sh`; both must still run,
+and the `regression-test` failure they report is expected (see the walkthrough-material entry
+below). Read `docs/checkpoints/cp3-batch-queue.md` directly for the fixes themselves; every one
+above is in the section named.
+
+**Rollback.** `git revert` this commit; the prior commit's document is still internally
+consistent on its own, just missing these corrections.
+
+## TRO-472 — LH-CP3: ⛔ CHECKPOINT 3 walkthrough material (2026-08-11)
+
+**This entry does not clear a checkpoint.** It adds the material Troy reads at the checkpoint.
+One thing differs from CP-1 and CP-2's own entries. Troy's 2026-08-11 policy change (commit
+`c09250e`) removed the block on dispatch: LH-040, LH-041, and LH-042 can start once this
+material exists and Troy has been notified, without waiting for his reply. That change affects
+dispatch only. Troy's acknowledgment is still what makes this design one he accepts, not one an
+agent merely produced.
+
+**What changed.** One new document: `docs/checkpoints/cp3-batch-queue.md`. No product code, no
+`src/` change, no schema migration. It covers everything the ticket asks for — queue design,
+worker concurrency, backoff strategy, the Sonnet sub-queue, partial-failure semantics, a full
+worked example — plus a "defend it" Q&A and open questions (TH-R4, TH-R20, TH-R2, TH-R19,
+TH-R21, TH-R23).
+
+- **What's actually queuing, and why the existing schema can't answer that alone.**
+  `verifications` only records a *finished* cascade result — its own doc comment says so:
+  "there is no 'pending' state, because the row exists only once the cascade has produced a
+  result." The document designs a new table, `batch_queue_items`, LH-041's own migration, with
+  atomic-claim columns (`status`, `claimed_by`, `lease_expires_at`, `available_at`, `attempts`)
+  that a finished-only table cannot supply. The Sonnet sub-queue reuses `review_queue` instead
+  of a second table — it already has the right unique-per-verification constraint.
+- **TRO-506, read and answered concretely, not deferred again.** The Linear finding says two
+  concurrent workers can both pay for the same Sonnet call before either insert lands. The
+  document's atomic claim (`FOR UPDATE SKIP LOCKED`) makes that structurally impossible under
+  normal operation; a narrower residual window (lease expiry during a slow-but-alive worker) is
+  named precisely rather than claimed closed, with TRO-506's own recommended fix scoped as a
+  follow-up (it also touches the already-shipped review-queue UI's list query).
+- **The PRD's own "tuned to Anthropic rate limits" claim, tested against real numbers and found
+  not to hold — as a steady-state calculation, not a safety proof.** Anthropic's published
+  Start/Build/Scale rate limits for Haiku 4.5 and Sonnet 5 (retrieved live 2026-08-11) show a
+  5-worker pool using under a fifth of the Start-tier budget on every axis for extraction, and
+  under a quarter for resolution even under CP-1's own 40%-escalation stress case (24% OTPM, the
+  single highest figure computed). That arithmetic divides a minute's traffic by a minute's
+  budget; it says nothing about the token-bucket, shorter-interval, and acceleration limits
+  Anthropic's own page also documents, which can 429 a burst or a usage spike regardless of the
+  per-minute average. The real reasons for ~5 are named instead of a false safety margin: an
+  unquantified "Evaluation" tier the real account may sit in, unmeasured local-compute limits,
+  and blast-radius/cost discipline. The recommendation is to make the number an environment
+  variable, with jittered backoff, `retry-after` handling, and a pool-wide cooldown on 429s
+  (§5) as the actual defense against bursts and acceleration limits — not the headroom
+  arithmetic alone.
+- **CP-1's own open question 6, decided, and its cost bound corrected to a real one.** CP-1
+  deferred the per-batch Sonnet escalation cap to this document. It adopts CP-1 Q7's proposed
+  25% threshold, on a fixed `totalCount` denominator — but the first draft checked settled
+  outcomes (`resolvedBySonnetCount + needsHumanCount`), which a batch where every Sonnet attempt
+  failed could exceed without ever tripping the cap. Corrected in the review round above to an
+  atomic per-batch counter reserved before every Sonnet call attempt, including retries: `$5.55`
+  worst-case on a 300-label batch now holds as an actual bound, not a no-race estimate.
+- **A full decision table for partial-failure semantics**, plus a precise definition: a batch is
+  `COMPLETED` once every queue item reaches a terminal state, whatever that state is — not a
+  claim that everything passed. A worker crash mid-batch is explicitly not a job failure; it is
+  the case the persistent, leased queue exists to survive.
+- **One gap found outside this ticket's scope, named rather than silently fixed.** Single-label
+  REVIEW verdicts appear to have no automatic resolution trigger at all today — nothing outside
+  test files calls `resolveEscalatedLabel`. Flagged as an open question for a follow-up ticket,
+  not folded into this design.
+- **Six open questions**, each with a recommendation and the cost of choosing wrong — including
+  whether "~5" is one pool or two, and whether the TRO-506 hardening should land now or as its
+  own ticket.
+
+**How to run it.** Nothing to build, nothing to test — this branch adds no code. Read
+`docs/checkpoints/cp3-batch-queue.md` — about 40 minutes — and work the Appendix A checklist
+during the walkthrough. Appendix B names the live URL and the file:line citations behind every
+**verified** and **derived** claim.
+
+**Rollback.** `git revert` this commit. The document adds no code and nothing imports it.
+
+**Known limits.** Every worker-pool size, lease duration, and backoff parameter is **proposed**,
+not measured — LH-031's latency harness is what replaces them, the same pattern CP-1 and CP-2
+used for their own thresholds. The local-compute ceiling (§4.4) and the actual deployed
+account's rate-limit tier (§4.2) are both **not measured**.
+## TRO-468 — LH-020: Warning subsystem (2026-08-11)
+
+**What changed.** This ticket builds the government-warning comparator (TH-R9) under
+`src/server/warning/`. CP-2 (`docs/checkpoints/cp2-warning-subsystem.md`) is the
+Troy-approved design. This ticket implements it as written.
+
+The comparator checks one thing. Does the label's government warning match 27 CFR part 16,
+word for word? It checks a second thing too. Does `GOVERNMENT WARNING` print in capital
+letters? Two independent readers feed the check. A vision model transcribes the label. A
+local OCR engine, tesseract.js, reads the same block again. Code compares both readings
+against the statutory text. No model ever judges whether the warning "looks right." That
+split is CP-2's whole argument.
+
+This ticket calls no model. It consumes the vision model's transcription, which the
+extractor (LH-011) already produced. It runs its own OCR pass and its own region detection.
+
+**Files.**
+- `canonical.ts` — the statutory text, retrieved live from the eCFR API on 2026-08-11 and
+  cross-checked against a committed XML fixture (`fixtures/ecfr-16-21.xml`). A future edit to
+  the constant that drifts from the source fails a test. It does not ship silently.
+- `normalize.ts` — `normalizeTransport`, the six CP-2 §5.2 rules in their fixed order. Unicode
+  NFC, not NFKC. Four named space characters map to a plain space. Zero-width characters
+  strip out. A hyphen at a line break joins, before line breaks collapse to spaces. Case never
+  changes here. `foldCase` is a separate, later step.
+- `caps.ts` — `checkCapitalPositions`. Four positions, hard-enforced. `GOVERNMENT` and
+  `WARNING` need every letter capitalized (27 CFR 16.22(a)(2)). `Surgeon` and `General` need
+  only their first letter capitalized (TTB's own label checklist).
+- `distance.ts` — a Levenshtein implementation local to this module. It does not import
+  `../comparators/similarity.ts`. The judgment regime (TH-R8) and the exact regime (TH-R9)
+  share no helpers. Not even a generic algorithm.
+- `wording-compare.ts` — `evaluateCandidate`, CP-2 §3.3's per-candidate algorithm, plus the
+  §5.5 near-miss band. A distance of 1 or 2 after normalization returns REVIEW, not FAIL.
+- `reconcile.ts` — `reconcileWarningChannels`. CP-2 §4.5's dual- and single-channel decision
+  tables. CP-2 §7.1's cross-check against the model's own `prefix_casing` report. Produces
+  `../router/types.ts`'s `WarningComparatorResult`.
+- `ocr.ts` — `runWarningOcr`, the tesseract.js wrapper. Crop-only. `PSM.SINGLE_BLOCK`,
+  confirmed against the installed library, not guessed.
+- `tessdata/eng.traineddata.gz` — the English language file, committed to the repo so
+  recognition never reaches the network (TH-R7). 2.8 MB. The LSTM-only variant, matching
+  tesseract.js's own default engine mode.
+- `ocr-network-guard.cjs`, `ocr-startup.test.ts` — the "network disabled" startup test CP-2
+  §4.3 requires by name. A fresh Node process runs with `fetch`/`http`/`https` blocked.
+  Recognition still succeeds, using only the committed file.
+- `region-detect.ts` — `detectWarningRegionClassical` (primary) and
+  `detectWarningRegionByBandSearch` (fallback). Classical detection finds the warning by its
+  shape: a dense, several-line block of small print. It runs in milliseconds and needs no
+  OCR, so OCR can still start at the same time as the Haiku call. `cropForOcr` outputs PNG,
+  never JPEG — tesseract needs no re-encode, and JPEG compression would hurt exactly the
+  small print this channel exists to read.
+- `index.ts` — the module's public entry point. `compareGovernmentWarningFromImage` ties
+  region detection, cropping, OCR, and `reconcileWarningChannels` together against a real
+  image.
+
+**Load-bearing decisions.** CP-2 §11 lists ten open questions with a recommendation each.
+"Cp2 is good" means implement the recommendation. This ticket did, and names each one here.
+
+- Four checked capitalization positions, all adopted (open question 1): `GOVERNMENT`,
+  `WARNING`, `Surgeon`, `General`. Case folds everywhere else in the body.
+- The near-miss band, adopted at N = 2 (open question 2). A distance of 1 or 2 returns
+  REVIEW. The band never touches capitalization, and never turns a FAIL into a PASS.
+- Classical detection first, band search second (open question 3). A model-reported box was
+  rejected. It cannot exist before the Haiku call returns, which breaks the concurrency
+  requirement.
+- `WarningComparatorResult`'s union stays as CP-1 defined it (open question 4). Channel
+  disagreement routes as `WARNING_MISMATCH`. `CONFLICTING_EXTRACTION` and
+  `LOW_MODEL_CONFIDENCE` never come out of this comparator.
+- One bold flag, kept for the prototype (open question 5). The second bold rule in 27 CFR
+  16.22(a)(2) — the body must NOT print bold — stays named as unchecked, in the limitation
+  comment `wording-compare.ts` and `reconcile.ts` carry, not silently dropped.
+- The OCR crop skips the JPEG re-encode (open question 6). `cropForOcr` is this module's own
+  function. It does not call `../preprocessing/pipeline.ts`'s `cropRegion`, which always
+  encodes JPEG.
+- The OCR confidence floor stays at 60 (open question 7), Tesseract's own 0-100 scale. Below
+  it, the OCR reading is discarded and the comparator runs single-channel.
+- A single channel may PASS at VLM confidence 0.90 or above (open question 10). A single
+  channel may never FAIL. "We never accuse on one channel" is CP-2's own line for this.
+- The two-element canonical constant (open question 8): `CANONICAL_WARNING_PARAGRAPHS` is a
+  tuple, not one 283-character literal. It matches the two `<P>` elements eCFR itself renders.
+- One decision beyond the ten open questions: CP-2 §7.1 says the model's `prefix_casing`
+  report is "a cross-check, not the source of truth," and that a disagreement between it and
+  the derived caps result routes to REVIEW. CP-2 does not spell out the exact rule. This
+  ticket's reading: derived-ALL-CAPS and reported-ALL_CAPS must agree, treating `TITLE_CASE`
+  and `OTHER` as real, competing claims — the model asserting a specific non-ALL_CAPS reading.
+  `NOT_VISIBLE` is not a claim. It means the model could not judge the casing at all, so it is
+  excluded from the check rather than treated as an active "not ALL_CAPS" vote — a review-round
+  fix, below. A disagreement can only downgrade an already-decided PASS or FAIL to REVIEW. It
+  never upgrades a REVIEW to anything else.
+
+**Review round.** A local CodeRabbit pass ran against the first commit. It found 13 findings,
+folded into this same entry rather than a separate one, since no PR had opened yet.
+- **Major.** `applyPrefixCasingCrossCheck` treated `NOT_VISIBLE` — the model could not judge
+  the prefix's casing at all — the same as an active "not ALL_CAPS" claim. A correct, confident
+  derived ALL_CAPS read got flagged as inconsistent whenever the model merely abstained. Fixed:
+  `NOT_VISIBLE` now leaves the result unchanged, in both directions. `OTHER` and `TITLE_CASE`
+  still count, since those are real, competing claims.
+- **Major.** `runOcrChannel` did not catch a rejected `deps.detectRegion`/`crop`/`ocr` promise.
+  A rejection would reject the whole `Promise.all`, discarding an already-good VLM read along
+  with it. Fixed: wrapped in `try`/`catch`, returning `{ available: false }`.
+- **Major.** `runWarningOcr` called `worker.terminate()` inside a bare `finally` block. A
+  termination failure would replace an already-successful `recognize()` result with a thrown
+  error. Fixed: the result is captured first; `terminate()`'s own failure is isolated so it
+  cannot destroy a good read.
+- **Major.** The OCR startup test's child process set `NODE_OPTIONS` to the guard's `--require`
+  flag alone, overwriting any value the parent process already carried, and inserted the guard
+  path unquoted into a value Node splits on whitespace — a repo path with a space in it would
+  have corrupted the flag. Fixed: appends to any existing `NODE_OPTIONS`, quotes the path.
+- **Major.** `wording-compare.test.ts` defined its own `capsPassesFor` helper, duplicating
+  `caps.ts`'s own exported `capsCheckPasses`. Fixed: removed, call site uses the shared function.
+- **Minor.** `dehyphenateAtLineBreaks` matched a hyphen before `\n` or `\r\n` but not a bare
+  `\r` — inconsistent with `lineBreaksToSpace`, which handles all three line-break forms. Fixed.
+- **Minor.** `__dirname`, used in two test files, is not defined in genuine ESM; it only
+  resolved because vitest's own transform shims it. Fixed: `import.meta.dirname`.
+- **Minor.** A real-image OCR test pinned its confidence assertion to a specific measured
+  number, fragile against a CI environment that substitutes a different font for the synthetic
+  render. Fixed: asserts against `OCR_CONFIDENCE_FLOOR`, the number that actually matters.
+- **Trivial.** Three tests strengthened to check the exact UI note text or the
+  confidence-below-floor property, not only the verdict. CHANGES.md's own wording tightened.
+- **Dismissed, both false-positive.** A suggestion to add latency-metric instrumentation to
+  `region-detect.ts`, citing a metrics convention that does not exist anywhere in this
+  codebase — LH-031 is the latency-harness ticket, not this one. A suggestion to resolve
+  `TESSDATA_DIR` from something other than `process.cwd()`: that matches
+  `src/server/storage/local-file-storage.ts`'s own established convention exactly, and
+  `pnpm build` (measured, passes clean) already includes `tessdata/` with no extra
+  configuration — there is no `output: "standalone"` in `next.config.ts` to need one.
+
+All 13 findings are recorded in `factory/review-findings.jsonl`.
+
+**Regression tests.** `src/server/warning/*.test.ts` — 11 files, 119 cases (115 from the
+initial build, 4 more from the review round below), all written
+before their implementation. Every file's first run failed on a missing module, confirmed
+before any implementation code existed.
+
+Named cases: `case-08` and `case-09` (title-case prefix, TH-R9's acceptance evidence) MISMATCH
+on capitalization; `case-10` and `case-11` (reworded clauses, measured distance 38 and 24)
+MISMATCH on wording; the canonical text itself PASSes; `surgeon general` in lower case and a
+missing comma after `General` (both named common mistakes in TTB's own brewer training deck)
+are covered directly, since no golden-set image can isolate them yet — that is LH-021's job.
+Channel disagreement has its own synthetic test suite, `reconcile.test.ts`, since CP-2 §9.2
+finding 3 is right: no photograph can exercise two readers disagreeing.
+
+`golden-case.test.ts` loads `golden-set/manifest.json` directly and checks this comparator's
+verdict against each case's own expected verdict, not a hand-copied string.
+
+`region-detect.test.ts` and `index.test.ts` both run the real pipeline — real image, real
+OCR, real region detection — against `case-01-clean-match-spirits.jpg`, not only synthetic
+fixtures. Measured while building this ticket, not assumed: six real golden-set label images
+with a warning present are all correctly located and read back at 90-95% confidence (54% on
+the one case with deliberately tiny print, which is below the OCR confidence floor and
+therefore correctly discarded); two images with no warning correctly return no region at all.
+
+**How to run it.** `pnpm test -- src/server/warning` runs 11 files. `pnpm typecheck` and
+`pnpm lint` both run clean.
+
+**Known limits.**
+- `src/app/api/verify/route.ts` still passes `warningResult: null` to `routeLabel`, exactly
+  as it did before this ticket. This ticket was scoped to the comparator itself — CP-2's own
+  "own component" framing, and the ticket's list of existing code to build on names
+  `region.ts`, `pipeline.ts`, `constants.ts`, and `router/types.ts`, not `route.ts`. Wiring
+  `compareGovernmentWarningFromImage` into the live request path is a separate, later change
+  to `route.ts` and its own test suite. `route.ts` must start region detection and OCR before
+  it awaits the Haiku call, not after, to keep PRD §3.8's concurrency requirement. That is a
+  real control-flow change, not a one-line import swap, so this ticket leaves it named here
+  as follow-up work rather than folding it in.
+- The full golden set's OCR/detection accuracy is not measured. LH-030's eval-harness sweep
+  is the ticket that measures it, per CP-2 §12.
+- The live drift check CP-2 §2.7 describes (a scheduled or manual re-fetch of the eCFR text,
+  reporting a difference for a human to read) is not built. The deterministic, offline half —
+  the constant checked against a committed fixture — is built and gated. The doc is explicit
+  that the two are separate mechanisms; only the first is a CI concern.
+- Bold detection stays exactly the documented limitation CP-2 §7.3 drafted: an advisory
+  three-valued signal from the vision model, never checked, never changing a verdict.
+
+**Rollback.** `git revert` this ticket's commits on `feat/lh-020-warning-subsystem`.
+`src/server/warning/*.ts` and `*.test.ts`, `tessdata/`, and the `tesseract.js` dependency are
+removed. No other module imports from `src/server/warning/` yet, so nothing else breaks.
+
 ## TRO-498 — PR #17 CI fix + 12 CodeRabbit findings (realistic-corpus Gemini pipeline) (2026-08-11)
 
 **Fixed — CI regression.** CI's verify job failed on `build.test.ts`'s new compositing test.

@@ -1,0 +1,3070 @@
+{
+  "ticket": "TRO-470 / LH-030",
+  "measuredAt": "2026-08-12T05:16:55.005Z",
+  "mode": "live",
+  "haikuModel": "claude-haiku-4-5",
+  "sonnetModel": "claude-sonnet-5",
+  "manifestVersion": "1.0.0",
+  "caseIds": [
+    "case-01-clean-match-spirits",
+    "case-02-clean-match-beer-no-abv",
+    "case-03-clean-match-wine",
+    "case-04-clean-match-spirits-alt-format",
+    "case-05-abv-mismatch-application-higher",
+    "case-06-abv-mismatch-label-higher",
+    "case-07-abv-proof-mismatch-internal",
+    "case-08-title-case-warning-prefix-only",
+    "case-09-title-case-warning-full-statement",
+    "case-10-reworded-warning-clause-one",
+    "case-11-reworded-warning-clause-two",
+    "case-12-missing-warning-spirits",
+    "case-13-missing-warning-wine",
+    "case-14-case-variant-brand-stones-throw",
+    "case-15-case-variant-brand-punctuation",
+    "case-16-case-variant-brand-extra-words",
+    "case-17-glare-front-label",
+    "case-18-glare-warning-block",
+    "case-19-rotation-mild-correctable",
+    "case-20-rotation-severe-upside-down",
+    "case-21-low-light-front-label",
+    "case-22-low-light-warning-block",
+    "case-23-tiny-warning-text-standard-bottle",
+    "case-24-tiny-warning-text-miniature-bottle",
+    "case-25-odd-typography-script-brand",
+    "case-26-odd-typography-blackletter-class-type",
+    "case-27-conflicting-net-contents",
+    "case-28-conflicting-class-type",
+    "case-29-conflicting-brand-name"
+  ],
+  "requestedFull": true,
+  "summary": {
+    "extractionAccuracy": {
+      "total": 145,
+      "correct": 139,
+      "rate": 0.9586206896551724
+    },
+    "extractionAccuracyByField": {
+      "brandName": {
+        "total": 29,
+        "correct": 28,
+        "rate": 0.9655172413793104
+      },
+      "classType": {
+        "total": 29,
+        "correct": 28,
+        "rate": 0.9655172413793104
+      },
+      "abv": {
+        "total": 29,
+        "correct": 28,
+        "rate": 0.9655172413793104
+      },
+      "netContents": {
+        "total": 29,
+        "correct": 28,
+        "rate": 0.9655172413793104
+      },
+      "governmentWarning": {
+        "total": 29,
+        "correct": 27,
+        "rate": 0.9310344827586207
+      }
+    },
+    "labelVerdictAccuracy": {
+      "total": 29,
+      "correct": 18,
+      "rate": 0.6206896551724138
+    },
+    "fieldVerdictAccuracyByField": {
+      "brand_name": {
+        "total": 29,
+        "correct": 24,
+        "rate": 0.8275862068965517
+      },
+      "class_type": {
+        "total": 29,
+        "correct": 26,
+        "rate": 0.896551724137931
+      },
+      "alcohol_content": {
+        "total": 29,
+        "correct": 29,
+        "rate": 1
+      },
+      "net_contents": {
+        "total": 29,
+        "correct": 29,
+        "rate": 1
+      },
+      "government_warning": {
+        "total": 29,
+        "correct": 25,
+        "rate": 0.8620689655172413
+      }
+    },
+    "reviewReasonAccuracy": {
+      "total": 13,
+      "correct": 4,
+      "rate": 0.3076923076923077
+    }
+  },
+  "cases": [
+    {
+      "caseId": "case-01-clean-match-spirits",
+      "category": "clean-match",
+      "extraction": {
+        "caseId": "case-01-clean-match-spirits",
+        "category": "clean-match",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Old Tom Distillery",
+            "actual": "Old Tom Distillery",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Straight Bourbon Whiskey",
+            "actual": "Straight Bourbon Whiskey",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "45%",
+            "actual": "45%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-01-clean-match-spirits",
+        "category": "clean-match",
+        "expectedLabelVerdict": "PASS",
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
+        "actualReviewReason": null,
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 373,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004565
+      },
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null
+    },
+    {
+      "caseId": "case-02-clean-match-beer-no-abv",
+      "category": "clean-match",
+      "extraction": {
+        "caseId": "case-02-clean-match-beer-no-abv",
+        "category": "clean-match",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Round Barn Brewing",
+            "actual": "Round Barn Brewing",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "American Pale Ale",
+            "actual": "American Pale Ale",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "(no ABV statement on the label)",
+            "actual": "(not read)",
+            "detail": "Haiku correctly read no ABV statement."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "12 fl oz",
+            "actual": "12 fl oz",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-02-clean-match-beer-no-abv",
+        "category": "clean-match",
+        "expectedLabelVerdict": "PASS",
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
+        "actualReviewReason": null,
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 381,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004605
+      },
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null
+    },
+    {
+      "caseId": "case-03-clean-match-wine",
+      "category": "clean-match",
+      "extraction": {
+        "caseId": "case-03-clean-match-wine",
+        "category": "clean-match",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Silver Creek Vineyards",
+            "actual": "Silver Creek Vineyards",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Cabernet Sauvignon",
+            "actual": "Cabernet Sauvignon",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "13.5%",
+            "actual": "13.5%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-03-clean-match-wine",
+        "category": "clean-match",
+        "expectedLabelVerdict": "PASS",
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
+        "actualReviewReason": null,
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 406,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.00473
+      },
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null
+    },
+    {
+      "caseId": "case-04-clean-match-spirits-alt-format",
+      "category": "clean-match",
+      "extraction": {
+        "caseId": "case-04-clean-match-spirits-alt-format",
+        "category": "clean-match",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Old Tom Distillery",
+            "actual": "Old Tom Distillery",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Straight Bourbon Whiskey",
+            "actual": "Straight Bourbon Whiskey",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "45%",
+            "actual": "45%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-04-clean-match-spirits-alt-format",
+        "category": "clean-match",
+        "expectedLabelVerdict": "PASS",
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
+        "actualReviewReason": null,
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 412,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.00476
+      },
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null
+    },
+    {
+      "caseId": "case-05-abv-mismatch-application-higher",
+      "category": "abv-mismatch",
+      "extraction": {
+        "caseId": "case-05-abv-mismatch-application-higher",
+        "category": "abv-mismatch",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Copper Kettle Spirits",
+            "actual": "Copper Kettle Spirits",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Vodka",
+            "actual": "Vodka",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "40%",
+            "actual": "40%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-05-abv-mismatch-application-higher",
+        "category": "abv-mismatch",
+        "expectedLabelVerdict": "FAIL",
+        "actualLabelVerdict": "FAIL",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
+        "actualReviewReason": null,
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MISMATCH",
+            "actualVerdict": "MISMATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 404,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.00472
+      },
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null
+    },
+    {
+      "caseId": "case-06-abv-mismatch-label-higher",
+      "category": "abv-mismatch",
+      "extraction": {
+        "caseId": "case-06-abv-mismatch-label-higher",
+        "category": "abv-mismatch",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Harbor Light Distilling",
+            "actual": "Harbor Light Distilling",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Gin",
+            "actual": "Gin",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "47%",
+            "actual": "47%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-06-abv-mismatch-label-higher",
+        "category": "abv-mismatch",
+        "expectedLabelVerdict": "FAIL",
+        "actualLabelVerdict": "FAIL",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
+        "actualReviewReason": null,
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MISMATCH",
+            "actualVerdict": "MISMATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 397,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004685
+      },
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null
+    },
+    {
+      "caseId": "case-07-abv-proof-mismatch-internal",
+      "category": "abv-mismatch",
+      "extraction": {
+        "caseId": "case-07-abv-proof-mismatch-internal",
+        "category": "abv-mismatch",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Millrace Distillery",
+            "actual": "Millrace Distillery",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Straight Rye Whiskey",
+            "actual": "Straight Rye Whiskey",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "43%",
+            "actual": "43%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-07-abv-proof-mismatch-internal",
+        "category": "abv-mismatch",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": "CONFLICTING_EXTRACTION",
+        "actualReviewReason": "AMBIGUOUS_ABV",
+        "reviewReasonCorrect": false,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 417,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004784999999999999
+      },
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3558,
+        "outputTokens": 1015,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.017266
+      },
+      "resolverOutcome": "resolved",
+      "resolverError": null,
+      "resolverDurationMs": 11772
+    },
+    {
+      "caseId": "case-08-title-case-warning-prefix-only",
+      "category": "title-case-warning",
+      "extraction": {
+        "caseId": "case-08-title-case-warning-prefix-only",
+        "category": "title-case-warning",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Blue Ridge Distillery",
+            "actual": "Blue Ridge Distillery",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Straight Bourbon Whiskey",
+            "actual": "Straight Bourbon Whiskey",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "45%",
+            "actual": "45%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "Government Warning: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "Government Warning: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-08-title-case-warning-prefix-only",
+        "category": "title-case-warning",
+        "expectedLabelVerdict": "FAIL",
+        "actualLabelVerdict": "FAIL",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
+        "actualReviewReason": null,
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MISMATCH",
+            "actualVerdict": "MISMATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 411,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004755
+      },
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null
+    },
+    {
+      "caseId": "case-09-title-case-warning-full-statement",
+      "category": "title-case-warning",
+      "extraction": {
+        "caseId": "case-09-title-case-warning-full-statement",
+        "category": "title-case-warning",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Timber Line Brewing",
+            "actual": "Timber Line Brewing",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "India Pale Ale",
+            "actual": "India Pale Ale",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "6.2%",
+            "actual": "6.2%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "12 fl oz",
+            "actual": "12 fl oz",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "Government Warning: (1) According To The Surgeon General, Women Should Not Drink Alcoholic Beverages During Pregnancy Because Of The Risk Of Birth Defects. (2) Consumption Of Alcoholic Beverages Impairs Your Ability To Drive A Car Or Operate Machinery, And May Cause Health Problems.",
+            "actual": "Government Warning: (1) According To The Surgeon General, Women Should Not Drink Alcoholic Beverages During Pregnancy Because Of The Risk Of Birth Defects. (2) Consumption Of Alcoholic Beverages Impairs Your Ability To Drive A Car Or Operate Machinery, And May Cause Health Problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-09-title-case-warning-full-statement",
+        "category": "title-case-warning",
+        "expectedLabelVerdict": "FAIL",
+        "actualLabelVerdict": "FAIL",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
+        "actualReviewReason": null,
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MISMATCH",
+            "actualVerdict": "MISMATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 423,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004815
+      },
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null
+    },
+    {
+      "caseId": "case-10-reworded-warning-clause-one",
+      "category": "reworded-warning",
+      "extraction": {
+        "caseId": "case-10-reworded-warning-clause-one",
+        "category": "reworded-warning",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Fairview Cellars",
+            "actual": "Fairview Cellars",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Chardonnay",
+            "actual": "Chardonnay",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "12.5%",
+            "actual": "12.5%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, pregnant women should not consume alcoholic beverages due to the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, pregnant women should not consume alcoholic beverages due to the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-10-reworded-warning-clause-one",
+        "category": "reworded-warning",
+        "expectedLabelVerdict": "FAIL",
+        "actualLabelVerdict": "FAIL",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
+        "actualReviewReason": null,
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MISMATCH",
+            "actualVerdict": "MISMATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 398,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.00469
+      },
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null
+    },
+    {
+      "caseId": "case-11-reworded-warning-clause-two",
+      "category": "reworded-warning",
+      "extraction": {
+        "caseId": "case-11-reworded-warning-clause-two",
+        "category": "reworded-warning",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Stagecoach Meadery",
+            "actual": "Stagecoach Meadery",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Mead",
+            "actual": "Mead",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "8%",
+            "actual": "8%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages may impair your ability to operate a vehicle or machinery, and can cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages may impair your ability to operate a vehicle or machinery, and can cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-11-reworded-warning-clause-two",
+        "category": "reworded-warning",
+        "expectedLabelVerdict": "FAIL",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": false,
+        "expectedReviewReason": null,
+        "actualReviewReason": "CONFLICTING_EXTRACTION",
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MISMATCH",
+            "actualVerdict": "MISMATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 395,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004675
+      },
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3955,
+        "outputTokens": 551,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.013420000000000001
+      },
+      "resolverOutcome": "needs-human",
+      "resolverError": null,
+      "resolverDurationMs": 6341
+    },
+    {
+      "caseId": "case-12-missing-warning-spirits",
+      "category": "missing-warning",
+      "extraction": {
+        "caseId": "case-12-missing-warning-spirits",
+        "category": "missing-warning",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Hollow Creek Distillery",
+            "actual": "Hollow Creek Distillery",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Straight Bourbon Whiskey",
+            "actual": "Straight Bourbon Whiskey",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "45%",
+            "actual": "45%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "(no government warning on the label)",
+            "actual": "(not present)",
+            "detail": "Haiku correctly read no government warning."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-12-missing-warning-spirits",
+        "category": "missing-warning",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": "MISSING_REQUIRED_FIELD",
+        "actualReviewReason": "MISSING_REQUIRED_FIELD",
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 293,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004165
+      },
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3342,
+        "outputTokens": 119,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.007873999999999999
+      },
+      "resolverOutcome": "needs-human",
+      "resolverError": null,
+      "resolverDurationMs": 3236
+    },
+    {
+      "caseId": "case-13-missing-warning-wine",
+      "category": "missing-warning",
+      "extraction": {
+        "caseId": "case-13-missing-warning-wine",
+        "category": "missing-warning",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Whitmore Estate Winery",
+            "actual": "Whitmore Estate Winery",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Pinot Noir",
+            "actual": "Pinot Noir",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "13%",
+            "actual": "13%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "(no government warning on the label)",
+            "actual": "(not present)",
+            "detail": "Haiku correctly read no government warning."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-13-missing-warning-wine",
+        "category": "missing-warning",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": "MISSING_REQUIRED_FIELD",
+        "actualReviewReason": "MISSING_REQUIRED_FIELD",
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 277,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004085
+      },
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3302,
+        "outputTokens": 113,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.0077339999999999996
+      },
+      "resolverOutcome": "needs-human",
+      "resolverError": null,
+      "resolverDurationMs": 2999
+    },
+    {
+      "caseId": "case-14-case-variant-brand-stones-throw",
+      "category": "case-variant-brand",
+      "extraction": {
+        "caseId": "case-14-case-variant-brand-stones-throw",
+        "category": "case-variant-brand",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "STONE'S THROW",
+            "actual": "STONE'S THROW",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "STRAIGHT BOURBON WHISKEY",
+            "actual": "STRAIGHT BOURBON WHISKEY",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "45%",
+            "actual": "45%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-14-case-variant-brand-stones-throw",
+        "category": "case-variant-brand",
+        "expectedLabelVerdict": "PASS",
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
+        "actualReviewReason": null,
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 414,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.00477
+      },
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null
+    },
+    {
+      "caseId": "case-15-case-variant-brand-punctuation",
+      "category": "case-variant-brand",
+      "extraction": {
+        "caseId": "case-15-case-variant-brand-punctuation",
+        "category": "case-variant-brand",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "STONES THROW",
+            "actual": "STONES THROW",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "STRAIGHT BOURBON WHISKEY",
+            "actual": "STRAIGHT BOURBON WHISKEY",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "45%",
+            "actual": "45%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-15-case-variant-brand-punctuation",
+        "category": "case-variant-brand",
+        "expectedLabelVerdict": "PASS",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": false,
+        "expectedReviewReason": null,
+        "actualReviewReason": "AMBIGUOUS_BRAND",
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": false
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 410,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.00475
+      },
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3595,
+        "outputTokens": 269,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.00988
+      },
+      "resolverOutcome": "resolved",
+      "resolverError": null,
+      "resolverDurationMs": 4714
+    },
+    {
+      "caseId": "case-16-case-variant-brand-extra-words",
+      "category": "case-variant-brand",
+      "extraction": {
+        "caseId": "case-16-case-variant-brand-extra-words",
+        "category": "case-variant-brand",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Stones Throw Distillery Co.",
+            "actual": "Stones Throw Distillery Co.",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Straight Bourbon Whiskey",
+            "actual": "Straight Bourbon Whiskey",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "45%",
+            "actual": "45%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-16-case-variant-brand-extra-words",
+        "category": "case-variant-brand",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": "AMBIGUOUS_BRAND",
+        "actualReviewReason": "AMBIGUOUS_BRAND",
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 418,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.00479
+      },
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3552,
+        "outputTokens": 476,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.011864
+      },
+      "resolverOutcome": "resolved",
+      "resolverError": null,
+      "resolverDurationMs": 6513
+    },
+    {
+      "caseId": "case-17-glare-front-label",
+      "category": "glare",
+      "extraction": {
+        "caseId": "case-17-glare-front-label",
+        "category": "glare",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Sable Ridge Distillery",
+            "actual": "Sable Ridge Distillery",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Straight Rye Whiskey",
+            "actual": "Straight Rye Whiskey",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "45%",
+            "actual": "45%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-17-glare-front-label",
+        "category": "glare",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": false,
+        "expectedReviewReason": "LOW_IMAGE_QUALITY",
+        "actualReviewReason": null,
+        "reviewReasonCorrect": false,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "MATCH",
+            "correct": false
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 419,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004795
+      },
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null
+    },
+    {
+      "caseId": "case-18-glare-warning-block",
+      "category": "glare",
+      "extraction": {
+        "caseId": "case-18-glare-warning-block",
+        "category": "glare",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Copper Kettle Spirits",
+            "actual": "Copper Kettle Spirits",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Vodka",
+            "actual": "Vodka",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "40%",
+            "actual": "40%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-18-glare-warning-block",
+        "category": "glare",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": "LOW_IMAGE_QUALITY",
+        "actualReviewReason": "WARNING_MISMATCH",
+        "reviewReasonCorrect": false,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 404,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.00472
+      },
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3485,
+        "outputTokens": 307,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.01004
+      },
+      "resolverOutcome": "resolved",
+      "resolverError": null,
+      "resolverDurationMs": 4604
+    },
+    {
+      "caseId": "case-19-rotation-mild-correctable",
+      "category": "rotation",
+      "extraction": {
+        "caseId": "case-19-rotation-mild-correctable",
+        "category": "rotation",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Ashgrove Distillery",
+            "actual": "Ashgrove Distillery",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Straight Bourbon Whiskey",
+            "actual": "Straight Bourbon Whiskey",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "45%",
+            "actual": "45%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": false,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because use of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku's transcription differs from what the label prints."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-19-rotation-mild-correctable",
+        "category": "rotation",
+        "expectedLabelVerdict": "PASS",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": false,
+        "expectedReviewReason": null,
+        "actualReviewReason": "WARNING_MISMATCH",
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": false
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 3210,
+        "outputTokens": 418,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.0053
+      },
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 4042,
+        "outputTokens": 346,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.011543999999999999
+      },
+      "resolverOutcome": "resolved",
+      "resolverError": null,
+      "resolverDurationMs": 4639
+    },
+    {
+      "caseId": "case-20-rotation-severe-upside-down",
+      "category": "rotation",
+      "extraction": {
+        "caseId": "case-20-rotation-severe-upside-down",
+        "category": "rotation",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": false,
+            "expected": "Ashgrove Distillery",
+            "actual": "(not read)",
+            "detail": "Haiku read \"(nothing)\"; the label prints \"Ashgrove Distillery\"."
+          },
+          {
+            "field": "classType",
+            "correct": false,
+            "expected": "Straight Bourbon Whiskey",
+            "actual": "(not read)",
+            "detail": "Haiku read \"(nothing)\"; the label prints \"Straight Bourbon Whiskey\"."
+          },
+          {
+            "field": "abv",
+            "correct": false,
+            "expected": "45%",
+            "actual": "(not read)",
+            "detail": "Haiku read no ABV statement; the label states 45%."
+          },
+          {
+            "field": "netContents",
+            "correct": false,
+            "expected": "750 mL",
+            "actual": "(not read)",
+            "detail": "Haiku read no net-contents statement; the label states 750 mL."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": false,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "(not read)",
+            "detail": "Haiku read no government warning; the label has one."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-20-rotation-severe-upside-down",
+        "category": "rotation",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": "LOW_IMAGE_QUALITY",
+        "actualReviewReason": "LOW_IMAGE_QUALITY",
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 193,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.003665
+      },
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3748,
+        "outputTokens": 468,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.012176
+      },
+      "resolverOutcome": "needs-human",
+      "resolverError": null,
+      "resolverDurationMs": 7141
+    },
+    {
+      "caseId": "case-21-low-light-front-label",
+      "category": "low-light",
+      "extraction": {
+        "caseId": "case-21-low-light-front-label",
+        "category": "low-light",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Northgate Cellars",
+            "actual": "Northgate Cellars",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Merlot",
+            "actual": "Merlot",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "13.8%",
+            "actual": "13.8%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-21-low-light-front-label",
+        "category": "low-light",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": false,
+        "expectedReviewReason": "LOW_IMAGE_QUALITY",
+        "actualReviewReason": null,
+        "reviewReasonCorrect": false,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "MATCH",
+            "correct": false
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "MATCH",
+            "correct": false
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 397,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004685
+      },
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null
+    },
+    {
+      "caseId": "case-22-low-light-warning-block",
+      "category": "low-light",
+      "extraction": {
+        "caseId": "case-22-low-light-warning-block",
+        "category": "low-light",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Amber Hollow Meadery",
+            "actual": "Amber Hollow Meadery",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Mead",
+            "actual": "Mead",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "8%",
+            "actual": "8%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-22-low-light-warning-block",
+        "category": "low-light",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": "LOW_IMAGE_QUALITY",
+        "actualReviewReason": "CONFLICTING_EXTRACTION",
+        "reviewReasonCorrect": false,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "MATCH",
+            "correct": false
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 393,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004665
+      },
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3951,
+        "outputTokens": 657,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.014471999999999999
+      },
+      "resolverOutcome": "resolved",
+      "resolverError": null,
+      "resolverDurationMs": 5939
+    },
+    {
+      "caseId": "case-23-tiny-warning-text-standard-bottle",
+      "category": "tiny-warning-text",
+      "extraction": {
+        "caseId": "case-23-tiny-warning-text-standard-bottle",
+        "category": "tiny-warning-text",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Windward Distillery",
+            "actual": "Windward Distillery",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Gin",
+            "actual": "Gin",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "47%",
+            "actual": "47%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-23-tiny-warning-text-standard-bottle",
+        "category": "tiny-warning-text",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": false,
+        "expectedReviewReason": "LOW_MODEL_CONFIDENCE",
+        "actualReviewReason": null,
+        "reviewReasonCorrect": false,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "MATCH",
+            "correct": false
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 399,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.0046949999999999995
+      },
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null
+    },
+    {
+      "caseId": "case-24-tiny-warning-text-miniature-bottle",
+      "category": "tiny-warning-text",
+      "extraction": {
+        "caseId": "case-24-tiny-warning-text-miniature-bottle",
+        "category": "tiny-warning-text",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Pocketful Spirits",
+            "actual": "Pocketful Spirits",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Bourbon Whiskey",
+            "actual": "Bourbon Whiskey",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "40%",
+            "actual": "40%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "50 mL",
+            "actual": "50 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-24-tiny-warning-text-miniature-bottle",
+        "category": "tiny-warning-text",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": false,
+        "expectedReviewReason": "LOW_MODEL_CONFIDENCE",
+        "actualReviewReason": null,
+        "reviewReasonCorrect": false,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "MATCH",
+            "correct": false
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 408,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004739999999999999
+      },
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null
+    },
+    {
+      "caseId": "case-25-odd-typography-script-brand",
+      "category": "odd-typography",
+      "extraction": {
+        "caseId": "case-25-odd-typography-script-brand",
+        "category": "odd-typography",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Willowbrook Winery",
+            "actual": "Willowbrook Winery",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Riesling",
+            "actual": "Riesling",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "11%",
+            "actual": "11%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-25-odd-typography-script-brand",
+        "category": "odd-typography",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": false,
+        "expectedReviewReason": "LOW_MODEL_CONFIDENCE",
+        "actualReviewReason": null,
+        "reviewReasonCorrect": false,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "MATCH",
+            "correct": false
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 395,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004675
+      },
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null
+    },
+    {
+      "caseId": "case-26-odd-typography-blackletter-class-type",
+      "category": "odd-typography",
+      "extraction": {
+        "caseId": "case-26-odd-typography-blackletter-class-type",
+        "category": "odd-typography",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Ashford Row Distillery",
+            "actual": "Ashford Row Distillery",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Straight Rye Whiskey",
+            "actual": "Straight Rye Whiskey",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "45%",
+            "actual": "45%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-26-odd-typography-blackletter-class-type",
+        "category": "odd-typography",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": false,
+        "expectedReviewReason": "LOW_MODEL_CONFIDENCE",
+        "actualReviewReason": null,
+        "reviewReasonCorrect": false,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "MATCH",
+            "correct": false
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 419,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004795
+      },
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null
+    },
+    {
+      "caseId": "case-27-conflicting-net-contents",
+      "category": "conflicting-application-vs-label",
+      "extraction": {
+        "caseId": "case-27-conflicting-net-contents",
+        "category": "conflicting-application-vs-label",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Cascade Peak Brewing",
+            "actual": "Cascade Peak Brewing",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Imperial Stout",
+            "actual": "Imperial Stout",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "9.5%",
+            "actual": "9.5%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "22 fl oz",
+            "actual": "22 fl oz",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-27-conflicting-net-contents",
+        "category": "conflicting-application-vs-label",
+        "expectedLabelVerdict": "FAIL",
+        "actualLabelVerdict": "FAIL",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
+        "actualReviewReason": null,
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MISMATCH",
+            "actualVerdict": "MISMATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 397,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004685
+      },
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null
+    },
+    {
+      "caseId": "case-28-conflicting-class-type",
+      "category": "conflicting-application-vs-label",
+      "extraction": {
+        "caseId": "case-28-conflicting-class-type",
+        "category": "conflicting-application-vs-label",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Dry Gulch Distillery",
+            "actual": "Dry Gulch Distillery",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Straight Rye Whiskey",
+            "actual": "Straight Rye Whiskey",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "45%",
+            "actual": "45%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-28-conflicting-class-type",
+        "category": "conflicting-application-vs-label",
+        "expectedLabelVerdict": "FAIL",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": false,
+        "expectedReviewReason": null,
+        "actualReviewReason": "AMBIGUOUS_BRAND",
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MISMATCH",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": false
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 421,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004805
+      },
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3531,
+        "outputTokens": 185,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.008912
+      },
+      "resolverOutcome": "resolved",
+      "resolverError": null,
+      "resolverDurationMs": 4107
+    },
+    {
+      "caseId": "case-29-conflicting-brand-name",
+      "category": "conflicting-application-vs-label",
+      "extraction": {
+        "caseId": "case-29-conflicting-brand-name",
+        "category": "conflicting-application-vs-label",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Copper Kettle Spirits",
+            "actual": "Copper Kettle Spirits",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Straight Bourbon Whiskey",
+            "actual": "Straight Bourbon Whiskey",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "45%",
+            "actual": "45%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-29-conflicting-brand-name",
+        "category": "conflicting-application-vs-label",
+        "expectedLabelVerdict": "FAIL",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": false,
+        "expectedReviewReason": null,
+        "actualReviewReason": "AMBIGUOUS_BRAND",
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MISMATCH",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": false
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 377,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004585
+      },
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3550,
+        "outputTokens": 164,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.00874
+      },
+      "resolverOutcome": "resolved",
+      "resolverError": null,
+      "resolverDurationMs": 3408
+    }
+  ],
+  "totalCostUsd": 0.26907699999999996,
+  "failures": []
+}

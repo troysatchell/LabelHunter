@@ -148,6 +148,232 @@ constraints — nothing extra to do for those by hand. Dropping the two columns 
 drops their own CHECK constraints (`batch_jobs_sonnet_call_count_bounded`,
 `review_queue_resolver_output_skip_reason_exclusive`): Postgres cannot keep a constraint
 that names a column no longer there.
+## TRO-470 — LH-030: Eval harness (2026-08-12)
+
+**What changed.** An eval harness for extraction accuracy and verdict accuracy against the
+golden set (TH-R17, TH-R19, PRD §6), plus the cascade-vs-Sonnet-only benchmark PRD §4 asks
+for. Gate G8 (`scripts/factory/gate.sh`, "eval-not-regressed") goes live: it no longer skips.
+
+- `scripts/eval/check.ts` — `pnpm eval:check`. Two modes:
+  - No flags: **cheap mode.** Reads the committed `scripts/eval/results/eval-report.json`
+    and `scripts/eval/baseline.json`, compares them, exits non-zero on a regression. Makes
+    no live API call. This is what `gate.sh` and CI both run, on every gate run and every
+    push.
+  - `--live`: runs the real cascade (real Haiku extraction; real Sonnet resolution only for
+    cases the router actually escalates) over a case sample, scores it, writes a fresh
+    report, then runs the same comparison against the fresh numbers. `--full` covers the
+    whole 29-case golden set instead of a fixed 8-case default sample
+    (`scripts/eval/args.ts`); `--update-baseline` promotes a clean run's numbers into the
+    committed baseline — always a separate, explicit flag, never an automatic side effect
+    of `--live` (the same reasoning a snapshot test's "update snapshot" step follows: a
+    baseline update is a decision a human or agent makes on purpose, not something a script
+    does to itself); `--case=<id>` runs one named case for debugging and never touches the
+    committed report or baseline.
+- `scripts/eval/cascade-runner.ts` — runs one golden-set case through the real cascade via
+  `handleVerifyRequest` (the same in-process pattern `scripts/latency/measure.ts` already
+  uses, not a real HTTP round-trip). Captures the real Haiku extraction, the real
+  preprocessed image, and the real warning-comparator result through `VerifyRouteDeps` —
+  the same dependency-injection seam `measure.ts` already validated — rather than
+  re-deriving them with a second, possibly-different API call. Calls the real, pure
+  `routeLabel` a second time with those captured values to get the case's full
+  `LabelRouterResult` (needed for the resolver's own input contract, and impossible to get
+  from the API response body alone) and asserts it agrees with the response body's own
+  verdict — a harness bug, not a case result, if it does not. Shared by `check.ts` and
+  `benchmark.ts` so the two scripts cannot silently disagree about what "run the real
+  cascade" means.
+- `scripts/eval/extraction-scoring.ts` — did Haiku read each of the five fields correctly,
+  against the golden set's ground-truth `label` block? Reuses the router's own parsing and
+  normalizing functions (`parseAbv`, `parseNetContents`, `normalizeForFuzzyMatch`, the
+  warning subsystem's `normalizeTransport`/`foldCase`) rather than a second, hand-rolled
+  comparison that could drift from what "correct" means in production.
+- `scripts/eval/verdict-scoring.ts` — did the final label-level and field-level verdicts
+  match the golden set's `expected` block? Scored at the router level: a golden-set case
+  whose `expected.labelVerdict` is `"REVIEW"` counts as correct when the system also lands
+  on REVIEW with the matching reason, matching both production (`route.ts` never resolves a
+  REVIEW inline, TH-R19) and the manifest's own design (several cases' `notes` treat
+  "correctly escalated" as the right answer for a case a human still needs to look at).
+- `scripts/eval/summary.ts`, `baseline-compare.ts` — pure aggregation and regression-decision
+  logic. `baseline-compare.ts` is this ticket's adaptation of
+  `scripts/latency/exit-status.ts`'s `computeExitCode` — read, not copied: that file asks
+  "did every run finish cleanly," this one asks "did accuracy hold at or above a baseline,"
+  a different condition needing different logic. Gates on the three headline rates
+  (extraction, label-verdict, review-reason), not the per-field breakdowns — a single
+  field's small-sample noise should not fail the whole gate while the headline numbers hold.
+  Also checks a coverage-staleness condition: a report that does not cover every case the
+  baseline was built from cannot honestly claim "no regression."
+- `scripts/eval/usage.ts` — real, measured API cost. `createUsageCapturingClient` wraps a
+  real `Anthropic` client (neither `extractLabel` nor `resolveEscalatedLabel` surfaces
+  `usage` to its own caller) so every call's real token usage is captured with no second
+  call. `computeCostUsd` multiplies that real usage by Anthropic's published per-token
+  price — the price is a known public rate, the token count is always a real measurement,
+  neither half is invented.
+- `scripts/eval/flagged-fields.ts` — builds the resolver's `FlaggedField[]` input.
+  `buildFlaggedFieldsForEscalatedLabel` handles a real shape found running this ticket's own
+  `--live --full` sweep against the golden set, not a hypothetical: a label can escalate to
+  REVIEW purely on a label-level blocker (`LOW_IMAGE_QUALITY`, `CONFLICTING_EXTRACTION`)
+  with every individual field still scoring a clean MATCH, which left `flaggedFields` empty
+  and `resolveEscalatedLabel` correctly refused to run ("nothing to resolve"). Falls back to
+  flagging every field, using the label's headline reason as the trigger, when no field
+  individually failed — a label-level blocker means the whole reading is suspect, not that
+  one field failed alone.
+- `scripts/eval/resolver-rollup.ts` — the Sonnet-only benchmark arm's "what would the system
+  have decided" step. Reuses the router's own pure `rollupLabelVerdict`/`pickHeadlineReason`
+  rather than a second hand-written roll-up rule. Documents a real, measured property: with
+  no OCR channel, the government-warning field can only ever reach MATCH or NEEDS_REVIEW in
+  this arm, never MISMATCH (`reconcile.ts`'s own single-channel rule: "a single-channel FAIL
+  is never allowed, only REVIEW") — a real, structural reason the Sonnet-only arm scores
+  worse on warning-related categories below, not a benchmark artifact.
+- `scripts/eval/response-validation.ts` — validates the `/api/verify` response body shape at
+  the boundary (standing rule 13), extending `scripts/latency/response.ts`'s
+  `parseVerifySuccessBody` to also cover `fields`, which this harness needs and the latency
+  harness does not.
+- `scripts/eval/benchmark.ts` — `pnpm eval:benchmark` (`--full`/`--case=<id>` supported, same
+  as `check.ts`). Always live; there is no cheap mode, since a benchmark's only useful
+  output is a real number. Not wired into the gate or CI — PRD §4 already settles the
+  architecture ("keep the cascade regardless"); this script produces the evidence for an
+  already-decided question once, not a check that reopens it on every push. Runs every case
+  through both arms over the SAME real Haiku extraction (reused via
+  `CaseRunOutcome.rawExtraction`/`rawPreprocessed`, never a second Haiku call for one image)
+  so the only variable between arms is the one PRD §4 actually asks about. "Sonnet-only"
+  means every field routed to the real resolver regardless of what the router decided — the
+  only real Sonnet code path in this repo (`resolveEscalatedLabel`) is built to re-read
+  fields the router already flagged, using Haiku's own reading as context; there is no
+  from-scratch Sonnet extractor in this codebase, and TH-R19 means this ticket does not add
+  one. `resolver-rollup.ts`'s module comment states this definition plainly rather than
+  letting a reader assume a hypothetical "Sonnet reads a blank slate" arm was measured.
+- `scripts/eval/results/eval-report.json`, `scripts/eval/baseline.json`,
+  `scripts/eval/results/benchmark-report.json` — the committed evidence (numbers below).
+- `scripts/eval/args.ts` — CLI parsing, split from `check.ts`/`benchmark.ts` so a test can
+  import it without a live call, the same reason `scripts/latency/args.ts` is split from
+  `measure.ts`. `MAX_CASES` (40) is the same typo backstop `scripts/latency/args.ts`'s
+  `MAX_RUNS` is, sized above the golden set's own 29 cases.
+- `package.json` — added `eval:check` and `eval:benchmark`.
+- `.github/workflows/ci.yml` — a documentation-only comment on the existing "Eval harness not
+  regressed" step explaining that it now runs for real, in cheap mode, with no live call
+  (the CI-wiring decision, below). The step's own behavior needed no code change: it already
+  called `pnpm eval:check` bare, and cheap mode is that command's default.
+- 118 unit tests across 10 files, all new (`scripts/eval/*.test.ts`), TDD where the logic is
+  deterministic — the comparison/scoring/regression-decision logic, not the live API calls,
+  per this ticket's own brief.
+
+**The CI-wiring decision.** The ticket asks this harness to run in CI. But CI has no
+`ANTHROPIC_API_KEY` budget for a real-API sweep on every push — that would spend real,
+unbounded money on every commit. `scripts/golden/verify.ts` and `renderSmoke.ts` (TRO-499)
+already set this repo's precedent: a CI-wired check makes no live or network call. This
+harness follows that same rule. `pnpm eval:check` with no flags is cheap by construction. It
+compares the already-committed `eval-report.json` against the already-committed
+`baseline.json` — arithmetic only, no I/O beyond two JSON reads. The real, paid sweep lives
+behind an explicit `--live` flag that a human or agent invokes on purpose, the same
+discipline `latency:check` already uses. CI and `gate.sh` check that committed output going
+forward. Neither one re-derives it.
+
+The rejected alternative: wire CI to call `pnpm eval:check -- --live` directly. That would
+spend real API money and several real minutes on every push, even one that touches nothing
+about extraction or routing — unbounded cost for no proportional benefit.
+
+The accepted trade-off: CI can go stale. A router change that regresses accuracy will not
+fail CI until someone re-runs `--live --update-baseline` and commits the refreshed numbers.
+`compareToBaseline`'s coverage-staleness check catches one sharp edge of this gap — a report
+that silently stopped covering the full golden set. It does not catch "the code changed and
+nobody re-ran the harness yet." That gap is a stated human decision, not a hidden one.
+
+**The real measured numbers (observed, all 29 golden-set cases, `claude-haiku-4-5` /
+`claude-sonnet-5`, 2026-08-12).** `pnpm eval:check -- --live --full --update-baseline`, the
+run now committed as the baseline:
+
+| Metric | Result |
+|---|---|
+| Extraction accuracy | **95.9%** (139/145 fields) |
+| Label-verdict accuracy | **62.1%** (18/29 cases) |
+| Review-reason accuracy | **30.8%** (4/13 REVIEW cases) |
+| Total measured cost | **$0.2691** |
+| Cases escalated to Sonnet | 12/29 (41.4%) |
+
+Per-field verdict accuracy: `alcohol_content` 100%, `net_contents` 100%, `class_type` 89.7%,
+`government_warning` 86.2%, `brand_name` 82.8%.
+
+Two independent live runs on this final code — this `eval:check` sweep and the benchmark's
+cascade arm below — produced label-verdict accuracy of 62.1% (18/29) and 65.5% (19/29) on
+the identical 29 cases. This is real call-to-call model variance, not a harness bug. Both
+runs agree the number sits in the low-to-mid 60s.
+
+**These numbers are real findings this ticket reports, not problems this ticket fixes** —
+an eval harness's job is to produce the evidence, not to re-tune the router or the
+extractor prompt it is measuring. Two specific, precise findings for whoever picks up
+router/prompt tuning next:
+
+1. Six of eleven verdict misses are golden-set cases expecting `REVIEW` (glare, low-light,
+   tiny-warning-text, odd-typography categories). In each, Haiku read the image confidently
+   enough that the router returned a clean `PASS` instead. Two explanations are worth
+   checking: the golden set's degradation parameters may be milder than intended, or Haiku's
+   real image-quality confidence on these renders may be higher than the router's escalation
+   thresholds assume.
+2. `case-28-conflicting-class-type` and `case-29-conflicting-brand-name` both expect
+   `labelVerdict: "FAIL"`. But `brand_name`/`class_type` never assert `MISMATCH` by design
+   (`route.ts`'s own header comment, CP-1 §5.3: "distance beyond threshold routes to REVIEW,
+   a judgment call, never a silent FAIL"). A case whose only distinguishing feature is a
+   brand-or-class conflict cannot validly expect `FAIL` under that design. The real system
+   always routes it to `REVIEW`/`AMBIGUOUS_BRAND` instead. This reads as a golden-set
+   ground-truth question, not a router bug: should these two cases expect `REVIEW`, matching
+   `case-16`'s already-correct pattern? Flagged here, not corrected — editing
+   `golden-set/manifest.json` is outside this ticket's scope.
+
+**The cascade-vs-Sonnet-only benchmark (PRD §4, TH-R19) — observed, all 29 cases, both arms
+scored against the identical real Haiku extraction per case, 0 failures.** `pnpm
+eval:benchmark --full`:
+
+| | Cascade (real production path) | Sonnet-only (every field, every case) |
+|---|---|---|
+| Label-verdict accuracy | **65.5%** (19/29) | **41.4%** (12/29) |
+| `government_warning` field accuracy | 86.2% (25/29) | 58.6% (17/29) |
+| Total measured cost | **$0.2766** | **$0.4409** |
+
+Accuracy delta: **-24.1 percentage points** (Sonnet-only is worse). Cost delta: **+$0.1643,
+1.6x** (Sonnet-only is more expensive). On this golden set, routing every field to Sonnet is
+both less accurate and more expensive than the selective cascade — a real, measured, doubly
+one-sided result, not a close call.
+
+**Why Sonnet-only loses on accuracy, precisely, not just "it does."** The
+`government_warning` field is the clearest driver. The real warning subsystem cross-checks a
+VLM reading against an independent OCR reading (`src/server/warning/reconcile.ts`). The
+Sonnet-only arm has no second channel. That module's own single-channel rule says a
+single-channel FAIL is never allowed, only REVIEW — so the Sonnet-only arm can never assert
+a hard `MISMATCH` on this field. A title-case or reworded warning always escalates instead
+of correctly failing, dragging the whole label's verdict from a correct `FAIL` to an
+incorrect `REVIEW`. This is a structural property of having one reading instead of two, not
+a prompt-quality problem. More Sonnet calls do not fix a missing corroborating channel.
+
+**Per this ticket's own instruction, the recommendation is not up for renegotiation by this
+finding.** PRD §4: "Keep the cascade regardless per Troy; the benchmark is the evidence."
+This benchmark produces that evidence — in this case, evidence that agrees with the
+already-settled decision, not merely evidence that was collected regardless of outcome.
+`benchmark.ts`'s own committed report carries a fixed `recommendation` string rather than one
+derived from the numbers, so a future re-run cannot accidentally flip a recommendation this
+project already made.
+
+**Golden-set escalation rate vs. PRD §4's production estimate.** 12 of 29 cases (41.4%)
+escalated to Sonnet on this run — noticeably higher than PRD §4's "~10-15% of labels"
+estimate. This is not a contradiction: PRD §4's figure describes expected real-world
+production traffic; the golden set is deliberately weighted toward hard and degraded cases
+(glare, rotation, low light, tiny text, conflicting data) that a real label population would
+rarely produce at this density. Reported as measured on this specific, intentionally-hard
+test set — not a claim about production traffic.
+
+**Gate.** `scripts/factory/gate.sh` G8 ("eval-not-regressed") now runs `pnpm eval:check` for
+real. Confirmed: `[ok ] eval-not-regressed  accuracy >= committed baseline` — no longer
+`skip`.
+
+**How to run it.** `pnpm eval:check` (free, no live call) for the regression gate.
+`pnpm eval:check -- --live --full --update-baseline` to refresh the committed baseline after
+a real router or prompt change (costs real API money, several minutes). `pnpm eval:benchmark
+-- --full` to refresh the cascade-vs-Sonnet-only evidence (real money, several minutes,
+never automatic). `source .factory-env` first in a factory worktree, same `DATABASE_URL`
+discipline as every other script here.
+
+**Rollback.** `git revert` this ticket's commits. That removes every `scripts/eval/*` file,
+the two `package.json` scripts, and the CI comment, and restores gate.sh's G8 to its prior
+`skip` behavior (`gate.sh` itself already handles "no eval:check script" as a real branch,
+unchanged by this ticket).
 
 ## TRO-473 — local CodeRabbit review round 3: 4 findings, 4 fixed (2026-08-11)
 

@@ -98,4 +98,14 @@ describe("buildManifestCsv", () => {
     const [headerLine] = csv.split("\n");
     expect(headerLine).toBe("brand_name,class_type");
   });
+
+  it("quotes a cell containing a bare carriage return, not only a newline", () => {
+    // RFC 4180 requires quoting for \r as well as \n — an earlier version
+    // of csvField's character class checked only [",\n], which would have
+    // written a bare \r straight into the CSV unquoted (CodeRabbit
+    // finding, TRO-479 local review round 2).
+    const csv = buildManifestCsv([{ ...row, classType: "Straight\rBourbon" }]);
+    const [, dataLine] = csv.trim().split("\n");
+    expect(dataLine).toContain('"Straight\rBourbon"');
+  });
 });

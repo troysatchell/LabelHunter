@@ -7,8 +7,12 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 ## TRO-479 — LH-053 · E2E suite (2026-08-12)
 
 **What this builds.** Real, executable Playwright specs for the three PRD §6 flows: verify,
-batch, and review queue. Every spec runs against a real, live app instance
-(`playwright.config.ts`'s `webServer`). None run against a mocked server.
+batch, and review queue. Every spec runs against a real, live app and a real background worker
+(`playwright.config.ts`'s `webServer`) — real preprocessing, the real deterministic router, real
+persistence. The one exception is named up front, not buried: by default, the Anthropic API
+itself is faked (see "Real model calls or fakes" below). This entry's earlier draft claimed
+"none run against a mocked server," which was flatly wrong given the very next section —
+corrected here (CodeRabbit finding, TRO-479 local review round 2).
 
 - `e2e/verify.spec.ts` — the verify happy path (a real golden-set image, a full per-field
   checklist, click-through to detail), plus three error states: unreadable image, oversized
@@ -23,12 +27,12 @@ batch, and review queue. Every spec runs against a real, live app instance
 **Scope cut, stated explicitly.** Two of the seven PRD §5 error states are not built as E2E
 specs: partial batch failure and the rate-limit backoff notice. Both already have precise,
 deterministic unit coverage (`src/server/batch-progress/get-batch-progress.test.ts`). That
-coverage does not depend on timing. A true E2E repro of either state needs one of two things: a
-deliberately-broken item inside an otherwise-good batch (partial failure), or a live 429 racing
-a real `available_at` timestamp against the browser's own poll window (backoff). Both are
-exactly the shape of timing-dependent state that makes an E2E test flaky. Both would add only
-marginal signal beyond what the unit suite already proves deterministically. Five of seven is
-the real, honest count — not a silently dropped two.
+coverage does not depend on timing. A true E2E repro of partial failure needs a
+deliberately-broken item inside an otherwise-good batch. A true E2E repro of the backoff notice
+needs a live 429 racing a real `available_at` timestamp against the browser's own poll window.
+Both are exactly the shape of timing-dependent state that makes an E2E test flaky. Both would
+add only marginal signal beyond what the unit suite already proves deterministically. Five of
+seven is the real, honest count — not a silently dropped two.
 
 **Real model calls or fakes — decided, and load-bearing.** Every existing HTTP-level test in
 this repo (`src/app/api/verify/route.test.ts` and its siblings) injects a fake Anthropic client
@@ -81,7 +85,7 @@ regex, and either reported problem could satisfy it. It stayed green even with t
 message broken, because the (unbroken) image-specific message alone still matched the pattern.
 Fixed by asserting each reported problem against its own list item, not the panel as a whole.
 
-**Local CodeRabbit review triage (4 findings, 3 fixed, 1 kept as-is with reasoning).**
+**Local CodeRabbit review triage, round 1 (4 findings, 3 fixed, 1 kept as-is with reasoning).**
 - `scripts/e2e/fake-anthropic-server.ts` (major): an unrecognized `model` silently fell through
   to the extraction response. Fixed — now a loud 400, since this app is the only caller and any
   other value means a caller bug or real drift from the two model constants (standing rule 13).
@@ -98,6 +102,49 @@ Fixed by asserting each reported problem against its own list item, not the pane
   running `pnpm dev`" workflow) for protection against a self-inflicted mistake (an orphaned
   local process) that CI's own `!process.env.CI` already guards against where it actually
   matters. Recorded in the review ledger as reviewed, not applied.
+
+**Local CodeRabbit review triage, round 2 — post-merge with TRO-480 (5 findings, all fixed).**
+Run by the orchestrator against the merged state (this branch plus TRO-480's UX-polish
+changes); the orchestrator read the actual code before sending each finding, and all five held
+up. All five fixed here, none dismissed.
+- CHANGES.md (major): a real self-contradiction. "What this builds" claimed "None run against a
+  mocked server," directly contradicted two paragraphs later by "Real model calls or fakes"
+  explaining that the Anthropic API is faked by default. Fixed — the opening paragraph now names
+  the one exception up front instead of denying it exists.
+- `e2e/verify.spec.ts` (major): the happy-path test asserted exact evidence text from the fake
+  server's own canned fixture (`WELL_FORMED_EXTRACTION_BODY`). Under the documented, callable
+  `E2E_LIVE=1` path, a real model reads the real photo for itself, and its evidence text is not
+  guaranteed to match a hardcoded fixture byte for byte — every one of those assertions was
+  foreseeably broken under a real live run, for a reason that has nothing to do with an actual
+  bug. Fixed: the exact-text checks now run only when `!E2E_LIVE` (`e2e/helpers.ts`'s new
+  `E2E_LIVE` export); the MATCH-badge checks, which hold under either mode for this genuinely
+  clean-match label, stay unconditional. The "API failure" test's own failure-injection trigger
+  has no live-API equivalent at all (the real API does not fail on demand for a small image), so
+  that whole test now uses `test.skip(E2E_LIVE, ...)` with the reason stated inline — a
+  deliberate mode-scoping decision, not a weakened assertion; the retry affordance it proves stays
+  fully exercised in the default mode, which is also what the gate runs. Verified the branching
+  itself fires correctly (skip triggers, remaining assertions still pass) without any real API
+  spend, by hardcoding the flag in the test file only — `playwright.config.ts`'s own real
+  `ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY` overrides were never touched for this check.
+- `e2e/helpers.ts` (major): `submitVerifyFormAndWait` used a raw, unfiltered
+  `page.getByRole("alert")` instead of the `errorPanel(page)` helper built specifically to filter
+  out Next's own always-present route announcer (`__next-route-announcer__`). Since `.or(...)`
+  resolves as soon as either side matches, a stale, non-empty announcer left over from an earlier
+  client-side navigation could let this function return before the real result ever rendered.
+  Fixed: now uses `errorPanel(page)`. Regression-tested directly — a new spec
+  (`e2e/verify.spec.ts`, "helper correctness") writes stale text into the announcer before
+  submitting, then checks the checklist with a non-auto-retrying `isVisible()` call (deliberately
+  not an auto-waiting `expect`, which would have silently papered over the bug the same way an
+  auto-retrying check almost always does). Confirmed failing against the old, unfiltered code
+  before restoring the fix — the old code returned control before the real checklist had
+  rendered, exactly as predicted.
+- CHANGES.md (minor): the "true E2E repro of either state" sentence (scope-cut paragraph) still
+  ran to 37 words after round 1's own pass. Split into two sentences, one per state.
+- `scripts/e2e/fixtures.ts` (minor): `csvField`'s special-character check, `/[",\n]/`, quoted a
+  comma, a double quote, or a newline, but not a bare carriage return — RFC 4180 requires quoting
+  for `\r` too. Fixed: `/[",\r\n]/`. Added a regression case.
+
+All nine findings across both rounds recorded in `factory/review-findings.jsonl`.
 
 **How to run it.**
 

@@ -16,6 +16,22 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import type { BeverageType } from "../src/lib/db/enums";
 
+/**
+ * True when this run is using the real Anthropic API
+ * (`playwright.config.ts`'s `E2E_LIVE=1` opt-in) rather than the fake
+ * model server. Reads the SAME env var `playwright.config.ts` reads, so a
+ * spec's own idea of "am I live" never drifts from the config's.
+ *
+ * A few assertions are coupled to the fake server's own hardcoded canned
+ * text (`WELL_FORMED_EXTRACTION_BODY`) and cannot hold against a real
+ * model's own reading of the real photo — those branch on this flag
+ * instead of failing for a reason that has nothing to do with a real bug
+ * (CodeRabbit finding, TRO-479 local review round 2: `E2E_LIVE=1` was a
+ * real, documented, callable path this suite had never actually run, and
+ * every fixture-exact-text assertion would foreseeably fail under it).
+ */
+export const E2E_LIVE = process.env.E2E_LIVE === "1";
+
 export interface FilePayload {
   name: string;
   mimeType: string;
@@ -63,16 +79,6 @@ export function verifySubmitButton(page: Page): Locator {
   return page.getByRole("button", { name: "Verify" });
 }
 
-/** Submits the verify form and waits for the request to settle — either
- * the results checklist (`data-testid="label-verdict-banner"`) or a
- * designed error panel (`role="alert"`), whichever the server actually
- * returns. Never a fixed sleep (standing rule 8): both outcomes are real,
- * observable DOM changes Playwright's own auto-waiting `expect` polls for. */
-export async function submitVerifyFormAndWait(page: Page): Promise<void> {
-  await verifySubmitButton(page).click();
-  await expect(page.getByTestId("label-verdict-banner").or(page.getByRole("alert"))).toBeVisible({ timeout: 20_000 });
-}
-
 /** The Verify screen's one designed error panel
  * (`src/app/_components/ErrorPanel.tsx`) — `role="alert"` is the resilient
  * anchor; title/message text is asserted separately, tolerantly, by each
@@ -87,4 +93,28 @@ export async function submitVerifyFormAndWait(page: Page): Promise<void> {
  * spec failed on this before the filter was added, not a hypothetical). */
 export function errorPanel(page: Page): Locator {
   return page.getByRole("alert").filter({ hasText: /.+/ });
+}
+
+/** Submits the verify form and waits for the request to settle — either
+ * the results checklist (`data-testid="label-verdict-banner"`) or the
+ * designed error panel (`errorPanel(page)`), whichever the server
+ * actually returns. Never a fixed sleep (standing rule 8): both outcomes
+ * are real, observable DOM changes Playwright's own auto-waiting `expect`
+ * polls for.
+ *
+ * Uses `errorPanel(page)`, not a raw `page.getByRole("alert")` — an
+ * earlier version of this function used the raw, unfiltered locator,
+ * which can also match Next's own always-present, possibly non-empty
+ * route announcer (see `errorPanel`'s own comment). Matching the
+ * announcer here is worse than the strict-mode violation it causes
+ * elsewhere: `.or(...)` would resolve this wait as soon as EITHER side
+ * matches, so a stale announcer left non-empty by an earlier client-side
+ * navigation in the same test could let this function return before the
+ * real result ever renders — a caller has no way to tell "the real thing
+ * showed up" from "some old, unrelated announcer text was already there"
+ * (CodeRabbit finding, TRO-479 local review round 2; regression-tested
+ * below). */
+export async function submitVerifyFormAndWait(page: Page): Promise<void> {
+  await verifySubmitButton(page).click();
+  await expect(page.getByTestId("label-verdict-banner").or(errorPanel(page))).toBeVisible({ timeout: 20_000 });
 }

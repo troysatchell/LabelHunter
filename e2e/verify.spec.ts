@@ -20,7 +20,7 @@
 import { expect, test } from "@playwright/test";
 import { buildCorruptImage, buildFailureTriggerImage, buildOversizedFile, readDefaultGoldenImage, uniqueTag } from "../scripts/e2e/fixtures";
 import { WELL_FORMED_EXTRACTION_BODY } from "../src/server/extractor/test-support";
-import { errorPanel, fillVerifyForm, jpegFile, submitVerifyFormAndWait } from "./helpers";
+import { E2E_LIVE, errorPanel, fillVerifyForm, jpegFile, submitVerifyFormAndWait } from "./helpers";
 
 test.describe("Verify — happy path", () => {
   test("uploads a real golden-set label, fills the application fields, and renders a real per-field checklist", async ({ page }) => {
@@ -41,25 +41,32 @@ test.describe("Verify — happy path", () => {
     await expect(banner).toBeVisible();
     await expect(banner).toContainText(/matches the application/i);
 
-    // Every row is real — the evidence text ties straight back to the
-    // fake server's canned extraction (itself case-01's own verified
-    // ground truth, golden-set/manifest.json), never a hand-typed
-    // duplicate of what the UI happens to show.
+    // Every row is real. In the default (fake) mode, the evidence text
+    // ties straight back to the fake server's canned extraction (itself
+    // case-01's own verified ground truth, golden-set/manifest.json),
+    // never a hand-typed duplicate of what the UI happens to show. Under
+    // E2E_LIVE=1, a real model reads the real photo for itself — its
+    // evidence text is not guaranteed to be byte-for-byte identical to
+    // this fixture (case, spacing, or transcription choices can differ
+    // even on a correct read), so only the MATCH badge — the fact every
+    // field agrees with the application, true under either mode for this
+    // genuinely clean-match label — is asserted live (CodeRabbit finding,
+    // TRO-479 local review round 2).
     const brandRow = page.getByTestId("checklist-row-brand_name");
     await expect(brandRow).toBeVisible();
-    await expect(brandRow).toContainText(WELL_FORMED_EXTRACTION_BODY.brand_name.evidence);
+    if (!E2E_LIVE) await expect(brandRow).toContainText(WELL_FORMED_EXTRACTION_BODY.brand_name.evidence);
     await expect(brandRow).toContainText("Match");
 
     const classRow = page.getByTestId("checklist-row-class_type");
-    await expect(classRow).toContainText(WELL_FORMED_EXTRACTION_BODY.class_type.evidence);
+    if (!E2E_LIVE) await expect(classRow).toContainText(WELL_FORMED_EXTRACTION_BODY.class_type.evidence);
     await expect(classRow).toContainText("Match");
 
     const abvRow = page.getByTestId("checklist-row-alcohol_content");
-    await expect(abvRow).toContainText(WELL_FORMED_EXTRACTION_BODY.alcohol_content.evidence);
+    if (!E2E_LIVE) await expect(abvRow).toContainText(WELL_FORMED_EXTRACTION_BODY.alcohol_content.evidence);
     await expect(abvRow).toContainText("Match");
 
     const netRow = page.getByTestId("checklist-row-net_contents");
-    await expect(netRow).toContainText(WELL_FORMED_EXTRACTION_BODY.net_contents.evidence);
+    if (!E2E_LIVE) await expect(netRow).toContainText(WELL_FORMED_EXTRACTION_BODY.net_contents.evidence);
     await expect(netRow).toContainText("Match");
 
     // The warning field is the one row whose MATCH depends on a second,
@@ -125,6 +132,18 @@ test.describe("Verify — designed error states (TH-R20)", () => {
   });
 
   test("an API failure shows the SERVICE error state with a retry affordance that actually recovers", async ({ page }) => {
+    // This test exercises the fake model server's own failure-injection
+    // trigger — a deliberately tiny image, matched by decoded byte length
+    // (fake-anthropic-server.ts). That mechanism has no live equivalent:
+    // the real Anthropic API does not fail on demand for a small image,
+    // so there is nothing for E2E_LIVE=1 to prove here, and running this
+    // unmodified against the real API would foreseeably fail for a reason
+    // that has nothing to do with a real bug (CodeRabbit finding, TRO-479
+    // local review round 2). The retry affordance itself is still fully
+    // exercised in the default (fake) mode, which is also what the gate
+    // runs.
+    test.skip(E2E_LIVE, "the fake server's failure-injection trigger has no live-API equivalent");
+
     await page.goto("/");
 
     const brandName = uniqueTag("verify-retry");
@@ -156,5 +175,44 @@ test.describe("Verify — designed error states (TH-R20)", () => {
     await expect(page.getByTestId("label-verdict-banner")).toBeVisible({ timeout: 20_000 });
     await expect(errorPanel(page)).toHaveCount(0);
     await expect(page.getByTestId("checklist-row-brand_name")).toBeVisible();
+  });
+});
+
+test.describe("Verify — helper correctness", () => {
+  test("submitVerifyFormAndWait waits for the real result, not Next's own stale route announcer", async ({ page }) => {
+    // Regression test for a CodeRabbit finding (TRO-479 local review
+    // round 2): submitVerifyFormAndWait's own `.or(...)` wait must ignore
+    // Next's always-present route announcer (`__next-route-announcer__`),
+    // the same element `errorPanel(page)` already filters out for the
+    // same reason. Simulates the exact race directly — an earlier client-
+    // side navigation elsewhere in a longer test could leave the
+    // announcer non-empty — rather than relying on one happening to occur
+    // naturally in this suite's own current specs.
+    await page.goto("/");
+    await page.evaluate(() => {
+      const announcer = document.getElementById("__next-route-announcer__");
+      if (announcer) announcer.textContent = "stale text from an earlier client-side navigation";
+    });
+
+    await fillVerifyForm(page, {
+      image: jpegFile("case-01-clean-match-spirits.jpg", readDefaultGoldenImage()),
+      beverageType: "spirits",
+      brandName: uniqueTag("verify-announcer-race"),
+      classType: "Straight Bourbon Whiskey",
+      alcoholContentPercent: 45,
+      netContentsValue: 750,
+      netContentsUnit: "mL",
+    });
+    await submitVerifyFormAndWait(page);
+
+    // Deliberately NOT an auto-retrying `expect(...).toBeVisible()` here:
+    // that would poll for up to its own default timeout and could paper
+    // over `submitVerifyFormAndWait` having returned too early, exactly
+    // the vacuous-proof risk this ticket's own break/restore discipline
+    // exists to catch (see CHANGES.md). If the wait had resolved against
+    // the stale, already-visible announcer instead of the real result,
+    // the checklist would not reliably be in the DOM the INSTANT control
+    // returns here.
+    expect(await page.getByTestId("label-verdict-banner").isVisible()).toBe(true);
   });
 });

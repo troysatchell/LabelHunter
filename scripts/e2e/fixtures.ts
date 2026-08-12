@@ -122,11 +122,14 @@ export interface ManifestCsvRow {
 }
 
 /** RFC 4180 quoting, applied only when a cell actually needs it — every
- * value this suite's fixtures pass is plain ASCII with no comma/quote/
- * newline, so this is a correctness safety net, not a path any current
- * spec exercises. */
+ * value this suite's fixtures pass is plain ASCII with no comma, quote,
+ * or line break, so this is a correctness safety net, not a path any
+ * current spec exercises. The character class covers `\r` as well as
+ * `\n` — RFC 4180 requires quoting for either — not just the `\n` an
+ * earlier version of this function checked (CodeRabbit finding, TRO-479
+ * local review round 2). */
 function csvField(value: string): string {
-  if (/[",\n]/.test(value)) {
+  if (/[",\r\n]/.test(value)) {
     return `"${value.replace(/"/g, '""')}"`;
   }
   return value;

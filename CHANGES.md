@@ -4,6 +4,162 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-538 — LH-033 · Score the cascade end state and the per-field confidence the report discarded (2026-08-12)
+
+**What this builds.** The eval harness scored the Validation Router alone. It called the
+result "the cascade." `scripts/eval/cascade-runner.ts:299-304` built the scored verdict from
+the `/api/verify` response body. The resolver gate at `:311` ran seven lines later. By
+contrast, `rollUpResolverResolution` already scored the Sonnet-only benchmark arm one stage
+later than that. The two arms of the headline benchmark measured different pipeline stages.
+The benchmark compared them anyway.
+
+This ticket adds a real post-resolution stage. `cascade-runner.ts` now exports
+`mergeResolutionIntoActualVerdict`. It takes the router's own five field rows and the
+resolver's resolution, when one ran. It overrides each resolver-flagged row with the
+resolver's own disposition, and it carries every unflagged row through unchanged. It reuses
+`resolver-rollup.ts`'s existing per-field mapping, now exported as `rollUpOneField`. Every
+`CascadeCaseResult` now carries two verdict scores under different names. `routerVerdict` is
+the router's own verdict, before any resolver call. `cascadeVerdict` is the merged end state.
+`cascadeVerdict` equals `routerVerdict` exactly when nothing escalated. `EvalReportSummary`
+gained the matching `cascadeVerdictAccuracy` headline number, beside the renamed
+`routerVerdictAccuracy` (was `labelVerdictAccuracy`). `benchmark.ts` now compares
+`cascadeVerdict` against the Sonnet-only arm's own verdict — both post-resolution — and names
+each arm's pipeline stage in a new `stage` string on the committed report. The old router-only
+number survives as `cascadeRouterStageVerdictAccuracy`. It is informational only. It is never
+the number this report compares.
+
+**Open design question, decided here, needs Troy's confirmation.** `mergeResolutionIntoActualVerdict`
+never reads the router's own `labelVerdict` or `headlineReason`. It reads only the field rows.
+So a label-level blocker (`LOW_IMAGE_QUALITY`, `CONFLICTING_EXTRACTION`) never survives into
+the cascade end state once a resolution exists. Reasoning: `buildFlaggedFieldsForEscalatedLabel`
+already sends every field to Sonnet when no field individually carried its own reason — the
+usual way a label-level blocker fires. So Sonnet has independently checked the blocker's
+distrust by the time the merge runs. This mirrors `resolver-rollup.ts`'s own Sonnet-only-arm
+choice. That arm has no router pass, so it has no blocker to take at all. Honest limit, stated
+in the function's own doc comment: `buildFlaggedFieldsForEscalatedLabel` can flag a partial
+field set even alongside a label-level blocker. One field's own override rejection can set the
+same blocker reason on just that one field. On that path, an unflagged field still carries the
+router's blocker-era verdict forward. **Troy: confirm that dropping the blocker after
+resolution is the right choice.** Or name which of the two documented alternatives you want
+instead: keep the blocker always, or drop it only when the resolver has resolved every field.
+
+**A second, separate honest limit. The live run found it; nobody designed it in.** A resolved
+`government_warning` field runs back through `resolver-rollup.ts`'s existing
+`rollUpGovernmentWarning`. That function has no OCR channel. So it can return only `MATCH` or
+`NEEDS_REVIEW` — never `MISMATCH` — the same limit the Sonnet-only arm already lives with. So a
+router-level warning `MISMATCH`, once a resolver call sweeps it in for an unrelated reason,
+cannot survive the merge as a `MISMATCH`. Measured on case-11, the case that motivated this
+ticket: the router's own `government_warning` row read `MISMATCH`, from two agreeing real
+channels. Post-merge, it reads `NEEDS_REVIEW` / `LOW_MODEL_CONFIDENCE`. The comparator did not
+downgrade it. Sonnet's own resolution reported `needsHuman: true` for that field instead.
+`resolver-rollup.ts`'s `rollUpCorrectionField` checks `needsHuman` before it checks which field
+it is, so that flag short-circuits straight past the comparator re-run. case-11 stays a miss
+(expects `FAIL`) at both stages. This is real, new evidence, and surfacing it is this ticket's
+job. It is not a defect this ticket introduces or fixes. The router bug that actually caused
+case-11's original miss belongs to a separate ticket: the `beverage_type` cross-check treats
+"Mead" as a conflict with a declared "wine" application.
+
+**Other evidence recorded, none of it scored.** Every case now carries the per-field
+`confidence` CP-1 §4.5 step 1 asks for: `ExtractionFieldScore.confidence` and
+`VerdictFieldScore.confidence`. Both read from the same captured `HaikuExtractionResult` every
+caller already held. Neither needs a second API call or a database read. `EvalReportSummary`
+gained `extractionReliabilityDiagram`: ten confidence-decile buckets over every scored
+extraction field, each with its own `n` beside its rate (CP-1 §4.5 step 2). Every case now
+carries the whole `image_quality` object (`legible`, `issues`, `confidence`) and
+`beverage_type`'s `value`/`evidence`/`confidence`, as recorded evidence only.
+`beverage_type` never joins the extraction-accuracy denominator, which stays at 160 for 32
+cases: no golden label prints its category word, so no label ground truth exists to score it
+against.
+
+**Manifest provenance now moves with content.** `EvalReport`, `EvalBaseline`, and the
+benchmark report all gained `manifestContentHash`: a SHA-256 hash of `golden-set/manifest.json`'s
+raw bytes (`scripts/eval/manifest-hash.ts`). It hashes the same file `loadGoldenSetManifest()`
+reads from `DEFAULT_MANIFEST_PATH`, now exported for this reason. `baseline-compare.ts` rejects
+a comparison when the current hash disagrees with the baseline's hash. `manifestVersion` alone
+could not catch that gap: seven straight commits edited the manifest, and every one left
+`version` at `"1.0.0"`.
+
+**Files touched.** `scripts/eval/{types,cascade-runner,resolver-rollup,verdict-scoring,
+extraction-scoring,summary,check,benchmark,baseline-compare,report-validation}.ts` and their
+test files; new `scripts/eval/manifest-hash.ts` (+ test) and `scripts/eval/cascade-runner.test.ts`;
+`src/lib/golden-set/loader.ts` (exports `DEFAULT_MANIFEST_PATH`). No schema change, no
+migration — the committed report is the evidence artifact for `image_quality`/`beverage_type`,
+per the ticket's own instruction not to add a database column here.
+
+**How to run it.**
+1. `pnpm test` runs every unit test, including the new `mergeResolutionIntoActualVerdict` and
+   `hashManifestContent` suites.
+2. `pnpm typecheck` and `pnpm lint` both pass.
+3. `pnpm eval:check -- --live --full` re-runs the whole 32-case golden set for real, then
+   `--update-baseline` promotes it. Plain `pnpm eval:check` (cheap mode, what the gate runs)
+   compares the committed report against that baseline with no live call.
+4. `pnpm eval:benchmark -- --full` regenerates the benchmark report.
+
+**Measured — real, live run against the full 32-case golden set, `claude-haiku-4-5` /
+`claude-sonnet-5`, today, now committed as the baseline (`scripts/eval/results/eval-report.json`,
+`measuredAt: 2026-08-12T21:31:15.150Z`).**
+
+| Metric | Result |
+|---|---|
+| Extraction accuracy | 95.6% (153/160 fields) |
+| Router-verdict accuracy (before any resolver call) | **68.8%** (22/32) |
+| Cascade-verdict accuracy (end state) | **68.8%** (22/32) |
+| Review-reason accuracy | 35.7% (5/14) |
+| Total measured cost | $0.2987 |
+
+**The old 65.6% (21/32) was a router number, not a cascade number.** This run's own router
+number moved to 68.8% (22/32), on real, independent model calls — known call-to-call variance,
+already documented in this file and in `docs/diagnostics/2026-08-12-verdict-miss-triage.md`.
+This run's cascade number is also 68.8% (22/32): the same headline rate, but not because
+nothing changed underneath it. Eight of the 32 cases move between the two stages:
+
+- **Correct to wrong (4 cases):** case-16, case-17, case-18, case-22. Each held a correct
+  router `REVIEW`. A resolver call resolved each one to an incorrect `PASS`.
+- **Wrong to correct (4 cases):** case-15, case-19, case-28, case-29. Each held an incorrect
+  router `REVIEW`. A resolver call resolved each one correctly. `eval-report.json` now records
+  the reason directly: case-28's `class_type` and case-29's `brand_name` both resolved
+  `RESOLVED_MISMATCH`.
+
+The net cancels in the headline rate. The underlying evidence does not. **Derived, not a claim
+this ticket investigates further:** the golden set expects all four new "wrong" cases to stay
+in `REVIEW`. Sonnet's own judgment resolved them past that point instead — real evidence about
+the resolver's own behavior on this corpus, not a regression this ticket caused or fixes.
+
+**The cascade-vs-Sonnet-only benchmark, corrected — both arms scored post-resolution,
+`pnpm eval:benchmark -- --full`, `measuredAt: 2026-08-12T21:40:59.900Z`.** 31 of 32 cases
+scored on both arms. `case-02-clean-match-beer-no-abv`'s Sonnet-only arm failed response
+validation: Sonnet returned `RESOLVED_MATCH` with a null `corrected_value`, for an
+`alcohol_content` field the label genuinely states nothing about. This is a pre-existing gap in
+the Sonnet-only arm's own "flag every field, always" design (`buildAllFieldsFlagged`). This
+ticket did not cause it and does not fix it here; this entry only notes it.
+
+| | Cascade end state (post-resolution) | Sonnet-only (post-resolution) |
+|---|---|---|
+| Label-verdict accuracy | **67.7%** (21/31) | **38.7%** (12/31) |
+| Total measured cost | $0.2950 | $0.4543 |
+
+Accuracy delta: **-29.0 percentage points** (Sonnet-only minus cascade end state). Cost delta:
+**+$0.1593, 1.5x** (Sonnet-only costs more). **This replaces the earlier -24.1 point figure
+recorded in this file** (`CHANGES.md`, the TRO-470 entry: cascade 65.5%/19/29 vs sonnet-only
+41.4%/12/29). That older number compared the cascade arm's router-only verdict against the
+Sonnet-only arm's post-resolution verdict — a stage mismatch, and the exact one this ticket
+fixes. The corrected comparison still shows the cascade winning on accuracy and cost, by a
+wider margin than the router-only reading suggested. Do not read the smaller headline-rate move
+(65.5% to 67.7%) as "the fix changed little." The fair comparison moved by 4.9 points, from
+-24.1 to -29.0. This run measures the cascade arm's own accuracy at its real, final stage for
+the first time.
+
+**Not verified by this ticket.** Three open questions. Does Troy agree with the
+label-level-blocker design decision above? Do the four newly-exposed router-to-cascade
+regressions (case-16/17/18/22) warrant a resolver-prompt change — flagged here as evidence,
+not diagnosed further? Does `case-02`'s Sonnet-only-arm validation failure reproduce on a
+second run? (Not re-run, to avoid spending money chasing a known, pre-existing, out-of-scope
+edge case.)
+
+**Rollback.** `git revert` this commit. `scripts/eval/results/eval-report.json`,
+`scripts/eval/baseline.json`, and `scripts/eval/results/benchmark-report.json` revert to their
+pre-TRO-538 shape along with the code; no other file depends on the new fields.
+
 ## TRO-479 — LH-053 · E2E suite (2026-08-12)
 
 **What this builds.** Real, executable Playwright specs for the three PRD §6 flows: verify,

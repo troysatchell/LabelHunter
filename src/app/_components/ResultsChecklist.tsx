@@ -5,6 +5,7 @@
  * takes the API's response shape as a prop and renders it, so it is
  * testable with no network and no form state.
  */
+import Link from "next/link";
 import type { FieldVerdict, LabelVerdict } from "../../server/router";
 import type { VerifySuccessResponse } from "../api/verify/types";
 
@@ -26,13 +27,25 @@ const VERDICT_ROW_CLASS: Record<FieldVerdict, string> = {
   NEEDS_REVIEW: "checklist-row--needs_review",
 };
 
-const LABEL_BANNER_CLASS: Record<LabelVerdict, string> = {
+export const LABEL_BANNER_CLASS: Record<LabelVerdict, string> = {
   PASS: "label-verdict-banner--pass",
   FAIL: "label-verdict-banner--fail",
   REVIEW: "label-verdict-banner--review",
 };
 
-function labelVerdictText(result: VerifySuccessResponse): string {
+/** The label-verdict banner's own text. Exported (TRO-466) so the Detail
+ * view (`DetailView.tsx`) shows the identical wording for the identical
+ * verdict — the same product fact, in two views, must read the same way.
+ * `LabelVerdictSummary` is a minimal structural type, not the full
+ * `VerifySuccessResponse` — `VerifySuccessResponse` still satisfies it, and
+ * so does `VerificationDetail` (`src/server/verification-detail/types.ts`)
+ * once it carries its own `headlineMessage`. */
+export interface LabelVerdictSummary {
+  labelVerdict: LabelVerdict;
+  headlineMessage: string | null;
+}
+
+export function labelVerdictText(result: LabelVerdictSummary): string {
   if (result.labelVerdict === "PASS") return "This label matches the application.";
   if (result.labelVerdict === "FAIL") return "This label does not match the application.";
   return result.headlineMessage ?? "This label needs review.";
@@ -75,6 +88,12 @@ export function ResultsChecklist({ result }: ResultsChecklistProps) {
           </li>
         ))}
       </ul>
+      {/* TRO-466, PRD §5's Detail view: one clearly labeled link, styled
+          like a button (TH-R3 — large controls, no hunting), to the label
+          photo and the full side-by-side comparison. */}
+      <Link href={`/verify/${result.verificationId}`} className="secondary-button">
+        See the label photo and full comparison
+      </Link>
     </div>
   );
 }

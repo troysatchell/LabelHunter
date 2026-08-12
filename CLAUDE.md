@@ -84,9 +84,11 @@ This repo is worked by an autonomous ticket factory, not just ad hoc sessions.
   projects; never dispatch outside this one.
 - **Evidence gate:** `scripts/factory/gate.sh`. A ticket is done when the gate passes, CI is
   green, and the review is triaged — never on an agent's self-report.
-- **Three unskippable human checkpoints** (CP-1 cascade router/prompts, CP-2 warning
-  subsystem, CP-3 batch queue) block their waves in Linear. Final submission wording and the
-  submit decision are always Troy's.
+- **Three human checkpoints** (CP-1 cascade router/prompts, CP-2 warning subsystem, CP-3
+  batch queue) each require prepared walkthrough and "defend it" Q&A material before their
+  wave dispatches — Troy must be able to defend every decision live. Dispatch no longer waits
+  for live acknowledgment (Troy's call, 2026-08-11) — see `references/escalation.md`. Final
+  submission wording and the submit decision are always Troy's.
 
 ## Non-negotiables
 

@@ -107,10 +107,15 @@ policy:                               # set via PRD rounds R1–R4 (2026-08-10).
   retryCap: 3                         # converts "burns tokens forever" into "surfaces a problem"
   scopeLimitFiles: 40
   spendCap:
-    projectedBuildEvalUsd: 25         # PRD §4: pause the factory and notify Troy at $25
-                                      # projected build+eval spend (default — confirm)
-  humanCheckpoints:                   # PRD §10 — blocking, unskippable. Overnight runs are
-                                      # allowed but NEVER across an unacknowledged checkpoint.
+    projectedBuildEvalUsd: 25         # PRD §4 default figure — kept for cost tracking only
+    blocking: false                   # REMOVED 2026-08-11, Troy's explicit call: run to
+                                      # completion regardless of cost. Still log spend; do
+                                      # not pause dispatching on it.
+  humanCheckpoints:                   # PRD §10. CHANGED 2026-08-11, Troy's explicit call:
+                                      # walkthrough + "defend it" Q&A material is still
+                                      # REQUIRED for CP-1/2/3 (purpose unchanged — Troy must
+                                      # be able to defend every decision live), but dispatch
+                                      # of the gated wave no longer waits for acknowledgment.
     CP-1: cascade router + prompts (Haiku schema, thresholds, ReviewReason rules, resolver prompt)
     CP-2: warning subsystem (canonical text sourcing, OCR, normalization, exact-compare, bold/caps)
     CP-3: batch queue + workers (queue design, concurrency, rate limits, partial failure)

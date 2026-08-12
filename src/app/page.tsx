@@ -3,6 +3,7 @@
  * flow, replacing the scaffold placeholder: upload a label photo, fill in
  * the application fields, press Verify, read the checklist.
  */
+import Link from "next/link";
 import { VerifyForm } from "./_components/VerifyForm";
 
 export default function Home() {
@@ -14,6 +15,11 @@ export default function Home() {
         needs a closer look.
       </p>
       <VerifyForm />
+      <p>
+        <Link href="/review-queue" className="secondary-button">
+          Review queue
+        </Link>
+      </p>
     </main>
   );
 }

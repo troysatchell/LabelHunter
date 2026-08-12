@@ -86,4 +86,10 @@ describe("ResultsChecklist", () => {
     expect(row).toHaveTextContent("Does not match the application.");
     expect(row.className).toContain("checklist-row--mismatch");
   });
+
+  it("links to the Detail view (TRO-466, PRD §5) using this verification's own id — one clear link, not a hunt", () => {
+    render(<ResultsChecklist result={PASS_RESULT} />);
+    const link = screen.getByRole("link", { name: "See the label photo and full comparison" });
+    expect(link).toHaveAttribute("href", `/verify/${PASS_RESULT.verificationId}`);
+  });
 });

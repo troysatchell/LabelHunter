@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   BEVERAGE_TYPES,
+  REVIEW_DISPOSITIONS,
   REVIEW_REASONS,
   assertEnumMember,
   toBeverageType,
+  toReviewDisposition,
   toReviewReason,
 } from "./enums";
 
@@ -54,6 +56,27 @@ describe("toBeverageType", () => {
 
   it("throws on a near-miss (wrong case) instead of silently accepting it", () => {
     expect(() => toBeverageType("Beer")).toThrow();
+  });
+});
+
+describe("toReviewDisposition", () => {
+  it("returns the value unchanged when it is a valid ReviewDisposition", () => {
+    for (const disposition of REVIEW_DISPOSITIONS) {
+      expect(toReviewDisposition(disposition)).toBe(disposition);
+    }
+  });
+
+  it("throws on a value outside the ReviewDisposition set", () => {
+    expect(() => toReviewDisposition("MAYBE")).toThrow(
+      /toReviewDisposition: "MAYBE" is not one of/,
+    );
+  });
+
+  it("throws on a near-miss (wrong case) instead of silently accepting it", () => {
+    // The review-queue action endpoint (TRO-476) reads this from an HTTP
+    // JSON body — untrusted input, same failure mode toReviewReason's own
+    // near-miss test guards against.
+    expect(() => toReviewDisposition("approved")).toThrow();
   });
 });
 

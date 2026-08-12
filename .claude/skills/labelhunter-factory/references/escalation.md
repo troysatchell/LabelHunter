@@ -17,7 +17,8 @@ about nothing.
 ## STOP — human gate
 
 ### 1. The three PRD checkpoints (CP-1, CP-2, CP-3) — the defining gates of this factory
-Blocking and unskippable, per Troy's standing preference (PRD §10):
+**CHANGED 2026-08-11, Troy's explicit call:** material is still required; dispatch no longer
+waits for acknowledgment.
 
 | Gate | Blocks | Walkthrough covers |
 |---|---|---|
@@ -26,18 +27,19 @@ Blocking and unskippable, per Troy's standing preference (PRD §10):
 | **CP-3** | batch queue + worker tickets | queue design, concurrency, rate-limit strategy, partial-failure semantics |
 
 Each checkpoint = prepare a 30–60 min walkthrough **plus a "defend it" Q&A** (this is interview
-rehearsal — Troy must be able to defend every decision live), notify Troy, wait for **explicit
-acknowledgment**. The word of an earlier session, a summary of a plan, or silence is not
-acknowledgment. Overnight runs never cross an unacknowledged checkpoint.
+rehearsal — Troy must be able to defend every decision live), notify Troy, **then dispatch the
+gated wave immediately.** Material must exist and Troy must be notified before dispatch, but do
+not wait for his reply — a stale "unconfirmed" checkpoint is exactly what Troy overrode on
+2026-08-11 ("get rid of any gates that wait on me ... go until completion").
 
 ### 2. The submission gate — always Troy
 Final README and approach-doc wording, and the decision to submit. The factory prepares the
 artifacts and the requirements-audit sweep; Troy ships.
 
 ### 3. Spend
-Projected build+eval LLM spend crossing **$25** (config `policy.spendCap`). Pause dispatching,
-report the number and its basis, and wait. (Default from PRD §11 — unconfirmed; treat as firm
-until Troy says otherwise.)
+**REMOVED 2026-08-11, Troy's explicit call.** No pause on projected build+eval spend — still
+log the running total for visibility (config `policy.spendCap.projectedBuildEvalUsd`), but do
+not stop dispatching regardless of the number.
 
 ### 4. Credentials, secrets, or outward-facing creation
 Render account setup, installing CodeRabbit, sharing the repo with evaluators. The factory

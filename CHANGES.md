@@ -4,6 +4,85 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-473 — LH-040: Batch input — CSV manifest + images + pairing preview (2026-08-11)
+
+**What changed.** TH-R4 asks for batch upload: many label applications at once, each
+reported individually. This ticket builds the first stage — a CSV manifest, paired against
+uploaded images, validated before any processing starts. It does not start a batch job.
+LH-041 (job queue + worker pool) and LH-042 (batch progress + results UI) build on this
+ticket's output. Neither is touched here.
+
+New module, `src/server/batch/` — pure logic, no database call, TDD throughout:
+
+- `csv.ts` — a small RFC 4180 CSV tokenizer. Handles quoted fields, a comma or a newline
+  inside one, CRLF and LF line endings, a leading UTF-8 BOM, and blank lines. Reports a
+  syntax error (an unterminated quote) at the line where the quote opened.
+- `manifest.ts` — turns CSV rows into validated `ManifestRow` values. Reuses
+  `src/app/api/verify/parse-request.ts`'s own field rules: the same beverage types, the
+  same ABV range, the same net-contents units. Tells apart two kinds of "wrong": a
+  structural problem (bad headers, a duplicated column, a row with the wrong cell count)
+  fails the whole file — a ragged row is a sign columns have shifted, so guessing which
+  cell means what past that point is not safe. A value problem in one row (a bad beverage
+  type, a non-numeric ABV) fails only that row. It is reported in `rowErrors`, never
+  dropped, and it does not block any other row.
+- `pairing.ts` — deterministic filename pairing. Every row and every uploaded image ends
+  up in exactly one of `matched`, `unmatchedRows`, `unmatchedImages`. Nothing is dropped;
+  nothing is silently paired with the wrong piece. Filename comparison is Unicode
+  NFC-normalized (standing rule 20) and case-sensitive — matching the case-sensitive
+  uniqueness Postgres itself will enforce once a batch's `label_images` rows exist
+  (`schema.ts`'s `label_images_batch_filename_unique` index).
+- `zip.ts` — extracts filenames and sizes from an uploaded zip, using `fflate` (new
+  dependency). Every entry's declared uncompressed size is checked, and decompression
+  skipped past the limit, through `fflate`'s own pre-decompression filter — a zip bomb
+  never actually decompresses far enough to matter. Every entry path is reduced to a
+  basename before anything else sees it; nothing ever uses a zip entry's raw path for a
+  real filesystem read or write, which closes off zip-slip as a concern.
+- `index.ts` — `buildBatchPreview`, the facade. Produces the exact handoff shape for
+  whatever starts a batch job next: `PairedItem[]` (`{ row, image }`), plus every
+  unmatched or invalid item TH-R20 requires reported alongside it.
+
+New route: `POST /api/batch/preview` (`src/app/api/batch/preview/`). Accepts a CSV
+manifest plus images — individual multi-file-drop entries, a zip, or both together — and
+returns a 200 pairing preview. An unmatched row or image is data inside that 200 response,
+not a request failure: TH-R20 asks for these to be reported, never silently dropped, which
+is a different thing from rejected. Only a request the server cannot turn into a preview at
+all — no manifest, an unreadable CSV, a corrupt zip, too many images — returns a designed
+error response (`kind: VALIDATION | MALFORMED_CSV | MALFORMED_ZIP | SERVICE`), the same
+pattern `src/app/api/verify/types.ts`'s `VerifyErrorKind` already uses.
+
+**Scope boundary, and the judgment call behind it.** `docs/checkpoints/cp3-batch-queue.md`
+§10 states plainly: "this document assumes a `batch_jobs` row only exists once pairing has
+already succeeded." Pairing happens before any batch job exists — it is not part of
+creating one. This ticket writes nothing to the database. It creates no `batch_jobs`,
+`applications`, or `label_images` row, and no `batch_queue_items` row either — that table
+does not exist on this branch. LH-041 adds it in its own migration, in a sibling worktree.
+
+`docs/error-states.md` (LH-052, already merged) reached the same boundary from the UI
+side, independently. It names the malformed-CSV and unpairable-row states as ones LH-052
+deliberately left unbuilt, "buildable and testable once LH-040 and LH-041 merge," and names
+LH-042 — not LH-040 — as "the natural ticket to carry them" into an actual UI panel. This
+ticket builds the pipeline LH-042 needs for that. It does not build the UI panels
+themselves, and no `src/app/batch` page exists yet.
+
+**Tests.** `pnpm test -- src/server/batch/ src/app/api/batch/` — 7 files, 70 new test
+cases, all green (verified: `npx vitest run src/server/batch/ src/app/api/batch/`, 2026-08-11).
+Every new module's test file was written first, and confirmed to fail on
+"module not found" before the module existed — the correct red for a brand-new file. One
+real assertion failure came up along the way: `csv.ts`'s first draft reported an
+unterminated quote at the line the parser ran out of input on, not the line the quote
+actually opened on, whenever the unterminated field itself contained a newline. Fixed by
+tracking the quote's own start line separately from the running line counter.
+
+**How to run it.** `source .factory-env` first, matching every other ticket's convention —
+though this ticket's own tests touch no database at all; nothing in `src/server/batch/` or
+the new route makes a DB call. Then run `pnpm test -- src/server/batch/ src/app/api/batch/`,
+or `pnpm test` for the full suite.
+
+**Rollback.** `git revert` this ticket's commits. No schema change, no migration. Outside
+this changelog, the only existing files touched are `package.json` and `pnpm-lock.yaml`
+(the new `fflate` dependency, used only by `zip.ts`) — every other file this ticket adds is
+new.
+
 ## TRO-478 — local CodeRabbit review round 1: 3 findings, 3 fixed (2026-08-11)
 
 **What changed.** The gate's local CodeRabbit pass reviewed this branch once, before the PR

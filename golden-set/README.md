@@ -36,30 +36,46 @@ in the same manifest change. The loader rejects a `verified: false` `ai-generate
 shape only, not whether the file exists. `scripts/golden/images.test.ts` checks that the file
 exists.
 
-**Still not done — the realistic-corpus track.** A newer design,
-`docs/superpowers/specs/2026-08-11-realistic-corpus-gemini-design.md`, supersedes the rest of the
-original §5 scope: Gemini generates realistic bottle photographs — steady, motion-blur, or camera-shake — from real
-reference photos. `build.ts` composites the renderer's exact-text label onto each photo. This removes the
-warning-text transcription risk that `ai-generated` cases carry. The tooling exists, tested against synthetic fixtures
-(`scripts/golden/{imagenPrompt,blankRegionDetector,compositeBackdrop,imagen}.ts`).
-`assets/golden/references/` is still empty — no case in this manifest has
-`provenance: "rendered+ai-backdrop"` yet. To add one once real bottle photos exist:
+**Still not done — the realistic-corpus track.** A newer design doc supersedes the rest of the
+original §5 scope: `docs/superpowers/specs/2026-08-11-realistic-corpus-gemini-design.md`.
 
-1. Add a bottle reference JSON + photo under `assets/golden/references/` (schema:
-   `src/lib/golden-set/bottleReference.ts`).
-2. Run `pnpm golden:imagen` — it writes a backdrop PNG and a `.meta.json` sidecar (detected
-   `labelPlacement` + `generationMetadata`) to `golden-set/backdrops/` for every
-   `(scene, cameraCondition)` combination. It never edits `manifest.json`.
-3. Hand-author the case's manifest entry (ground truth, category, vectors — same as every other
-   case), folding in the sidecar's `referenceBottle`/`scene`/`cameraCondition`/`labelPlacement`/
-   `generationMetadata`. Set `verified: true` only after confirming the composited label is
-   legible and correctly placed (not re-transcribing warning text — the renderer already
-   guarantees that).
-4. Run `pnpm golden:build` — it composites the label onto the committed backdrop deterministically,
-   no network call.
+Under this design, Gemini generates a realistic bottle photograph from a real reference photo.
+Each photo shows one camera condition: steady, motion-blur, or camera-shake. `build.ts`
+composites the renderer's exact-text label onto the photo. This step removes the warning-text
+transcription risk that an `ai-generated` case carries.
 
-`scripts/golden/verify.ts` (LH-006, not yet built) will eventually check this track's consistency
-too; until then, the loader (`src/lib/golden-set/loader.ts`) already enforces the schema shape.
+The tooling exists now. Synthetic fixtures test the tooling:
+`scripts/golden/{imagenPrompt,blankRegionDetector,compositeBackdrop,imagen}.ts`.
+
+`assets/golden/references/` is still empty. No case in this manifest has provenance
+`"rendered+ai-backdrop"` yet.
+
+A future ticket adds the first one, once real bottle photos exist. Follow these steps:
+
+1. Add a bottle reference JSON file and its photo under `assets/golden/references/`. The
+   schema is `src/lib/golden-set/bottleReference.ts`.
+2. Run `pnpm golden:imagen`. For every `(scene, cameraCondition)` combination, the tooling
+   writes a backdrop PNG and a `.meta.json` sidecar to `golden-set/backdrops/`. The sidecar
+   records the detected `labelPlacement` and `generationMetadata`. The tooling never edits
+   `manifest.json`.
+3. Check the sidecar's `labelPlacement` value. If automatic detection fails, the sidecar
+   shows `labelPlacement: null` for that case. `pnpm golden:imagen` also prints "needs
+   manual placement" as a reminder. When this happens, measure a valid label-placement
+   quadrilateral by hand. Use it instead of the null value.
+4. Hand-author the case's manifest entry: ground truth, category, and vectors, the same as
+   every other case. Fold in the sidecar's `referenceBottle`, `scene`, `cameraCondition`,
+   `labelPlacement`, and `generationMetadata`.
+5. Keep `verified: false` until two conditions both hold. First, the entry's
+   `labelPlacement` holds the real, measured quadrilateral — it is never the null
+   placeholder. Second, a human confirms the composited label is legible and correctly
+   placed. Do not re-transcribe the warning text — the renderer already guarantees that
+   text is exact.
+6. Run `pnpm golden:build`. This command composites the label onto the committed backdrop.
+   The command is deterministic and makes no network call.
+
+`scripts/golden/verify.ts` (LH-006, not yet built) will eventually check this track's
+consistency too. Until then, the loader already enforces the schema shape:
+`src/lib/golden-set/loader.ts`.
 
 Every case's `verified` field stays `false`, even though its image is now real. `verified`
 records a **human** sign-off (design doc §3). That is CP-2's review, not this ticket's.

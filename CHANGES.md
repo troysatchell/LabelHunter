@@ -4,6 +4,69 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-472 — LH-CP3: ⛔ CHECKPOINT 3 walkthrough material (2026-08-11)
+
+**This entry does not clear a checkpoint.** It adds the material Troy reads at the checkpoint.
+One thing differs from CP-1 and CP-2's own entries: per Troy's 2026-08-11 policy change (commit
+`c09250e`), dispatch of LH-040, LH-041, and LH-042 no longer waits on his acknowledgment — only
+the material has to exist and he has to be notified. The design still is not accepted until
+Troy says so.
+
+**What changed.** One new document: `docs/checkpoints/cp3-batch-queue.md`. No product code, no
+`src/` change, no schema migration. It covers everything the ticket asks for — queue design,
+worker concurrency, backoff strategy, the Sonnet sub-queue, partial-failure semantics, a full
+worked example — plus a "defend it" Q&A and open questions (TH-R4, TH-R20, TH-R2, TH-R19,
+TH-R21, TH-R23).
+
+- **What's actually queuing, and why the existing schema can't answer that alone.**
+  `verifications` only records a *finished* cascade result — its own doc comment says so:
+  "there is no 'pending' state, because the row exists only once the cascade has produced a
+  result." The document designs a new table, `batch_queue_items`, LH-041's own migration, with
+  atomic-claim columns (`status`, `claimed_by`, `lease_expires_at`, `available_at`, `attempts`)
+  that a finished-only table cannot supply. The Sonnet sub-queue reuses `review_queue` instead
+  of a second table — it already has the right unique-per-verification constraint.
+- **TRO-506, read and answered concretely, not deferred again.** The Linear finding says two
+  concurrent workers can both pay for the same Sonnet call before either insert lands. The
+  document's atomic claim (`FOR UPDATE SKIP LOCKED`) makes that structurally impossible under
+  normal operation; a narrower residual window (lease expiry during a slow-but-alive worker) is
+  named precisely rather than claimed closed, with TRO-506's own recommended fix scoped as a
+  follow-up (it also touches the already-shipped review-queue UI's list query).
+- **The PRD's own "tuned to Anthropic rate limits" claim, tested against real numbers and found
+  not to hold.** Anthropic's published Start/Build/Scale rate limits for Haiku 4.5 and Sonnet 5
+  (retrieved live 2026-08-11) show a 5-worker pool using under a fifth of the Start-tier budget
+  on every axis, even under CP-1's own 40%-escalation stress case. The real reasons for ~5 are
+  named instead: an unquantified "Evaluation" tier the real account may sit in, unmeasured
+  local-compute limits, and blast-radius/cost discipline — and the recommendation is to make the
+  number an environment variable rather than a constant "tuned to" a constraint that, on the
+  evidence, is not binding.
+- **CP-1's own open question 6, decided.** CP-1 deferred the per-batch Sonnet escalation cap to
+  this document. It adopts CP-1 Q7's proposed 25% threshold, on a fixed `totalCount`
+  denominator, and derives the cost bound it buys: about $5.55 worst-case on a 300-label batch
+  versus $15.30 uncapped, both from CP-1's own per-call cost estimates.
+- **A full decision table for partial-failure semantics**, plus a precise definition: a batch is
+  `COMPLETED` once every queue item reaches a terminal state, whatever that state is — not a
+  claim that everything passed. A worker crash mid-batch is explicitly not a job failure; it is
+  the case the persistent, leased queue exists to survive.
+- **One gap found outside this ticket's scope, named rather than silently fixed.** Single-label
+  REVIEW verdicts appear to have no automatic resolution trigger at all today — nothing outside
+  test files calls `resolveEscalatedLabel`. Flagged as an open question for a follow-up ticket,
+  not folded into this design.
+- **Six open questions**, each with a recommendation and the cost of choosing wrong — including
+  whether "~5" is one pool or two, and whether the TRO-506 hardening should land now or as its
+  own ticket.
+
+**How to run it.** Nothing to build, nothing to test — this branch adds no code. Read
+`docs/checkpoints/cp3-batch-queue.md` — about 40 minutes — and work the Appendix A checklist
+during the walkthrough. Appendix B names the live URL and the file:line citations behind every
+**verified** and **derived** claim.
+
+**Rollback.** `git revert` this commit. The document adds no code and nothing imports it.
+
+**Known limits.** Every worker-pool size, lease duration, and backoff parameter is **proposed**,
+not measured — LH-031's latency harness is what replaces them, the same pattern CP-1 and CP-2
+used for their own thresholds. The local-compute ceiling (§4.4) and the actual deployed
+account's rate-limit tier (§4.2) are both **not measured**.
+
 ## TRO-476 — PR #16 review round 2: 34 CodeRabbit findings, 30 fixed, 1 filed, 3 dismissed (2026-08-11)
 
 **What changed.** CodeRabbit reviewed PR #16 six times. The GitHub PR review reported 11

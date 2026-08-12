@@ -125,7 +125,10 @@ describe("render.yaml — web service", () => {
   });
 
   it("builds with a real package.json script", () => {
-    expect(web.buildCommand).toContain("pnpm build");
+    // Exact match, not toContain: a substring check would still pass on a
+    // typo'd or malformed command (extra flags, a wrong operator) as long
+    // as "pnpm build" appeared somewhere inside it.
+    expect(web.buildCommand).toBe("pnpm install --frozen-lockfile && pnpm build");
     requireScript("build"); // throws if package.json ever drops the script
   });
 
@@ -175,11 +178,13 @@ describe("render.yaml — worker service", () => {
     expect(requireScript("worker")).toBe("tsx scripts/batch-worker/run.ts");
   });
 
-  it("does not run a Next.js build it never uses", () => {
-    // The worker runs its entrypoint through tsx directly (see
-    // startCommand above) — it never serves the `.next` build output, so a
-    // build step here would only spend build minutes for nothing.
-    expect(worker.buildCommand ?? "").not.toContain("next build");
+  it("installs dependencies only — it never runs a Next.js build it does not use", () => {
+    // Exact match, not a "does not contain next build" check: the worker
+    // runs its entrypoint through tsx directly (see startCommand above), so
+    // its buildCommand should be exactly the install step, nothing more —
+    // an extra, unexpected step here would still pass a weaker substring
+    // check.
+    expect(worker.buildCommand).toBe("pnpm install --frozen-lockfile");
   });
 
   it("wires DATABASE_URL from the same labelhunter-db resource as the web service", () => {

@@ -3,12 +3,13 @@
 TH-R16 asks for one thing: a deployed URL an evaluator can open and test. This
 document is the runbook for that deploy.
 
-`render.yaml` (repo root) is the automated half — it wires the web service,
-the background worker, and the database so a first deploy needs no further
-code change. Provisioning Troy's real Anthropic key on a third-party platform
-is a hard stop this factory does not cross on its own
+`render.yaml` (repo root) sets up the deploy automatically. It wires the web
+service, the background worker, and the database, so a first deploy needs no
+further code change. One step stays manual: Troy must give Render his real
+Anthropic key by hand. Deploying that key to a third-party platform is a
+hard stop — the factory does not do this on its own
 (`.claude/skills/labelhunter-factory/references/escalation.md`, item 4). The
-steps below are Troy's manual half: the part only he can do.
+steps below cover that manual step, and nothing this repo can automate.
 
 ## What `render.yaml` automates
 

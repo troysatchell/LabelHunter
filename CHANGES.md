@@ -6,19 +6,19 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
 ## TRO-481 — LH-060: Render deploy config (2026-08-12)
 
-**What changed.** This ticket builds the deploy config PRD §3.6 and §8 name.
-`render.yaml`, at the repo root, wires three resources: a `web` service (the
-Next.js app), a `worker` service (the batch worker — LH-041/TRO-474's
-`scripts/batch-worker/run.ts`), and a Postgres database. All three deploy
-from `main`. This advances TH-R16 — a deployed URL an evaluator can open and
-test.
+**What changed.** This ticket builds the deploy config that PRD §3.6 and §8
+describe. `render.yaml`, at the repo root, wires three resources: a `web`
+service (the Next.js app), a `worker` service (the batch worker —
+LH-041/TRO-474's `scripts/batch-worker/run.ts`), and a Postgres database.
+All three deploy from `main`. This advances TH-R16 — a deployed URL an
+evaluator can open and test.
 
-This ticket does not create a live deployment. Deploying Troy's real
-Anthropic key to a third-party platform is a hard stop. The factory does not
-cross that stop on its own
+This ticket does not create a live deployment. Troy must still give Render
+his real Anthropic key by hand. Deploying that key to a third-party platform
+is a hard stop — the factory does not do this on its own
 (`.claude/skills/labelhunter-factory/references/escalation.md`, item 4).
 Instead, this ticket builds the config for Troy's own first deploy — no
-further code change needed — plus the runbook for his manual half
+further code change needed — plus the runbook for that manual step
 (`docs/deploy.md`).
 
 **Design decisions.**
@@ -81,8 +81,9 @@ the 21 cases — the two structural secret checks and the raw-text scan, all
 naming the injected value — before the fix was reverted.
 
 **How to run it.** `pnpm test -- scripts/deploy/render-yaml.test.ts` runs
-the regression suite. `pnpm typecheck` and `pnpm lint` both run clean across
-the whole repo.
+the regression suite. It needs no `DATABASE_URL` — it only reads
+`render.yaml` and `package.json` from disk. `pnpm typecheck` and `pnpm lint`
+both run clean across the whole repo.
 
 **Observed.** `pnpm install --frozen-lockfile && pnpm build` — the web
 service's exact `buildCommand` — exits 0. `PORT=3791 pnpm start` — the web

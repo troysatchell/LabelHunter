@@ -26,12 +26,17 @@ function normalizeFilename(name: string): string {
 export function pairRowsWithImages(rows: ManifestRow[], images: BatchImageRef[]): PairingResult {
   // Zero-byte uploads are their own problem — report and set aside before
   // any pairing logic runs, so an empty file never "matches" a row just
-  // because the names line up.
+  // because the names line up. `emptyImageKeys` lets the row-side loop
+  // below tell "no file at all" apart from "a file, but it's empty" —
+  // two different problems that need two different messages (review
+  // finding).
   const emptyImages: UnmatchedBatchImage[] = [];
+  const emptyImageKeys = new Set<string>();
   const usableImages: BatchImageRef[] = [];
   for (const image of images) {
     if (image.sizeBytes === 0) {
       emptyImages.push({ image, reason: "This file is empty." });
+      emptyImageKeys.add(normalizeFilename(image.filename));
     } else {
       usableImages.push(image);
     }
@@ -71,7 +76,10 @@ export function pairRowsWithImages(rows: ManifestRow[], images: BatchImageRef[])
 
     const r = rowsForKey[0];
     if (imagesForKey.length === 0) {
-      unmatchedRows.push({ row: r, reason: `No uploaded image is named "${r.imageFilename}".` });
+      const reason = emptyImageKeys.has(key)
+        ? `The uploaded image "${r.imageFilename}" is empty.`
+        : `No uploaded image is named "${r.imageFilename}".`;
+      unmatchedRows.push({ row: r, reason });
     } else if (imagesForKey.length > 1) {
       unmatchedRows.push({
         row: r,
@@ -82,23 +90,33 @@ export function pairRowsWithImages(rows: ManifestRow[], images: BatchImageRef[])
     }
   }
 
+  // Every image in `imagesForKey` is reported in each non-unique-match
+  // branch below, not only the first — the module's own documented
+  // contract is "every uploaded image ends up in exactly one output
+  // list," and a filename with 3 duplicate uploads has 3 images that
+  // each need their own entry, not 1 (review finding).
   const unmatchedImages: PairingResult["unmatchedImages"] = [...emptyImages];
   for (const [key, imagesForKey] of imagesByFilename) {
     const rowsForKey = rowsByFilename.get(key) ?? [];
-    const displayName = imagesForKey[0].filename;
 
     if (rowsForKey.length === 0) {
-      unmatchedImages.push({ image: imagesForKey[0], reason: "No CSV row names this file." });
+      for (const image of imagesForKey) {
+        unmatchedImages.push({ image, reason: "No CSV row names this file." });
+      }
     } else if (rowsForKey.length > 1) {
-      unmatchedImages.push({
-        image: imagesForKey[0],
-        reason: `More than one CSV row names this file (${rowsForKey.length} rows). Give each image its own row.`,
-      });
+      for (const image of imagesForKey) {
+        unmatchedImages.push({
+          image,
+          reason: `More than one CSV row names this file (${rowsForKey.length} rows). Give each image its own row.`,
+        });
+      }
     } else if (imagesForKey.length > 1) {
-      unmatchedImages.push({
-        image: imagesForKey[0],
-        reason: `More than one uploaded file is named "${displayName}". Remove the duplicate.`,
-      });
+      for (const image of imagesForKey) {
+        unmatchedImages.push({
+          image,
+          reason: `More than one uploaded file is named "${image.filename}". Remove the duplicate.`,
+        });
+      }
     }
     // rowsForKey.length === 1 && imagesForKey.length === 1 -> matched above; nothing to report here.
   }

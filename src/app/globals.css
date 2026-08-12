@@ -13,9 +13,25 @@
   --color-bg-alt: #f0f0f0;
   --color-text: #1b1b1b;
   --color-text-muted: #454545;
-  --color-border: #a9aeb1;
+  /* TRO-480: was #a9aeb1 (USWDS gray-30) — measured 2.24:1 against
+     --color-bg, below WCAG 1.4.11's 3:1 floor for a UI component's own
+     boundary (input borders, .batch-stat/.status-banner boxes). #838a90
+     clears it against BOTH backgrounds this variable borders (3.50:1 on
+     --color-bg, 3.07:1 on --color-bg-alt) while staying a light-medium
+     gray, not a heavy outline. */
+  --color-border: #838a90;
   --color-primary: #162e51;
   --color-primary-hover: #0f1f38;
+  /* Filled-button background, white text on top (TRO-480). A separate pair
+     from --color-primary/-hover on purpose: those two also color plain TEXT
+     (links, .secondary-button's outline+label, the focus ring) and in dark
+     mode they are deliberately a LIGHT blue, correct for text on a dark
+     page but the wrong pairing for white text ON TOP of that color as a
+     solid fill (measured 2.14:1 in dark mode before this fix — WCAG AA
+     needs 4.5:1 for normal text). Light mode reuses the exact --color-primary
+     values, so light mode is pixel-identical to before this change. */
+  --color-button-bg: #162e51;
+  --color-button-bg-hover: #0f1f38;
   --color-focus-ring: #2491ff;
   --color-match: #106a19;
   --color-match-bg: #ecf3ec;
@@ -32,9 +48,20 @@
     --color-bg-alt: #1a222b;
     --color-text: #f0f0f0;
     --color-text-muted: #c6cace;
-    --color-border: #5b6670;
+    /* TRO-480: was #5b6670 — measured 3.13:1 against --color-bg (passes)
+       but 2.74:1 against --color-bg-alt (fails). #657078 clears 3:1
+       against both (3.62:1 / 3.17:1) — the same reasoning as light mode's
+       --color-border above, mirrored for this theme's two backgrounds. */
+    --color-border: #657078;
     --color-primary: #7fb3ff;
     --color-primary-hover: #a8cbff;
+    /* A darker, more saturated blue than --color-primary above — measured
+       (WCAG relative-luminance formula) to clear BOTH constraints at once:
+       white text on top stays >=4.5:1 (5.63:1), and the fill itself stays
+       >=3:1 against the page background (3.26:1) so the button still reads
+       as a distinct control, not a shape that blends into the dark page. */
+    --color-button-bg: #3468ad;
+    --color-button-bg-hover: #2a5490;
     --color-focus-ring: #7fb3ff;
     --color-match: #4bbf5b;
     --color-match-bg: #163420;
@@ -195,14 +222,14 @@ fieldset.field legend {
   padding: 0.9rem 1.5rem;
   border: none;
   border-radius: 0.3rem;
-  background: var(--color-primary);
+  background: var(--color-button-bg);
   color: #ffffff;
   cursor: pointer;
   align-self: flex-start;
 }
 
 .primary-button:hover:not(:disabled) {
-  background: var(--color-primary-hover);
+  background: var(--color-button-bg-hover);
 }
 
 .primary-button:disabled {
@@ -231,6 +258,16 @@ fieldset.field legend {
   text-decoration: none;
   text-align: center;
   display: inline-block;
+  /* TRO-480: a flex-column container's default `align-items: stretch`
+     otherwise stretches this element to the container's full width — a
+     real, observed bug in `.error-panel`'s "Try again" (ErrorPanel.tsx,
+     BatchProgressBrowser.tsx, ReviewQueueBrowser.tsx) and `.results`'s
+     "See the label photo and full comparison" (ResultsChecklist.tsx),
+     neither of which sets its own `align-items`. `.primary-button` already
+     carries this same rule for the identical reason (above) — this class
+     was the one place that pattern was missing, not a case where the
+     stretch was ever wanted. */
+  align-self: flex-start;
 }
 
 /* ---- Status / loading ------------------------------------------------ */

@@ -44,8 +44,13 @@ interface RgbColor {
   readonly b: number;
 }
 
-/** Downsample width for the flood fill — fast, and corners are rescaled back to full resolution. */
-const DETECTION_WIDTH = 240;
+/**
+ * Downsample width for the flood fill — fast, and corners are rescaled back
+ * to full resolution. Exported so tests can compute the exact detection
+ * height a given (originalWidth, originalHeight) pair resizes to, without
+ * duplicating this number.
+ */
+export const DETECTION_WIDTH = 240;
 /** A matched region smaller than this fraction of the frame is noise (a cap glint, a highlight), not the label. */
 const MIN_REGION_FRACTION = 0.02;
 /** A matched region larger than this fraction prevents a silently-wrong oversized match from blown highlights or loose tolerance. */
@@ -137,10 +142,16 @@ export async function detectBlankRegionQuad(
     if (diff < bottomLeft.score) bottomLeft = { x, y, score: diff };
   }
 
-  const rescale = 1 / scale;
+  // Two independent rescale factors, not one. `width` equals DETECTION_WIDTH
+  // exactly (sharp resized to it), so the x factor is exact. `height` equals
+  // `detectionHeight` — a ROUNDED value (see above) — so the real vertical
+  // resize ratio sharp actually applied is `height / originalHeight`, not
+  // `scale`. Reusing the horizontal factor for the vertical axis recorded a
+  // wrong y coordinate whenever `originalHeight * scale` was not already an
+  // integer.
   const toOriginal = (p: { x: number; y: number }): Point => ({
-    x: Math.round(p.x * rescale),
-    y: Math.round(p.y * rescale),
+    x: Math.round((p.x * originalWidth) / width),
+    y: Math.round((p.y * originalHeight) / height),
   });
 
   return {

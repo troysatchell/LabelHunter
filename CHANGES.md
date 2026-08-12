@@ -4,6 +4,111 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-535 — LH-030b · Sweep OCR_CONFIDENCE_FLOOR (2026-08-12)
+
+**What changed.** A statutory field passed on one channel. The second channel ran. It
+disagreed badly. The reconciler discarded it anyway. `OCR_CONFIDENCE_FLOOR`
+(`src/server/warning/reconcile.ts:106`) moves from 60, proposed and unmeasured, to 50, measured.
+
+**The measurement.** `scripts/eval/ocr-floor-sweep.ts` replays the OCR channel against every
+golden-set image. It calls the same five functions the verify route calls, in the same order:
+`preprocessImage`, `detectWarningRegion`, `cropForOcr`, `runWarningOcr`, `evaluateCandidate`. It
+makes no API call. It writes one file: `scripts/eval/results/ocr-floor-sweep.json`.
+
+Every warning-bearing case landed in one of two confidence clusters, with a wide, empty gap
+between them. Low cluster: 56 and 58 (case-24 and case-23, tiny warning print). Both are real
+readings, badly degraded — distance 42 and 47 from the canonical text. High cluster: 91, 95, or
+96 (25 of 27 warning-bearing cases with a usable OCR candidate). One high-cluster case (case-18,
+glare on the warning block) read confidently while reading garbage — Tesseract confidence is
+not a read-quality oracle, which is why the dual-channel agreement check, not this floor, is the
+real safety net.
+
+The old floor of 60 sat inside the empty gap, above both tiny-print readings. That is why it
+discarded case-23 and case-24's OCR evidence every time, no matter how badly the print
+degraded, and let a single confident VLM channel pass a label whose only other reader produced
+47 and 42 edits of garbage.
+
+**The chosen floor: 50.** The midpoint of Tesseract's 0-100 scale. Not the smallest number that
+flips two cases — 55 or 56 would already do that. 50 sits 6 to 8 points under both measured
+tiny-print readings.
+
+**Honest limit.** The golden set has no case between blank-crop noise (confidence 0,
+`ocr.test.ts`) and 56. Nothing in this corpus proves 50 over 40 or 45. `reconcile.ts`'s comment
+and the CP-2 amendment below both name this gap. Neither hides it.
+
+**CP-2 amendment.** `docs/checkpoints/cp2-warning-subsystem.md` §4.5 merged two states into one
+table row: "OCR unavailable or below the confidence floor." Case-23 and case-24 proved they are
+different states — one has no reading to discard, the other has a real one. The row is split
+into two, dated 2026-08-12. CP-2 is an approved checkpoint. The split is recorded as a dated
+amendment, not a silent rewrite of the original text. §11 open question 7 carries a matching
+resolution note.
+
+**Channel provenance.** `WarningComparatorResult` (`src/server/router/types.ts`) carries an
+optional field, `channel`: `"dual"` or `"single"`. Every result `reconcileWarningChannels`
+itself returns sets it — passed as an explicit argument through the reconciliation functions,
+never read back off an already-built result. The eval report carries it too.
+`VerdictCaseScore.warningChannel` (`scripts/eval/types.ts`) is populated in `cascade-runner.ts`
+from the `compareGovernmentWarning` dependency's own captured result — by the time the HTTP
+response body is built, `routeLabel` has already turned it into a `FieldResultRow` that carries
+no channel of its own.
+
+`WarningSegmentationSummary` gains `singleChannelPass` (`scripts/eval/warning-segmentation.ts`).
+CP-2 §8.4 names this rate: the residual false-PASS exposure. It is the subset of `clean` where
+one VLM channel decided PASS, with no OCR channel to disagree. It is not a fifth,
+mutually-exclusive class — it overlaps `clean` by construction, exactly as CP-2 §8.4 states.
+Same denominator as the other four classes: `total`. The code states that choice, because CP-2
+states one for the suspect rate only.
+
+**Measured, live: case-23 and case-24 score REVIEW, not PASS.** `pnpm eval:check -- --live
+--full`, 2026-08-12T21:28:19Z, 32/32 cases, 0 failures, $0.318 measured cost. Both cases:
+`actualLabelVerdict: REVIEW`, `government_warning` field verdict `NEEDS_REVIEW` (matches the
+manifest), `warningChannel: "dual"` (both channels now compared), `actualReviewReason:
+WARNING_MISMATCH`. That reason does not match the manifest's `LOW_IMAGE_QUALITY` — expected and
+named up front in the ticket. TRO-516's correction C4 owns closing that gap; not closed here.
+
+Label-verdict accuracy moved from 21/32 (65.6%) to 24/32 (75.0%) in this run. **Only two of
+those three newly-correct cases are this ticket's fix.** The third, case-17, also flipped
+PASS→REVIEW. Its headline reason is `AMBIGUOUS_BRAND`, not a warning reason. Its cause: Haiku
+read `brand_name` differently on the two live calls (correct, then wrong). The original
+2026-08-12 diagnosis already named this exact case as model-call variance. This ticket's code
+never touches brand extraction. That same misread also cost extraction accuracy one point,
+154/160 → 153/160.
+
+The full per-case diff was checked, not assumed. Exactly three `labelVerdictCorrect` values
+changed. All three moved False → True. None moved the other way.
+
+`scripts/eval/baseline.json` is updated from this same live, full, zero-failure run — the only
+honest source, since `singleChannelPass` and `warningChannel` did not exist as concepts before
+this ticket and no historical value for them exists to preserve.
+
+**A TypeScript control-flow limit, found and worked around.** A `let` variable a nested closure
+reassigns (`cascade-runner.ts`'s `capturedWarningResult`) narrows to `never` at any later
+property read — confirmed with a minimal reproduction, even across an intervening `await`. This
+is a real TypeScript limit, not a bug in the captured value. Fixed with one small named
+function, `extractWarningChannel`. A function parameter gets a fresh type binding from its own
+annotation; that resets the over-narrowing.
+
+**What stays open.** Whether Haiku read case-23 and case-24's 9px print, or completed it from
+memory, stays unmeasured. No golden case pairs tiny print with a wording deviation, so nothing
+in this repo can tell the two apart (CP-2 §10 Q7). Separately, this run's `singleChannelPass`
+metric caught a live, real instance of the same exposure class on a different case: case-22's
+`government_warning` field is a single-channel MATCH against an expected NEEDS_REVIEW (the label
+verdict still lands on REVIEW overall, from a different blocker) — noticed, not fixed, here.
+
+**How to run it.** `pnpm eval:ocr-floor-sweep` re-runs the sweep. It makes no API call. `pnpm
+test` runs the regression suite, including new cases in `reconcile.test.ts` that encode the
+measured case-23 (58) and case-24 (56) confidence values directly — red under the old floor,
+green under the measured one. `pnpm eval:check -- --live --full` re-measures the live cascade.
+This spends real money.
+
+**Rollback.** `git revert` this commit. `OCR_CONFIDENCE_FLOOR` reverts to 60. `channel` and
+`singleChannelPass` are additive; dropping them is safe for every other caller. The CP-2
+amendment is a dated addition, not an edit to the original text — reverting it restores the
+pre-amendment document exactly. `scripts/eval/baseline.json` and `eval-report.json` would need a
+fresh `--live --full --update-baseline` run to re-establish the pre-ticket floor, since the old
+files are not restored by a plain revert once superseded (both are working artifacts, committed
+for evidence, not source).
+
 ## TRO-479 — LH-053 · E2E suite (2026-08-12)
 
 **What this builds.** Real, executable Playwright specs for the three PRD §6 flows: verify,

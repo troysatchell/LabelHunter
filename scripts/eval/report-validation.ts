@@ -16,9 +16,13 @@
  * (`extractionAccuracyByField`/`fieldVerdictAccuracyByField`) are real
  * report content but never drive a decision this script makes — see
  * `baseline-compare.ts`'s own module comment for why the gate only reads
- * the three headline rates.
+ * the three headline rates. `warningSegmentation` (TRO-469 / LH-021, PRD
+ * §3.7) gets the same light shape check as those breakdowns — present and
+ * well-formed, never compared against a floor — for the same reason:
+ * checked here so a malformed committed report fails loudly instead of
+ * `check.ts` reading `undefined.resolutionSuspect` further down.
  */
-import type { AccuracySummary, EvalBaseline, EvalReport, EvalReportSummary } from "./types";
+import type { AccuracySummary, EvalBaseline, EvalReport, EvalReportSummary, WarningSegmentationSummary } from "./types";
 
 function isNonNegativeSafeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
@@ -38,13 +42,32 @@ function isAccuracySummary(value: unknown): value is AccuracySummary {
   );
 }
 
+function isWarningSegmentCount(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return isNonNegativeSafeInteger(candidate.count) && isFiniteUnitRate(candidate.rate);
+}
+
+function isWarningSegmentationSummary(value: unknown): value is WarningSegmentationSummary {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    isNonNegativeSafeInteger(candidate.total) &&
+    isWarningSegmentCount(candidate.clean) &&
+    isWarningSegmentCount(candidate.trueMismatch) &&
+    isWarningSegmentCount(candidate.resolutionSuspect) &&
+    isWarningSegmentCount(candidate.notFound)
+  );
+}
+
 function isEvalReportSummary(value: unknown): value is EvalReportSummary {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
   return (
     isAccuracySummary(candidate.extractionAccuracy) &&
     isAccuracySummary(candidate.labelVerdictAccuracy) &&
-    isAccuracySummary(candidate.reviewReasonAccuracy)
+    isAccuracySummary(candidate.reviewReasonAccuracy) &&
+    isWarningSegmentationSummary(candidate.warningSegmentation)
   );
 }
 
@@ -65,7 +88,7 @@ export function validateEvalBaseline(parsed: unknown, filePath: string): EvalBas
   if (!isStringArray(candidate.caseIds)) problems.push('"caseIds" must be an array of strings');
   if (typeof candidate.establishedAt !== "string") problems.push('"establishedAt" must be a string');
   if (!isEvalReportSummary(candidate.summary)) {
-    problems.push('"summary" must carry valid extractionAccuracy/labelVerdictAccuracy/reviewReasonAccuracy AccuracySummary objects');
+    problems.push('"summary" must carry valid extractionAccuracy/labelVerdictAccuracy/reviewReasonAccuracy AccuracySummary objects and a valid warningSegmentation');
   }
   if (problems.length > 0) {
     throw new Error(`report-validation: ${filePath} is not a valid EvalBaseline — ${problems.join("; ")}.`);
@@ -86,7 +109,7 @@ export function validateEvalReport(parsed: unknown, filePath: string): EvalRepor
   if (!isStringArray(candidate.caseIds)) problems.push('"caseIds" must be an array of strings');
   if (typeof candidate.measuredAt !== "string") problems.push('"measuredAt" must be a string');
   if (!isEvalReportSummary(candidate.summary)) {
-    problems.push('"summary" must carry valid extractionAccuracy/labelVerdictAccuracy/reviewReasonAccuracy AccuracySummary objects');
+    problems.push('"summary" must carry valid extractionAccuracy/labelVerdictAccuracy/reviewReasonAccuracy AccuracySummary objects and a valid warningSegmentation');
   }
   if (!Array.isArray(candidate.failures)) problems.push('"failures" must be an array');
   if (problems.length > 0) {

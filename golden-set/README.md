@@ -12,7 +12,7 @@ and what the Validation Router should decide. Later tickets use it two ways:
 ## Images: rendered and degraded (LH-004, TRO-497)
 
 `golden-set/images/` now holds a real, committed JPEG for every `rendered` and
-`rendered+degraded` case. That is 30 of 30 cases. Total size: about 1.14 MB. Largest file:
+`rendered+degraded` case. That is 32 of 32 cases. Total size: about 1.20 MB. Largest file:
 47.6 KB. Every image stays well under the ~500 KB per-image target.
 
 The pipeline is the render-first hybrid design doc §2 lays out:
@@ -86,7 +86,7 @@ image looks right.
 **Rubric-vector coverage (`audit/rubric.md` Appendix A):** every case is tagged with the
 vectors it provides evidence for (`vectors` field). V1 through V9 each have at least one
 covering case today. **V10** is different: it is a property of the manifest as a whole (batch
-of ≥20), not any single case. The manifest's 30 cases satisfy the ≥20 count, but no case
+of ≥20), not any single case. The manifest's 32 cases satisfy the ≥20 count, but no case
 individually claims V10, and none ever should. `loader.test.ts` asserts both halves of this
 explicitly, so neither can silently drift.
 
@@ -149,7 +149,7 @@ never by upload order or a separate lookup table.
 
 ## The 12 required test categories (PRD §6)
 
-30 cases across all 12 categories named in the PRD: clean match, ABV mismatch, title-case
+32 cases across all 12 categories named in the PRD: clean match, ABV mismatch, title-case
 warning, reworded warning, missing warning, case-variant brand, glare, rotation, low light,
 tiny warning text, odd typography, and conflicting application-vs-label data. Two cases carry
 the brief's named examples directly:
@@ -160,6 +160,22 @@ the brief's named examples directly:
   Warning` in title case on the label instead of `GOVERNMENT WARNING`, must FAIL.
 
 Case counts lean toward the categories most likely to need several variants: clean match (5),
-abv-mismatch (3), case-variant-brand (3), and conflicting-application-vs-label (3). Every
-other category has 2. Clean match is the largest group because it also carries every
-format-variant vector (V1, V6, V7) that needs a fully-matching label to isolate cleanly.
+abv-mismatch (3), case-variant-brand (3), conflicting-application-vs-label (3), title-case
+warning (3), and reworded warning (3). Every other category has 2. Clean match is the largest
+group because it also carries every format-variant vector (V1, V6, V7) that needs a
+fully-matching label to isolate cleanly.
+
+**TRO-469 / LH-021 added two cases**, closing two gaps `docs/checkpoints/cp2-warning-subsystem.md`
+§9.2 named at CP-2 (both ship with reasoning and no covering case until this ticket, and both
+are TTB-documented real mistakes, not invented ones — CP-2 §2.6). Numbered `case-31`/`case-32`,
+not `case-30`, because TRO-515's `case-30-clean-match-net-contents-alt-format` (above) landed
+on `main` first:
+
+- `case-31-title-case-warning-surgeon-general-lowercase` (finding 5) — the warning body prints
+  `surgeon general` in lower case; the `GOVERNMENT WARNING` prefix stays all-caps. Covers the
+  `Surgeon`/`General` capitalization positions CP-2 §5.4 added on TTB's own checklist
+  authority, which no case exercised before.
+- `case-32-reworded-warning-near-miss-missing-comma` (finding 4) — the warning omits the comma
+  after `General`, a genuine one-character (near-miss-band) deviation. Covers CP-2 §5.5's
+  proposed near-miss band (edit distance 1–2), which no case exercised before — the golden
+  set's other reworded-warning cases sit at distance 24 and 38, far outside it.

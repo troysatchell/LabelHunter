@@ -19,6 +19,15 @@
  * cases) could fail the whole gate while the headline numbers the ticket
  * asks for are unchanged or improved. A human reads the breakdown in the
  * committed report to see WHY; the gate only asks WHETHER.
+ *
+ * `warningSegmentation` (TRO-469 / LH-021, PRD §3.7) is the same kind of
+ * reported-not-gated detail, for a sharper reason than sample noise: it
+ * feeds a five-way human decision (CP-2 §8.4's upgrade ladder — keep
+ * Haiku, fix the crop pipeline, upgrade the warning field, or upgrade the
+ * whole extractor), not a pass/fail question this script could answer on
+ * its own. PRD §3.7's own framing is "a number in CI output, not a
+ * judgment call mid-week" — reported, so the judgment call is informed;
+ * never gated, because the judgment call still belongs to a person.
  */
 import type { EvalBaseline, EvalReportSummary } from "./types";
 

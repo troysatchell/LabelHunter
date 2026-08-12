@@ -21,8 +21,36 @@
  * further, to PASS or FAIL.
  */
 import type { GoldenExpectedResult, GoldenSetCase } from "../../src/lib/golden-set/types";
-import type { FieldVerdict, LabelVerdict, ReviewReason, RouterFieldKey } from "../../src/server/router/types";
+import type { LabelVerdict, ReviewReason, RouterFieldKey } from "../../src/server/router/types";
 import type { VerdictCaseScore, VerdictFieldScore } from "./types";
+
+/**
+ * One field's actual outcome. A discriminated union on `verdict`, not an
+ * independently-optional `reviewReason` (standing rule 19: "a field whose
+ * validity depends on another field's value needs a discriminated union"):
+ * `reviewReason` is forbidden on `MATCH`/`MISMATCH` — a caller cannot
+ * construct `{ verdict: "MATCH", reviewReason: "..." }`, a compile error.
+ *
+ * `reviewReason` on the `NEEDS_REVIEW` branch is `ReviewReason | null`, NOT
+ * required-non-null — found running this ticket's own `--live --full`
+ * sweep against the real golden set (case-20, a severely degraded image),
+ * not a hypothetical. `field-resolution.ts`'s `resolveComparatorField`/
+ * `resolveGovernmentWarningField` both have a real, DELIBERATE path to
+ * `{ verdict: "NEEDS_REVIEW", reviewReason: null }`: a required field that
+ * is absent AND the label already carries a `LOW_IMAGE_QUALITY` blocker
+ * (CP-1 §5.3's own carve-out comment: "LOW_IMAGE_QUALITY already explains
+ * the whole label") — deliberately suppressing a redundant, misleading
+ * `MISSING_REQUIRED_FIELD` on every other field when the one true cause is
+ * already named once, at the label level. `FieldResultRow`'s own type
+ * (`src/server/router/types.ts`) already permits exactly this: it
+ * discriminates `resolvedBy`/`reviewReason` together, never `verdict`/
+ * `reviewReason` — this type now matches that real, looser invariant
+ * instead of a stricter one this ticket's first draft assumed and a real
+ * run disproved.
+ */
+export type ActualFieldOutcome =
+  | { field: RouterFieldKey; verdict: "MATCH" | "MISMATCH" }
+  | { field: RouterFieldKey; verdict: "NEEDS_REVIEW"; reviewReason: ReviewReason | null };
 
 /** The system's actual verdict for one case, in the minimal shape
  * `scoreVerdict` needs — both callers (the real router's output, and the
@@ -31,7 +59,7 @@ import type { VerdictCaseScore, VerdictFieldScore } from "./types";
 export interface ActualVerdict {
   labelVerdict: LabelVerdict;
   headlineReason: ReviewReason | null;
-  fields: readonly { field: RouterFieldKey; verdict: FieldVerdict }[];
+  fields: readonly ActualFieldOutcome[];
 }
 
 /** Maps the golden set's `expected.fields` keys (`GoldenExpectedResult`,
@@ -56,7 +84,7 @@ const EXPECTED_FIELD_TO_ROUTER_FIELD: Record<keyof GoldenExpectedResult["fields"
  */
 export function scoreVerdict(caseSpec: GoldenSetCase, actual: ActualVerdict): VerdictCaseScore {
   const expected = caseSpec.expected;
-  const actualByField = new Map(actual.fields.map((f) => [f.field, f.verdict]));
+  const actualByField = new Map(actual.fields.map((f) => [f.field, f]));
   if (actualByField.size !== actual.fields.length) {
     throw new Error(
       `scoreVerdict: case "${caseSpec.caseId}" — actual.fields has ${actual.fields.length} entries but only ${actualByField.size} distinct fields — duplicate field entries are not allowed.`,
@@ -68,13 +96,20 @@ export function scoreVerdict(caseSpec: GoldenSetCase, actual: ActualVerdict): Ve
   ).map((expectedKey) => {
     const routerField = EXPECTED_FIELD_TO_ROUTER_FIELD[expectedKey];
     const expectedVerdict = expected.fields[expectedKey].verdict;
-    const actualVerdict = actualByField.get(routerField);
-    if (actualVerdict === undefined) {
+    const actualField = actualByField.get(routerField);
+    if (actualField === undefined) {
       throw new Error(
         `scoreVerdict: case "${caseSpec.caseId}" — actual.fields has no entry for "${routerField}", required by the golden set's expected.fields.${expectedKey}`,
       );
     }
-    return { field: routerField, expectedVerdict, actualVerdict, correct: expectedVerdict === actualVerdict };
+    const actualVerdict = actualField.verdict;
+    return {
+      field: routerField,
+      expectedVerdict,
+      actualVerdict,
+      correct: expectedVerdict === actualVerdict,
+      actualReviewReason: actualField.verdict === "NEEDS_REVIEW" ? actualField.reviewReason : null,
+    };
   });
 
   const expectedReviewReason = expected.reviewReason ?? null;

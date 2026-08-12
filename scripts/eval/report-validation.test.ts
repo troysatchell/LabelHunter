@@ -2,12 +2,20 @@ import { describe, expect, it } from "vitest";
 import { validateEvalBaseline, validateEvalReport } from "./report-validation";
 
 const RATE = { total: 10, correct: 9, rate: 0.9 };
+const VALID_WARNING_SEGMENTATION = {
+  total: 10,
+  clean: { count: 8, rate: 0.8 },
+  trueMismatch: { count: 1, rate: 0.1 },
+  resolutionSuspect: { count: 1, rate: 0.1 },
+  notFound: { count: 0, rate: 0 },
+};
 const VALID_SUMMARY = {
   extractionAccuracy: RATE,
   extractionAccuracyByField: {},
   labelVerdictAccuracy: RATE,
   fieldVerdictAccuracyByField: {},
   reviewReasonAccuracy: RATE,
+  warningSegmentation: VALID_WARNING_SEGMENTATION,
 };
 
 function validBaseline(overrides: Record<string, unknown> = {}) {
@@ -63,6 +71,17 @@ describe("validateEvalBaseline", () => {
 
   it("rejects an AccuracySummary with an out-of-range rate", () => {
     const badSummary = { ...VALID_SUMMARY, extractionAccuracy: { total: 10, correct: 9, rate: 1.5 } };
+    expect(() => validateEvalBaseline(validBaseline({ summary: badSummary }), "baseline.json")).toThrow(/summary/);
+  });
+
+  it("rejects a summary missing warningSegmentation (TRO-469 / LH-021)", () => {
+    const { warningSegmentation: _drop, ...summaryRest } = VALID_SUMMARY;
+    expect(() => validateEvalBaseline(validBaseline({ summary: summaryRest }), "baseline.json")).toThrow(/summary/);
+  });
+
+  it("rejects a warningSegmentation whose resolutionSuspect count is negative", () => {
+    const badSegmentation = { ...VALID_WARNING_SEGMENTATION, resolutionSuspect: { count: -1, rate: 0 } };
+    const badSummary = { ...VALID_SUMMARY, warningSegmentation: badSegmentation };
     expect(() => validateEvalBaseline(validBaseline({ summary: badSummary }), "baseline.json")).toThrow(/summary/);
   });
 

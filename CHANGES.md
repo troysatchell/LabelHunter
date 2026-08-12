@@ -4,6 +4,188 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-469 — LH-021: Warning cases in golden set + eval (2026-08-12)
+
+**Investigated first, per the ticket's own instruction.** The golden set already had six
+warning-variant cases: title-case (×2), reworded (×2), missing (×2). Each had a real image. The
+eval harness already scored `governmentWarning`/`government_warning` accuracy field by field
+(TRO-470 / LH-030). Two real gaps remained. First, PRD §3.7's warning-check segmentation
+(true-mismatch vs. resolution-suspect) had no code behind it anywhere. Second, two named
+golden-set defects from the CP-2 checkpoint walkthrough
+(`docs/checkpoints/cp2-warning-subsystem.md` §9.2) were still unfixed. This ticket closes both
+gaps.
+
+**PRD §3.7 / CP-2 §8.4's warning-check segmentation, built from scratch.** New file:
+`scripts/eval/warning-segmentation.ts`. It exports one pure function, `segmentWarningCheckOutcomes`.
+The function sorts every scored case's `government_warning` outcome into CP-2 §8.4's four
+classes: clean, true-mismatch, resolution-suspect, not-found. The four classes are mutually
+exclusive and exhaustive. The function reports `resolutionSuspect`'s rate — the number that
+drives the Haiku→Sonnet upgrade ladder. Three files now wire this in:
+
+- `summary.ts` — `VerdictSummary` and `EvalReportSummary` both gain a `warningSegmentation`
+  field.
+- `report-validation.ts` — checks the new field's shape, the same way it checks every other
+  summary field.
+- `check.ts` — prints the segmentation in its console output.
+
+`baseline-compare.ts` deliberately does NOT gate on the new field. PRD §3.7 calls this metric
+"a number in CI output, not a judgment call mid-week." It feeds a five-way human decision. It is
+not a pass/fail check.
+
+Getting the field's own `reviewReason` to the segmentation function needed real plumbing.
+`ActualVerdict.fields` (`verdict-scoring.ts`) used to carry only `{ field, verdict }`. It
+dropped the router's own per-field `reviewReason` on the floor. It is now a discriminated union
+(`ActualFieldOutcome`, standing rule 19): `reviewReason` is forbidden on `MATCH`/`MISMATCH` and
+present on `NEEDS_REVIEW`. Two files thread the real reason through: `cascade-runner.ts` (from
+the real response body) and `resolver-rollup.ts` (from the Sonnet-only rollup).
+
+**One deliberate extension beyond CP-2 §8.4's own table, documented in code and here.** §8.4's
+table names only `LOW_IMAGE_QUALITY` and `WARNING_MISMATCH` as resolution-suspect reasons. It
+builds this list from §6.1's table, and §6.1 only covers what `WarningComparatorResult` (the
+comparator's own return type) can produce. But `resolveGovernmentWarningField`
+(`src/server/router/field-resolution.ts`) has two more real paths outside the comparator:
+`overrideRejected` maps to `CONFLICTING_EXTRACTION`, and a defensive no-comparator-result
+fallback maps to `LOW_MODEL_CONFIDENCE`. CP-2 §6.2 already names both as values the comparator's
+own union cannot return. Their absence from §8.4's table is that same fact, not a fresh
+decision. Both mean exactly what resolution-suspect means: the check ran, and it could not
+confidently resolve one way or the other. `warning-segmentation.ts`'s `RESOLUTION_SUSPECT_REASONS`
+set includes all four reasons for this. This decision is flagged here for review, not buried in
+a comment nobody reads.
+
+**A second, unplanned finding, from running this ticket's own real `--live --full` sweep — not
+a hypothetical.** The first live run crashed. A real response carried
+`{ field: "brand_name", verdict: "NEEDS_REVIEW", reviewReason: null }`. This ticket's first
+draft assumed that shape was impossible, and threw an error on it. The shape is real and
+deliberate. `resolveGovernmentWarningField` and `resolveComparatorField` both suppress a
+redundant `MISSING_REQUIRED_FIELD` on one condition: the field is absent and required, and the
+label already carries a `LOW_IMAGE_QUALITY` blocker. CP-1 §5.3 states the reason for this
+carve-out directly: "LOW_IMAGE_QUALITY already explains the whole label." The router does not
+accuse a photo of causing a violation twice. The fix: loosen `ActualFieldOutcome`'s
+`NEEDS_REVIEW` branch to `reviewReason: ReviewReason | null`. This type now matches
+`FieldResultRow`'s own real, looser invariant. The fix also classifies a null reason as
+resolution-suspect, because that state is definitionally tied to `LOW_IMAGE_QUALITY` by the
+router's own condition — it belongs in the same class. A real run finds this kind of thing; a
+synthetic fixture cannot. See `verdict-scoring.ts`'s and `warning-segmentation.ts`'s own doc
+comments for the full trace, and this ticket's own report for a plain-language version.
+
+**Golden-set corrections — CP-2 §9.2 findings 1 and 2, recommended at the checkpoint,
+implemented here.** Neither fix touches the comparator. Both are ground-truth data fixes, this
+ticket's own territory.
+
+- **Finding 1.** Cases 23/24 (tiny warning text) expected a label-level `reviewReason` of
+  `LOW_MODEL_CONFIDENCE`. `WarningComparatorResult` can only return `WARNING_MISMATCH`,
+  `LOW_IMAGE_QUALITY`, or `MISSING_REQUIRED_FIELD`. The manifest asked for a value the system
+  could never produce. Fixed: corrected to `LOW_IMAGE_QUALITY`, CP-2's own recommendation. Tiny
+  print is an image-resolution problem — that is the honest name for it.
+- **Finding 2.** Case-09's field-level reason text said "the wording must match the statute
+  exactly." That implies a wording failure. With case folded, this case's body is a genuine
+  exact match (distance 0). The real failure is capitalization, not wording. This is confirmed
+  by `src/server/warning/golden-case.test.ts`'s own existing assertion on this case's `note`
+  string. Fixed: reworded to name the capitalization rule.
+
+**Two new golden-set cases — CP-2 §9.2 findings 4 and 5, and §11 open question 9.** Both are
+TTB-documented real mistakes (§2.6), not invented ones. Both render through the existing
+pipeline (`pnpm golden:build`); neither is hand-crafted.
+
+- `case-31-title-case-warning-surgeon-general-lowercase` (finding 5): the warning body prints
+  `surgeon general` in lower case; the `GOVERNMENT WARNING` prefix stays all-caps. No case
+  exercised the `Surgeon`/`General` capitalization positions before this. CP-2 §5.4 added those
+  positions on TTB's own checklist authority. This case MISMATCHes on capitalization against
+  the real comparator.
+- `case-32-reworded-warning-near-miss-missing-comma` (finding 4): the warning omits the comma
+  after `General` — a genuine one-character deviation. No case exercised CP-2 §5.5's proposed
+  near-miss band (edit distance 1–2) before this; the existing reworded-warning cases sit at
+  distance 24 and 38. This case routes REVIEW/`WARNING_MISMATCH` against the real comparator.
+  The real edit distance (1) and wording classification (`NEAR_MISS`) are computed, not
+  asserted by hand.
+
+`scripts/eval/warning-golden-cases.test.ts` verifies both cases' exact defect computationally,
+against the real, already-shipped comparator (`reconcileWarningChannels`, `evaluateCandidate` —
+imported, never reimplemented). `src/server/warning/golden-case.test.ts` already gives
+case-08/09/10/11 this same property. The manifest grew from 29 to 32 cases: TRO-515's
+`case-30-clean-match-net-contents-alt-format` (below) landed on `main` first, closing rubric
+vector V7; this ticket's two cases are numbered `case-31`/`case-32` to come after it, not
+`case-30`/`case-31` as this ticket's own first draft had them.
+`loader.test.ts`'s ballpark upper-bound assertion moved from 30 to 32, with a comment citing
+why. `golden-set/README.md`'s case-count prose was updated to match.
+
+**The Jenny title-case catch is a named case, at the eval-harness boundary specifically — not
+only at the router unit-test layer LH-013 already covers.**
+`scripts/eval/warning-golden-cases.test.ts` asserts three things about case-08: it is present
+and named "Jenny's catch" in its own manifest notes; it is always included in `args.ts`'s
+`DEFAULT_SAMPLE_CASE_IDS`, so a bare `--live` run (no `--full` needed) never skips it; and it
+MISMATCHes against the real comparator. Fixing case-23 (Finding 1, above) had one side effect:
+`args.ts`'s default sample lost its `LOW_MODEL_CONFIDENCE` exemplar, because case-23 now
+duplicates case-17's `LOW_IMAGE_QUALITY` family instead. The fix: swap case-23 for case-25 in
+the default sample. Case-25 (odd-typography) is a genuine `LOW_MODEL_CONFIDENCE` case, via
+`brand_name`, unrelated to the warning field. The sample again covers every reviewReason family
+it always intended to.
+
+**Tests (all in `pnpm test`, red-first where a fix followed).**
+- `scripts/eval/warning-segmentation.test.ts` — new, TDD (written before the implementation
+  file existed). Covers every class, the deliberate `CONFLICTING_EXTRACTION`/`LOW_MODEL_CONFIDENCE`
+  extension, the null-reviewReason real case, the sum-equals-total invariant, the empty-run
+  zero case, and two harness-bug throws (a bogus reviewReason, a missing field score).
+- `scripts/eval/warning-golden-cases.test.ts` — new. Covers the case-08 named-case assertions,
+  the case-09/23/24 ground-truth corrections, and case-31/32's real, computed verdicts.
+- `scripts/eval/verdict-scoring.test.ts` — extended. Covers `actualReviewReason` threading,
+  including the real null-on-NEEDS_REVIEW case.
+- `scripts/eval/summary.test.ts`, `scripts/eval/report-validation.test.ts`,
+  `scripts/eval/baseline-compare.test.ts` — extended for the new `warningSegmentation` field.
+- `src/lib/golden-set/loader.test.ts` — the manifest case-count ballpark moved from 30 to 32,
+  with a citation.
+
+**How to run it.**
+1. `pnpm test` runs every test above.
+2. `pnpm typecheck` and `pnpm lint` both pass.
+3. `pnpm golden:build` renders every case, including the two new ones (already committed).
+4. `pnpm golden:verify` checks all 32 cases: zero known gaps, zero problems found.
+5. `pnpm eval:check -- --live --full --update-baseline` re-runs the whole golden set for real
+   and refreshes the committed baseline.
+6. Plain `pnpm eval:check` (cheap mode — what the gate runs) reads that baseline back with no
+   live call.
+
+**Measured — real, live run against the full 32-case golden set, today, after the TRO-515
+merge below.** Extraction accuracy: 96.3% (154/160). Label-verdict accuracy: 65.6% (21/32).
+Review-reason accuracy: 35.7% (5/14). Warning-check segmentation, of 32 cases: clean 65.6%
+(21), true-mismatch 15.6% (5), **resolution-suspect 12.5% (4)**, not-found 6.3% (2). The four
+counts sum to 32, as CP-2 §8.4 requires. Total cost: $0.2920. Per PRD §3.7's ladder, a 12.5%
+resolution-suspect rate falls in the **10–25%: fix the crop pipeline first** band. It is not
+healthy, and it is not yet a model-upgrade signal. This is the first real number behind that
+decision. It is reported here as evidence, not acted on — the crop pipeline is not this
+ticket's territory. (An earlier run, against this ticket's own pre-merge 31-case branch state,
+measured 95.5%/67.7%/35.7% and a 12.9% resolution-suspect rate — materially the same picture;
+superseded by the number above, the real one behind the committed baseline.)
+
+**Not done here (explicitly out of scope, named so they don't read as gaps).**
+- **The single-channel PASS rate** (CP-2 §8.4/§11 Q10 — "the residual false-PASS exposure").
+  This needs the comparator to expose which channel or channels decided a verdict. That means a
+  new field on `WarningComparatorResult`/`FieldResultRow` — comparator-shape territory this
+  ticket was told not to touch. It is a real, separate, follow-on gap against LH-020/LH-012.
+- **The real label-verdict/reviewReason accuracy numbers measured above are not this ticket's
+  to fix.** Eleven cases scored "verdict WRONG" this run: case-11, 15, 17, 19, 21, 23–26, 28,
+  29. This reflects real comparator/router accuracy, out of this ticket's scope (data and eval
+  wiring only). It is reported honestly here, not hidden or softened. One case (case-17) flips
+  between runs — the pre-merge run scored it correct, this run does not, with no code change to
+  explain it. This is real call-to-call model variance, not a harness bug (`check.ts`'s cascade
+  makes one real, non-deterministic Haiku call per case every time it runs).
+- `scripts/eval/results/benchmark-report.json` is not refreshed. `resolver-rollup.ts`'s change
+  was smoke-tested live, via `pnpm eval:benchmark -- --case=case-08-...`; both arms produced a
+  correct `ActualFieldOutcome` shape. The full paid `--full` sweep was not re-run — it is not
+  this ticket's deliverable.
+- `docs/approach.md` (LH-064, blocked by LH-030 **and** LH-031, neither this ticket) is where
+  CP-2 §9.2 finding 3 belongs in the write-up: no image can exercise channel disagreement, and
+  LH-020's own unit tests already cover it there. Not created here.
+
+**Rollback.** `git revert` this ticket's commits on `feat/lh-021-warning-golden-eval`. The
+revert restores the pre-TRO-469 golden set: TRO-515's 30 cases (case-31/32 and the
+LOW_MODEL_CONFIDENCE/wording-reason defect fixes go away; TRO-515's own case-30 is untouched,
+it lands from a separate ticket). It removes `scripts/eval/warning-segmentation.ts` and its
+wiring, and reverts `ActualVerdict`'s field shape. `scripts/eval/results/eval-report.json` and
+`scripts/eval/baseline.json` revert to their pre-ticket committed values along with the code. If
+a fresh baseline under the old code is needed instead of the reverted commit's own, re-run
+`pnpm eval:check -- --live --full --update-baseline` after reverting.
+
 ## TRO-513 — Fix the flaky "Old Tom Distillery" fixture in route.test.ts (2026-08-12)
 
 **What changed.** This fix has two parts. The ticket's own description bundled two

@@ -26,7 +26,7 @@
  * `eval-report.json`, and THEN runs the same baseline comparison against
  * the fresh numbers. This is the expensive, deliberate, human-or-agent-
  * invoked mode — never automatic, matching `scripts/latency/measure.ts`'s
- * own real-money discipline. `--full` runs the whole 29-case golden set
+ * own real-money discipline. `--full` runs the whole 31-case golden set
  * instead of the default 8-case sample (`args.ts`); `--update-baseline`
  * promotes a clean `--live` run's numbers into the committed baseline (see
  * `args.ts` for why this is always a separate, explicit flag, never a
@@ -192,6 +192,17 @@ async function runLive(args: ReturnType<typeof parseEvalArgs>): Promise<void> {
   );
   console.log(
     `check.ts: review-reason accuracy ${(summary.reviewReasonAccuracy.rate * 100).toFixed(1)}% (${summary.reviewReasonAccuracy.correct}/${summary.reviewReasonAccuracy.total})`,
+  );
+  // PRD §3.7 / CP-2 §8.4's warning upgrade-ladder segmentation (TRO-469 /
+  // LH-021) — reported, not gated (baseline-compare.ts's own module
+  // comment says why). "a number in CI output, not a judgment call
+  // mid-week": this line IS that number.
+  const seg = summary.warningSegmentation;
+  console.log(
+    `check.ts: warning-check segmentation (of ${seg.total}) — clean ${(seg.clean.rate * 100).toFixed(1)}% (${seg.clean.count}), ` +
+      `true-mismatch ${(seg.trueMismatch.rate * 100).toFixed(1)}% (${seg.trueMismatch.count}), ` +
+      `resolution-suspect ${(seg.resolutionSuspect.rate * 100).toFixed(1)}% (${seg.resolutionSuspect.count}) <- drives the ladder, ` +
+      `not-found ${(seg.notFound.rate * 100).toFixed(1)}% (${seg.notFound.count})`,
   );
   console.log(`check.ts: total measured cost $${totalCostUsd.toFixed(4)}`);
   console.log(`check.ts: wrote ${REPORT_PATH}`);

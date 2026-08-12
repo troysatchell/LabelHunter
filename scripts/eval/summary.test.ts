@@ -78,7 +78,18 @@ function verdictCase(
     actualReviewReason: opts.expectedLabelVerdict === "REVIEW" && opts.reviewReasonCorrect ? "LOW_IMAGE_QUALITY" : null,
     reviewReasonCorrect: opts.reviewReasonCorrect,
     fields: [
-      { field: "brand_name", expectedVerdict: "MATCH", actualVerdict: opts.fieldCorrect ? "MATCH" : "MISMATCH", correct: opts.fieldCorrect },
+      {
+        field: "brand_name",
+        expectedVerdict: "MATCH",
+        actualVerdict: opts.fieldCorrect ? "MATCH" : "MISMATCH",
+        correct: opts.fieldCorrect,
+        actualReviewReason: null,
+      },
+      // Every case needs its own government_warning row —
+      // segmentWarningCheckOutcomes (called inside summarizeVerdict) reads
+      // it for every case in the run, TRO-469 / LH-021. A plain MATCH here
+      // keeps these fixtures focused on what each test actually asserts.
+      { field: "government_warning", expectedVerdict: "MATCH", actualVerdict: "MATCH", correct: true, actualReviewReason: null },
     ],
   };
 }
@@ -107,6 +118,20 @@ describe("summarizeVerdict", () => {
     expect(summarizeVerdict(cases).fieldVerdictAccuracyByField.brand_name).toEqual({ total: 1, correct: 0, rate: 0 });
     expect(summarizeVerdict(cases).fieldVerdictAccuracyByField.class_type).toEqual({ total: 0, correct: 0, rate: 0 });
   });
+
+  it("includes the warning-check segmentation (TRO-469 / LH-021, PRD §3.7) — every fixture case's government_warning row is a clean MATCH", () => {
+    const cases = [
+      verdictCase("a", { labelCorrect: true, reviewReasonCorrect: true, expectedLabelVerdict: "PASS", fieldCorrect: true }),
+      verdictCase("b", { labelCorrect: true, reviewReasonCorrect: true, expectedLabelVerdict: "PASS", fieldCorrect: true }),
+    ];
+    expect(summarizeVerdict(cases).warningSegmentation).toEqual({
+      total: 2,
+      clean: { count: 2, rate: 1 },
+      trueMismatch: { count: 0, rate: 0 },
+      resolutionSuspect: { count: 0, rate: 0 },
+      notFound: { count: 0, rate: 0 },
+    });
+  });
 });
 
 describe("buildEvalReportSummary", () => {
@@ -117,5 +142,18 @@ describe("buildEvalReportSummary", () => {
     expect(summary.extractionAccuracy).toEqual({ total: 5, correct: 5, rate: 1 });
     expect(summary.labelVerdictAccuracy).toEqual({ total: 1, correct: 1, rate: 1 });
     expect(summary.reviewReasonAccuracy).toEqual({ total: 0, correct: 0, rate: 0 });
+  });
+
+  it("carries warningSegmentation through from summarizeVerdict (TRO-469 / LH-021)", () => {
+    const extractionCases = [extractionCase("a", [true, true, true, true, true])];
+    const verdictCases = [verdictCase("a", { labelCorrect: true, reviewReasonCorrect: true, expectedLabelVerdict: "PASS", fieldCorrect: true })];
+    const summary = buildEvalReportSummary(extractionCases, verdictCases);
+    expect(summary.warningSegmentation).toEqual({
+      total: 1,
+      clean: { count: 1, rate: 1 },
+      trueMismatch: { count: 0, rate: 0 },
+      resolutionSuspect: { count: 0, rate: 0 },
+      notFound: { count: 0, rate: 0 },
+    });
   });
 });

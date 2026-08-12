@@ -24,6 +24,14 @@ Every ticket's DoD includes the factory gate; entries below list only ticket-spe
 | LH-006 | TRO-499 | | | | | | | | LH-065 | TRO-486 |
 | | | | | | | | | | LH-070 | TRO-487 |
 
+Wave 2b added 2026-08-12 — the bold rule and the real-label corpus:
+
+| LH | TRO | | LH | TRO | | LH | TRO |
+|---|---|---|---|---|---|---|---|
+| LH-022 | TRO-527 | | LH-025 | TRO-532 | | LH-028 | TRO-531 |
+| LH-023 | TRO-528 | | LH-026 | TRO-533 | | | |
+| LH-024 | TRO-529 | | LH-027 | TRO-530 | | | |
+
 ---
 
 ## Wave 0 — bootstrap
@@ -146,6 +154,62 @@ documented limitation.
 ### LH-021 · Warning cases in golden set + eval  [High]
 TH-R9, TH-R12, TH-R17. Blocked by LH-020, LH-003. Ground-truth warning variants wired into
 the eval harness; the Jenny title-case catch is a named case.
+
+## Wave 2b — the bold rule + real-label corpus (added 2026-08-12)
+
+27 CFR 16.22(a)(2) carries four rules. LH-020 and LH-021 closed the wording rule and the
+capitalization rule. The two bold rules had no coverage and no ground-truth field. Measured
+2026-08-12: every one of the 32 cases renders the prefix and the body at the same weight, so
+the corpus scores a prefix/body stroke-width ratio of 1.00. A real compliant label scores 2.2.
+
+### LH-022 · Golden-set bold ground truth + renderer bold prefix  [High]
+TH-R9, TH-R12. Blocked by nothing. Two required fields on `GoldenLabelFields`
+(`governmentWarningPrefixBold`, `governmentWarningBodyBold`), each typed
+`boolean | "unknown"`; `render.ts` splits the warning at the first colon and drives each span's
+weight from the spec; all 32 cases backfilled; images rebuilt. DoD adds: a test proves the two
+spans rejoin byte for byte. The third state exists because a real photograph often supports
+neither answer — recording `false` there would be a fabricated compliance claim against a
+shipped product (LH-024).
+
+### LH-023 · Bold-isolating golden cases (case-33, case-34)  [Medium]
+TH-R9, TH-R12. Blocked by LH-022. One case per bold rule. Both expect PASS, because
+LabelHunter does not check bold. They exist to measure a documented limitation, and they become
+LH-025's regression fixtures.
+
+### LH-024 · Real-label reference cases + reference provenance record  [High]
+TH-R10, TH-R12. Blocked by LH-022. Adopt all five reference warning close-ups as cases by hand
+transcription — no generation, no spend. Troy cleared the trademarked images on 2026-08-12, so
+the set covers flat scan, gentle curve, strong curve, low contrast, and extreme wrap. That is
+Jenny's exact ask (source-TH.md L34) with real photographs instead of `degrade.ts` transforms.
+Needs a new `GoldenSetProvenance` value. Ships a provenance record for all six files in
+`assets/golden/references/`. Record bold as `"unknown"` wherever the photograph cannot support
+an answer — a `false` there is a compliance claim against a named real product, and we cannot
+prove it. `verified` stays false until Troy confirms each transcription.
+
+### LH-025 · Stroke-width bold advisory check  [Medium]
+TH-R9. Blocked by LH-022, LH-024. Implements the v2 technique CP-2 §7.2 named and never tried.
+Measured: 2.2 separation on a flat scan, no separation on three of four bottle photographs,
+2 px stroke at the statutory 1 mm minimum. The signal stays advisory and never changes a
+verdict. DoD adds: the eval output is identical with the check on and off.
+
+### LH-026 · Surface the bold signal; fix the bold doc drift  [Medium]
+TH-R9, TH-R15, TH-R20. Blocked by LH-025. `formatting.bold` is extracted and read by nothing.
+PRD §2 credits bold to Sonnet, but `resolver/prompt.ts:44` forbids Sonnet from judging the
+warning. Surface the signal, score it, and make CP-2 §7.3, `docs/approach.md`, and the README
+carry the same limitation wording.
+
+### LH-027 · Wild AI-generated labels (image-gen design §5, job 2)  [Medium]
+TH-R12. Blocked by LH-022. About 5 flat label artworks from prompts, fictional brands only.
+Ground truth is transcribed FROM each generated image, so a garbled warning is a valid case
+rather than a failed generation. No bottle, no compositing, no warp. `verified: true` needs
+Troy. Design doc §5 estimates the full set under $5.
+
+### LH-028 · ⏸ AI-backdrop track: land the fixes, then park it  [Low — backlog]
+TH-R10 (stretch). Backlogged by Troy, 2026-08-12. `source-TH.md` never asks for a bottle
+photograph: agents review "label artwork" (L9), the sample label is a field list (L52–57), and
+the one mention of a bottle is hedged as "maybe out of scope for a prototype" (L34).
+`degrade.ts` already covers TH-R10 on flat artwork. Land the detector, prompt, composite, and
+bottle-reference fixes so the code is parked correct, then stop. No further Gemini spend.
 
 ## Wave E — evidence harnesses
 

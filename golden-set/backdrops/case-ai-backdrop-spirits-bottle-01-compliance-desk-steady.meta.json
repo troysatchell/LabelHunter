@@ -1,0 +1,33 @@
+{
+  "caseId": "case-ai-backdrop-spirits-bottle-01-compliance-desk-steady",
+  "referenceBottle": "spirits-bottle-01",
+  "scene": "compliance-desk",
+  "cameraCondition": "steady",
+  "labelPlacement": {
+    "topLeft": {
+      "x": 869,
+      "y": 282
+    },
+    "topRight": {
+      "x": 1348,
+      "y": 361
+    },
+    "bottomLeft": {
+      "x": 874,
+      "y": 751
+    },
+    "bottomRight": {
+      "x": 1337,
+      "y": 638
+    },
+    "pixelCount": 5501,
+    "imageWidth": 1354,
+    "imageHeight": 768
+  },
+  "generationMetadata": {
+    "model": "gemini-3.1-flash-image",
+    "resolution": "1K",
+    "promptVersion": "v2",
+    "generatedAt": "2026-08-12T16:45:20.395Z"
+  }
+}

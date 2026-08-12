@@ -32,3 +32,5 @@ test-results/
 *.pem
 npm-debug.log*
 pnpm-debug.log*
+.gstack/
+.codacy/

@@ -1,0 +1,14 @@
+{
+  "bottleId": "spirits-bottle-01",
+  "referencePhoto": "assets/golden/references/crown-royal-warning-label-closeup.png",
+  "beverageType": "spirits",
+  "bottleDescription": "Close-up photograph (1271x721) of the back label on a real spirits bottle. The printed text names the Crown Royal Company, 750 mL, product of Canada. The label is dark burgundy with gold text, a boxed government warning, and a barcode. Curved clear glass and amber spirit show at both edges. No whole-bottle silhouette and no closure appear in the frame, so this reference gives Gemini label surface and label curvature only, never bottle geometry.",
+  "scenes": [
+    {
+      "sceneId": "compliance-desk",
+      "setting": "a plain dark-walnut desk in a windowless office, with a matte charcoal wall close behind the bottle",
+      "lighting": "One soft light comes from above and outside the frame. The light points down onto the label. The wall and the desk stay in shadow."
+    }
+  ],
+  "cameraConditions": ["steady"]
+}

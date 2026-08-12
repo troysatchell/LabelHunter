@@ -56,15 +56,17 @@ Only clause (1)'s wording is off.
 | case-10, real pipeline, `pnpm test` | `MISMATCH`, "Government Warning wording differs from the required text." |
 | case-10 wall clock | 298 ms |
 
-**Not touched.** `reconcile.ts`, `region-detect.ts`, `ocr.ts`, and `OCR_CONFIDENCE_FLOOR` are
-unchanged — this ticket adds tests, and fixes nothing. `reconcile.test.ts:59-63` and `:80-87`
-(the comparator-level title-case and reworded tests) are untouched. They stay the right unit
-tests. This ticket adds the missing integration proof beside them.
+**Not touched.** This ticket leaves `reconcile.ts`, `region-detect.ts`, `ocr.ts`, and
+`OCR_CONFIDENCE_FLOOR` unchanged. It adds tests. It fixes no production code.
+`reconcile.test.ts:59-63` and `:80-87` (the comparator-level title-case and reworded tests) stay
+untouched too. They remain the right unit tests. This ticket adds the missing integration proof
+beside them.
 
-**Effect on TH-R9.** INT-001's bar is met: a FAIL case now runs the real image pipeline. TH-R9
-moves out of PARTIAL.
+**Effect on TH-R9.** This ticket meets INT-001's bar. A FAIL case now runs the real image
+pipeline. TH-R9 moves out of PARTIAL.
 
-**Rollback.** Revert this commit. No schema change, no other file touched.
+**Rollback.** Revert this ticket's commits. They touch two files: this changelog entry and
+`src/server/warning/index.test.ts`. No schema change.
 
 ## TRO-479 — LH-053 · E2E suite (2026-08-12)
 

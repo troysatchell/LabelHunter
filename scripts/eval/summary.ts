@@ -11,7 +11,9 @@ import {
   type ExtractionCaseScore,
   type ExtractionFieldKey,
   type VerdictCaseScore,
+  type WarningSegmentationSummary,
 } from "./types";
+import { segmentWarningCheckOutcomes } from "./warning-segmentation";
 
 const EXTRACTION_FIELD_KEYS: readonly ExtractionFieldKey[] = [
   "brandName",
@@ -73,6 +75,13 @@ export interface VerdictSummary {
   labelVerdictAccuracy: AccuracySummary;
   fieldVerdictAccuracyByField: Record<RouterFieldKey, AccuracySummary>;
   reviewReasonAccuracy: AccuracySummary;
+  /** PRD §3.7 / CP-2 §8.4's warning upgrade-ladder segmentation (TRO-469 /
+   * LH-021) — computed here, not `check.ts`, so `benchmark.ts`'s two arms
+   * (`ArmSummary extends VerdictSummary`) get it for free too: the
+   * cascade-vs-Sonnet-only comparison can show whether the resolution-
+   * suspect rate itself would change under the benchmark's alternate arm,
+   * the same real-Sonnet-per-field question §3.7's ladder ultimately asks. */
+  warningSegmentation: WarningSegmentationSummary;
 }
 
 /**
@@ -90,6 +99,7 @@ export function summarizeVerdict(cases: readonly VerdictCaseScore[]): VerdictSum
     labelVerdictAccuracy: summarizeBy(cases, (c) => c.labelVerdictCorrect),
     fieldVerdictAccuracyByField,
     reviewReasonAccuracy: summarizeBy(reviewCases, (c) => c.reviewReasonCorrect),
+    warningSegmentation: segmentWarningCheckOutcomes(cases),
   };
 }
 
@@ -108,5 +118,6 @@ export function buildEvalReportSummary(
     labelVerdictAccuracy: verdict.labelVerdictAccuracy,
     fieldVerdictAccuracyByField: verdict.fieldVerdictAccuracyByField,
     reviewReasonAccuracy: verdict.reviewReasonAccuracy,
+    warningSegmentation: verdict.warningSegmentation,
   };
 }

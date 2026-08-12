@@ -49,8 +49,9 @@ import { buildFlaggedFieldsForEscalatedLabel } from "./flagged-fields";
 import { scoreExtraction } from "./extraction-scoring";
 import { parseFullVerifySuccessBody } from "./response-validation";
 import { buildMeasuredCost, createUsageCapturingClient, HAIKU_4_5_PRICING, selectSonnetPricing } from "./usage";
-import { scoreVerdict, type ActualVerdict } from "./verdict-scoring";
+import { scoreVerdict, type ActualFieldOutcome, type ActualVerdict } from "./verdict-scoring";
 import type { CascadeCaseResult, EvalCaseFailure } from "./types";
+import type { FullVerifyFieldResult } from "./response-validation";
 
 export const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -149,6 +150,22 @@ async function cleanupApplicationRow(
       `cascade-runner.ts: cleanup of application ${applicationId} (case "${caseId}") failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
     );
   }
+}
+
+/**
+ * Converts one real `/api/verify` response field row into `ActualVerdict`'s
+ * discriminated-union shape (TRO-469 / LH-021, PRD §3.7's warning
+ * segmentation needs each field's own `reviewReason`, not just its
+ * verdict — see `verdict-scoring.ts`'s `ActualFieldOutcome`). A `NEEDS_REVIEW`
+ * row's `reviewReason` CAN be `null` here — `ActualFieldOutcome`'s own doc
+ * comment explains the real, deliberate router path that produces it
+ * (an absent required field a label-level `LOW_IMAGE_QUALITY` blocker
+ * already explains) — so this is a straight passthrough, not a narrowing
+ * that could fail.
+ */
+function toActualFieldOutcome(f: FullVerifyFieldResult): ActualFieldOutcome {
+  if (f.verdict !== "NEEDS_REVIEW") return { field: f.field, verdict: f.verdict };
+  return { field: f.field, verdict: "NEEDS_REVIEW", reviewReason: f.reviewReason };
 }
 
 export interface CaseRunOutcome {
@@ -282,7 +299,7 @@ export async function runOneCase(
     const actualVerdict: ActualVerdict = {
       labelVerdict: body.labelVerdict,
       headlineReason: body.headlineReason,
-      fields: body.fields.map((f) => ({ field: f.field, verdict: f.verdict })),
+      fields: body.fields.map(toActualFieldOutcome),
     };
     const verdictScore = scoreVerdict(caseSpec, actualVerdict);
     const haikuCost = buildMeasuredCost(HAIKU_EXTRACTOR_MODEL, haikuUsage, HAIKU_4_5_PRICING);

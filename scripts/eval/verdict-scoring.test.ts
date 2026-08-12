@@ -61,7 +61,7 @@ describe("scoreVerdict", () => {
       labelVerdict: "REVIEW",
       headlineReason: "LOW_IMAGE_QUALITY",
       fields: [
-        { field: "brand_name", verdict: "NEEDS_REVIEW" },
+        { field: "brand_name", verdict: "NEEDS_REVIEW", reviewReason: "LOW_IMAGE_QUALITY" },
         { field: "class_type", verdict: "MATCH" },
         { field: "alcohol_content", verdict: "MATCH" },
         { field: "net_contents", verdict: "MATCH" },
@@ -71,6 +71,7 @@ describe("scoreVerdict", () => {
     const result = scoreVerdict(caseSpec, actual);
     expect(result.labelVerdictCorrect).toBe(true);
     expect(result.reviewReasonCorrect).toBe(true);
+    expect(result.fields.find((f) => f.field === "brand_name")?.actualReviewReason).toBe("LOW_IMAGE_QUALITY");
   });
 
   it("scores a REVIEW case as label-correct-but-reason-wrong when the reason disagrees", () => {
@@ -89,7 +90,7 @@ describe("scoreVerdict", () => {
       labelVerdict: "REVIEW",
       headlineReason: "LOW_MODEL_CONFIDENCE",
       fields: [
-        { field: "brand_name", verdict: "NEEDS_REVIEW" },
+        { field: "brand_name", verdict: "NEEDS_REVIEW", reviewReason: "LOW_MODEL_CONFIDENCE" },
         { field: "class_type", verdict: "MATCH" },
         { field: "alcohol_content", verdict: "MATCH" },
         { field: "net_contents", verdict: "MATCH" },
@@ -135,5 +136,84 @@ describe("scoreVerdict", () => {
       fields: [...ALL_MATCH_FIELDS, { field: "brand_name", verdict: "MISMATCH" }],
     };
     expect(() => scoreVerdict(testGoldenCase(), duplicated)).toThrow(/duplicate field entries/);
+  });
+
+  it("sets actualReviewReason to null on every MATCH/MISMATCH field, never leftover from a different field's reason", () => {
+    const base = testGoldenCase();
+    const caseSpec = testGoldenCase({
+      expected: {
+        labelVerdict: "FAIL",
+        fields: { ...base.expected.fields, abv: { verdict: "MISMATCH", reason: "differs" } },
+      },
+    });
+    const actual: ActualVerdict = {
+      labelVerdict: "FAIL",
+      headlineReason: null,
+      fields: [
+        { field: "brand_name", verdict: "MATCH" },
+        { field: "class_type", verdict: "MATCH" },
+        { field: "alcohol_content", verdict: "MISMATCH" },
+        { field: "net_contents", verdict: "MATCH" },
+        { field: "government_warning", verdict: "MATCH" },
+      ],
+    };
+    const result = scoreVerdict(caseSpec, actual);
+    for (const field of result.fields) {
+      expect(field.actualReviewReason, `${field.field} should carry no reviewReason`).toBeNull();
+    }
+  });
+
+  it("accepts a NEEDS_REVIEW field with reviewReason: null — a real, observed router shape (case-20's --live --full run), not a hypothetical", () => {
+    // resolveGovernmentWarningField/resolveComparatorField's own carve-out
+    // (CP-1 §5.3): a required, absent field on a label that already
+    // carries a LOW_IMAGE_QUALITY blocker resolves to NEEDS_REVIEW with no
+    // reviewReason of its own, to avoid a redundant, misleading
+    // MISSING_REQUIRED_FIELD once the true cause is already named at the
+    // label level. ActualFieldOutcome's NEEDS_REVIEW branch must accept
+    // this without throwing (see its own doc comment for the full story).
+    const actual: ActualVerdict = {
+      labelVerdict: "REVIEW",
+      headlineReason: "LOW_IMAGE_QUALITY",
+      fields: [
+        { field: "brand_name", verdict: "NEEDS_REVIEW", reviewReason: null },
+        { field: "class_type", verdict: "NEEDS_REVIEW", reviewReason: null },
+        { field: "alcohol_content", verdict: "NEEDS_REVIEW", reviewReason: null },
+        { field: "net_contents", verdict: "NEEDS_REVIEW", reviewReason: null },
+        { field: "government_warning", verdict: "NEEDS_REVIEW", reviewReason: null },
+      ],
+    };
+    const result = scoreVerdict(testGoldenCase(), actual);
+    expect(result.fields.find((f) => f.field === "brand_name")?.actualReviewReason).toBeNull();
+    expect(result.fields.find((f) => f.field === "government_warning")?.actualReviewReason).toBeNull();
+  });
+
+  it("threads government_warning's own actualReviewReason through independently of the label headlineReason — TRO-469's warning-segmentation input", () => {
+    // The real, observed shape from case-11's live run (CHANGES.md TRO-470):
+    // the label escalates on a DIFFERENT field's blocker while
+    // government_warning's own field verdict is a confident MISMATCH with
+    // no reviewReason of its own — segmentWarningCheckOutcomes must read
+    // THIS field's own outcome, not the label's headlineReason.
+    const base = testGoldenCase();
+    const caseSpec = testGoldenCase({
+      expected: {
+        labelVerdict: "FAIL",
+        fields: { ...base.expected.fields, governmentWarning: { verdict: "MISMATCH", reason: "reworded" } },
+      },
+    });
+    const actual: ActualVerdict = {
+      labelVerdict: "REVIEW",
+      headlineReason: "CONFLICTING_EXTRACTION",
+      fields: [
+        { field: "brand_name", verdict: "NEEDS_REVIEW", reviewReason: "CONFLICTING_EXTRACTION" },
+        { field: "class_type", verdict: "MATCH" },
+        { field: "alcohol_content", verdict: "MATCH" },
+        { field: "net_contents", verdict: "MATCH" },
+        { field: "government_warning", verdict: "MISMATCH" },
+      ],
+    };
+    const result = scoreVerdict(caseSpec, actual);
+    const warningField = result.fields.find((f) => f.field === "government_warning");
+    expect(warningField?.actualVerdict).toBe("MISMATCH");
+    expect(warningField?.actualReviewReason).toBeNull();
   });
 });

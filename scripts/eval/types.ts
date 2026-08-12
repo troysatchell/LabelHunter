@@ -66,6 +66,17 @@ export interface VerdictFieldScore {
   expectedVerdict: FieldVerdict;
   actualVerdict: FieldVerdict;
   correct: boolean;
+  /** The real system's own `reviewReason` for this field, carried through
+   * unscored (the golden set has no per-field expected reviewReason — see
+   * `verdict-scoring.ts`'s `ActualFieldOutcome`). Non-null exactly when
+   * `actualVerdict` is `NEEDS_REVIEW` — the same invariant
+   * `field-resolution.ts`'s `resolveComparatorField`/
+   * `resolveGovernmentWarningField` already hold on every real router
+   * field. TRO-469 / LH-021: the input `warning-segmentation.ts` needs to
+   * segment the `government_warning` field's outcomes (PRD §3.7); every
+   * other field carries it too, for the same reason `category` is on every
+   * `VerdictCaseScore` even though only some callers read it. */
+  actualReviewReason: ReviewReason | null;
 }
 
 export interface VerdictCaseScore {
@@ -150,6 +161,50 @@ export interface CascadeCaseResult {
   resolverDurationMs: number | null;
 }
 
+/** One class's count in the PRD §3.7 / CP-2 §8.4 warning-check-outcome
+ * segmentation — the same total/rate shape as `AccuracySummary`, with
+ * `count` in place of `correct`/`total`: a segment is a mutually-exclusive
+ * bucket of a fixed partition, not a right-vs-wrong score. */
+export interface WarningSegmentCount {
+  readonly count: number;
+  /** `count / total`, sharing ONE denominator across all four classes —
+   * CP-2 §8.4's own written formula: "suspect rate = resolution-suspect /
+   * (clean pass + true mismatch + resolution-suspect + not found)". `0` on
+   * an empty run, never `NaN` (same convention as `AccuracySummary.rate`). */
+  readonly rate: number;
+}
+
+/**
+ * PRD §3.7's warning-check-outcome segmentation, restated precisely by CP-2
+ * §8.4 (`docs/checkpoints/cp2-warning-subsystem.md`) as four mutually
+ * exclusive, exhaustive classes over the `government_warning` field's own
+ * ACTUAL verdict. An operational/incidence metric ("a number in CI output,
+ * not a judgment call mid-week") — not an accuracy score against ground
+ * truth; the golden set carries no per-field expected `reviewReason` to
+ * score against (see `VerdictFieldScore.actualReviewReason`'s own doc
+ * comment). Computed by `warning-segmentation.ts`'s
+ * `segmentWarningCheckOutcomes`; TRO-469 / LH-021.
+ */
+export interface WarningSegmentationSummary {
+  /** Sum of the four classes below, by construction — every scored case
+   * lands in exactly one (CP-2 §8.4: "their counts must sum to the number
+   * of checks run"). */
+  readonly total: number;
+  readonly clean: WarningSegmentCount;
+  /** Wording deviation (distance >= 3) or a hard capitalization failure —
+   * "NOT an upgrade signal, no matter how frequent" (CP-2 §8.4). */
+  readonly trueMismatch: WarningSegmentCount;
+  /** `LOW_IMAGE_QUALITY`, `WARNING_MISMATCH` (channel disagreement or the
+   * near-miss band), `CONFLICTING_EXTRACTION`, or `LOW_MODEL_CONFIDENCE` —
+   * every case where the check ran and could not confidently resolve one
+   * way or the other. CP-2 §8.4: "This rate drives the ladder." */
+  readonly resolutionSuspect: WarningSegmentCount;
+  /** `MISSING_REQUIRED_FIELD` — no warning was present to check at all.
+   * CP-2 §8.4: "An absent warning is a labelling question, not a
+   * resolution question. Report it beside the rate, never inside it." */
+  readonly notFound: WarningSegmentCount;
+}
+
 export interface EvalReportSummary {
   extractionAccuracy: AccuracySummary;
   /** Per-`ExtractionFieldKey` breakdown — TH-R17's "field by field". */
@@ -158,6 +213,8 @@ export interface EvalReportSummary {
   /** Per-`RouterFieldKey` breakdown of field-verdict accuracy. */
   fieldVerdictAccuracyByField: Record<RouterFieldKey, AccuracySummary>;
   reviewReasonAccuracy: AccuracySummary;
+  /** PRD §3.7's warning upgrade-ladder segmentation (TRO-469 / LH-021). */
+  warningSegmentation: WarningSegmentationSummary;
 }
 
 /** The committed evidence artifact `pnpm eval:check -- --live` writes

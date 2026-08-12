@@ -2,13 +2,20 @@
  * The batch worker process entry point (LH-041 / TRO-474, PRD §3.6's
  * "background worker" process; CP-3 §4.5's two-separate-pools design).
  *
- * Run with `pnpm worker`. Starts two independent worker pools — 5
- * extract-workers, 2 resolve-workers, both proposed defaults (CP-3 §4.4,
- * §12 open question 1) — and keeps running until `SIGINT`/`SIGTERM`.
+ * Run with `pnpm worker`. Starts THREE independent claim+process loops —
+ * 5 extract-workers, 2 resolve-workers (both proposed defaults, CP-3 §4.4,
+ * §12 open question 1), and 1 single-label resolve-worker (TRO-511, CP-3
+ * §9/§12 open question 5) — all in this SAME process, matching PRD §3.6's
+ * "background worker" naming: singular. Keeps running until
+ * `SIGINT`/`SIGTERM`.
  *
- * `BATCH_WORKER_CONCURRENCY` (extract pool size, default 5) and
- * `BATCH_RESOLVE_WORKER_CONCURRENCY` (resolve pool size, default 2) are
- * environment variables, not hard-coded constants — CP-3 §4.4's own
+ * `BATCH_WORKER_CONCURRENCY` (extract pool size, default 5),
+ * `BATCH_RESOLVE_WORKER_CONCURRENCY` (resolve pool size, default 2), and
+ * `SINGLE_LABEL_RESOLVE_WORKER_CONCURRENCY` (default 1 — single-label
+ * REVIEW volume is interactive-triggered, not batch-scale; see
+ * `src/server/single-label-resolve/worker.ts`'s own doc comment on why a
+ * pool-wide rate-limit cooldown is deliberately not built for this one)
+ * are environment variables, not hard-coded constants — CP-3 §4.4's own
  * finding: this project's real deployed Anthropic key may sit in an
  * unquantified, below-Start-tier "Evaluation" bracket, so the one lever
  * available to correct a wrong default is a config change, not a
@@ -26,7 +33,9 @@
  * this ticket's. It also does not run CP-1 §7.3's warm-up request or flip
  * a batch to `RUNNING` — `lifecycle.ts`'s `startBatchJob` is the hook a
  * future batch-creation caller (LH-040/LH-042) uses for that; this process
- * only ever claims from batches already `RUNNING`.
+ * only ever claims from batches already `RUNNING` (for the two batch
+ * pools) or from single-label-originated `review_queue` rows (for the
+ * third).
  */
 import { db } from "../../src/lib/db";
 import { DEFAULT_BACKOFF_CONFIG } from "../../src/server/batch-queue/backoff";
@@ -35,9 +44,12 @@ import { startWorkerPool, type WorkerPoolHandle } from "../../src/server/batch-q
 import { processResolveClaim } from "../../src/server/batch-queue/resolve-worker";
 import { productionComparators } from "../../src/server/comparators";
 import { readLabelImage } from "../../src/server/storage/local-file-storage";
+import { startSingleLabelResolveWorker, type SingleLabelResolveWorkerHandle } from "../../src/server/single-label-resolve";
 
 /** Proposed, not measured (CP-3 §3.2) — generous multiples of the
- * extractor's/resolver's own target call durations (PRD §3.8). */
+ * extractor's/resolver's own target call durations (PRD §3.8). The
+ * single-label resolve worker reuses the SAME lease as the batch RESOLVE
+ * pool — it runs the identical kind of call (one Sonnet resolution). */
 const EXTRACT_LEASE_SECONDS = 60;
 const RESOLVE_LEASE_SECONDS = 120;
 
@@ -71,11 +83,13 @@ function envPositiveInt(name: string, fallback: number): number {
 function main(): void {
   const extractConcurrency = envPositiveInt("BATCH_WORKER_CONCURRENCY", 5);
   const resolveConcurrency = envPositiveInt("BATCH_RESOLVE_WORKER_CONCURRENCY", 2);
+  const singleLabelResolveConcurrency = envPositiveInt("SINGLE_LABEL_RESOLVE_WORKER_CONCURRENCY", 1);
   const shutdownTimeoutMs = envPositiveInt("BATCH_WORKER_SHUTDOWN_TIMEOUT_MS", DEFAULT_SHUTDOWN_TIMEOUT_MS);
   const workerIdPrefix = `${process.pid}`;
 
   console.log(
-    `[batch-worker] starting — ${extractConcurrency} extract worker(s), ${resolveConcurrency} resolve worker(s) (pid ${process.pid})`,
+    `[batch-worker] starting — ${extractConcurrency} extract worker(s), ${resolveConcurrency} resolve worker(s), ` +
+      `${singleLabelResolveConcurrency} single-label resolve worker(s) (pid ${process.pid})`,
   );
 
   const extractPool: WorkerPoolHandle = startWorkerPool({
@@ -111,13 +125,30 @@ function main(): void {
     onLoopError: (error, workerId) => console.error(`[batch-worker] ${workerId} error:`, error),
   });
 
+  // TRO-511 — the trigger CP-3 §9/§12 open question 5 named: a
+  // single-label REVIEW verdict's review_queue row otherwise never gets a
+  // resolver suggestion. Same process, same DEFAULT_BACKOFF_CONFIG, no
+  // batch counters or escalation cap (neither applies — see
+  // src/server/single-label-resolve/worker.ts's own doc comment).
+  const singleLabelResolveWorker: SingleLabelResolveWorkerHandle = startSingleLabelResolveWorker({
+    db,
+    workerIdPrefix,
+    concurrency: singleLabelResolveConcurrency,
+    leaseSeconds: RESOLVE_LEASE_SECONDS,
+    pollIntervalMs: POLL_INTERVAL_MS,
+    readLabelImage,
+    backoffConfig: DEFAULT_BACKOFF_CONFIG,
+    onLoopError: (error, workerId) => console.error(`[batch-worker] ${workerId} error:`, error),
+  });
+
   let shuttingDown = false;
   const shutdown = (signal: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
-    console.log(`[batch-worker] received ${signal} — stopping both pools (up to ${shutdownTimeoutMs}ms)...`);
+    console.log(`[batch-worker] received ${signal} — stopping all worker loops (up to ${shutdownTimeoutMs}ms)...`);
     extractPool.stop();
     resolvePool.stop();
+    singleLabelResolveWorker.stop();
 
     // Bounded, not open-ended: `stop()` only signals every loop to exit
     // after its CURRENT iteration — it cannot itself detect a loop that
@@ -126,7 +157,7 @@ function main(): void {
     // shutdown, and whatever deploy tooling sent SIGTERM, forever.
     const timedOut = Symbol("shutdown-timeout");
     const timeout = new Promise<typeof timedOut>((resolve) => setTimeout(() => resolve(timedOut), shutdownTimeoutMs));
-    Promise.race([Promise.all([extractPool.done, resolvePool.done]), timeout])
+    Promise.race([Promise.all([extractPool.done, resolvePool.done, singleLabelResolveWorker.done]), timeout])
       .then((result) => {
         if (result === timedOut) {
           console.error(`[batch-worker] did not stop within ${shutdownTimeoutMs}ms — forcing exit. A loop may be stuck mid-claim.`);

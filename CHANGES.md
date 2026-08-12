@@ -53,14 +53,18 @@ low-light golden-set cases.
   router behavior, not a vacuous pass.
 - Confirmed all six images (`golden-set/images/case-17-*.jpg` through `case-22-*.jpg`) decode
   through the real `preprocessImage` pipeline (LH-010) without rejection, at 800-1173px on
-  the long edge — above the 640px floor `isLowImageQuality` checks. This confirms the tests'
-  default `PreprocessingSignal` fixture (`rejected: false, longEdgePx: 1568`,
-  `test-support.ts`'s existing convention) does not paper over a real preprocessing-level
-  rejection.
+  the long edge — above the 640px floor `isLowImageQuality` checks. This is a narrow, purely
+  technical claim about the decode step, not a claim about the golden-set manifest's own
+  `verified` field (still `false` on every case — no human has confirmed the images show what
+  their spec claims). It confirms the tests' default `PreprocessingSignal` fixture
+  (`rejected: false, longEdgePx: 1568`, `test-support.ts`'s existing convention) does not
+  paper over a real preprocessing-level rejection.
 
-**How to run it.** `pnpm test -- src/server/router/golden-image-quality.test.ts`. No live
-model call and no real money — every fixture is a hand-built, clearly-labeled stand-in for a
-Haiku response, not a live extraction.
+**How to run it.** `source .factory-env` first — every test command needs `DATABASE_URL`
+pointed at this ticket's own worktree database, even though this specific suite touches no
+table. `pnpm test -- src/server/router/golden-image-quality.test.ts`. No live model call and
+no real money — every fixture is a hand-built, clearly-labeled stand-in for a Haiku response,
+not a live extraction.
 
 **Rollback.** Delete `src/server/router/golden-image-quality.test.ts`. No production code
 changed.

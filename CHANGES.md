@@ -4,31 +4,86 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-474 — PR #26 review: GitHub CodeRabbit, 24 findings, 21 fixed, 3 dismissed (2026-08-12)
+
+**What changed.** GitHub's CodeRabbit reviewed PR #26's full diff — this ticket's whole batch
+queue and worker pool — and posted 24 comments, `CHANGES_REQUESTED`. This is a third,
+independent pass, after two local CodeRabbit rounds already folded into the branch. Every
+finding was checked against the current code and the CP-3 design doc, not taken on faith.
+Three were real correctness bugs. Two more looked like bugs but are this design's own stated
+intent. The remaining 19 were hardening, test-quality, and documentation findings.
+
+- **A batch's own `enqueueExtractItems` never checked its status.** A caller could enqueue
+  `EXTRACT` items into a batch that had already started, finished, or failed. `total_count`
+  would climb, but the claim query only ever pulls from a `RUNNING` batch (`claim.ts`). Those
+  items would then sit forever, invisible and unprocessed. Added a `FOR UPDATE` lock and a
+  `PENDING`-only guard, matching the sequence this module's own comment already stated:
+  enqueue while `PENDING`, then `startBatchJob` flips it to `RUNNING`.
+- **A worker pool's own error backoff never actually escalated.** `consecutiveErrors` reset
+  to 0 right after a successful claim, before `processClaim` had a chance to fail. A
+  `processClaim` that throws on every single attempt — a systemic config bug, a dead
+  dependency — never saw its backoff grow past the 1-second floor. It hammered the failing
+  dependency once a second, forever, instead of backing off toward the 30-second ceiling.
+  Moved the reset to after a full claim-and-process cycle completes without throwing.
+- **`last_error` stored an upstream SDK error message verbatim, with no length bound.** A
+  human reads this column on a dashboard. Nothing capped how much of a raw exception's text
+  could land in the database — potentially a large stack dump, or something an upstream
+  library should not have included. Added a 2000-character cap in `markFailed`, the single
+  place both workers' failures actually get written.
+
+Two findings looked like bugs but are this design's own stated intent, quoted and dismissed
+rather than changed. The escalation cap reserves budget on *every* Sonnet attempt, retries
+included — CP-3 §6.2 is explicit that this is what keeps the cost bound real, not an
+oversight. The backoff delay is deliberately not re-capped after adding jitter — CP-3 §5.2's
+own formula, and its own words: the scheduled delay is "not an upper bound on wall-clock
+time." Both got a test proving the actual, intentional behavior, not a code change.
+
+The rest closes three more input-validation gaps this ticket had left implicit: `leaseSeconds`,
+`WorkerPoolConfig`, and an empty `flaggedFields` snapshot all now reject bad input at the
+boundary instead of failing later, confusingly. A redundant image-resize calculation is gone —
+the router now reads the dimensions `sharp` actually produced, closing a latent drift risk. A
+worker-pool shutdown that could hang forever is now bounded by a configurable timeout. One
+comment claimed a type guarantee that was never actually enforced where it claimed; the
+comment is now accurate. Nine more findings strengthened tests: real assertions in place of
+type casts, silent comments, and loose `.rejects.toThrow()` calls with no argument. One
+nitpick — shared JPEG-quality constants — stayed out of scope a third time: the shared value
+lives in a module this ticket's own code explicitly does not import from.
+
+Every finding and its fix is recorded in `factory/review-findings.jsonl`.
+
+**How to run it.** Source `.factory-env` first. `pnpm test -- src/server/batch-queue
+src/server/resolver/queue.test.ts` runs this ticket's suite — 122 tests across 11 files, all
+green (up from 91 before this round). `pnpm test` runs the full suite — 1184 tests, 107 files.
+
+**Rollback.** `git revert` this commit. No schema change this round — the migration and its
+own rollback procedure are unchanged from the original TRO-474 entry below.
+
 ## TRO-474 — LH-041: job queue + worker pool (2026-08-11)
 
 **What changed.** This ticket builds the batch queue that CP-3 designed: a Postgres-backed
 job queue, two worker pools, backoff, and a hard cap on Sonnet spend. It advances TH-R4
 (batch upload of 200-300 labels, each processed and reported on its own).
 
-A new table, `batch_queue_items`, holds two logical queues in one place — `EXTRACT` rows
-run the Haiku-extract-then-route cascade for one label; `RESOLVE` rows run the Sonnet
+A new table, `batch_queue_items`, holds two logical queues in one place. `EXTRACT` rows
+run the Haiku-extract-then-route cascade for one label. `RESOLVE` rows run the Sonnet
 resolver for one escalated label. A worker claims a row with one atomic SQL statement
 (`FOR UPDATE SKIP LOCKED`). Every claim creates a new `claim_token`, even a reclaim of the
-same row. A completion write updates the row only when its `claim_token` still matches —
-the write rejects a worker whose lease already expired, even if that worker is still
-running. The transaction discards that worker's result instead of double-applying it.
+same row. A completion write updates the row only when its `claim_token` still matches.
+The write rejects a worker whose lease already expired, even if that worker is still
+running. The transaction discards that stale result — it never double-applies one.
 `claim.test.ts` and `complete.test.ts` fire ten workers at one row and prove exactly one
-wins; they also force a lease to expire mid-claim and prove the late worker's write
+wins. They also force a lease to expire mid-claim, and prove the late worker's write
 touches nothing.
 
-Two separate worker pools run the two queues — 5 extract-workers, 2 resolve-workers,
-both proposed defaults from CP-3 §4.4, both environment variables
-(`BATCH_WORKER_CONCURRENCY`, `BATCH_RESOLVE_WORKER_CONCURRENCY`), not hard-coded numbers.
-A retryable failure (a 429, a 5xx, a network drop) releases its item for a later retry with
-exponential backoff and jitter; a non-retryable one (a bad request, a corrupt image) fails
-the item on the first try. The worker never sleeps holding a claim — it releases and moves
-on. A 429 also opens a short, whole-pool cooldown, so four other workers do not immediately
-re-discover the same throttled endpoint.
+Two separate worker pools run the two queues. Each pool's size is a configurable default:
+5 extract-workers, 2 resolve-workers, both proposed by CP-3 §4.4. An environment variable
+overrides either one at startup (`BATCH_WORKER_CONCURRENCY`,
+`BATCH_RESOLVE_WORKER_CONCURRENCY`) — never a hard-coded number. A retryable failure (a
+429, a 5xx, a network drop) releases its item for a later retry with exponential backoff
+and jitter; a non-retryable one (a bad request, a corrupt image) fails the item on the
+first try. The worker never sleeps holding a claim — it releases and moves on. A 429 also
+opens a short, whole-pool cooldown, so four other workers do not immediately re-discover
+the same throttled endpoint.
 
 The Sonnet escalation cap (CP-1's own deferred question, settled by CP-3 §6) reserves one
 unit of a batch's call budget before every Sonnet attempt, first try or retry alike — not
@@ -76,9 +131,23 @@ calls, in about 16 seconds (04:03:31.003 to 04:03:46.995, observed from `batch_j
 `completedAt`).
 
 **Rollback.** Revert this commit, then run `pnpm db:migrate` again on the reverted branch.
-Drizzle does not generate a down migration — once `0002_batch_queue` is applied and journaled,
-undoing it is a manual step: drop `batch_queue_items`, drop `batch_jobs.sonnet_call_count`, and
-drop `review_queue.resolver_skip_reason` by hand, on top of the code revert.
+Drizzle does not generate a down migration. Once `0002_batch_queue` is applied and
+journaled, undoing it is a manual step, in this order (drop the table before its own enum
+types — Postgres refuses to drop a type still in use):
+
+```sql
+DROP TABLE "batch_queue_items";
+DROP TYPE "batch_queue_item_kind";
+DROP TYPE "batch_queue_item_status";
+ALTER TABLE "batch_jobs" DROP COLUMN "sonnet_call_count";
+ALTER TABLE "review_queue" DROP COLUMN "resolver_skip_reason";
+```
+
+Dropping `batch_queue_items` also drops its own foreign keys, indexes, and CHECK
+constraints — nothing extra to do for those by hand. Dropping the two columns above also
+drops their own CHECK constraints (`batch_jobs_sonnet_call_count_bounded`,
+`review_queue_resolver_output_skip_reason_exclusive`): Postgres cannot keep a constraint
+that names a column no longer there.
 
 ## TRO-473 — local CodeRabbit review round 3: 4 findings, 4 fixed (2026-08-11)
 

@@ -10,8 +10,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { db } from "../../lib/db";
 import { batchJobs, batchQueueItems } from "../../lib/db/schema";
 import { claimNextBatchQueueItem } from "./claim";
-import { markDone, markFailed, maybeCompleteBatchJob, releaseForRetry } from "./complete";
-import { cleanupBatchJobFixture, createApplicationAndImageFixture, createBatchJobFixture, enqueueExtractItemFixture } from "./test-support";
+import { markDone, markFailed, MAX_LAST_ERROR_LENGTH, maybeCompleteBatchJob, releaseForRetry } from "./complete";
+import { cleanupBatchJobFixture, createApplicationAndImageFixture, createBatchJobFixture, dbPastTimestamp, enqueueExtractItemFixture } from "./test-support";
 
 const createdBatchJobIds: number[] = [];
 
@@ -53,7 +53,7 @@ describe("markDone", () => {
 
     // Simulate the lease expiring, and a second worker reclaiming the row —
     // without a real sleep (lessons.md #8).
-    await db.update(batchQueueItems).set({ leaseExpiresAt: new Date(Date.now() - 1000) }).where(eq(batchQueueItems.id, staleClaim.id));
+    await db.update(batchQueueItems).set({ leaseExpiresAt: await dbPastTimestamp(db, 1) }).where(eq(batchQueueItems.id, staleClaim.id));
     const freshClaim = await claimNextBatchQueueItem(db, "EXTRACT", "worker-2", 60, { scopeToBatchJobId: batchJobId });
     expect(freshClaim?.id).toBe(staleClaim.id);
     expect(freshClaim?.claimToken).not.toBe(staleClaim.claimToken);
@@ -119,7 +119,7 @@ describe("releaseForRetry", () => {
   it("does not release using a stale claim_token", async () => {
     const batchJobId = await trackBatch();
     const claimed = await claimedFixture(batchJobId);
-    await db.update(batchQueueItems).set({ leaseExpiresAt: new Date(Date.now() - 1000) }).where(eq(batchQueueItems.id, claimed.id));
+    await db.update(batchQueueItems).set({ leaseExpiresAt: await dbPastTimestamp(db, 1) }).where(eq(batchQueueItems.id, claimed.id));
     const reclaimed = await claimNextBatchQueueItem(db, "EXTRACT", "worker-2", 60, { scopeToBatchJobId: batchJobId });
 
     const staleGuarded = await releaseForRetry(db, claimed.id, claimed.claimToken as string, 5000);
@@ -158,13 +158,37 @@ describe("markFailed", () => {
   it("does not fail using a stale claim_token", async () => {
     const batchJobId = await trackBatch();
     const claimed = await claimedFixture(batchJobId);
-    await db.update(batchQueueItems).set({ leaseExpiresAt: new Date(Date.now() - 1000) }).where(eq(batchQueueItems.id, claimed.id));
+    await db.update(batchQueueItems).set({ leaseExpiresAt: await dbPastTimestamp(db, 1) }).where(eq(batchQueueItems.id, claimed.id));
     await claimNextBatchQueueItem(db, "EXTRACT", "worker-2", 60, { scopeToBatchJobId: batchJobId });
 
     const staleGuarded = await markFailed(db, claimed.id, claimed.claimToken as string, "should not apply");
     expect(staleGuarded).toBe(false);
     const [row] = await db.select().from(batchQueueItems).where(eq(batchQueueItems.id, claimed.id));
     expect(row.lastError).not.toBe("should not apply");
+  });
+
+  it("truncates a last_error longer than MAX_LAST_ERROR_LENGTH instead of storing it verbatim", async () => {
+    const batchJobId = await trackBatch();
+    const claimed = await claimedFixture(batchJobId);
+    const huge = "x".repeat(MAX_LAST_ERROR_LENGTH + 500);
+
+    await markFailed(db, claimed.id, claimed.claimToken as string, huge);
+
+    const [row] = await db.select().from(batchQueueItems).where(eq(batchQueueItems.id, claimed.id));
+    expect(row.lastError).not.toBe(huge);
+    expect(row.lastError?.length).toBeLessThan(huge.length);
+    expect(row.lastError).toContain(`${huge.length} chars total`);
+  });
+
+  it("leaves a last_error at or under the cap completely untouched", async () => {
+    const batchJobId = await trackBatch();
+    const claimed = await claimedFixture(batchJobId);
+    const short = "corrupt image: VipsJpeg decode failed";
+
+    await markFailed(db, claimed.id, claimed.claimToken as string, short);
+
+    const [row] = await db.select().from(batchQueueItems).where(eq(batchQueueItems.id, claimed.id));
+    expect(row.lastError).toBe(short);
   });
 });
 

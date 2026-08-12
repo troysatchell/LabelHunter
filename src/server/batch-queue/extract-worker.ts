@@ -29,7 +29,6 @@ import { db as defaultDb } from "../../lib/db";
 import type { FieldName } from "../../lib/db/enums";
 import { batchJobs, batchQueueItems, fieldResults, verifications } from "../../lib/db/schema";
 import { extractLabel as defaultExtractLabel, type ExtractLabelOptions, type HaikuExtractionResult, type PreprocessedLabelImage } from "../extractor";
-import { computeResizeDimensions, HAIKU_MAX_LONG_EDGE_PX } from "../preprocessing";
 import {
   routeLabel,
   type ApplicationRecord,
@@ -199,14 +198,18 @@ export async function processExtractClaim(item: ClaimedBatchQueueItem, deps: Par
 
     const original = await d.readLabelImage(labelImageRow.storagePath);
     const haikuVariant = await resizeStoredOriginalToHaikuVariant(original, labelImageRow.widthPx, labelImageRow.heightPx);
-    const extractorImage: PreprocessedLabelImage = { data: haikuVariant.toString("base64"), mediaType: "image/jpeg" };
+    const extractorImage: PreprocessedLabelImage = { data: haikuVariant.buffer.toString("base64"), mediaType: "image/jpeg" };
     extraction = await (d.extractLabel ?? defaultExtractLabel)(extractorImage, { client: d.anthropicClient });
 
     const applicationRecord = toApplicationRecord(application);
-    const haikuDims = computeResizeDimensions({ width: labelImageRow.widthPx, height: labelImageRow.heightPx }, HAIKU_MAX_LONG_EDGE_PX);
+    // longEdgePx comes from the variant sharp ACTUALLY produced
+    // (`haikuVariant.dims`), not a second, separately-computed
+    // `computeResizeDimensions` call against the same width/height — one
+    // real source of truth for what was actually sent to the model,
+    // instead of two call sites that could silently drift apart.
     routerResult = routeLabel(extraction, applicationRecord, d.comparators, d.warningResult ?? null, {
       rejected: false,
-      longEdgePx: Math.max(haikuDims.width, haikuDims.height),
+      longEdgePx: Math.max(haikuVariant.dims.width, haikuVariant.dims.height),
     });
 
     // Mirrors verify/route.ts's own defensive invariant check exactly —

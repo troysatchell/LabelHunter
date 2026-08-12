@@ -19,26 +19,40 @@
  * detection, work already done once by whoever saved `original`.
  */
 import sharp from "sharp";
-import { computeResizeDimensions, HAIKU_MAX_LONG_EDGE_PX, SONNET_MAX_LONG_EDGE_PX } from "../preprocessing";
+import { computeResizeDimensions, type Dimensions, HAIKU_MAX_LONG_EDGE_PX, SONNET_MAX_LONG_EDGE_PX } from "../preprocessing";
 
-async function resizeTo(original: Buffer, width: number, height: number, maxLongEdgePx: number, jpegQuality: number): Promise<Buffer> {
+export interface ResizedVariant {
+  buffer: Buffer;
+  /** The ACTUAL dimensions this resize produced, computed once here and
+   * handed back rather than left for a caller to re-derive separately. A
+   * caller that needs `longEdgePx` for its own router input (e.g.
+   * `extract-worker.ts`) should read it from here, not call
+   * `computeResizeDimensions` a second time against the same inputs — two
+   * separate call sites computing "the same" number is exactly the kind of
+   * duplication that silently drifts apart the day only one of them gets
+   * updated. */
+  dims: Dimensions;
+}
+
+async function resizeTo(original: Buffer, width: number, height: number, maxLongEdgePx: number, jpegQuality: number): Promise<ResizedVariant> {
   const dims = computeResizeDimensions({ width, height }, maxLongEdgePx);
-  return sharp(original)
+  const buffer = await sharp(original)
     .resize(dims.width, dims.height, { fit: "inside", withoutEnlargement: true })
     .jpeg({ quality: jpegQuality })
     .toBuffer();
+  return { buffer, dims };
 }
 
 /** At most `HAIKU_MAX_LONG_EDGE_PX` on its long edge — matches
  * `preprocessImage`'s own `haikuVariant` quality (85). `width`/`height` are
  * `original`'s own dimensions (`label_images.widthPx`/`heightPx`), not
  * re-measured here — the caller already has them from the database row. */
-export async function resizeStoredOriginalToHaikuVariant(original: Buffer, width: number, height: number): Promise<Buffer> {
+export async function resizeStoredOriginalToHaikuVariant(original: Buffer, width: number, height: number): Promise<ResizedVariant> {
   return resizeTo(original, width, height, HAIKU_MAX_LONG_EDGE_PX, 85);
 }
 
 /** At most `SONNET_MAX_LONG_EDGE_PX` on its long edge — matches
  * `preprocessImage`'s own `sonnetVariant` quality (88). */
-export async function resizeStoredOriginalToSonnetVariant(original: Buffer, width: number, height: number): Promise<Buffer> {
+export async function resizeStoredOriginalToSonnetVariant(original: Buffer, width: number, height: number): Promise<ResizedVariant> {
   return resizeTo(original, width, height, SONNET_MAX_LONG_EDGE_PX, 88);
 }

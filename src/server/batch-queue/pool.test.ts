@@ -11,8 +11,28 @@ import { afterEach, describe, expect, it } from "vitest";
 import { db } from "../../lib/db";
 import { batchQueueItems } from "../../lib/db/schema";
 import { markDone } from "./complete";
-import { startWorkerPool } from "./pool";
+import { computeLoopErrorBackoffMs, LOOP_ERROR_BASE_BACKOFF_MS, LOOP_ERROR_MAX_BACKOFF_MS, startWorkerPool } from "./pool";
 import { cleanupBatchJobFixture, createApplicationAndImageFixture, createBatchJobFixture, enqueueExtractItemFixture } from "./test-support";
+
+describe("computeLoopErrorBackoffMs — the pure formula", () => {
+  it("doubles from the base for each consecutive error, and caps at the max", () => {
+    expect(computeLoopErrorBackoffMs(1)).toBe(LOOP_ERROR_BASE_BACKOFF_MS); // 1000
+    expect(computeLoopErrorBackoffMs(2)).toBe(2000);
+    expect(computeLoopErrorBackoffMs(3)).toBe(4000);
+    expect(computeLoopErrorBackoffMs(4)).toBe(8000);
+    expect(computeLoopErrorBackoffMs(5)).toBe(16000);
+    expect(computeLoopErrorBackoffMs(6)).toBe(LOOP_ERROR_MAX_BACKOFF_MS); // 32000 would exceed the 30000 cap
+    expect(computeLoopErrorBackoffMs(10)).toBe(LOOP_ERROR_MAX_BACKOFF_MS); // stays capped, does not keep growing
+  });
+
+  it("accepts a custom config — how the new test below runs fast without waiting out the real 1s/30s values", () => {
+    const small = { baseMs: 20, maxMs: 100 };
+    expect(computeLoopErrorBackoffMs(1, small)).toBe(20);
+    expect(computeLoopErrorBackoffMs(2, small)).toBe(40);
+    expect(computeLoopErrorBackoffMs(3, small)).toBe(80);
+    expect(computeLoopErrorBackoffMs(4, small)).toBe(100); // capped
+  });
+});
 
 const createdBatchJobIds: number[] = [];
 
@@ -27,6 +47,36 @@ async function trackBatch(): Promise<number> {
   createdBatchJobIds.push(id);
   return id;
 }
+
+function baseConfig(): Parameters<typeof startWorkerPool>[0] {
+  return {
+    db,
+    kind: "EXTRACT",
+    concurrency: 1,
+    leaseSeconds: 60,
+    workerIdPrefix: "test-pool-validation",
+    pollIntervalMs: 20,
+    processClaim: async () => ({ kind: "done" }),
+  };
+}
+
+describe("startWorkerPool — config validation (standing rule 13)", () => {
+  it("rejects a non-positive or non-integer concurrency before starting any loop", () => {
+    expect(() => startWorkerPool({ ...baseConfig(), concurrency: 0 })).toThrow(RangeError);
+    expect(() => startWorkerPool({ ...baseConfig(), concurrency: -1 })).toThrow(RangeError);
+    expect(() => startWorkerPool({ ...baseConfig(), concurrency: 1.5 })).toThrow(RangeError);
+  });
+
+  it("rejects a non-positive or non-finite leaseSeconds", () => {
+    expect(() => startWorkerPool({ ...baseConfig(), leaseSeconds: 0 })).toThrow(RangeError);
+    expect(() => startWorkerPool({ ...baseConfig(), leaseSeconds: Number.NaN })).toThrow(RangeError);
+  });
+
+  it("rejects a non-positive or non-finite pollIntervalMs", () => {
+    expect(() => startWorkerPool({ ...baseConfig(), pollIntervalMs: 0 })).toThrow(RangeError);
+    expect(() => startWorkerPool({ ...baseConfig(), pollIntervalMs: Number.POSITIVE_INFINITY })).toThrow(RangeError);
+  });
+});
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -155,11 +205,61 @@ describe("startWorkerPool — whole-pool cooldown (CP-3 §5.3)", () => {
     }
 
     deadline = Date.now() + 3000;
-    while (doneAts.length === 0 && Date.now() < deadline) await sleep(10);
+    while (doneAts.length < fresh.length && Date.now() < deadline) await sleep(10);
     pool.stop();
     await pool.done;
 
-    expect(doneAts.length).toBeGreaterThan(0);
+    // ALL FOUR seeded items eventually drain once the cooldown clears —
+    // not just the first one claimed after it. The cooldown gates the
+    // pool's claiming for a while, it does not permanently starve it.
+    expect(doneAts).toHaveLength(4);
     expect(doneAts[0] - rateLimitAt).toBeGreaterThanOrEqual(COOLDOWN_MS - 50); // small scheduling slack
+  });
+});
+
+describe("startWorkerPool — this loop's own error backoff (distinct from the item/rate-limit backoffs above)", () => {
+  it("escalates consecutiveErrors across repeated processClaim throws, instead of wrongly resetting after every successful claim", async () => {
+    // Four seeded items, one loop, processClaim throws every time: each
+    // throw leaves its item CLAIMED with a live lease (processClaim never
+    // reaches a completion call), so each of the four throws corresponds
+    // to a genuinely NEW claim, never a reclaim of the same row — the
+    // sequence below is really four separate attempts, not one repeated.
+    const batchJobId = await trackBatch();
+    for (let i = 0; i < 4; i++) {
+      const { applicationId, labelImageId } = await createApplicationAndImageFixture(db, batchJobId, `err${i}.jpg`);
+      await enqueueExtractItemFixture(db, { batchJobId, applicationId, labelImageId });
+    }
+
+    const seenConsecutiveErrors: number[] = [];
+    const pool = startWorkerPool({
+      db,
+      kind: "EXTRACT",
+      concurrency: 1, // a single loop keeps the consecutiveErrors sequence deterministic
+      leaseSeconds: 60,
+      workerIdPrefix: "test-pool-error-backoff",
+      pollIntervalMs: 10,
+      scopeToBatchJobId: batchJobId,
+      loopErrorBackoff: { baseMs: 20, maxMs: 200 }, // real setTimeout delays, just small ones — no fake timers needed
+      processClaim: async () => {
+        throw new Error("processClaim always fails");
+      },
+      onLoopError: (_error, _workerId, consecutiveErrors) => {
+        seenConsecutiveErrors.push(consecutiveErrors);
+      },
+    });
+
+    const deadline = Date.now() + 3000;
+    while (seenConsecutiveErrors.length < 4 && Date.now() < deadline) {
+      await sleep(10);
+    }
+    pool.stop();
+    await pool.done;
+
+    // The bug this guards against: resetting consecutiveErrors right after
+    // the CLAIM succeeded, before processClaim had a chance to throw, meant
+    // a processClaim that fails on every single attempt never actually
+    // escalated — it always incremented from 0, landing on 1 forever:
+    // [1, 1, 1, 1]. Fixed, a run of throws climbs: 1, 2, 3, 4.
+    expect(seenConsecutiveErrors).toEqual([1, 2, 3, 4]);
   });
 });

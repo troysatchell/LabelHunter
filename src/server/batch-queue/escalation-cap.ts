@@ -30,12 +30,19 @@ export function computeSonnetCallCapThreshold(totalCount: number): number {
 
 /**
  * Closed set of `resolverSkipReason` values this ticket can produce (CP-3
- * §6.2/§6.4) — passed to `../resolver/queue.ts`'s
- * `insertSkippedReviewQueueEntry`, whose own `resolverSkipReason` parameter
- * takes this type rather than a bare `string`, so a typo in a future
- * second skip reason fails to compile instead of silently writing an
- * unrecognized value `readReviewQueueOutcome` (`resolve-worker.ts`) would
- * then be unable to interpret.
+ * §6.2/§6.4). `resolve-worker.ts` always passes
+ * `ESCALATION_CAP_EXCEEDED_SKIP_REASON` (this type) into
+ * `../resolver/queue.ts`'s `insertSkippedReviewQueueEntry`, never a
+ * hand-written string, so a typo in a future second skip reason fails to
+ * compile at ITS call site.
+ *
+ * This is NOT enforced at `insertSkippedReviewQueueEntry`'s own boundary —
+ * `InsertSkippedReviewQueueEntryParams.resolverSkipReason` there is a bare
+ * `string`, deliberately (that module's own comment: it "stays decoupled
+ * from that vocabulary," avoiding a circular import between `resolver` and
+ * `batch-queue`). The type safety here is real, but local: it protects
+ * THIS module's own callers, not every possible caller of
+ * `insertSkippedReviewQueueEntry`.
  */
 export const RESOLVER_SKIP_REASONS = ["ESCALATION_CAP_EXCEEDED"] as const;
 export type ResolverSkipReason = (typeof RESOLVER_SKIP_REASONS)[number];

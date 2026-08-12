@@ -51,11 +51,20 @@ export interface WorkerPoolConfig {
   /** Test-only — see `claim.ts`'s own `ClaimNextBatchQueueItemOptions` doc
    * comment. Never set by the real entry point. */
   scopeToBatchJobId?: number;
+  /** Test-only override for this loop's own error backoff
+   * (`computeLoopErrorBackoffMs`) — lets a test prove escalation across
+   * several consecutive failures without waiting out the real
+   * `LOOP_ERROR_BASE_BACKOFF_MS`/`LOOP_ERROR_MAX_BACKOFF_MS` values for
+   * real. Never set by the real entry point. */
+  loopErrorBackoff?: LoopErrorBackoffConfig;
   /** Called with a loop's own uncaught error (e.g. a lost database
    * connection) — the loop itself never dies from one; it logs (via this
    * hook, defaulting to `console.error`) and keeps going after a short
-   * backoff. */
-  onLoopError?: (error: unknown, workerId: string) => void;
+   * backoff. `consecutiveErrors` is this loop's own running count AFTER
+   * this error (the value `computeLoopErrorBackoffMs` is about to use) —
+   * exposed mainly so a test can observe the escalation sequence directly
+   * instead of measuring real elapsed time between sleeps. */
+  onLoopError?: (error: unknown, workerId: string, consecutiveErrors: number) => void;
 }
 
 export interface WorkerPoolHandle {
@@ -86,13 +95,34 @@ function sleep(ms: number): Promise<void> {
 export const LOOP_ERROR_BASE_BACKOFF_MS = 1000;
 export const LOOP_ERROR_MAX_BACKOFF_MS = 30_000;
 
-function computeLoopErrorBackoffMs(consecutiveErrors: number): number {
-  return Math.min(LOOP_ERROR_BASE_BACKOFF_MS * 2 ** (consecutiveErrors - 1), LOOP_ERROR_MAX_BACKOFF_MS);
+export interface LoopErrorBackoffConfig {
+  baseMs: number;
+  maxMs: number;
+}
+
+const DEFAULT_LOOP_ERROR_BACKOFF: LoopErrorBackoffConfig = { baseMs: LOOP_ERROR_BASE_BACKOFF_MS, maxMs: LOOP_ERROR_MAX_BACKOFF_MS };
+
+export function computeLoopErrorBackoffMs(consecutiveErrors: number, config: LoopErrorBackoffConfig = DEFAULT_LOOP_ERROR_BACKOFF): number {
+  return Math.min(config.baseMs * 2 ** (consecutiveErrors - 1), config.maxMs);
 }
 
 /** Starts `config.concurrency` concurrent claim+process loops for one
  * queue `kind`, sharing one pool-wide cooldown coordinator (CP-3 §5.3). */
 export function startWorkerPool(config: WorkerPoolConfig): WorkerPoolHandle {
+  // Standing rule 13: validate at the boundary, before any loop starts —
+  // a bad value here is a caller bug (a misconfigured env var at the
+  // entry-point layer, CP-3 §4.4/§4.5), not something that should surface
+  // later as an inscrutable claim/sleep failure deep inside a loop.
+  if (!Number.isInteger(config.concurrency) || config.concurrency <= 0) {
+    throw new RangeError(`startWorkerPool: concurrency must be a positive integer, got ${config.concurrency}`);
+  }
+  if (!Number.isFinite(config.leaseSeconds) || config.leaseSeconds <= 0) {
+    throw new RangeError(`startWorkerPool: leaseSeconds must be a finite number > 0, got ${config.leaseSeconds}`);
+  }
+  if (!Number.isFinite(config.pollIntervalMs) || config.pollIntervalMs <= 0) {
+    throw new RangeError(`startWorkerPool: pollIntervalMs must be a finite number > 0, got ${config.pollIntervalMs}`);
+  }
+
   const cooldown: PoolCooldownState = { cooldownUntilMs: 0 };
   let stopped = false;
   const onLoopError = config.onLoopError ?? ((error, workerId) => console.error(`[batch-queue] worker ${workerId} loop error:`, error));
@@ -111,8 +141,8 @@ export function startWorkerPool(config: WorkerPoolConfig): WorkerPoolHandle {
         const item = await claimNextBatchQueueItem(config.db, config.kind, workerId, config.leaseSeconds, {
           scopeToBatchJobId: config.scopeToBatchJobId,
         });
-        consecutiveErrors = 0; // the claim path itself is healthy again
         if (!item) {
+          consecutiveErrors = 0; // the claim path itself is healthy again
           await sleep(config.pollIntervalMs);
           continue;
         }
@@ -123,16 +153,25 @@ export function startWorkerPool(config: WorkerPoolConfig): WorkerPoolHandle {
         // delay (extract-worker.ts/resolve-worker.ts); this loop does not
         // wait on that delay itself, it just moves on.
         const outcome = await config.processClaim(item);
+        // Reset only once a FULL claim+process cycle finished without
+        // throwing — not right after the claim itself. Resetting earlier
+        // (the original bug) meant a `processClaim` that throws on every
+        // single attempt never actually escalated: the reset ran before
+        // `processClaim` had a chance to fail, so the catch block below
+        // always incremented from 0, landing on 1 forever instead of
+        // climbing 1, 2, 3, ... A "retry"/"failed" outcome is a NORMAL
+        // per-item result, not a loop-level error — it still resets this.
+        consecutiveErrors = 0;
         if (outcome.kind === "retry" && outcome.isRateLimit) {
           noteRateLimited(cooldown, outcome.delayMs ?? DEFAULT_POOL_COOLDOWN_MS, Date.now());
         }
       } catch (error) {
         consecutiveErrors += 1;
-        onLoopError(error, workerId);
+        onLoopError(error, workerId, consecutiveErrors);
         // A DB blip or an unexpected throw from processClaim must not
         // spin this loop hot forever — an escalating pause, distinct from
         // the item-level backoff this loop does not own.
-        await sleep(computeLoopErrorBackoffMs(consecutiveErrors));
+        await sleep(computeLoopErrorBackoffMs(consecutiveErrors, config.loopErrorBackoff));
       }
     }
   }

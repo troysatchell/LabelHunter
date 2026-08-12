@@ -263,7 +263,7 @@ export async function processResolveClaim(item: ClaimedBatchQueueItem, deps: Par
 
     resolverInput = {
       verificationId: item.verificationId as number,
-      image: { data: sonnetVariant.toString("base64"), mediaType: "image/jpeg" },
+      image: { data: sonnetVariant.buffer.toString("base64"), mediaType: "image/jpeg" },
       extraction: snapshot.extraction,
       application: toApplicationRecord(applicationRow),
       router: snapshot.router,

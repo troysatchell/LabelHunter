@@ -47,7 +47,17 @@ const RESOLVE_LEASE_SECONDS = 120;
  * constant claim attempts. */
 const POLL_INTERVAL_MS = 2000;
 
-function envConcurrency(name: string, fallback: number): number {
+/** How long shutdown waits for both pools to drain their CURRENT
+ * claim+process cycle before giving up and forcing exit (proposed, not
+ * measured). CP-3 §5.2: a worker never sleeps holding a claim, but ONE
+ * in-flight model call can still take a while — generous enough to let a
+ * normal call finish, short enough that a genuinely stuck loop does not
+ * hang a deploy's shutdown forever. Environment-variable driven for the
+ * same reason BATCH_WORKER_CONCURRENCY is (CP-3 §4.4): the right number
+ * depends on real deployed latency this ticket has not measured yet. */
+const DEFAULT_SHUTDOWN_TIMEOUT_MS = 30_000;
+
+function envPositiveInt(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined || raw === "") return fallback;
   const parsed = Number(raw);
@@ -59,8 +69,9 @@ function envConcurrency(name: string, fallback: number): number {
 }
 
 function main(): void {
-  const extractConcurrency = envConcurrency("BATCH_WORKER_CONCURRENCY", 5);
-  const resolveConcurrency = envConcurrency("BATCH_RESOLVE_WORKER_CONCURRENCY", 2);
+  const extractConcurrency = envPositiveInt("BATCH_WORKER_CONCURRENCY", 5);
+  const resolveConcurrency = envPositiveInt("BATCH_RESOLVE_WORKER_CONCURRENCY", 2);
+  const shutdownTimeoutMs = envPositiveInt("BATCH_WORKER_SHUTDOWN_TIMEOUT_MS", DEFAULT_SHUTDOWN_TIMEOUT_MS);
   const workerIdPrefix = `${process.pid}`;
 
   console.log(
@@ -104,11 +115,24 @@ function main(): void {
   const shutdown = (signal: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
-    console.log(`[batch-worker] received ${signal} — stopping both pools...`);
+    console.log(`[batch-worker] received ${signal} — stopping both pools (up to ${shutdownTimeoutMs}ms)...`);
     extractPool.stop();
     resolvePool.stop();
-    Promise.all([extractPool.done, resolvePool.done])
-      .then(() => {
+
+    // Bounded, not open-ended: `stop()` only signals every loop to exit
+    // after its CURRENT iteration — it cannot itself detect a loop that
+    // never finishes one (a hung network call with no timeout of its own,
+    // a bug). Without a race against a timeout here, that hangs the whole
+    // shutdown, and whatever deploy tooling sent SIGTERM, forever.
+    const timedOut = Symbol("shutdown-timeout");
+    const timeout = new Promise<typeof timedOut>((resolve) => setTimeout(() => resolve(timedOut), shutdownTimeoutMs));
+    Promise.race([Promise.all([extractPool.done, resolvePool.done]), timeout])
+      .then((result) => {
+        if (result === timedOut) {
+          console.error(`[batch-worker] did not stop within ${shutdownTimeoutMs}ms — forcing exit. A loop may be stuck mid-claim.`);
+          process.exit(1);
+          return;
+        }
         console.log("[batch-worker] stopped cleanly.");
         process.exit(0);
       })

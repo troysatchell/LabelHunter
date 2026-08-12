@@ -14,7 +14,7 @@
  * images, verifications, field results, review-queue rows, and batch queue
  * items in one shot.
  */
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import sharp from "sharp";
 import { db as defaultDb } from "../../lib/db";
 import { applications, batchJobs, batchQueueItems, labelImages, verifications } from "../../lib/db/schema";
@@ -28,6 +28,20 @@ type Db = typeof defaultDb;
  * just DB round-tripping. */
 export async function makeTestJpeg(width = 1200, height = 1600): Promise<Buffer> {
   return sharp({ create: { width, height, channels: 3, background: { r: 180, g: 180, b: 180 } } }).jpeg().toBuffer();
+}
+
+/**
+ * A timestamp `secondsAgo` seconds in Postgres's OWN past — for simulating
+ * an already-expired lease (`leaseExpiresAt`) without the clock-skew risk a
+ * Node-side `new Date(Date.now() - ...)` carries. Same reasoning as
+ * `enqueueExtractItemFixture`'s own `availableAt` comment above: the claim
+ * query's `lease_expires_at < now()` check runs entirely in Postgres's
+ * clock, so the timestamp a test backdates a lease to should come from
+ * that same clock, not the test process's.
+ */
+export async function dbPastTimestamp(db: Db = defaultDb, secondsAgo: number): Promise<Date> {
+  const [{ ts }] = await db.execute<{ ts: string }>(sql`SELECT (now() - (${secondsAgo} * interval '1 second')) AS ts`).then((r) => r.rows);
+  return new Date(ts);
 }
 
 export interface BatchJobFixtureOverrides {

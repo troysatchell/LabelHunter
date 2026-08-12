@@ -61,10 +61,32 @@ export interface ExtractPairing {
  * confirm "every pairing is now queued" should compare this against
  * `pairings.length` only loosely: a smaller number on a retry is the
  * expected, correct idempotent outcome, not an error.
+ *
+ * Requires `batch_jobs.status = 'PENDING'`, locked `FOR UPDATE` for the
+ * life of the transaction — the module comment above states the intended
+ * call order plainly: enqueue while PENDING, THEN `startBatchJob` flips it
+ * to RUNNING. The lock serializes against a concurrent `startBatchJob` call
+ * racing for the same row, and the status check rejects a caller bug
+ * (enqueueing into a batch that already started, completed, or failed)
+ * rather than silently inflating `total_count` for items the claim query
+ * (`claim.ts`, scoped to `status = 'RUNNING'`) would never pick up, or that
+ * would be enqueued after the batch already reported itself COMPLETED
+ * (standing rule 13: validate at the boundary where a caller's assumed
+ * state is not guaranteed).
  */
 export async function enqueueExtractItems(db: DbOrTx, batchJobId: number, pairings: ExtractPairing[]): Promise<number> {
   if (pairings.length === 0) return 0;
   return db.transaction(async (tx) => {
+    const [job] = await tx.select({ status: batchJobs.status }).from(batchJobs).where(eq(batchJobs.id, batchJobId)).for("update");
+    if (!job) {
+      throw new Error(`enqueueExtractItems: batch job ${batchJobId} does not exist`);
+    }
+    if (job.status !== "PENDING") {
+      throw new Error(
+        `enqueueExtractItems: batch job ${batchJobId} is ${job.status}, not PENDING — cannot enqueue EXTRACT items into a batch that has already started, completed, or failed`,
+      );
+    }
+
     const rows = await tx
       .insert(batchQueueItems)
       .values(

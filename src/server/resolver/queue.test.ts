@@ -425,9 +425,23 @@ describe("insertSkippedReviewQueueEntry — real database (LH-041 / TRO-474, CP-
     const { applicationId, verificationId } = await makeVerificationFixture();
     try {
       await insertSkippedReviewQueueEntry({ verificationId, reason: "AMBIGUOUS_ABV", resolverSkipReason: "ESCALATION_CAP_EXCEEDED" });
-      await expect(
-        insertSkippedReviewQueueEntry({ verificationId, reason: "AMBIGUOUS_ABV", resolverSkipReason: "ESCALATION_CAP_EXCEEDED" }),
-      ).rejects.toThrow();
+
+      // Checks the SPECIFIC constraint fired, not just "something threw" —
+      // same reasoning as the CHECK-constraint test below: a bare
+      // `.rejects.toThrow()` would pass just as happily if this started
+      // failing for an unrelated reason (a dropped connection, a typo'd
+      // column), and a silently-broken duplicate guard is exactly the kind
+      // of bug that stays invisible until TRO-506's own race actually
+      // happens in production.
+      let caught: unknown;
+      try {
+        await insertSkippedReviewQueueEntry({ verificationId, reason: "AMBIGUOUS_ABV", resolverSkipReason: "ESCALATION_CAP_EXCEEDED" });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(Error);
+      const cause = (caught as Error).cause;
+      expect(String(cause instanceof Error ? cause.message : cause)).toMatch(/review_queue_verification_id_unique/);
     } finally {
       await cleanup(applicationId);
     }

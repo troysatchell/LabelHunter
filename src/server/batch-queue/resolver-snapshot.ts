@@ -63,6 +63,18 @@ export function buildResolverInputSnapshot(
   router: LabelRouterResult,
   flaggedFields: FlaggedField[],
 ): ResolverInputSnapshotV1 {
+  if (flaggedFields.length === 0) {
+    // Standing rule 13: validate at the boundary. parseResolverInputSnapshot
+    // below — the READ side of this same snapshot — rejects an empty
+    // flaggedFields unconditionally; writing one here would only defer that
+    // same failure to whichever RESOLVE worker reads this row back later,
+    // with a far less useful stack trace pointing at the wrong module.
+    // deriveFlaggedFields's own contract guarantees a non-empty result for
+    // any genuine REVIEW verdict — an empty array reaching here means a
+    // caller (or a future change to deriveFlaggedFields) broke that
+    // guarantee, and should fail loudly right here, not downstream.
+    throw new Error("buildResolverInputSnapshot: flaggedFields must not be empty — a RESOLVE item with nothing to ask about can never be resolved.");
+  }
   return { schemaVersion: RESOLVER_INPUT_SCHEMA_VERSION, extraction, router, flaggedFields };
 }
 

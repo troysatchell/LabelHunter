@@ -32,6 +32,26 @@ function claimedGuard(id: number, claimToken: string) {
   return and(eq(batchQueueItems.id, id), eq(batchQueueItems.claimToken, claimToken), eq(batchQueueItems.status, "CLAIMED"));
 }
 
+/**
+ * Cap on the length of `last_error` actually written to the database. This
+ * is an operational diagnostic string a human reads on a dashboard (CP-3's
+ * own framing: "a human reading the last_error... naming which... case it
+ * was") — not label data compared against statutory text, so
+ * `resolver/input-validation.ts`'s much stricter "never truncate, reject
+ * instead" rule governs a different problem, not this one. Generous enough
+ * to keep a genuinely useful message (including a short SQL error detail)
+ * intact; short enough to bound storage and limit how much of an upstream
+ * SDK error's raw text (which this module does not otherwise inspect or
+ * classify — CP-3 §8 says only that last_error "records the... message,"
+ * not a structured taxonomy) ever lands in the database.
+ */
+export const MAX_LAST_ERROR_LENGTH = 2000;
+
+function truncateLastError(message: string): string {
+  if (message.length <= MAX_LAST_ERROR_LENGTH) return message;
+  return `${message.slice(0, MAX_LAST_ERROR_LENGTH)}… (truncated, ${message.length} chars total)`;
+}
+
 /** Marks a `CLAIMED` row `DONE`. Returns `false` (and writes nothing) when
  * `claimToken` no longer matches the row's current one. */
 export async function markDone(db: DbOrTx, id: number, claimToken: string): Promise<boolean> {
@@ -68,7 +88,7 @@ export async function releaseForRetry(db: DbOrTx, id: number, claimToken: string
 export async function markFailed(db: DbOrTx, id: number, claimToken: string, lastError: string): Promise<boolean> {
   const rows = await db
     .update(batchQueueItems)
-    .set({ status: "FAILED", lastError, claimedBy: null, claimToken: null, claimedAt: null, leaseExpiresAt: null })
+    .set({ status: "FAILED", lastError: truncateLastError(lastError), claimedBy: null, claimToken: null, claimedAt: null, leaseExpiresAt: null })
     .where(claimedGuard(id, claimToken))
     .returning({ id: batchQueueItems.id });
   return rows.length > 0;

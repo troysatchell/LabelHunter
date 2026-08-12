@@ -46,7 +46,7 @@ describe("enqueueExtractItems (CP-3 §2.2 — idempotent enqueue)", () => {
   it("enqueues one EXTRACT row per (application, image) pairing, and sets total_count to match", async () => {
     // totalCount: 0 — the real starting state a batch-creation caller
     // (LH-040) would use, before enqueueExtractItems has run at all.
-    const batchJobId = await trackBatch({ totalCount: 0 });
+    const batchJobId = await trackBatch({ totalCount: 0, status: "PENDING" });
     const a = await createApplicationAndImageFixture(db, batchJobId, "a.jpg");
     const b = await createApplicationAndImageFixture(db, batchJobId, "b.jpg");
 
@@ -65,7 +65,7 @@ describe("enqueueExtractItems (CP-3 §2.2 — idempotent enqueue)", () => {
   });
 
   it("is idempotent: re-enqueueing the SAME pairing (a retried upload handler) inserts nothing new, and does not double-count total_count", async () => {
-    const batchJobId = await trackBatch({ totalCount: 0 });
+    const batchJobId = await trackBatch({ totalCount: 0, status: "PENDING" });
     const a = await createApplicationAndImageFixture(db, batchJobId, "a.jpg");
     const pairs = [{ applicationId: a.applicationId, labelImageId: a.labelImageId }];
 
@@ -84,7 +84,7 @@ describe("enqueueExtractItems (CP-3 §2.2 — idempotent enqueue)", () => {
   });
 
   it("is idempotent under REAL concurrency too, not just sequential retries: two simultaneous callers enqueueing the same pairing insert exactly one row and total_count lands on exactly 1", async () => {
-    const batchJobId = await trackBatch({ totalCount: 0 });
+    const batchJobId = await trackBatch({ totalCount: 0, status: "PENDING" });
     const a = await createApplicationAndImageFixture(db, batchJobId, "a.jpg");
     const pairs = [{ applicationId: a.applicationId, labelImageId: a.labelImageId }];
 
@@ -103,7 +103,7 @@ describe("enqueueExtractItems (CP-3 §2.2 — idempotent enqueue)", () => {
   });
 
   it("enqueues only the genuinely new pairings in a partially-overlapping retry, and total_count reflects only the real total", async () => {
-    const batchJobId = await trackBatch({ totalCount: 0 });
+    const batchJobId = await trackBatch({ totalCount: 0, status: "PENDING" });
     const a = await createApplicationAndImageFixture(db, batchJobId, "a.jpg");
     const b = await createApplicationAndImageFixture(db, batchJobId, "b.jpg");
 
@@ -119,5 +119,26 @@ describe("enqueueExtractItems (CP-3 §2.2 — idempotent enqueue)", () => {
 
     const [job] = await db.select().from(batchJobs).where(eq(batchJobs.id, batchJobId));
     expect(job.totalCount).toBe(2);
+  });
+
+  it("rejects enqueueing into a batch that is not PENDING (RUNNING, already started) — a caller bug, not a silent no-op", async () => {
+    const batchJobId = await trackBatch({ totalCount: 0, status: "RUNNING" });
+    const a = await createApplicationAndImageFixture(db, batchJobId, "a.jpg");
+
+    await expect(enqueueExtractItems(db, batchJobId, [{ applicationId: a.applicationId, labelImageId: a.labelImageId }])).rejects.toThrow(/not PENDING/);
+
+    // The rejection happens before either write — nothing inserted, and
+    // total_count is untouched, not a partial write left half-committed.
+    const rows = await db.select().from(batchQueueItems).where(eq(batchQueueItems.batchJobId, batchJobId));
+    expect(rows).toHaveLength(0);
+    const [job] = await db.select().from(batchJobs).where(eq(batchJobs.id, batchJobId));
+    expect(job.totalCount).toBe(0);
+  });
+
+  it("rejects enqueueing into a COMPLETED batch the same way", async () => {
+    const batchJobId = await trackBatch({ totalCount: 0, status: "COMPLETED" });
+    const a = await createApplicationAndImageFixture(db, batchJobId, "a.jpg");
+
+    await expect(enqueueExtractItems(db, batchJobId, [{ applicationId: a.applicationId, labelImageId: a.labelImageId }])).rejects.toThrow(/not PENDING/);
   });
 });

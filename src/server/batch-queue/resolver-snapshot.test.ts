@@ -128,9 +128,14 @@ describe("buildResolverInputSnapshot / parseResolverInputSnapshot round trip", (
     expect(parseResolverInputSnapshot({ ...snapshot, flaggedFields: undefined }).ok).toBe(false);
   });
 
-  it("rejects a snapshot whose flaggedFields is empty", () => {
-    const snapshot = buildResolverInputSnapshot(makeExtraction(), makeRouterResult(), []);
-    const parsed = parseResolverInputSnapshot(snapshot);
+  it("buildResolverInputSnapshot itself rejects an empty flaggedFields — never writes a RESOLVE row nothing can act on", () => {
+    expect(() => buildResolverInputSnapshot(makeExtraction(), makeRouterResult(), [])).toThrow(/flaggedFields must not be empty/);
+  });
+
+  it("parseResolverInputSnapshot independently rejects a raw value whose flaggedFields is empty — defends the READ side against more than just this module's own writer (a hand-crafted or corrupted row)", () => {
+    const snapshot = buildResolverInputSnapshot(makeExtraction(), makeRouterResult(), makeFlaggedFields());
+    const parsed = parseResolverInputSnapshot({ ...snapshot, flaggedFields: [] });
     expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.reason).toMatch(/flaggedFields/);
   });
 });

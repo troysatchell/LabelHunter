@@ -30,6 +30,7 @@ import {
   createApplicationAndSavedImageFixture,
   createBatchJobFixture,
   createVerificationFixture,
+  dbPastTimestamp,
   enqueueResolveItemFixture,
 } from "./test-support";
 
@@ -65,6 +66,19 @@ function clientThrowing(error: unknown): Anthropic {
   return fakeAnthropicClient(async () => {
     throw error;
   });
+}
+
+/** Same as `clientReturning`, but also exposes how many times
+ * `messages.create` was actually invoked — for tests asserting Sonnet is
+ * NEVER called (the cap-skip and malformed-snapshot paths) rather than only
+ * checking the side effect a silent double-call could still produce. */
+function countingClientReturning(body: unknown): { client: Anthropic; callCount: () => number } {
+  let calls = 0;
+  const client = fakeAnthropicClient(async () => {
+    calls += 1;
+    return makeMockMessage(JSON.stringify(body));
+  });
+  return { client, callCount: () => calls };
 }
 
 function makeDeps(overrides: Partial<ResolveWorkerDeps> = {}): ResolveWorkerDeps {
@@ -143,9 +157,11 @@ describe("processResolveClaim — the escalation cap (CP-3 §6.2)", () => {
     // Exhaust the batch's ENTIRE budget before this worker ever tries.
     expect(await reserveSonnetCall(db, batchJobId, 1)).toBe(true);
 
-    const deps = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_RESOLVER_BODY) }); // must NEVER be called
+    const capped = countingClientReturning(WELL_FORMED_RESOLVER_BODY); // must NEVER be called
+    const deps = makeDeps({ anthropicClient: capped.client });
     const outcome = await processResolveClaim(claimed, deps);
     expect(outcome).toEqual({ kind: "done", outcome: "cap-skipped" });
+    expect(capped.callCount()).toBe(0); // the cap guard must short-circuit BEFORE ever calling Sonnet
 
     const [verificationRow] = await db.select().from(verifications).where(eq(verifications.id, verificationId));
     expect(verificationRow.resolutionPath).toBe("EXTRACTOR_ONLY"); // Sonnet never ran
@@ -176,6 +192,23 @@ describe("processResolveClaim — the escalation cap (CP-3 §6.2)", () => {
 
     const [jobAfterFirst] = await db.select().from(batchJobs).where(eq(batchJobs.id, batchJobId));
     expect(jobAfterFirst.sonnetCallCount).toBe(1); // spent even though the call failed
+
+    // handleResolveFailure's own releaseForRetry pushed availableAt into the
+    // future by the real backoff delay (CP-3 §5.2) — pull it into
+    // Postgres's OWN past rather than sleeping for real (lessons.md #8),
+    // then claim and process the SAME item a second time, this time letting
+    // the call succeed. Proves the reservation on attempt one was not a
+    // one-time fluke of "first attempt only" bookkeeping: a wholly separate
+    // attempt reserves a wholly separate unit of budget.
+    await db.update(batchQueueItems).set({ availableAt: await dbPastTimestamp(db, 1) }).where(eq(batchQueueItems.id, firstClaim!.id));
+    const secondClaim = await claimNextBatchQueueItem(db, "RESOLVE", "worker-1", 120, { scopeToBatchJobId: batchJobId });
+    expect(secondClaim).not.toBeNull();
+    const secondDeps = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_RESOLVER_BODY) });
+    const secondOutcome = await processResolveClaim(secondClaim!, secondDeps);
+    expect(secondOutcome).toEqual({ kind: "done", outcome: "resolved" });
+
+    const [jobAfterSecond] = await db.select().from(batchJobs).where(eq(batchJobs.id, batchJobId));
+    expect(jobAfterSecond.sonnetCallCount).toBe(2); // a SEPARATE reservation for the second attempt, on top of the first
   });
 });
 
@@ -191,8 +224,9 @@ describe("processResolveClaim — TRO-506 recovery (CP-3 §3.3)", () => {
 
     // Simulate the first worker's lease expiring while its Sonnet call was
     // still (slowly) in flight, and a second worker reclaiming the SAME row.
-    await db.update(batchQueueItems).set({ leaseExpiresAt: new Date(Date.now() - 1000) }).where(eq(batchQueueItems.id, firstClaim.id));
+    await db.update(batchQueueItems).set({ leaseExpiresAt: await dbPastTimestamp(db, 1) }).where(eq(batchQueueItems.id, firstClaim.id));
     const secondClaim = await claimNextBatchQueueItem(db, "RESOLVE", "worker-2", 120, { scopeToBatchJobId: batchJobId });
+    expect(secondClaim).not.toBeNull();
     expect(secondClaim?.claimToken).not.toBe(firstClaim.claimToken);
 
     // Both workers now genuinely race to call Sonnet and insert review_queue
@@ -228,12 +262,17 @@ describe("processResolveClaim — TRO-506 recovery (CP-3 §3.3)", () => {
     const { claimed: firstClaim, verificationId } = await escalatedFixture(batchJobId, "double-cap-skip.jpg");
     expect(await reserveSonnetCall(db, batchJobId, 1)).toBe(true); // exhaust the cap up front
 
-    await db.update(batchQueueItems).set({ leaseExpiresAt: new Date(Date.now() - 1000) }).where(eq(batchQueueItems.id, firstClaim.id));
+    await db.update(batchQueueItems).set({ leaseExpiresAt: await dbPastTimestamp(db, 1) }).where(eq(batchQueueItems.id, firstClaim.id));
     const secondClaim = await claimNextBatchQueueItem(db, "RESOLVE", "worker-2", 120, { scopeToBatchJobId: batchJobId });
     expect(secondClaim).not.toBeNull();
 
-    const depsA = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_RESOLVER_BODY) }); // must NEVER be called
-    const depsB = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_RESOLVER_BODY) });
+    // The cap was already exhausted before EITHER worker ran — neither
+    // worker's own reservation attempt can succeed, so neither may ever
+    // call Sonnet, not just the one that loses the review_queue race.
+    const capA = countingClientReturning(WELL_FORMED_RESOLVER_BODY); // must NEVER be called
+    const capB = countingClientReturning(WELL_FORMED_RESOLVER_BODY); // must NEVER be called
+    const depsA = makeDeps({ anthropicClient: capA.client });
+    const depsB = makeDeps({ anthropicClient: capB.client });
     const [outcomeA, outcomeB] = await Promise.all([processResolveClaim(firstClaim, depsA), processResolveClaim(secondClaim!, depsB)]);
 
     const queueRows = await db.select().from(reviewQueue).where(eq(reviewQueue.verificationId, verificationId));
@@ -242,6 +281,8 @@ describe("processResolveClaim — TRO-506 recovery (CP-3 §3.3)", () => {
 
     const outcomes = [outcomeA.kind, outcomeB.kind].sort();
     expect(outcomes).toEqual(["done", "stale"]);
+    expect(capA.callCount()).toBe(0);
+    expect(capB.callCount()).toBe(0);
 
     const [job] = await db.select().from(batchJobs).where(eq(batchJobs.id, batchJobId));
     expect(job.resolvedBySonnetCount + job.needsHumanCount).toBe(1);
@@ -256,9 +297,11 @@ describe("processResolveClaim — malformed snapshot (CP-3 §2.3 — reject, nev
     await enqueueResolveItemFixture(db, { batchJobId, verificationId, resolverInput: { schemaVersion: "2" } });
     const claimed = await claimNextBatchQueueItem(db, "RESOLVE", "worker-1", 120, { scopeToBatchJobId: batchJobId });
 
-    const deps = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_RESOLVER_BODY) }); // must NEVER be called
+    const malformed = countingClientReturning(WELL_FORMED_RESOLVER_BODY); // must NEVER be called
+    const deps = makeDeps({ anthropicClient: malformed.client });
     const outcome = await processResolveClaim(claimed!, deps);
     expect(outcome.kind).toBe("failed");
+    expect(malformed.callCount()).toBe(0); // an unsupported schemaVersion must reject before ever spending a Sonnet call
 
     const [item] = await db.select().from(batchQueueItems).where(eq(batchQueueItems.id, claimed!.id));
     expect(item.status).toBe("FAILED");

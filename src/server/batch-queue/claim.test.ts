@@ -14,6 +14,7 @@ import {
   createApplicationAndImageFixture,
   createBatchJobFixture,
   createVerificationFixture,
+  dbPastTimestamp,
   enqueueExtractItemFixture,
   enqueueResolveItemFixture,
 } from "./test-support";
@@ -125,7 +126,7 @@ describe("claimNextBatchQueueItem — lease expiry recovery (CP-3 §3.2)", () =>
     expect(first).not.toBeNull();
 
     // Simulate time passing past the lease, without a real sleep (lessons.md #8).
-    await db.update(batchQueueItems).set({ leaseExpiresAt: new Date(Date.now() - 1000) }).where(eq(batchQueueItems.id, itemId));
+    await db.update(batchQueueItems).set({ leaseExpiresAt: await dbPastTimestamp(db, 1) }).where(eq(batchQueueItems.id, itemId));
 
     const second = await claimNextBatchQueueItem(db, "EXTRACT", "worker-B", 60, { scopeToBatchJobId: batchJobId });
     expect(second).not.toBeNull();
@@ -201,5 +202,17 @@ describe("claimNextBatchQueueItem — concurrency (the question CP-3 exists to a
     const successes = results.filter((r) => r !== null);
     expect(successes).toHaveLength(3);
     expect(new Set(successes.map((r) => r?.id)).size).toBe(3);
+  });
+});
+
+describe("claimNextBatchQueueItem — input validation (standing rule 13)", () => {
+  it("rejects a non-positive leaseSeconds before ever touching the database", async () => {
+    await expect(claimNextBatchQueueItem(db, "EXTRACT", "worker-1", 0)).rejects.toThrow(RangeError);
+    await expect(claimNextBatchQueueItem(db, "EXTRACT", "worker-1", -5)).rejects.toThrow(RangeError);
+  });
+
+  it("rejects a non-finite leaseSeconds (NaN, Infinity)", async () => {
+    await expect(claimNextBatchQueueItem(db, "EXTRACT", "worker-1", Number.NaN)).rejects.toThrow(RangeError);
+    await expect(claimNextBatchQueueItem(db, "EXTRACT", "worker-1", Number.POSITIVE_INFINITY)).rejects.toThrow(RangeError);
   });
 });

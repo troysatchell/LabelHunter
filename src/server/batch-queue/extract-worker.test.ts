@@ -8,7 +8,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
-import { RateLimitError } from "@anthropic-ai/sdk";
+import { InternalServerError, RateLimitError } from "@anthropic-ai/sdk";
 import { eq, sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { db } from "../../lib/db";
@@ -20,10 +20,12 @@ import { readLabelImage } from "../storage/local-file-storage";
 import { claimNextBatchQueueItem } from "./claim";
 import { DEFAULT_BACKOFF_CONFIG } from "./backoff";
 import { processExtractClaim, type ExtractWorkerDeps } from "./extract-worker";
+import { parseResolverInputSnapshot } from "./resolver-snapshot";
 import {
   cleanupBatchJobFixture,
   createApplicationAndSavedImageFixture,
   createBatchJobFixture,
+  dbPastTimestamp,
   enqueueExtractItemFixture,
 } from "./test-support";
 
@@ -36,8 +38,17 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await rm(scratchDir, { recursive: true, force: true });
-  for (const id of createdBatchJobIds.splice(0)) {
-    await cleanupBatchJobFixture(db, id);
+  // Promise.allSettled, not a sequential loop: one rejected cleanup must
+  // not leave the REST of this test's fixture rows behind uncleaned —
+  // that would leak into later tests (this suite already documents one
+  // real cross-file collision risk from leftover fixture data,
+  // test-support.ts's own "Old Tom Distillery" comment). Still surfaces a
+  // failure afterward rather than swallowing it silently.
+  const ids = createdBatchJobIds.splice(0);
+  const results = await Promise.allSettled(ids.map((id) => cleanupBatchJobFixture(db, id)));
+  const failures = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+  if (failures.length > 0) {
+    throw new Error(`afterEach: ${failures.length}/${ids.length} batch job cleanups failed: ${failures.map((f) => String(f.reason)).join("; ")}`);
   }
 });
 
@@ -175,9 +186,17 @@ describe("processExtractClaim — REVIEW / escalation (CP-3 §2.3, §8 step 5)",
     expect(resolveRow).toBeDefined();
     expect(resolveRow?.status).toBe("PENDING");
     expect(resolveRow?.verificationId).toBe(outcome.verificationId);
-    const snapshot = resolveRow?.resolverInput as { schemaVersion: string; flaggedFields: unknown[] };
-    expect(snapshot.schemaVersion).toBe("1");
-    expect(snapshot.flaggedFields.length).toBeGreaterThan(0);
+    // The REAL validator, not a type cast — a cast only tells the compiler
+    // to trust the shape, it proves nothing about what actually got
+    // persisted. Running the row through parseResolverInputSnapshot (the
+    // same function the resolve-worker itself uses to read this column)
+    // proves the EXTRACT worker wrote something the RESOLVE worker can
+    // actually consume, not just something that happens to compile.
+    const parsed = parseResolverInputSnapshot(resolveRow?.resolverInput);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) throw new Error("unreachable");
+    expect(parsed.snapshot.schemaVersion).toBe("1");
+    expect(parsed.snapshot.flaggedFields.length).toBeGreaterThan(0);
 
     const [job] = await db.select().from(batchJobs).where(eq(batchJobs.id, batchJobId));
     expect(job.processedCount).toBe(1);
@@ -202,6 +221,13 @@ describe("processExtractClaim — retryable failure (CP-3 §5)", () => {
 
     const outcome = await processExtractClaim(claimed, deps);
     expect(outcome.kind).toBe("retry");
+    if (outcome.kind !== "retry") throw new Error("unreachable");
+    // isRateLimit specifically true for a 429 — pool.ts's whole-pool
+    // cooldown (CP-3 §5.3) only ever engages on THIS flag, so asserting
+    // just outcome.kind here would miss a classifyModelCallError
+    // regression that reported the right retry decision for the wrong
+    // reason.
+    expect(outcome.isRateLimit).toBe(true);
 
     const [item] = await db.select().from(batchQueueItems).where(eq(batchQueueItems.id, claimed.id));
     expect(item.status).toBe("PENDING");
@@ -210,6 +236,21 @@ describe("processExtractClaim — retryable failure (CP-3 §5)", () => {
 
     const [job] = await db.select().from(batchJobs).where(eq(batchJobs.id, batchJobId));
     expect(job.processedCount).toBe(0);
+  });
+
+  it("a non-rate-limit retryable error (5xx) also releases to PENDING, but isRateLimit is false — must NOT trigger the pool-wide cooldown", async () => {
+    const batchJobId = await trackBatch({ totalCount: 1 });
+    const claimed = await claimedFixture(batchJobId, "retry-500.jpg");
+    const error = new InternalServerError(500, { type: "api_error", message: "internal server error" }, "500", new Headers(), "api_error");
+    const deps = makeDeps({ anthropicClient: clientThrowing(error) });
+
+    const outcome = await processExtractClaim(claimed, deps);
+    expect(outcome.kind).toBe("retry");
+    if (outcome.kind !== "retry") throw new Error("unreachable");
+    expect(outcome.isRateLimit).toBe(false);
+
+    const [item] = await db.select().from(batchQueueItems).where(eq(batchQueueItems.id, claimed.id));
+    expect(item.status).toBe("PENDING");
   });
 
   it("exhausting maxAttempts turns a retryable failure into a permanent one — processedCount and failedCount both increment (CP-3 §7.1)", async () => {
@@ -286,7 +327,7 @@ describe("processExtractClaim — lost-lease race (CP-3 §3.2)", () => {
     // Simulate this worker's lease expiring WHILE it was still (slowly)
     // computing, and a second worker reclaiming + fully completing the
     // item first.
-    await db.update(batchQueueItems).set({ leaseExpiresAt: new Date(Date.now() - 1000) }).where(eq(batchQueueItems.id, claimed.id));
+    await db.update(batchQueueItems).set({ leaseExpiresAt: await dbPastTimestamp(db, 1) }).where(eq(batchQueueItems.id, claimed.id));
     const secondClaim = await claimNextBatchQueueItem(db, "EXTRACT", "worker-2", 60, { scopeToBatchJobId: batchJobId });
     const secondDeps = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY), warningResult: { verdict: "MATCH" } });
     const secondOutcome = await processExtractClaim(secondClaim!, secondDeps);

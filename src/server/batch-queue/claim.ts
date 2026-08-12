@@ -123,6 +123,15 @@ export async function claimNextBatchQueueItem(
   leaseSeconds: number,
   options: ClaimNextBatchQueueItemOptions = {},
 ): Promise<ClaimedBatchQueueItem | null> {
+  if (!Number.isFinite(leaseSeconds) || leaseSeconds <= 0) {
+    // Standing rule 13: validate at the boundary. A bad value here (0,
+    // negative, NaN, Infinity) would build a nonsense or rejected SQL
+    // interval — better an immediate, readable throw than a lease that
+    // expires in the past (or never) and silently breaks CP-3 §3.2's
+    // recovery path.
+    throw new RangeError(`claimNextBatchQueueItem: leaseSeconds must be a finite number > 0, got ${leaseSeconds}`);
+  }
+
   const batchScope =
     options.scopeToBatchJobId !== undefined ? sql`AND bqi.batch_job_id = ${options.scopeToBatchJobId}` : sql``;
 

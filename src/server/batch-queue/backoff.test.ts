@@ -90,6 +90,15 @@ describe("computeBackoffDelayMs", () => {
     expect(computeBackoffDelayMs(10, config, null, noJitter)).toBe(5000);
   });
 
+  it("does NOT re-cap after adding jitter — maxDelayMs bounds only the exponential term, by design (CP-3 §5.2: the scheduled delay is 'not an upper bound on wall-clock time, since jitter... can... push an individual wait higher')", () => {
+    const config = { ...DEFAULT_BACKOFF_CONFIG, baseDelayMs: 1000, maxDelayMs: 5000 };
+    const fullJitter = () => 1; // jitterFn returns a [0,1) fraction of baseDelayMs
+    // attempts high enough that the exponential term alone already hits the
+    // 5000ms cap — full jitter then adds another whole baseDelayMs on top,
+    // and the result is NOT clamped back down to maxDelayMs afterward.
+    expect(computeBackoffDelayMs(10, config, null, fullJitter)).toBe(6000);
+  });
+
   it("adds jitter on top of the exponential delay", () => {
     const config = { ...DEFAULT_BACKOFF_CONFIG, baseDelayMs: 1000, maxDelayMs: 30_000 };
     const fullJitter = () => 1; // jitterFn returns a [0,1) fraction of baseDelayMs

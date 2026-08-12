@@ -12,13 +12,14 @@ warp itself, `solveLinearMap`, is a 3-point affine map. It uses only `topLeft`, 
 `bottomLeft`. `bottomRight` never feeds the warp. That gap is a known, accepted approximation —
 the file's own docstring names it, and so does the design doc (§11).
 
-A real bottle-label photo detects as a genuine trapezoid, not a parallelogram. Camera
-perspective moves the detected `bottomRight` somewhere the 3-point affine map would not reach
-on its own. The affine map's own implied 4th corner is `topRight + bottomLeft − topLeft`. The
-detected `bottomRight` can sit inside that implied corner. When it does, the old bounding box
-was smaller than the parallelogram the warp actually draws. The pixel loop only visits pixels
-inside the bounding box. Pixels between the two corners never got visited. They stayed raw
-backdrop. They never received label content.
+A real bottle-label photo detects as a genuine trapezoid, not a parallelogram. On a trapezoid,
+the detected `bottomRight` and the affine map's own implied 4th corner
+(`topRight + bottomLeft − topLeft`) are different points. The detected point can still fall
+inside the parallelogram the map draws. It is simply not that parallelogram's own far vertex.
+The old bounding box was built from the four detected corners. It could then stop short of the
+implied corner. That made it smaller than the parallelogram the warp actually draws. The pixel
+loop only visits pixels inside the bounding box. Pixels between the detected box's edge and the
+implied corner never got visited. They stayed raw backdrop. They never received label content.
 
 The renderer's `LABEL_REGIONS.warning` region sits in the label's bottom band. A trapezoid quad
 with this shape can truncate the statutory government-warning text. The pipeline would still

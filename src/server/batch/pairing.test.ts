@@ -111,6 +111,28 @@ describe("pairRowsWithImages", () => {
     expect(result.unmatchedRows[0].reason).toMatch(/empty/i);
   });
 
+  it("does not silently match a usable image when an empty duplicate shares its filename (review finding)", () => {
+    // A zero-byte upload must still count as a candidate for duplicate
+    // detection, not vanish from consideration before that check runs —
+    // otherwise the non-empty duplicate "wins" silently, masking a real
+    // problem (maybe the empty one is the one the user actually meant).
+    const r = row({ imageFilename: "duplicate.jpg" });
+    const images = [
+      { filename: "duplicate.jpg", sizeBytes: 0 },
+      { filename: "duplicate.jpg", sizeBytes: 1024 },
+    ];
+    const result = pairRowsWithImages([r], images);
+
+    expect(result.matched).toEqual([]);
+    expect(result.unmatchedRows).toHaveLength(1);
+    expect(result.unmatchedRows[0].reason).toMatch(/more than one uploaded image/i);
+    // Both uploads are reported, not just the empty one or just the real
+    // one (the same "every image, not just the first" rule this module
+    // already applies to non-empty duplicates).
+    expect(result.unmatchedImages).toHaveLength(2);
+    expect(result.unmatchedImages.map((u) => u.image)).toEqual(expect.arrayContaining(images));
+  });
+
   it("matches filenames after Unicode NFC normalization (standing rule 20)", () => {
     const nfd = "bottle-caf" + String.fromCharCode(0x65, 0x0301) + ".jpg"; // decomposed
     const nfc = "bottle-caf" + String.fromCharCode(0x00e9) + ".jpg"; // precomposed

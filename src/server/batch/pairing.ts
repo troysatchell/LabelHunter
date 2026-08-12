@@ -17,31 +17,13 @@
  * `label_images_batch_filename_unique` index, which Postgres also
  * compares case-sensitively (`src/lib/db/schema.ts`).
  */
-import type { BatchImageRef, ManifestRow, PairingResult, UnmatchedBatchImage } from "./types";
+import type { BatchImageRef, ManifestRow, PairingResult } from "./types";
 
 function normalizeFilename(name: string): string {
   return name.normalize("NFC");
 }
 
 export function pairRowsWithImages(rows: ManifestRow[], images: BatchImageRef[]): PairingResult {
-  // Zero-byte uploads are their own problem — report and set aside before
-  // any pairing logic runs, so an empty file never "matches" a row just
-  // because the names line up. `emptyImageKeys` lets the row-side loop
-  // below tell "no file at all" apart from "a file, but it's empty" —
-  // two different problems that need two different messages (review
-  // finding).
-  const emptyImages: UnmatchedBatchImage[] = [];
-  const emptyImageKeys = new Set<string>();
-  const usableImages: BatchImageRef[] = [];
-  for (const image of images) {
-    if (image.sizeBytes === 0) {
-      emptyImages.push({ image, reason: "This file is empty." });
-      emptyImageKeys.add(normalizeFilename(image.filename));
-    } else {
-      usableImages.push(image);
-    }
-  }
-
   const rowsByFilename = new Map<string, ManifestRow[]>();
   for (const r of rows) {
     const key = normalizeFilename(r.imageFilename);
@@ -50,8 +32,15 @@ export function pairRowsWithImages(rows: ManifestRow[], images: BatchImageRef[])
     else rowsByFilename.set(key, [r]);
   }
 
+  // ALL uploaded images share one filename-keyed map — including
+  // zero-byte ones. An empty upload must still count as a candidate for
+  // duplicate detection: filtering it out before this map is built would
+  // let a non-empty duplicate "win" silently whenever the two shared a
+  // filename, exactly the kind of guess this module exists to refuse
+  // (review finding). Emptiness is checked per-image below, once the
+  // duplicate question is already settled.
   const imagesByFilename = new Map<string, BatchImageRef[]>();
-  for (const image of usableImages) {
+  for (const image of images) {
     const key = normalizeFilename(image.filename);
     const list = imagesByFilename.get(key);
     if (list) list.push(image);
@@ -76,15 +65,14 @@ export function pairRowsWithImages(rows: ManifestRow[], images: BatchImageRef[])
 
     const r = rowsForKey[0];
     if (imagesForKey.length === 0) {
-      const reason = emptyImageKeys.has(key)
-        ? `The uploaded image "${r.imageFilename}" is empty.`
-        : `No uploaded image is named "${r.imageFilename}".`;
-      unmatchedRows.push({ row: r, reason });
+      unmatchedRows.push({ row: r, reason: `No uploaded image is named "${r.imageFilename}".` });
     } else if (imagesForKey.length > 1) {
-      unmatchedRows.push({
-        row: r,
-        reason: `More than one uploaded image is named "${r.imageFilename}". Remove the duplicate file.`,
-      });
+      const reason = imagesForKey.some((image) => image.sizeBytes === 0)
+        ? `More than one uploaded image is named "${r.imageFilename}", and at least one of them is empty. Remove the duplicate.`
+        : `More than one uploaded image is named "${r.imageFilename}". Remove the duplicate file.`;
+      unmatchedRows.push({ row: r, reason });
+    } else if (imagesForKey[0].sizeBytes === 0) {
+      unmatchedRows.push({ row: r, reason: `The uploaded image "${r.imageFilename}" is empty.` });
     } else {
       matched.push({ row: r, image: imagesForKey[0] });
     }
@@ -95,13 +83,16 @@ export function pairRowsWithImages(rows: ManifestRow[], images: BatchImageRef[])
   // contract is "every uploaded image ends up in exactly one output
   // list," and a filename with 3 duplicate uploads has 3 images that
   // each need their own entry, not 1 (review finding).
-  const unmatchedImages: PairingResult["unmatchedImages"] = [...emptyImages];
+  const unmatchedImages: PairingResult["unmatchedImages"] = [];
   for (const [key, imagesForKey] of imagesByFilename) {
     const rowsForKey = rowsByFilename.get(key) ?? [];
 
     if (rowsForKey.length === 0) {
       for (const image of imagesForKey) {
-        unmatchedImages.push({ image, reason: "No CSV row names this file." });
+        unmatchedImages.push({
+          image,
+          reason: image.sizeBytes === 0 ? "This file is empty." : "No CSV row names this file.",
+        });
       }
     } else if (rowsForKey.length > 1) {
       for (const image of imagesForKey) {
@@ -112,13 +103,17 @@ export function pairRowsWithImages(rows: ManifestRow[], images: BatchImageRef[])
       }
     } else if (imagesForKey.length > 1) {
       for (const image of imagesForKey) {
-        unmatchedImages.push({
-          image,
-          reason: `More than one uploaded file is named "${image.filename}". Remove the duplicate.`,
-        });
+        const reason =
+          image.sizeBytes === 0
+            ? `This file is empty, and more than one uploaded file is named "${image.filename}".`
+            : `More than one uploaded file is named "${image.filename}". Remove the duplicate.`;
+        unmatchedImages.push({ image, reason });
       }
+    } else if (imagesForKey[0].sizeBytes === 0) {
+      unmatchedImages.push({ image: imagesForKey[0], reason: "This file is empty." });
     }
-    // rowsForKey.length === 1 && imagesForKey.length === 1 -> matched above; nothing to report here.
+    // rowsForKey.length === 1 && imagesForKey.length === 1 && non-empty
+    // -> matched above; nothing to report here.
   }
 
   return { matched, unmatchedRows, unmatchedImages };

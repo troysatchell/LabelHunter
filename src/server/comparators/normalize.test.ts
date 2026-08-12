@@ -78,7 +78,7 @@ describe("normalizeForFuzzyMatch — CP-1 §5.3's 6-step pipeline, in order", ()
 });
 
 describe("normalizeForFuzzyMatch — the typographic right single quote, a gap TRO-536 closed", () => {
-  it("folds U+2019 (’) to the same result as the straight apostrophe (') — case-15, TRO-536", () => {
+  it("normalizes U+2019 (’) to the same result as the straight apostrophe (') — case-15, TRO-536", () => {
     // CP-1 §5.3's step 3 names exactly three variants to fold: the straight
     // apostrophe, the backtick, and the acute accent. U+2019 RIGHT SINGLE
     // QUOTATION MARK — a stylized apostrophe a real vision-model extraction

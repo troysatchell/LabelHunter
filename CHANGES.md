@@ -78,16 +78,17 @@ record here for Troy, not a decision this ticket claims authority to make quietl
 - TDD: `brand.test.ts`'s new case-15 test was written first and observed failing
   (`NEEDS_REVIEW`, not `MATCH`) against the pre-fix normalizer, for the documented reason
   (0.923077 similarity below the 0.95 threshold), before the source change landed.
-- Live, one Haiku call: `pnpm eval:check -- --live --case=case-15-case-variant-brand-punctuation`
-  — observed `actualLabelVerdict: "PASS"`, `brand_name` `actualVerdict: "MATCH"`,
-  `resolverCost: null` (the router now resolves the field itself; no Sonnet call). Cost $0.00475.
+- Live, one Haiku call: `pnpm eval:check -- --live --case=case-15-case-variant-brand-punctuation`.
+  Observed `actualLabelVerdict: "PASS"` and `brand_name` `actualVerdict: "MATCH"`. The router
+  now resolves the field itself, so `resolverCost` is `null` — no Sonnet call. Cost $0.00475.
   **Correction to this ticket's own prediction:** the ticket expected exit code 1 with a
-  "stale coverage" message. Observed: exit code 0, no such message. Read
-  `scripts/eval/check.ts:154-160`: `--case=<id>` is a dedicated single-case debug path that
-  prints the result and returns before the baseline-comparison logic ever runs, so it neither
-  emits that message nor touches the committed report — confirmed separately by byte-identical
-  md5 on `scripts/eval/results/eval-report.json` before and after the run, and a clean
-  `git status` on that path. No restore was needed, though a backup was taken first regardless.
+  "stale coverage" message. The observed exit code was 0, with no such message.
+  `scripts/eval/check.ts:154-160` explains why: `--case=<id>` is a dedicated single-case debug
+  path. It prints the result and returns before the baseline-comparison logic ever runs, so it
+  never emits that message and never touches the committed report. Two checks confirm this: the
+  md5 of `scripts/eval/results/eval-report.json` is byte-identical before and after the run, and
+  `git status` shows that path clean. No restore was needed, though a backup was taken first
+  regardless.
 - `pnpm eval:check` (cheap mode, what gate G8 runs): PASS, exit 0, comparing the untouched
   committed report against the committed baseline. **Stated honest limit:** this run does not
   exercise this fix at all — it is scored against the same pre-fix committed numbers, so G8

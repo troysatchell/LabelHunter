@@ -1,6 +1,6 @@
 {
   "ticket": "TRO-470 / LH-030",
-  "establishedAt": "2026-08-12T21:31:15.150Z",
+  "establishedAt": "2026-08-12T22:15:52.776Z",
   "manifestVersion": "1.0.0",
   "manifestContentHash": "98ae09d5d62752d2f98712f27ea2dbcd6e595c673ccba791821a157349be3663",
   "caseIds": [
@@ -40,14 +40,14 @@
   "summary": {
     "extractionAccuracy": {
       "total": 160,
-      "correct": 153,
-      "rate": 0.95625
+      "correct": 154,
+      "rate": 0.9625
     },
     "extractionAccuracyByField": {
       "brandName": {
         "total": 32,
-        "correct": 30,
-        "rate": 0.9375
+        "correct": 31,
+        "rate": 0.96875
       },
       "classType": {
         "total": 32,
@@ -72,8 +72,8 @@
     },
     "routerVerdictAccuracy": {
       "total": 32,
-      "correct": 22,
-      "rate": 0.6875
+      "correct": 24,
+      "rate": 0.75
     },
     "fieldVerdictAccuracyByField": {
       "brand_name": {
@@ -98,8 +98,8 @@
       },
       "government_warning": {
         "total": 32,
-        "correct": 28,
-        "rate": 0.875
+        "correct": 30,
+        "rate": 0.9375
       }
     },
     "reviewReasonAccuracy": {
@@ -110,20 +110,24 @@
     "warningSegmentation": {
       "total": 32,
       "clean": {
-        "count": 21,
-        "rate": 0.65625
+        "count": 19,
+        "rate": 0.59375
       },
       "trueMismatch": {
         "count": 5,
         "rate": 0.15625
       },
       "resolutionSuspect": {
-        "count": 4,
-        "rate": 0.125
+        "count": 6,
+        "rate": 0.1875
       },
       "notFound": {
         "count": 2,
         "rate": 0.0625
+      },
+      "singleChannelPass": {
+        "count": 1,
+        "rate": 0.03125
       }
     },
     "cascadeVerdictAccuracy": {
@@ -189,8 +193,8 @@
       {
         "decile": 9,
         "n": 152,
-        "correct": 150,
-        "rate": 0.9868421052631579
+        "correct": 151,
+        "rate": 0.993421052631579
       }
     ]
   }

@@ -50,6 +50,7 @@ interface RenderService {
   runtime?: string;
   plan?: string;
   branch?: string;
+  autoDeployTrigger?: string;
   buildCommand?: string;
   startCommand?: string;
   preDeployCommand?: string;
@@ -120,6 +121,10 @@ describe("render.yaml — web service", () => {
     expect(web.branch).toBe("main");
   });
 
+  it("redeploys only a commit whose CI checks already passed", () => {
+    expect(web.autoDeployTrigger).toBe("checksPass");
+  });
+
   it("names a real, non-empty plan tier", () => {
     expect(web.plan).toBeTruthy();
   });
@@ -169,6 +174,10 @@ describe("render.yaml — worker service", () => {
     expect(worker.branch).toBe("main");
   });
 
+  it("redeploys only a commit whose CI checks already passed", () => {
+    expect(worker.autoDeployTrigger).toBe("checksPass");
+  });
+
   it("names a real, non-empty plan tier (Render has no free `worker` plan)", () => {
     expect(worker.plan).toBeTruthy();
   });
@@ -190,6 +199,7 @@ describe("render.yaml — worker service", () => {
   it("wires DATABASE_URL from the same labelhunter-db resource as the web service", () => {
     const envVar = (worker.envVars ?? []).find((v) => v.key === "DATABASE_URL");
     expect(envVar?.fromDatabase?.name).toBe("labelhunter-db");
+    expect(envVar?.fromDatabase?.property).toBe("connectionString");
     expect(envVar?.value).toBeUndefined();
   });
 

@@ -93,18 +93,20 @@ Marked plainly so nobody mistakes a default for a verified fact.
   the steps above is the real test.
 - **Batch image storage does not yet survive the web/worker split.**
   `src/server/storage/local-file-storage.ts` saves an uploaded label image to
-  a directory on the saving process's own disk — that module's own header
-  comment already calls this "a prototype-appropriate stand-in, not a
-  durable object store." `POST /api/batch/start` (LH-042/TRO-475) saves a
-  batch's images this way on `labelhunter-web`; `labelhunter-worker`
-  (`extract-worker.ts`, `resolve-worker.ts`) later reads them back the same
-  way, from what is — once both are real, separate Render services, exactly
-  what this ticket's `render.yaml` sets up — a different disk. A single-label
-  verify is unaffected (one process saves and, later, reads its own file).
-  A real batch run will fail to read every image once exercised against the
-  deployed instance. This needs a shared or durable store (S3-compatible
-  object storage is the natural fit, and the module's own comment already
-  names it) before batch is real on Render — a new ticket, not fixed here.
+  a directory on disk. That directory belongs to whichever single process
+  saved it. That module's own header comment already calls this "a
+  prototype-appropriate stand-in, not a durable object store."
+  `POST /api/batch/start` (LH-042/TRO-475) saves a batch's images this way,
+  on `labelhunter-web`. `labelhunter-worker` (`extract-worker.ts`,
+  `resolve-worker.ts`) later reads them back the same way. This ticket's
+  `render.yaml` makes `labelhunter-web` and `labelhunter-worker` two
+  separate Render services, so they are two separate disks. A real batch
+  run will fail to read every image once it runs against the deployed
+  instance. Single-label verify is unaffected: one process saves the image
+  and, later, reads that same file back. Fixing this needs a shared or
+  durable store — S3-compatible object storage is the natural fit, and the
+  module's own comment already names it. That is a new ticket, not fixed
+  here.
 - **Plan tiers are a default, not a Troy-confirmed budget decision.**
   `render.yaml`'s own comment explains the reasoning (a `worker` service has
   no free tier at all; a free Postgres database expires in 30 days). Change

@@ -4,6 +4,112 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-543 — LH-038 · Measure verdict variance (2026-08-12)
+
+Advances TH-R10 (stretch), TH-R17, TH-R19. This entry is Part 1 only: a free measurement, plus
+tooling. Part 2, the real paid sweep, needs Troy's go-ahead. It ships as a follow-up ticket.
+
+**The finding.** Case-17 (`case-17-glare-front-label`) returned three REVIEW verdicts and two
+PASS verdicts across five committed runs. The router code never changed between them. The image
+never changed either. Every run used `claude-haiku-4-5` at `temperature: 0`. CP-1 already names
+this setting's real limit: "`temperature: 0` has never guaranteed identical output" (`cp1:302`).
+TH-R10 names case-17 as the imperfect-image stretch case. Its own instability is the finding.
+
+**Observed** (git archaeology only — zero API cost). Five committed runs carry case-17's verdict.
+
+| measuredAt | Source | case-17 verdict | Correct |
+|---|---|---|---|
+| 2026-08-12T04:39:34.853Z | `eval-report.json` @ `1ccf44b` | REVIEW / AMBIGUOUS_BRAND | yes |
+| 2026-08-12T05:16:55.005Z | `eval-report.json` @ `62cdf1b` | PASS / null | no |
+| 2026-08-12T05:23:34.689Z | `benchmark-report.json` @ HEAD, cascade arm | REVIEW / AMBIGUOUS_BRAND | yes |
+| 2026-08-12T12:59:28.746Z | `eval-report.json` @ `a6140ff` | REVIEW / AMBIGUOUS_BRAND | yes |
+| 2026-08-12T13:26:45.488Z | `eval-report.json` @ HEAD | PASS / null | no |
+
+Every run expects REVIEW / LOW_IMAGE_QUALITY.
+
+**The rest of the corpus holds steady.** 29 case IDs appear in all five runs. The manifest itself
+grew from 29 to 32 cases inside this window. `16a65fd` (TRO-515) and `9b11baf` (TRO-469) each
+added cases. No existing image changed. Aggregate accuracy is not comparable across the window
+for that reason — only the 29 shared cases are. This entry compares those 29 cases only.
+
+28 of 29 shared cases (N=29) return the identical verdict and headline reason across all five
+runs (K=5). **Case-17 is the one exception: 3 REVIEW, 2 PASS** — the split the table above shows.
+
+This is real call-to-call model variance. It is not a harness bug — the code path held steady
+and the image held steady. `CHANGES.md:699-702` named the phenomenon on this one case first.
+`CHANGES.md:1518-1521` measured it as an aggregate spread: 62.1% (18/29, `62cdf1b`'s run) vs.
+65.5% (19/29, the benchmark cascade arm's run) on the identical 29 cases — a 3.4-point swing,
+both figures re-confirmed directly from their own committed artifacts above. This entry adds the
+number those two did not yet have: the retrospective, whole-corpus stability rate. **28/29
+stable (96.6%), N=29, K=5.**
+
+**New tooling: `scripts/eval/variance.ts`, run with `pnpm eval:variance`.** It reuses
+`runOneCase` (`cascade-runner.ts`) — no second cascade path (TH-R19). It reuses `parseEvalArgs`
+and `resolveCaseIds` (`args.ts`). It adds one new flag, `--repeats=<k>`:
+
+1. Default: 5 repeats.
+2. Hard cap: `MAX_REPEATS = 10`, checked separately from `MAX_CASES` — cases and repeats are
+   different axes, capped apart on purpose.
+3. `pnpm eval:variance` alone, with no `--live`, makes no live call. It reads back the last
+   committed report and prints its summary, or says plainly that none exists yet.
+
+For each case, the new `scripts/eval/variance-analysis.ts` module records every repeat's verdict
+and headline reason, the modal verdict, and a stability rate (modal count / repeats run). It also
+records the accuracy spread: the lowest and highest label-verdict accuracy across the repeats.
+Both computations are pure functions, unit-tested against synthetic fixtures — one fixture
+reproduces case-17's own 3/2 split directly.
+
+The artifact writer (`scripts/eval/results/variance-report.json`) follows `EvalReport`'s own
+discipline: real measured cost, an explicit `measuredAt`, exact model IDs, every case ID the
+sweep ran. TRO-538 / LH-033 adds a manifest content-hash field to `EvalReport`. That work sits in
+a sibling worktree, not yet on `main`. This report carries `manifestContentHash: null` with a
+TODO, not a blocker.
+
+**Proven mechanically, at the smallest real scale — not the real sweep.** This command ran once:
+
+```
+pnpm eval:variance -- --live --case=case-01-clean-match-spirits --repeats=1
+```
+
+This made one real Haiku call. Case-01 is a clean PASS case; nothing escalates. The measured
+result: corpus stability 100.0% (1/1), accuracy spread 100.0%-100.0%, cost **$0.0048, measured**.
+The report writer worked end to end. The trivial report is not committed to the repo. A 1-case
+report reading "100% stable" sits badly next to the real 28/29 figure above. It would invite
+exactly the misreading this entry exists to prevent.
+
+**The real N x K sweep does not run in this ticket.** It needs Troy's go-ahead — a named approval
+gate this ticket's own acceptance criteria set. Every cost figure below is **derived**, not
+measured: no sweep at this scale has run yet. Each figure comes from the 13:26 HEAD run's own
+measured per-call costs:
+
+1. 32 Haiku calls, mean $0.004668.
+2. 13 resolver calls, mean $0.010969.
+3. 13 of 32 cases escalated — a 40.6% rate.
+
+| Sweep | No escalation | Every run escalates | At the 13:26 run's own rate |
+|---|---|---|---|
+| 8 cases x 5 repeats (40 calls) | ~$0.19 | ~$0.63 | — |
+| 32 cases x 3 repeats (96 calls) | ~$0.45 | ~$1.50 | ~$0.88 |
+
+**How to run it.** `pnpm eval:variance` alone reads the last committed report, or says plainly
+that none exists yet — no live call. `pnpm eval:variance -- --live --case=case-01-clean-match-spirits
+--repeats=1` is the smallest real check: one case, one repeat. **Do not run `--live` without
+`--case=<id>` and `--repeats=1`** until Troy confirms the go-ahead above. A wider invocation
+spends real money at N x K scale.
+
+**Rollback.** `git revert` this ticket's commits. No schema change. No committed data file. No
+`docs/approach.md` entry exists yet to revert. `package.json`'s new `eval:variance` script and
+the two new `scripts/eval/variance*.ts` files disappear with the revert.
+
+**Not done here, on purpose.**
+- No fix for the variance. CP-1 already names it as a property of the model, not a defect this
+  ticket owns. No retry. No lower temperature. No self-consistency vote.
+- No golden-set expectation changed. TRO-516's own finding C8 already confirms case-17's pixels
+  support the manifest note. A variance figure explains the flip. It does not license a corpus
+  edit.
+- No entry in `docs/approach.md`. That file does not exist yet — TRO-485 creates it. This
+  finding belongs there once it does.
+
 ## TRO-479 — LH-053 · E2E suite (2026-08-12)
 
 **What this builds.** Real, executable Playwright specs for the three PRD §6 flows: verify,

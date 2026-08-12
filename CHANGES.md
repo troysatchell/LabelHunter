@@ -57,16 +57,17 @@ remaining REVIEW-bound labels went straight to `needsHumanCount`, with no Sonnet
 Sonnet. It would show a different `resolvedBySonnetCount`/`needsHumanCount` split.
 
 **Cost is derived, not measured.** The batch worker records no per-call token usage. That
-seam exists only in the eval harness. The $0.2371 total multiplies this run's real call
-counts by the eval harness's own measured mean per-call cost. This run made 32 Haiku calls
-and 8 Sonnet calls. The two counts come from different sources. The Sonnet count is
-`batch_jobs.sonnet_call_count`, a real reserved-before-the-call counter. The Haiku count is a
-sum of `batch_queue_items.attempts` for this batch's own EXTRACT items. That sum is an upper
-bound, not a certainty — `attempts` increments at claim time, before the real API call
-happens. A retried call still counts as more than one either way. Haiku averages $0.004668 per call. The
-resolver averages $0.010969 (`scripts/eval/results/eval-report.json`, measured
-2026-08-12T13:26:45.488Z). `pnpm batch:throughput` reads that file fresh on every run. This
-figure moves if a newer eval run changes the means.
+seam exists only in the eval harness. The $0.2371 total multiplies each call count by the
+eval harness's own measured mean per-call cost. This run counted 32 Haiku attempts and 8
+Sonnet calls. The two counts come from different sources. The Sonnet count is
+`batch_jobs.sonnet_call_count`, a real reserved-before-the-call counter. The Haiku count
+sums `batch_queue_items.attempts` for this batch's own EXTRACT items. That sum is an upper
+bound, not a certainty. `attempts` increments at claim time, before the real API call
+happens. A retried call counts once per attempt either way. Haiku averages $0.004668 per
+call. The resolver averages $0.010969 per call. Both means come from
+`scripts/eval/results/eval-report.json`, measured 2026-08-12T13:26:45.488Z. `pnpm
+batch:throughput` reads that file fresh on every run. This figure moves if a newer eval run
+changes the means.
 
 **Verdict correctness is a separate, already-tracked concern.** The golden set's ground truth
 expects 8 PASS / 10 FAIL / 14 REVIEW for these 32 cases. This run produced 11 PASS / 7 FAIL /
@@ -105,8 +106,10 @@ value. "AUTO-VERIFIED SHARE 56.3%" appeared. So did "ITEMS PER MINUTE 50.48" wit
 per label" sub-note. Both sat in the same stat-tile grid as the five existing tiles.
 
 **Local CodeRabbit review triage, three rounds, 15 findings total.** Fourteen were fixed.
-One was skipped, with a documented reason below. The triage stopped after round 3. Each
-round found smaller issues than the round before, and the gate passed clean twice in a row.
+One was skipped, with a documented reason below. The INITIAL triage stopped after round 3.
+Each round found smaller issues than the round before, and the gate passed clean twice in a
+row. Rounds 4 and beyond, described after the round list, ran later, during the
+orchestrator's own merge-and-gate pass.
 
 Round 1, four findings, all fixed or skipped:
 - `computeAutoVerifiedShare` checked `processedCount <= 0` before validating
@@ -176,6 +179,13 @@ because this run set no override; and the completed-batch fixtures in
 completed batch would have. The twelfth was half-accepted: the auto-verified-share fixtures
 keep their RUNNING status, because `get-batch-progress.ts` serves that share mid-run — the
 state is reachable, so only the throughput fixture needed the completed shape.
+
+Round 6 found four issues, all fixed. The biggest: round 5 made `readWorkerConcurrency`
+throw on a bad override, but the call ran only after the batch had spent real money — it
+now runs in the fail-fast preflight, before any request. The rest: this section's "stopped
+after round 3" now says INITIAL triage; the cost paragraph above got its own STE split; and
+"same sourced shell" became "both terminals sourced the same environment configuration,"
+which is what actually happens.
 
 **Do NOT.** No column was added to `batch_jobs` — every input already existed. No claim was
 extrapolated past this run's real 32 items to TH-R4's 200-300 label reference.

@@ -274,6 +274,10 @@ async function main(): Promise<void> {
   // it now, not after the batch completes, is the whole point of this
   // move.
   const costMeans = readCostMeans();
+  // Same fail-fast reasoning: readWorkerConcurrency() throws on an invalid
+  // override. Run it before any request, so a bad value cannot abort the
+  // script AFTER a real batch has already spent real money.
+  const workerConcurrency = readWorkerConcurrency();
 
   await checkHealth(args.baseUrl);
 
@@ -388,7 +392,7 @@ async function main(): Promise<void> {
     haikuModel: HAIKU_EXTRACTOR_MODEL,
     sonnetModel: SONNET_RESOLVER_MODEL,
     machine: readMachineInfo(),
-    workerConcurrency: readWorkerConcurrency(),
+    workerConcurrency,
     fixture: { source: args.fixtureDir, itemCount: finalProgress.totalCount },
     batchJobId: started.batchJobId,
     totalCount: finalProgress.totalCount,
@@ -432,9 +436,9 @@ async function main(): Promise<void> {
         "(see cost.meanCostSource for that file's own measuredAt). " +
         "This run's own per-call token usage was not captured — the batch worker has no usage-capturing seam today.",
       "workerConcurrency provenance is recorded in workerConcurrency.source: an explicitly set environment variable is an " +
-        "observation of this script's own shell; a scripts/batch-worker/run.ts default is a configured assumption, not an " +
-        "observation. Either way, the separate worker process is assumed to match because both processes were started from " +
-        "the same sourced shell.",
+        "observation of this script's own environment; a scripts/batch-worker/run.ts default is a configured assumption, not an " +
+        "observation. Either way, the separate worker process is assumed to match only because both terminals sourced the " +
+        "same environment configuration (.factory-env, or .env.local for a plain checkout).",
       "This ran on a local dev workstation, not a deployed Render instance. Do not quote these figures as deployed throughput.",
     ],
   };

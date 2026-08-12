@@ -35,14 +35,17 @@ low-light golden-set cases.
   text (brand, class, ABV, net contents, warning) also comes from the manifest, the same
   pattern `src/server/extractor/golden-case.test.ts` (LH-011) already uses for case-01.
 
-  The two warning-block cases (case-18, case-22) pass `warningResult: null`. That is today's
-  real production value: LH-020, the warning subsystem, is not merged, and `route.ts` always
-  passes `null` (see `scripts/latency/measure.ts`'s own comment on this gap). Passing `null`
+  The two warning-block cases (case-18, case-22) pass `warningResult: null`. That is
+  `route.ts`'s real value as of this writing: `route.ts` does not call LH-020 yet, even
+  though LH-020's own subsystem module has since merged (TRO-468, PR #19, mid-way through this
+  ticket's own work) — `route.ts`'s own file comment still says so, and `scripts/latency/
+  measure.ts`'s doc comment records the same gap from before LH-020 merged. Passing `null`
   here proves this ticket's own mechanism carries the `LOW_IMAGE_QUALITY` headline on its
-  own — not a hypothetical future warning subsystem standing in for it. An earlier draft of
-  these two tests passed a synthetic warning result instead. A mutation check (below) showed
-  that draft passed even with the router's own detection disabled — it was proving the test
-  fixture, not the router. Switched to `null` and reconfirmed.
+  own — not a hypothetical future warning subsystem standing in for it, and not contingent on
+  exactly when `route.ts` starts calling one. An earlier draft of these two tests passed a
+  synthetic warning result instead. A mutation check (below) showed that draft passed even
+  with the router's own detection disabled — it was proving the test fixture, not the router.
+  Switched to `null` and reconfirmed.
 
 **Verification beyond a green test run.**
 - Mutation check, not shipped. Temporarily forced `isLowImageQuality` to always return

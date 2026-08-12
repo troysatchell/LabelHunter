@@ -20,17 +20,20 @@
  * copy — a manifest edit cannot silently drift out of step with this file.
  *
  * `government_warning`'s own comparator result is a caller-supplied
- * contract this router does not compute (LH-020, gated by CP-2, not yet
- * built — see `./types.ts`'s `WarningComparatorResult` doc). Cases 17, 19,
+ * contract this router does not compute (LH-020's own subsystem, gated by
+ * CP-2 — see `./types.ts`'s `WarningComparatorResult` doc). Cases 17, 19,
  * and 21 (no warning-block defect) pass `CLEAN_WARNING_RESULT`, the same
- * "once LH-020 exists and reads a clean warning block, it returns MATCH"
- * stand-in `./index.test.ts`'s own suite already uses. Cases 18, 20, and 22
- * (a warning-block defect) instead pass `null` — TODAY's real production
- * value, since `route.ts` never calls LH-020 (it is not merged; see
- * `scripts/latency/measure.ts`'s own doc comment). Passing `null` there
- * proves this ticket's own mechanism — `isLowImageQuality`, driven by the
- * extractor's per-field confidence — carries the LOW_IMAGE_QUALITY headline
- * on its own. No warning-quality detector is built here (standing rule 11).
+ * "once LH-020 reads a clean warning block, it returns MATCH" stand-in
+ * `./index.test.ts`'s own suite already uses. Cases 18, 20, and 22 (a
+ * warning-block defect) instead pass `null` — `route.ts`'s real value as of
+ * this writing: `route.ts` does not call LH-020 yet, even though LH-020's
+ * own module has since merged (its own file comment still says so — see
+ * `scripts/latency/measure.ts`'s doc comment, written when neither had
+ * merged, and `route.ts` itself). Passing `null` here proves this ticket's
+ * own mechanism — `isLowImageQuality`, driven by the extractor's per-field
+ * confidence — carries the LOW_IMAGE_QUALITY headline on its own, whether or
+ * not a warning-comparator result is ever supplied. No warning-quality
+ * detector is built here (standing rule 11).
  */
 import { describe, expect, it } from "vitest";
 import { loadGoldenSetManifest } from "../../lib/golden-set/loader";
@@ -178,12 +181,12 @@ describe("case-18-glare-warning-block — glare over the warning block only", ()
       },
     };
 
-    // `warningResult: null` — today's real production value (LH-020, the
-    // warning subsystem, is not merged; `route.ts` always passes `null`, per
-    // `scripts/latency/measure.ts`'s own doc comment). This case still must
-    // headline LOW_IMAGE_QUALITY with a null warning result — proving the
-    // label-level blocker (`isLowImageQuality`, this ticket's own mechanism)
-    // carries it, not a hypothetical future warning subsystem standing in.
+    // `warningResult: null` — `route.ts`'s real value as of this writing:
+    // it does not call LH-020 yet (own file comment; see the module doc
+    // comment above). This case still must headline LOW_IMAGE_QUALITY with
+    // a null warning result — proving the label-level blocker
+    // (`isLowImageQuality`, this ticket's own mechanism) carries it, not a
+    // hypothetical future warning subsystem standing in.
     const result = routeLabel(
       extraction,
       applicationFromGoldenCase(caseSpec),
@@ -264,9 +267,9 @@ describe("case-20-rotation-severe-upside-down — upside down and out of focus",
       extraction,
       applicationFromGoldenCase(caseSpec),
       productionComparators,
-      // null — today's real production value (see case-18's note above),
-      // and moot here either way: government_warning resolves via the
-      // "absent" path before this router ever consults a warning result.
+      // null — route.ts's real value as of this writing (see case-18's note
+      // above), and moot here either way: government_warning resolves via
+      // the "absent" path before this router ever consults a warning result.
       null,
       makePreprocessing(),
     );
@@ -334,9 +337,10 @@ describe("case-22-low-light-warning-block — dim warning block, everything else
       },
     };
 
-    // `warningResult: null` — see case-18's note above: this is today's real
-    // production value, and this case must still headline LOW_IMAGE_QUALITY
-    // through this ticket's own per-field-confidence mechanism alone.
+    // `warningResult: null` — see case-18's note above: this is `route.ts`'s
+    // real value as of this writing, and this case must still headline
+    // LOW_IMAGE_QUALITY through this ticket's own per-field-confidence
+    // mechanism alone.
     const result = routeLabel(
       extraction,
       applicationFromGoldenCase(caseSpec),

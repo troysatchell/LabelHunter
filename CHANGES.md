@@ -108,49 +108,50 @@ for. Gate G8 (`scripts/factory/gate.sh`, "eval-not-regressed") goes live: it no 
   regressed" step explaining that it now runs for real, in cheap mode, with no live call
   (the CI-wiring decision, below). The step's own behavior needed no code change: it already
   called `pnpm eval:check` bare, and cheap mode is that command's default.
-- 89 new unit tests across the pure modules above (`scripts/eval/*.test.ts`), TDD where the
-  logic is deterministic — the comparison/scoring/regression-decision logic, not the live API
-  calls, per this ticket's own brief.
+- 118 unit tests across 10 files, all new (`scripts/eval/*.test.ts`), TDD where the logic is
+  deterministic — the comparison/scoring/regression-decision logic, not the live API calls,
+  per this ticket's own brief.
 
-**The CI-wiring decision.** The ticket asks this harness to "run in CI," but CI has no
-`ANTHROPIC_API_KEY` budget for a real-API sweep on every push — that would be real,
-unbounded, per-commit spend. `scripts/golden/verify.ts` and `renderSmoke.ts` (TRO-499)
-already set the applicable precedent for this repo: a CI-wired check makes no live or
-network call. This harness follows the same rule, extended one step further than a
-metadata-only check needs to: `pnpm eval:check` with no flags is cheap by construction — it
+**The CI-wiring decision.** The ticket asks this harness to run in CI. But CI has no
+`ANTHROPIC_API_KEY` budget for a real-API sweep on every push — that would spend real,
+unbounded money on every commit. `scripts/golden/verify.ts` and `renderSmoke.ts` (TRO-499)
+already set this repo's precedent: a CI-wired check makes no live or network call. This
+harness follows that same rule. `pnpm eval:check` with no flags is cheap by construction. It
 compares the already-committed `eval-report.json` against the already-committed
-`baseline.json`, arithmetic only, no I/O beyond reading two JSON files. The real, paid sweep
-lives entirely behind an explicit `--live` flag a human or agent invokes deliberately (same
-discipline as `latency:check`), and its output — the committed report and baseline — is what
-CI and `gate.sh` check going forward, not something either one re-derives. The alternative
-this design rejected: wiring CI to call `pnpm eval:check -- --live` directly. That would
-make every push, including ones that touch nothing about extraction or routing, spend real
-API money and take several real minutes — unbounded cost for no proportional benefit. The
-trade-off this design accepts instead: CI can go stale — a router change that regresses
-accuracy will not fail CI until someone re-runs `--live --update-baseline` and commits the
-refreshed numbers. `compareToBaseline`'s coverage-staleness check catches the sharpest edge
-of this (a report that silently stopped covering the full golden set), but not "the code
-changed and nobody re-ran the harness yet." That gap is accepted, not hidden: a human
-decision, not a script's.
+`baseline.json` — arithmetic only, no I/O beyond two JSON reads. The real, paid sweep lives
+behind an explicit `--live` flag that a human or agent invokes on purpose, the same
+discipline `latency:check` already uses. CI and `gate.sh` check that committed output going
+forward. Neither one re-derives it.
+
+The rejected alternative: wire CI to call `pnpm eval:check -- --live` directly. That would
+spend real API money and several real minutes on every push, even one that touches nothing
+about extraction or routing — unbounded cost for no proportional benefit.
+
+The accepted trade-off: CI can go stale. A router change that regresses accuracy will not
+fail CI until someone re-runs `--live --update-baseline` and commits the refreshed numbers.
+`compareToBaseline`'s coverage-staleness check catches one sharp edge of this gap — a report
+that silently stopped covering the full golden set. It does not catch "the code changed and
+nobody re-ran the harness yet." That gap is a stated human decision, not a hidden one.
 
 **The real measured numbers (observed, all 29 golden-set cases, `claude-haiku-4-5` /
-`claude-sonnet-5`, 2026-08-12).** `pnpm eval:check -- --live --full --update-baseline`:
+`claude-sonnet-5`, 2026-08-12).** `pnpm eval:check -- --live --full --update-baseline`, the
+run now committed as the baseline:
 
 | Metric | Result |
 |---|---|
-| Extraction accuracy | **95.2%** (138/145 fields) |
-| Label-verdict accuracy | **65.5%** (19/29 cases) |
+| Extraction accuracy | **95.9%** (139/145 fields) |
+| Label-verdict accuracy | **62.1%** (18/29 cases) |
 | Review-reason accuracy | **30.8%** (4/13 REVIEW cases) |
-| Total measured cost | **$0.2756** |
+| Total measured cost | **$0.2691** |
 | Cases escalated to Sonnet | 12/29 (41.4%) |
 
 Per-field verdict accuracy: `alcohol_content` 100%, `net_contents` 100%, `class_type` 89.7%,
 `government_warning` 86.2%, `brand_name` 82.8%.
 
-Repeating the same `--live --full` run twice (once before, once after an unrelated code
-change in this ticket) produced label-verdict accuracy of 62.1% and 65.5% on the identical
-29 cases — real call-to-call model variance, not a harness bug. Both runs, and the
-benchmark's own independent cascade-arm run, agree the number sits in the low-to-mid 60s.
+Two independent live runs on this final code — this `eval:check` sweep and the benchmark's
+cascade arm below — produced label-verdict accuracy of 62.1% (18/29) and 65.5% (19/29) on
+the identical 29 cases. This is real call-to-call model variance, not a harness bug. Both
+runs agree the number sits in the low-to-mid 60s.
 
 **These numbers are real findings this ticket reports, not problems this ticket fixes** —
 an eval harness's job is to produce the evidence, not to re-tune the router or the
@@ -158,44 +159,45 @@ extractor prompt it is measuring. Two specific, precise findings for whoever pic
 router/prompt tuning next:
 
 1. Six of eleven verdict misses are golden-set cases expecting `REVIEW` (glare, low-light,
-   tiny-warning-text, odd-typography categories) where Haiku read the image confidently
-   enough that the router returned a clean `PASS` instead. Worth a look at whether the
-   golden set's degradation parameters are milder than intended, or Haiku's actual
-   image-quality confidence on these renders is higher than the router's escalation
+   tiny-warning-text, odd-typography categories). In each, Haiku read the image confidently
+   enough that the router returned a clean `PASS` instead. Two explanations are worth
+   checking: the golden set's degradation parameters may be milder than intended, or Haiku's
+   real image-quality confidence on these renders may be higher than the router's escalation
    thresholds assume.
 2. `case-28-conflicting-class-type` and `case-29-conflicting-brand-name` both expect
-   `labelVerdict: "FAIL"`, but `brand_name`/`class_type` never assert `MISMATCH` by design
+   `labelVerdict: "FAIL"`. But `brand_name`/`class_type` never assert `MISMATCH` by design
    (`route.ts`'s own header comment, CP-1 §5.3: "distance beyond threshold routes to REVIEW,
    a judgment call, never a silent FAIL"). A case whose only distinguishing feature is a
-   brand-or-class conflict cannot validly expect `FAIL` under that design — the real system
-   will always route it to `REVIEW`/`AMBIGUOUS_BRAND` instead. This reads as a golden-set
-   ground-truth question (should these two cases expect `REVIEW`, matching
-   `case-16`'s already-correct pattern?), not a router bug — flagged here rather than
-   corrected, since editing `golden-set/manifest.json` is outside this ticket's scope.
+   brand-or-class conflict cannot validly expect `FAIL` under that design. The real system
+   always routes it to `REVIEW`/`AMBIGUOUS_BRAND` instead. This reads as a golden-set
+   ground-truth question, not a router bug: should these two cases expect `REVIEW`, matching
+   `case-16`'s already-correct pattern? Flagged here, not corrected — editing
+   `golden-set/manifest.json` is outside this ticket's scope.
 
 **The cascade-vs-Sonnet-only benchmark (PRD §4, TH-R19) — observed, all 29 cases, both arms
-scored against the identical real Haiku extraction per case.** `pnpm eval:benchmark --full`:
+scored against the identical real Haiku extraction per case, 0 failures.** `pnpm
+eval:benchmark --full`:
 
 | | Cascade (real production path) | Sonnet-only (every field, every case) |
 |---|---|---|
-| Label-verdict accuracy | **65.5%** (19/29) | **44.8%** (13/29) |
-| `government_warning` field accuracy | 86.2% | 58.6% |
-| Total measured cost | **$0.2719** | **$0.4274** |
+| Label-verdict accuracy | **65.5%** (19/29) | **41.4%** (12/29) |
+| `government_warning` field accuracy | 86.2% (25/29) | 58.6% (17/29) |
+| Total measured cost | **$0.2766** | **$0.4409** |
 
-Accuracy delta: **-20.7 percentage points** (Sonnet-only is worse). Cost delta: **+$0.1555,
+Accuracy delta: **-24.1 percentage points** (Sonnet-only is worse). Cost delta: **+$0.1643,
 1.6x** (Sonnet-only is more expensive). On this golden set, routing every field to Sonnet is
 both less accurate and more expensive than the selective cascade — a real, measured, doubly
 one-sided result, not a close call.
 
 **Why Sonnet-only loses on accuracy, precisely, not just "it does."** The
-`government_warning` field is the clearest driver: the real warning subsystem cross-checks a
-VLM reading against an independent OCR reading (`src/server/warning/reconcile.ts`); the
-Sonnet-only arm has no second channel, so by that module's own single-channel rule
-("a single-channel FAIL is never allowed, only REVIEW") it can never assert a hard
-`MISMATCH` on this field — a title-case or reworded warning always escalates instead of
-correctly failing, dragging the whole label's verdict from a correct `FAIL` to an incorrect
-`REVIEW`. This is a structural property of having one reading instead of two, not a prompt
-quality problem — more Sonnet calls do not fix a missing corroborating channel.
+`government_warning` field is the clearest driver. The real warning subsystem cross-checks a
+VLM reading against an independent OCR reading (`src/server/warning/reconcile.ts`). The
+Sonnet-only arm has no second channel. That module's own single-channel rule says a
+single-channel FAIL is never allowed, only REVIEW — so the Sonnet-only arm can never assert
+a hard `MISMATCH` on this field. A title-case or reworded warning always escalates instead
+of correctly failing, dragging the whole label's verdict from a correct `FAIL` to an
+incorrect `REVIEW`. This is a structural property of having one reading instead of two, not
+a prompt-quality problem. More Sonnet calls do not fix a missing corroborating channel.
 
 **Per this ticket's own instruction, the recommendation is not up for renegotiation by this
 finding.** PRD §4: "Keep the cascade regardless per Troy; the benchmark is the evidence."

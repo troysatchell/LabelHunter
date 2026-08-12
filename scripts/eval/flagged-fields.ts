@@ -14,6 +14,7 @@
  */
 import type { FlaggedField } from "../../src/server/resolver";
 import type { LabelRouterResult, ReviewReason, RouterFieldKey } from "../../src/server/router/types";
+import { ROUTER_FIELD_KEYS } from "./types";
 
 /** The minimal shape `buildFlaggedFields` needs from one field row — a
  * structural subset of `FieldResultRow`, not the whole thing, so a caller
@@ -99,14 +100,6 @@ export function buildFlaggedFieldsForEscalatedLabel(routerResult: LabelRouterRes
   }));
 }
 
-const ALL_ROUTER_FIELDS: readonly RouterFieldKey[] = [
-  "brand_name",
-  "class_type",
-  "alcohol_content",
-  "net_contents",
-  "government_warning",
-];
-
 /**
  * Flags every one of the five router fields, regardless of what any
  * router decided — the Sonnet-only arm's own definition of "bypass the
@@ -116,7 +109,7 @@ const ALL_ROUTER_FIELDS: readonly RouterFieldKey[] = [
  * router reason, since no router decision produced this list.
  */
 export function buildAllFieldsFlagged(): FlaggedField[] {
-  return ALL_ROUTER_FIELDS.map((field) => ({
+  return ROUTER_FIELD_KEYS.map((field) => ({
     field,
     reviewReason: "LOW_MODEL_CONFIDENCE",
     trigger: "Sonnet-only benchmark: every field routed to Sonnet, not escalation-selected.",

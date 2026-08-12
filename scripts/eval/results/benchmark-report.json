@@ -1,6 +1,6 @@
 {
   "ticket": "TRO-470 / LH-030",
-  "measuredAt": "2026-08-12T04:36:20.558Z",
+  "measuredAt": "2026-08-12T05:23:34.689Z",
   "manifestVersion": "1.0.0",
   "caseIds": [
     "case-01-clean-match-spirits",
@@ -73,13 +73,13 @@
       "correct": 4,
       "rate": 0.3076923076923077
     },
-    "totalCostUsd": 0.27191200000000004
+    "totalCostUsd": 0.276604
   },
   "sonnetOnly": {
     "labelVerdictAccuracy": {
       "total": 29,
-      "correct": 13,
-      "rate": 0.4482758620689655
+      "correct": 12,
+      "rate": 0.41379310344827586
     },
     "fieldVerdictAccuracyByField": {
       "brand_name": {
@@ -113,11 +113,11 @@
       "correct": 0,
       "rate": 0
     },
-    "totalCostUsd": 0.42742399999999997
+    "totalCostUsd": 0.44091600000000003
   },
-  "labelVerdictAccuracyDeltaPercentagePoints": -20.68965517241379,
-  "costDeltaUsd": 0.15551199999999993,
-  "costDeltaMultiplier": 1.5719203271646707,
+  "labelVerdictAccuracyDeltaPercentagePoints": -24.137931034482758,
+  "costDeltaUsd": 0.164312,
+  "costDeltaMultiplier": 1.5940333473124033,
   "recommendation": "Keep the cascade regardless of this benchmark's outcome (PRD §4, TH-R19) — the cascade is the architecture, not an optimization up for renegotiation. This benchmark exists to produce the evidence for that decision, not to reopen it.",
   "notes": [
     "reviewReasonAccuracy for the sonnet-only arm is informational only, not a meaningful cascade-vs-sonnet-only comparison point: this arm has no router pass, so a NEEDS_REVIEW field's reason is a fixed placeholder (LOW_MODEL_CONFIDENCE) rather than one of the router's eight structural reasons — see resolver-rollup.ts.",
@@ -227,10 +227,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 4021,
-          "outputTokens": 685,
+          "outputTokens": 675,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.014891999999999999
+          "usd": 0.014792
         }
       }
     },
@@ -328,18 +328,18 @@
             {
               "field": "government_warning",
               "expectedVerdict": "MATCH",
-              "actualVerdict": "MATCH",
-              "correct": true
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": false
             }
           ]
         },
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 3962,
-          "outputTokens": 686,
+          "outputTokens": 674,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.014784000000000002
+          "usd": 0.014664
         }
       }
     },
@@ -445,10 +445,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 4009,
-          "outputTokens": 657,
+          "outputTokens": 664,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.014588
+          "usd": 0.014658000000000001
         }
       }
     },
@@ -554,10 +554,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 4021,
-          "outputTokens": 677,
+          "outputTokens": 687,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.014811999999999999
+          "usd": 0.014911999999999998
         }
       }
     },
@@ -662,11 +662,11 @@
         },
         "cost": {
           "model": "claude-sonnet-5",
-          "inputTokens": 3991,
-          "outputTokens": 574,
+          "inputTokens": 3981,
+          "outputTokens": 641,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.013722
+          "usd": 0.014372000000000001
         }
       }
     },
@@ -772,10 +772,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 3984,
-          "outputTokens": 768,
+          "outputTokens": 657,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.015648000000000002
+          "usd": 0.014537999999999999
         }
       }
     },
@@ -829,10 +829,10 @@
         "cost": {
           "model": "cascade-total",
           "inputTokens": 6258,
-          "outputTokens": 1061,
+          "outputTokens": 1442,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.018341
+          "usd": 0.022150999999999997
         }
       },
       "sonnetOnly": {
@@ -881,10 +881,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 4010,
-          "outputTokens": 657,
+          "outputTokens": 670,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.014589999999999999
+          "usd": 0.01472
         }
       }
     },
@@ -952,7 +952,7 @@
           "actualLabelVerdict": "REVIEW",
           "labelVerdictCorrect": false,
           "expectedReviewReason": null,
-          "actualReviewReason": "LOW_MODEL_CONFIDENCE",
+          "actualReviewReason": "WARNING_MISMATCH",
           "reviewReasonCorrect": true,
           "fields": [
             {
@@ -990,10 +990,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 4013,
-          "outputTokens": 590,
+          "outputTokens": 672,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.013926000000000001
+          "usd": 0.014746
         }
       }
     },
@@ -1061,7 +1061,7 @@
           "actualLabelVerdict": "REVIEW",
           "labelVerdictCorrect": false,
           "expectedReviewReason": null,
-          "actualReviewReason": "WARNING_MISMATCH",
+          "actualReviewReason": "LOW_MODEL_CONFIDENCE",
           "reviewReasonCorrect": true,
           "fields": [
             {
@@ -1099,10 +1099,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 4035,
-          "outputTokens": 728,
+          "outputTokens": 719,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.015349999999999999
+          "usd": 0.01526
         }
       }
     },
@@ -1208,10 +1208,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 3976,
-          "outputTokens": 638,
+          "outputTokens": 663,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.014332
+          "usd": 0.014582
         }
       }
     },
@@ -1265,10 +1265,10 @@
         "cost": {
           "model": "cascade-total",
           "inputTokens": 6655,
-          "outputTokens": 936,
+          "outputTokens": 1058,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.017995000000000004
+          "usd": 0.019215000000000003
         }
       },
       "sonnetOnly": {
@@ -1317,10 +1317,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 3970,
-          "outputTokens": 653,
+          "outputTokens": 644,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.01447
+          "usd": 0.01438
         }
       }
     },
@@ -1374,10 +1374,10 @@
         "cost": {
           "model": "cascade-total",
           "inputTokens": 6042,
-          "outputTokens": 420,
+          "outputTokens": 422,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.012119
+          "usd": 0.012139
         }
       },
       "sonnetOnly": {
@@ -1426,10 +1426,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 3835,
-          "outputTokens": 517,
+          "outputTokens": 512,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.01284
+          "usd": 0.01279
         }
       }
     },
@@ -1483,10 +1483,10 @@
         "cost": {
           "model": "cascade-total",
           "inputTokens": 6002,
-          "outputTokens": 397,
+          "outputTokens": 382,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.011889
+          "usd": 0.011739
         }
       },
       "sonnetOnly": {
@@ -1535,10 +1535,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 3795,
-          "outputTokens": 480,
+          "outputTokens": 485,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.01239
+          "usd": 0.01244
         }
       }
     },
@@ -1603,10 +1603,10 @@
           "caseId": "case-14-case-variant-brand-stones-throw",
           "category": "case-variant-brand",
           "expectedLabelVerdict": "PASS",
-          "actualLabelVerdict": "PASS",
-          "labelVerdictCorrect": true,
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": false,
           "expectedReviewReason": null,
-          "actualReviewReason": null,
+          "actualReviewReason": "LOW_MODEL_CONFIDENCE",
           "reviewReasonCorrect": true,
           "fields": [
             {
@@ -1636,18 +1636,18 @@
             {
               "field": "government_warning",
               "expectedVerdict": "MATCH",
-              "actualVerdict": "MATCH",
-              "correct": true
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": false
             }
           ]
         },
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 4032,
-          "outputTokens": 701,
+          "outputTokens": 637,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.015074
+          "usd": 0.014434
         }
       }
     },
@@ -1701,10 +1701,10 @@
         "cost": {
           "model": "cascade-total",
           "inputTokens": 6295,
-          "outputTokens": 554,
+          "outputTokens": 563,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.01338
+          "usd": 0.01347
         }
       },
       "sonnetOnly": {
@@ -1753,10 +1753,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 4028,
-          "outputTokens": 730,
+          "outputTokens": 748,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.015356
+          "usd": 0.015536
         }
       }
     },
@@ -1809,11 +1809,11 @@
         },
         "cost": {
           "model": "cascade-total",
-          "inputTokens": 6252,
-          "outputTokens": 773,
+          "inputTokens": 6238,
+          "outputTokens": 784,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.015444
+          "usd": 0.015526000000000002
         }
       },
       "sonnetOnly": {
@@ -1821,10 +1821,10 @@
           "caseId": "case-16-case-variant-brand-extra-words",
           "category": "case-variant-brand",
           "expectedLabelVerdict": "REVIEW",
-          "actualLabelVerdict": "REVIEW",
-          "labelVerdictCorrect": true,
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": false,
           "expectedReviewReason": "AMBIGUOUS_BRAND",
-          "actualReviewReason": "LOW_MODEL_CONFIDENCE",
+          "actualReviewReason": null,
           "reviewReasonCorrect": false,
           "fields": [
             {
@@ -1854,18 +1854,18 @@
             {
               "field": "government_warning",
               "expectedVerdict": "MATCH",
-              "actualVerdict": "NEEDS_REVIEW",
-              "correct": false
+              "actualVerdict": "MATCH",
+              "correct": true
             }
           ]
         },
         "cost": {
           "model": "claude-sonnet-5",
-          "inputTokens": 4027,
-          "outputTokens": 1153,
+          "inputTokens": 4013,
+          "outputTokens": 1098,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.019584
+          "usd": 0.019006000000000002
         }
       }
     },
@@ -1919,10 +1919,10 @@
         "cost": {
           "model": "cascade-total",
           "inputTokens": 6240,
-          "outputTokens": 679,
+          "outputTokens": 661,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.01449
+          "usd": 0.01431
         }
       },
       "sonnetOnly": {
@@ -1971,10 +1971,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 4015,
-          "outputTokens": 691,
+          "outputTokens": 718,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.014939999999999998
+          "usd": 0.01521
         }
       }
     },
@@ -2028,10 +2028,10 @@
         "cost": {
           "model": "cascade-total",
           "inputTokens": 6185,
-          "outputTokens": 706,
+          "outputTokens": 703,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.014709999999999999
+          "usd": 0.01468
         }
       },
       "sonnetOnly": {
@@ -2080,10 +2080,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 3981,
-          "outputTokens": 650,
+          "outputTokens": 652,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.014462000000000001
+          "usd": 0.014482000000000002
         }
       }
     },
@@ -2137,10 +2137,10 @@
         "cost": {
           "model": "cascade-total",
           "inputTokens": 7252,
-          "outputTokens": 746,
+          "outputTokens": 767,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.016663999999999998
+          "usd": 0.016874
         }
       },
       "sonnetOnly": {
@@ -2148,10 +2148,10 @@
           "caseId": "case-19-rotation-mild-correctable",
           "category": "rotation",
           "expectedLabelVerdict": "PASS",
-          "actualLabelVerdict": "REVIEW",
-          "labelVerdictCorrect": false,
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": true,
           "expectedReviewReason": null,
-          "actualReviewReason": "LOW_MODEL_CONFIDENCE",
+          "actualReviewReason": null,
           "reviewReasonCorrect": true,
           "fields": [
             {
@@ -2181,18 +2181,18 @@
             {
               "field": "government_warning",
               "expectedVerdict": "MATCH",
-              "actualVerdict": "NEEDS_REVIEW",
-              "correct": false
+              "actualVerdict": "MATCH",
+              "correct": true
             }
           ]
         },
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 4528,
-          "outputTokens": 876,
+          "outputTokens": 2328,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.017816
+          "usd": 0.032336000000000004
         }
       }
     },
@@ -2246,10 +2246,10 @@
         "cost": {
           "model": "cascade-total",
           "inputTokens": 6448,
-          "outputTokens": 628,
+          "outputTokens": 610,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.015511
+          "usd": 0.015331
         }
       },
       "sonnetOnly": {
@@ -2298,10 +2298,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 3723,
-          "outputTokens": 469,
+          "outputTokens": 415,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.012136000000000001
+          "usd": 0.011595999999999999
         }
       }
     },
@@ -2407,10 +2407,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 3972,
-          "outputTokens": 639,
+          "outputTokens": 644,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.014334
+          "usd": 0.014384000000000001
         }
       }
     },
@@ -2464,10 +2464,10 @@
         "cost": {
           "model": "cascade-total",
           "inputTokens": 6651,
-          "outputTokens": 1029,
+          "outputTokens": 1025,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.018927
+          "usd": 0.018886999999999998
         }
       },
       "sonnetOnly": {
@@ -2516,10 +2516,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 3971,
-          "outputTokens": 630,
+          "outputTokens": 638,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.014242000000000001
+          "usd": 0.014322
         }
       }
     },
@@ -2625,10 +2625,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 3975,
-          "outputTokens": 635,
+          "outputTokens": 629,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.0143
+          "usd": 0.014240000000000001
         }
       }
     },
@@ -2734,10 +2734,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 4009,
-          "outputTokens": 655,
+          "outputTokens": 682,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.014568
+          "usd": 0.014838
         }
       }
     },
@@ -2843,10 +2843,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 3969,
-          "outputTokens": 633,
+          "outputTokens": 640,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.014268
+          "usd": 0.014338
         }
       }
     },
@@ -2952,10 +2952,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 4016,
-          "outputTokens": 660,
+          "outputTokens": 659,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.014632
+          "usd": 0.014622
         }
       }
     },
@@ -3020,10 +3020,10 @@
           "caseId": "case-27-conflicting-net-contents",
           "category": "conflicting-application-vs-label",
           "expectedLabelVerdict": "FAIL",
-          "actualLabelVerdict": "FAIL",
-          "labelVerdictCorrect": true,
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": false,
           "expectedReviewReason": null,
-          "actualReviewReason": null,
+          "actualReviewReason": "LOW_MODEL_CONFIDENCE",
           "reviewReasonCorrect": true,
           "fields": [
             {
@@ -3053,18 +3053,18 @@
             {
               "field": "government_warning",
               "expectedVerdict": "MATCH",
-              "actualVerdict": "MATCH",
-              "correct": true
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": false
             }
           ]
         },
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 4001,
-          "outputTokens": 677,
+          "outputTokens": 611,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.014772
+          "usd": 0.014112000000000001
         }
       }
     },
@@ -3170,10 +3170,10 @@
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 4008,
-          "outputTokens": 698,
+          "outputTokens": 708,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.014995999999999999
+          "usd": 0.015095999999999998
         }
       }
     },
@@ -3227,10 +3227,10 @@
         "cost": {
           "model": "cascade-total",
           "inputTokens": 6250,
-          "outputTokens": 561,
+          "outputTokens": 545,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.013524999999999999
+          "usd": 0.013364999999999998
         }
       },
       "sonnetOnly": {
@@ -3238,10 +3238,10 @@
           "caseId": "case-29-conflicting-brand-name",
           "category": "conflicting-application-vs-label",
           "expectedLabelVerdict": "FAIL",
-          "actualLabelVerdict": "REVIEW",
-          "labelVerdictCorrect": false,
+          "actualLabelVerdict": "FAIL",
+          "labelVerdictCorrect": true,
           "expectedReviewReason": null,
-          "actualReviewReason": "LOW_MODEL_CONFIDENCE",
+          "actualReviewReason": null,
           "reviewReasonCorrect": true,
           "fields": [
             {
@@ -3271,18 +3271,18 @@
             {
               "field": "government_warning",
               "expectedVerdict": "MATCH",
-              "actualVerdict": "NEEDS_REVIEW",
-              "correct": false
+              "actualVerdict": "MATCH",
+              "correct": true
             }
           ]
         },
         "cost": {
           "model": "claude-sonnet-5",
           "inputTokens": 4025,
-          "outputTokens": 755,
+          "outputTokens": 746,
           "cacheCreationInputTokens": 0,
           "cacheReadInputTokens": 0,
-          "usd": 0.0156
+          "usd": 0.01551
         }
       }
     }

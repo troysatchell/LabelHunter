@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { LabelRouterResult } from "../../src/server/router/types";
+import type { LabelRouterResult, ReviewReason, RouterFieldKey } from "../../src/server/router/types";
 import {
   buildAllFieldsFlagged,
   buildFlaggedFields,
@@ -47,9 +47,9 @@ describe("buildAllFieldsFlagged", () => {
   });
 });
 
-function routerField(field: string, reviewReason: string | null, reason = "detail"): LabelRouterResult["fields"][number] {
+function routerField(field: RouterFieldKey, reviewReason: ReviewReason | null, reason = "detail"): LabelRouterResult["fields"][number] {
   return {
-    field: field as never,
+    field,
     verdict: reviewReason ? "NEEDS_REVIEW" : "MATCH",
     labelValue: "x",
     applicationValue: "x",
@@ -57,7 +57,7 @@ function routerField(field: string, reviewReason: string | null, reason = "detai
     confidence: 0.9,
     reason,
     resolvedBy: null,
-    reviewReason: reviewReason as never,
+    reviewReason,
   };
 }
 

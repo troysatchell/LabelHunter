@@ -6,7 +6,9 @@ import {
   computeCostUsd,
   createUsageCapturingClient,
   HAIKU_4_5_PRICING,
+  selectSonnetPricing,
   SONNET_5_INTRO_PRICING,
+  SONNET_5_STANDARD_PRICING,
 } from "./usage";
 
 function fakeClient(create: (params: Anthropic.MessageCreateParamsNonStreaming) => Promise<Anthropic.Message>) {
@@ -48,6 +50,28 @@ describe("computeCostUsd", () => {
 
   it("returns 0 for zero usage", () => {
     expect(computeCostUsd({ inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }, HAIKU_4_5_PRICING)).toBe(0);
+  });
+});
+
+describe("selectSonnetPricing", () => {
+  it("uses intro pricing on the cutoff date itself", () => {
+    expect(selectSonnetPricing("2026-08-31T23:59:59.999Z")).toBe(SONNET_5_INTRO_PRICING);
+  });
+
+  it("uses intro pricing for a run well before the cutoff", () => {
+    expect(selectSonnetPricing("2026-08-12T00:00:00.000Z")).toBe(SONNET_5_INTRO_PRICING);
+  });
+
+  it("uses standard pricing the instant after the cutoff", () => {
+    expect(selectSonnetPricing("2026-09-01T00:00:00.000Z")).toBe(SONNET_5_STANDARD_PRICING);
+  });
+
+  it("uses standard pricing well after the cutoff", () => {
+    expect(selectSonnetPricing("2027-01-01T00:00:00.000Z")).toBe(SONNET_5_STANDARD_PRICING);
+  });
+
+  it("accepts a Date as well as an ISO string", () => {
+    expect(selectSonnetPricing(new Date("2026-09-01T00:00:00.000Z"))).toBe(SONNET_5_STANDARD_PRICING);
   });
 });
 
@@ -125,5 +149,46 @@ describe("createUsageCapturingClient", () => {
 
     await capture.client.messages.create({} as Anthropic.MessageCreateParamsNonStreaming);
     expect(capture.takeLastUsage()?.input_tokens).toBe(200);
+  });
+
+  it("throws rather than silently misattribute usage when a second call starts before the first resolves", async () => {
+    // Two deferred calls, resolved in reverse order — the shape a shared
+    // mutable lastUsage slot would race on (PR review finding). The second
+    // call must fail loudly instead of corrupting the first call's usage.
+    let releaseFirst!: () => void;
+    const firstStarted = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let resolveFirst!: (message: Anthropic.Message) => void;
+    const firstResult = new Promise<Anthropic.Message>((resolve) => {
+      resolveFirst = resolve;
+    });
+
+    const client = fakeClient(async () => {
+      releaseFirst();
+      return firstResult;
+    });
+    const capture = createUsageCapturingClient(client);
+
+    const firstCall = capture.client.messages.create({} as Anthropic.MessageCreateParamsNonStreaming);
+    await firstStarted;
+
+    await expect(capture.client.messages.create({} as Anthropic.MessageCreateParamsNonStreaming)).rejects.toThrow(
+      /one call at a time/,
+    );
+
+    resolveFirst(makeMockMessage("first"));
+    await firstCall;
+    expect(capture.takeLastUsage()).not.toBeNull();
+  });
+
+  it("allows a new call after the previous one's usage was read (not stuck after a throw)", async () => {
+    const client = fakeClient(async () => makeMockMessage("hi"));
+    const capture = createUsageCapturingClient(client);
+
+    await capture.client.messages.create({} as Anthropic.MessageCreateParamsNonStreaming);
+    capture.takeLastUsage();
+
+    await expect(capture.client.messages.create({} as Anthropic.MessageCreateParamsNonStreaming)).resolves.toBeDefined();
   });
 });

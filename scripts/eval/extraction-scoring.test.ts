@@ -31,6 +31,18 @@ describe("scoreExtraction", () => {
     expect(result.fields.find((f) => f.field === "brandName")?.correct).toBe(false);
   });
 
+  it("classType: scores correct through a case difference", () => {
+    const result = scoreExtraction(testGoldenCase(), testExtraction({ class_type: testField("straight bourbon whiskey") }));
+    expect(result.fields.find((f) => f.field === "classType")?.correct).toBe(true);
+  });
+
+  it("classType: scores incorrect when Haiku reads a different class/type", () => {
+    const result = scoreExtraction(testGoldenCase(), testExtraction({ class_type: testField("Vodka") }));
+    const score = result.fields.find((f) => f.field === "classType");
+    expect(score?.correct).toBe(false);
+    expect(score?.actual).toBe("Vodka");
+  });
+
   it("abv: scores correct when the parsed percent matches, even with different printed text", () => {
     const result = scoreExtraction(testGoldenCase(), testExtraction({ alcohol_content: testField("90 Proof (45% Alc./Vol.)") }));
     expect(result.fields.find((f) => f.field === "abv")?.correct).toBe(true);

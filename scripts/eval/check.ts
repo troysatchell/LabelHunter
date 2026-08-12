@@ -63,6 +63,7 @@ import { cleanupScratchDirAndPool } from "../latency/cleanup";
 import { parseEvalArgs, resolveCaseIds, validateCheckArgs } from "./args";
 import { compareToBaseline } from "./baseline-compare";
 import { REPO_ROOT, runOneCase, type CaseRunOutcome } from "./cascade-runner";
+import { validateEvalBaseline, validateEvalReport } from "./report-validation";
 import { buildEvalReportSummary } from "./summary";
 import type { CascadeCaseResult, EvalBaseline, EvalCaseFailure, EvalReport } from "./types";
 
@@ -79,7 +80,11 @@ function printCaseLine(outcome: CaseRunOutcome, index: number, total: number): v
   const verdictNote = r.verdict.labelVerdictCorrect
     ? "verdict OK"
     : `verdict WRONG (expected ${r.verdict.expectedLabelVerdict}, got ${r.verdict.actualLabelVerdict})`;
-  const resolverNote = r.resolverOutcome ? `, resolver: ${r.resolverOutcome} ($${r.resolverCost!.usd.toFixed(4)})` : "";
+  const resolverNote = r.resolverOutcome
+    ? `, resolver: ${r.resolverOutcome} ($${r.resolverCost!.usd.toFixed(4)})`
+    : r.resolverError
+      ? `, resolver: FAILED (${r.resolverError})`
+      : "";
   console.log(
     `  [${index}/${total}] ${r.caseId}: extraction ${extractionCorrect}/5, ${verdictNote}, haiku $${r.haikuCost.usd.toFixed(4)}${resolverNote}`,
   );
@@ -216,7 +221,7 @@ async function runLive(args: ReturnType<typeof parseEvalArgs>): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8")) as EvalBaseline;
+  const baseline = validateEvalBaseline(JSON.parse(readFileSync(BASELINE_PATH, "utf8")), BASELINE_PATH);
   const regressionResult = compareToBaseline(report, baseline);
   printRegressionResult(regressionResult);
   process.exitCode = regressionResult.regressed ? 1 : 0;
@@ -236,8 +241,8 @@ function runCheap(): void {
     process.exitCode = 1;
     return;
   }
-  const report = JSON.parse(readFileSync(REPORT_PATH, "utf8")) as EvalReport;
-  const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8")) as EvalBaseline;
+  const report = validateEvalReport(JSON.parse(readFileSync(REPORT_PATH, "utf8")), REPORT_PATH);
+  const baseline = validateEvalBaseline(JSON.parse(readFileSync(BASELINE_PATH, "utf8")), BASELINE_PATH);
   console.log(
     `check.ts: cheap mode — comparing the committed report (measured ${report.measuredAt}) against the committed baseline (established ${baseline.establishedAt}). No live call made.`,
   );

@@ -1,6 +1,6 @@
 {
   "ticket": "TRO-470 / LH-030",
-  "measuredAt": "2026-08-12T04:39:34.853Z",
+  "measuredAt": "2026-08-12T05:16:55.005Z",
   "mode": "live",
   "haikuModel": "claude-haiku-4-5",
   "sonnetModel": "claude-sonnet-5",
@@ -40,14 +40,14 @@
   "summary": {
     "extractionAccuracy": {
       "total": 145,
-      "correct": 138,
-      "rate": 0.9517241379310345
+      "correct": 139,
+      "rate": 0.9586206896551724
     },
     "extractionAccuracyByField": {
       "brandName": {
         "total": 29,
-        "correct": 27,
-        "rate": 0.9310344827586207
+        "correct": 28,
+        "rate": 0.9655172413793104
       },
       "classType": {
         "total": 29,
@@ -72,14 +72,14 @@
     },
     "labelVerdictAccuracy": {
       "total": 29,
-      "correct": 19,
-      "rate": 0.6551724137931034
+      "correct": 18,
+      "rate": 0.6206896551724138
     },
     "fieldVerdictAccuracyByField": {
       "brand_name": {
         "total": 29,
-        "correct": 25,
-        "rate": 0.8620689655172413
+        "correct": 24,
+        "rate": 0.8275862068965517
       },
       "class_type": {
         "total": 29,
@@ -205,7 +205,8 @@
       },
       "resolverCost": null,
       "resolverOutcome": null,
-      "resolverDurationMs": 0
+      "resolverError": null,
+      "resolverDurationMs": null
     },
     {
       "caseId": "case-02-clean-match-beer-no-abv",
@@ -303,7 +304,8 @@
       },
       "resolverCost": null,
       "resolverOutcome": null,
-      "resolverDurationMs": 0
+      "resolverError": null,
+      "resolverDurationMs": null
     },
     {
       "caseId": "case-03-clean-match-wine",
@@ -401,7 +403,8 @@
       },
       "resolverCost": null,
       "resolverOutcome": null,
-      "resolverDurationMs": 0
+      "resolverError": null,
+      "resolverDurationMs": null
     },
     {
       "caseId": "case-04-clean-match-spirits-alt-format",
@@ -499,7 +502,8 @@
       },
       "resolverCost": null,
       "resolverOutcome": null,
-      "resolverDurationMs": 0
+      "resolverError": null,
+      "resolverDurationMs": null
     },
     {
       "caseId": "case-05-abv-mismatch-application-higher",
@@ -597,7 +601,8 @@
       },
       "resolverCost": null,
       "resolverOutcome": null,
-      "resolverDurationMs": 0
+      "resolverError": null,
+      "resolverDurationMs": null
     },
     {
       "caseId": "case-06-abv-mismatch-label-higher",
@@ -695,7 +700,8 @@
       },
       "resolverCost": null,
       "resolverOutcome": null,
-      "resolverDurationMs": 0
+      "resolverError": null,
+      "resolverDurationMs": null
     },
     {
       "caseId": "case-07-abv-proof-mismatch-internal",
@@ -794,13 +800,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3558,
-        "outputTokens": 578,
+        "outputTokens": 1015,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.012896000000000001
+        "usd": 0.017266
       },
       "resolverOutcome": "resolved",
-      "resolverDurationMs": 8510
+      "resolverError": null,
+      "resolverDurationMs": 11772
     },
     {
       "caseId": "case-08-title-case-warning-prefix-only",
@@ -898,7 +905,8 @@
       },
       "resolverCost": null,
       "resolverOutcome": null,
-      "resolverDurationMs": 0
+      "resolverError": null,
+      "resolverDurationMs": null
     },
     {
       "caseId": "case-09-title-case-warning-full-statement",
@@ -996,7 +1004,8 @@
       },
       "resolverCost": null,
       "resolverOutcome": null,
-      "resolverDurationMs": 0
+      "resolverError": null,
+      "resolverDurationMs": null
     },
     {
       "caseId": "case-10-reworded-warning-clause-one",
@@ -1094,7 +1103,8 @@
       },
       "resolverCost": null,
       "resolverOutcome": null,
-      "resolverDurationMs": 0
+      "resolverError": null,
+      "resolverDurationMs": null
     },
     {
       "caseId": "case-11-reworded-warning-clause-two",
@@ -1193,13 +1203,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3955,
-        "outputTokens": 637,
+        "outputTokens": 551,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.014280000000000001
+        "usd": 0.013420000000000001
       },
       "resolverOutcome": "needs-human",
-      "resolverDurationMs": 5557
+      "resolverError": null,
+      "resolverDurationMs": 6341
     },
     {
       "caseId": "case-12-missing-warning-spirits",
@@ -1298,13 +1309,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3342,
-        "outputTokens": 124,
+        "outputTokens": 119,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.007924
+        "usd": 0.007873999999999999
       },
       "resolverOutcome": "needs-human",
-      "resolverDurationMs": 2820
+      "resolverError": null,
+      "resolverDurationMs": 3236
     },
     {
       "caseId": "case-13-missing-warning-wine",
@@ -1403,13 +1415,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3302,
-        "outputTokens": 118,
+        "outputTokens": 113,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.007783999999999999
+        "usd": 0.0077339999999999996
       },
       "resolverOutcome": "needs-human",
-      "resolverDurationMs": 3011
+      "resolverError": null,
+      "resolverDurationMs": 2999
     },
     {
       "caseId": "case-14-case-variant-brand-stones-throw",
@@ -1507,7 +1520,8 @@
       },
       "resolverCost": null,
       "resolverOutcome": null,
-      "resolverDurationMs": 0
+      "resolverError": null,
+      "resolverDurationMs": null
     },
     {
       "caseId": "case-15-case-variant-brand-punctuation",
@@ -1606,13 +1620,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3595,
-        "outputTokens": 265,
+        "outputTokens": 269,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.00984
+        "usd": 0.00988
       },
       "resolverOutcome": "resolved",
-      "resolverDurationMs": 4455
+      "resolverError": null,
+      "resolverDurationMs": 4714
     },
     {
       "caseId": "case-16-case-variant-brand-extra-words",
@@ -1711,13 +1726,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3552,
-        "outputTokens": 404,
+        "outputTokens": 476,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.011144000000000001
+        "usd": 0.011864
       },
       "resolverOutcome": "resolved",
-      "resolverDurationMs": 5206
+      "resolverError": null,
+      "resolverDurationMs": 6513
     },
     {
       "caseId": "case-17-glare-front-label",
@@ -1728,10 +1744,10 @@
         "fields": [
           {
             "field": "brandName",
-            "correct": false,
+            "correct": true,
             "expected": "Sable Ridge Distillery",
-            "actual": "Sable Ridge",
-            "detail": "Haiku read \"Sable Ridge\"; the label prints \"Sable Ridge Distillery\"."
+            "actual": "Sable Ridge Distillery",
+            "detail": "Haiku read the brand name correctly."
           },
           {
             "field": "classType",
@@ -1767,17 +1783,17 @@
         "caseId": "case-17-glare-front-label",
         "category": "glare",
         "expectedLabelVerdict": "REVIEW",
-        "actualLabelVerdict": "REVIEW",
-        "labelVerdictCorrect": true,
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": false,
         "expectedReviewReason": "LOW_IMAGE_QUALITY",
-        "actualReviewReason": "AMBIGUOUS_BRAND",
+        "actualReviewReason": null,
         "reviewReasonCorrect": false,
         "fields": [
           {
             "field": "brand_name",
             "expectedVerdict": "NEEDS_REVIEW",
-            "actualVerdict": "NEEDS_REVIEW",
-            "correct": true
+            "actualVerdict": "MATCH",
+            "correct": false
           },
           {
             "field": "class_type",
@@ -1808,21 +1824,15 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2700,
-        "outputTokens": 416,
+        "outputTokens": 419,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.0047799999999999995
+        "usd": 0.004795
       },
-      "resolverCost": {
-        "model": "claude-sonnet-5",
-        "inputTokens": 3540,
-        "outputTokens": 263,
-        "cacheCreationInputTokens": 0,
-        "cacheReadInputTokens": 0,
-        "usd": 0.00971
-      },
-      "resolverOutcome": "resolved",
-      "resolverDurationMs": 3714
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null
     },
     {
       "caseId": "case-18-glare-warning-block",
@@ -1921,13 +1931,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3485,
-        "outputTokens": 312,
+        "outputTokens": 307,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.01009
+        "usd": 0.01004
       },
       "resolverOutcome": "resolved",
-      "resolverDurationMs": 4290
+      "resolverError": null,
+      "resolverDurationMs": 4604
     },
     {
       "caseId": "case-19-rotation-mild-correctable",
@@ -2026,13 +2037,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 4042,
-        "outputTokens": 516,
+        "outputTokens": 346,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.013243999999999999
+        "usd": 0.011543999999999999
       },
       "resolverOutcome": "resolved",
-      "resolverDurationMs": 5340
+      "resolverError": null,
+      "resolverDurationMs": 4639
     },
     {
       "caseId": "case-20-rotation-severe-upside-down",
@@ -2131,13 +2143,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3748,
-        "outputTokens": 416,
+        "outputTokens": 468,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.011656
+        "usd": 0.012176
       },
       "resolverOutcome": "needs-human",
-      "resolverDurationMs": 5674
+      "resolverError": null,
+      "resolverDurationMs": 7141
     },
     {
       "caseId": "case-21-low-light-front-label",
@@ -2235,7 +2248,8 @@
       },
       "resolverCost": null,
       "resolverOutcome": null,
-      "resolverDurationMs": 0
+      "resolverError": null,
+      "resolverDurationMs": null
     },
     {
       "caseId": "case-22-low-light-warning-block",
@@ -2334,13 +2348,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3951,
-        "outputTokens": 632,
+        "outputTokens": 657,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.014221999999999999
+        "usd": 0.014471999999999999
       },
       "resolverOutcome": "resolved",
-      "resolverDurationMs": 5930
+      "resolverError": null,
+      "resolverDurationMs": 5939
     },
     {
       "caseId": "case-23-tiny-warning-text-standard-bottle",
@@ -2438,7 +2453,8 @@
       },
       "resolverCost": null,
       "resolverOutcome": null,
-      "resolverDurationMs": 0
+      "resolverError": null,
+      "resolverDurationMs": null
     },
     {
       "caseId": "case-24-tiny-warning-text-miniature-bottle",
@@ -2536,7 +2552,8 @@
       },
       "resolverCost": null,
       "resolverOutcome": null,
-      "resolverDurationMs": 0
+      "resolverError": null,
+      "resolverDurationMs": null
     },
     {
       "caseId": "case-25-odd-typography-script-brand",
@@ -2634,7 +2651,8 @@
       },
       "resolverCost": null,
       "resolverOutcome": null,
-      "resolverDurationMs": 0
+      "resolverError": null,
+      "resolverDurationMs": null
     },
     {
       "caseId": "case-26-odd-typography-blackletter-class-type",
@@ -2732,7 +2750,8 @@
       },
       "resolverCost": null,
       "resolverOutcome": null,
-      "resolverDurationMs": 0
+      "resolverError": null,
+      "resolverDurationMs": null
     },
     {
       "caseId": "case-27-conflicting-net-contents",
@@ -2830,7 +2849,8 @@
       },
       "resolverCost": null,
       "resolverOutcome": null,
-      "resolverDurationMs": 0
+      "resolverError": null,
+      "resolverDurationMs": null
     },
     {
       "caseId": "case-28-conflicting-class-type",
@@ -2935,7 +2955,8 @@
         "usd": 0.008912
       },
       "resolverOutcome": "resolved",
-      "resolverDurationMs": 3671
+      "resolverError": null,
+      "resolverDurationMs": 4107
     },
     {
       "caseId": "case-29-conflicting-brand-name",
@@ -3034,15 +3055,16 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3550,
-        "outputTokens": 168,
+        "outputTokens": 164,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.00878
+        "usd": 0.00874
       },
       "resolverOutcome": "resolved",
-      "resolverDurationMs": 3050
+      "resolverError": null,
+      "resolverDurationMs": 3408
     }
   ],
-  "totalCostUsd": 0.27562200000000003,
+  "totalCostUsd": 0.26907699999999996,
   "failures": []
 }

@@ -9,7 +9,9 @@
  * `route.ts`'s own type system guarantees this shape today, but a caller
  * across a JSON-serialization boundary should check, not assume.
  */
+import { FIELD_VERDICTS, LABEL_VERDICTS, REVIEW_REASONS } from "../../src/lib/db/enums";
 import type { FieldVerdict, LabelVerdict, ReviewReason, RouterFieldKey } from "../../src/server/router/types";
+import { ROUTER_FIELD_KEYS } from "./types";
 
 export interface FullVerifyFieldResult {
   field: RouterFieldKey;
@@ -28,26 +30,6 @@ export interface FullVerifySuccessBody {
   fields: FullVerifyFieldResult[];
 }
 
-const LABEL_VERDICTS: readonly LabelVerdict[] = ["PASS", "FAIL", "REVIEW"];
-const FIELD_VERDICTS: readonly FieldVerdict[] = ["MATCH", "MISMATCH", "NEEDS_REVIEW"];
-const REVIEW_REASONS: readonly ReviewReason[] = [
-  "LOW_IMAGE_QUALITY",
-  "AMBIGUOUS_BRAND",
-  "AMBIGUOUS_ABV",
-  "AMBIGUOUS_NET_CONTENTS",
-  "WARNING_MISMATCH",
-  "MISSING_REQUIRED_FIELD",
-  "CONFLICTING_EXTRACTION",
-  "LOW_MODEL_CONFIDENCE",
-];
-const ROUTER_FIELDS: readonly RouterFieldKey[] = [
-  "brand_name",
-  "class_type",
-  "alcohol_content",
-  "net_contents",
-  "government_warning",
-];
-
 function isPositiveSafeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
@@ -59,7 +41,7 @@ function isReviewReasonOrNull(value: unknown): value is ReviewReason | null {
 function parseField(value: unknown): FullVerifyFieldResult | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Record<string, unknown>;
-  if (typeof candidate.field !== "string" || !(ROUTER_FIELDS as readonly string[]).includes(candidate.field)) return null;
+  if (typeof candidate.field !== "string" || !(ROUTER_FIELD_KEYS as readonly string[]).includes(candidate.field)) return null;
   if (typeof candidate.verdict !== "string" || !(FIELD_VERDICTS as readonly string[]).includes(candidate.verdict)) return null;
   if (candidate.labelValue !== null && typeof candidate.labelValue !== "string") return null;
   if (typeof candidate.evidence !== "string") return null;
@@ -91,13 +73,20 @@ export function parseFullVerifySuccessBody(body: unknown): FullVerifySuccessBody
   if (!isReviewReasonOrNull(candidate.headlineReason)) return null;
   if (!Array.isArray(candidate.fields)) return null;
 
+  // Exact length, not just "every required key present" — a body with a
+  // duplicate field entry (two "brand_name" rows, one required key
+  // missing) would pass a presence-only check; scoreVerdict downstream
+  // would then have to catch it. Catching it here, at the actual JSON
+  // boundary, is the more precise fix (standing rule 13).
+  if (candidate.fields.length !== ROUTER_FIELD_KEYS.length) return null;
+
   const fields: FullVerifyFieldResult[] = [];
   for (const raw of candidate.fields) {
     const field = parseField(raw);
     if (!field) return null;
     fields.push(field);
   }
-  if (ROUTER_FIELDS.some((key) => !fields.some((f) => f.field === key))) return null;
+  if (ROUTER_FIELD_KEYS.some((key) => !fields.some((f) => f.field === key))) return null;
 
   return {
     applicationId: candidate.applicationId,

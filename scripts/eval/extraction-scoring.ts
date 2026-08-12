@@ -20,6 +20,7 @@
 import {
   abvAsPercent,
   convertNetContentsToMl,
+  NET_CONTENTS_COMPARE_TOLERANCE_FRACTION,
   normalizeForFuzzyMatch,
   normalizeNetContentsUnit,
   parseAbv,
@@ -28,7 +29,7 @@ import {
 import type { HaikuExtractionResult } from "../../src/server/extractor/types";
 import { foldCase, normalizeTransport } from "../../src/server/warning/normalize";
 import type { GoldenSetCase } from "../../src/lib/golden-set/types";
-import type { ExtractionCaseScore, ExtractionFieldScore } from "./types";
+import type { ExtractionCaseScore, ExtractionFieldKey, ExtractionFieldScore } from "./types";
 
 /** A tiny float-rounding allowance for "the same number, restated" — the
  * same reasoning as `../../src/server/router/field-resolution.ts`'s
@@ -36,34 +37,38 @@ import type { ExtractionCaseScore, ExtractionFieldScore } from "./types";
  * answers the identical question ("45" vs "45.0"). */
 const ABV_EPSILON = 0.05;
 
-function scoreBrandName(caseSpec: GoldenSetCase, extraction: HaikuExtractionResult): ExtractionFieldScore {
-  const expected = caseSpec.label.brandName;
-  const actualRaw = extraction.brand_name.value;
+/**
+ * Scores a fuzzy-matched text field (`brandName`/`classType`) the same way
+ * `scoreBrandName` and `scoreClassType` used to, each with their own
+ * near-identical body — one shared function now, so the two fields cannot
+ * quietly drift in how they score (a PR review finding). `nounPhrase` is
+ * the human-readable name used in the `detail` sentence ("brand name",
+ * "class/type").
+ */
+function scoreFuzzyTextField(
+  field: ExtractionFieldKey,
+  nounPhrase: string,
+  expected: string,
+  actualRaw: string | null,
+): ExtractionFieldScore {
   const correct = actualRaw !== null && normalizeForFuzzyMatch(actualRaw) === normalizeForFuzzyMatch(expected);
   return {
-    field: "brandName",
+    field,
     correct,
     expected,
     actual: actualRaw ?? "(not read)",
     detail: correct
-      ? "Haiku read the brand name correctly."
+      ? `Haiku read the ${nounPhrase} correctly.`
       : `Haiku read "${actualRaw ?? "(nothing)"}"; the label prints "${expected}".`,
   };
 }
 
+function scoreBrandName(caseSpec: GoldenSetCase, extraction: HaikuExtractionResult): ExtractionFieldScore {
+  return scoreFuzzyTextField("brandName", "brand name", caseSpec.label.brandName, extraction.brand_name.value);
+}
+
 function scoreClassType(caseSpec: GoldenSetCase, extraction: HaikuExtractionResult): ExtractionFieldScore {
-  const expected = caseSpec.label.classType;
-  const actualRaw = extraction.class_type.value;
-  const correct = actualRaw !== null && normalizeForFuzzyMatch(actualRaw) === normalizeForFuzzyMatch(expected);
-  return {
-    field: "classType",
-    correct,
-    expected,
-    actual: actualRaw ?? "(not read)",
-    detail: correct
-      ? "Haiku read the class/type correctly."
-      : `Haiku read "${actualRaw ?? "(nothing)"}"; the label prints "${expected}".`,
-  };
+  return scoreFuzzyTextField("classType", "class/type", caseSpec.label.classType, extraction.class_type.value);
 }
 
 /**
@@ -173,7 +178,12 @@ function scoreNetContents(caseSpec: GoldenSetCase, extraction: HaikuExtractionRe
   }
   const actualMl = convertNetContentsToMl(parsed);
   const fractionDiff = expectedMl === 0 ? Infinity : Math.abs(actualMl - expectedMl) / expectedMl;
-  const correct = fractionDiff <= 0.005;
+  // Reuses the router's OWN net-contents tolerance (compareNetContents'
+  // MATCH/MISMATCH cutoff) rather than a second, independently-chosen
+  // number — "close enough to count as read correctly" should mean the
+  // same thing here as it does in the real comparator (a PR review finding
+  // named the bare 0.005 literal this constant replaces).
+  const correct = fractionDiff <= NET_CONTENTS_COMPARE_TOLERANCE_FRACTION;
   return {
     field: "netContents",
     correct,

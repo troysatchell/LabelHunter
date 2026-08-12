@@ -4,12 +4,13 @@
  * artifacts all read (LH-030 / TRO-470). Pure — no I/O.
  */
 import type { RouterFieldKey } from "../../src/server/router/types";
-import type {
-  AccuracySummary,
-  EvalReportSummary,
-  ExtractionCaseScore,
-  ExtractionFieldKey,
-  VerdictCaseScore,
+import {
+  ROUTER_FIELD_KEYS,
+  type AccuracySummary,
+  type EvalReportSummary,
+  type ExtractionCaseScore,
+  type ExtractionFieldKey,
+  type VerdictCaseScore,
 } from "./types";
 
 const EXTRACTION_FIELD_KEYS: readonly ExtractionFieldKey[] = [
@@ -18,13 +19,6 @@ const EXTRACTION_FIELD_KEYS: readonly ExtractionFieldKey[] = [
   "abv",
   "netContents",
   "governmentWarning",
-];
-const ROUTER_FIELD_KEYS: readonly RouterFieldKey[] = [
-  "brand_name",
-  "class_type",
-  "alcohol_content",
-  "net_contents",
-  "government_warning",
 ];
 
 /** `correct / total`, or `0` on an empty population — see `AccuracySummary`'s
@@ -39,6 +33,27 @@ function summarizeBy<T>(items: readonly T[], isCorrect: (item: T) => boolean): A
   return summarize(items.length, items.filter(isCorrect).length);
 }
 
+/**
+ * Groups `items` by `keyOf(item)` into one `AccuracySummary` per key in
+ * `keys` — the one place `summarizeExtraction` and `summarizeVerdict` each
+ * built their own per-field breakdown (a PR review finding: two near-
+ * identical `Object.fromEntries` calls, one per function, that could drift
+ * from each other). `keys` is the full, fixed key set (not derived from
+ * `items`), so a key with zero matching items still gets a real, zeroed
+ * `AccuracySummary` rather than being silently absent from the result.
+ */
+function summarizeByKey<T, K extends string>(
+  items: readonly T[],
+  keys: readonly K[],
+  keyOf: (item: T) => K,
+  isCorrect: (item: T) => boolean,
+): Record<K, AccuracySummary> {
+  return Object.fromEntries(keys.map((key) => [key, summarizeBy(items.filter((item) => keyOf(item) === key), isCorrect)])) as Record<
+    K,
+    AccuracySummary
+  >;
+}
+
 export interface ExtractionSummary {
   overall: AccuracySummary;
   byField: Record<ExtractionFieldKey, AccuracySummary>;
@@ -50,9 +65,7 @@ export interface ExtractionSummary {
  * question, not a per-case all-or-nothing one. */
 export function summarizeExtraction(cases: readonly ExtractionCaseScore[]): ExtractionSummary {
   const allFields = cases.flatMap((c) => c.fields);
-  const byField = Object.fromEntries(
-    EXTRACTION_FIELD_KEYS.map((key) => [key, summarizeBy(allFields.filter((f) => f.field === key), (f) => f.correct)]),
-  ) as Record<ExtractionFieldKey, AccuracySummary>;
+  const byField = summarizeByKey(allFields, EXTRACTION_FIELD_KEYS, (f) => f.field, (f) => f.correct);
   return { overall: summarizeBy(allFields, (f) => f.correct), byField };
 }
 
@@ -71,9 +84,7 @@ export interface VerdictSummary {
  */
 export function summarizeVerdict(cases: readonly VerdictCaseScore[]): VerdictSummary {
   const allFields = cases.flatMap((c) => c.fields);
-  const fieldVerdictAccuracyByField = Object.fromEntries(
-    ROUTER_FIELD_KEYS.map((key) => [key, summarizeBy(allFields.filter((f) => f.field === key), (f) => f.correct)]),
-  ) as Record<RouterFieldKey, AccuracySummary>;
+  const fieldVerdictAccuracyByField = summarizeByKey(allFields, ROUTER_FIELD_KEYS, (f) => f.field, (f) => f.correct);
   const reviewCases = cases.filter((c) => c.expectedLabelVerdict === "REVIEW");
   return {
     labelVerdictAccuracy: summarizeBy(cases, (c) => c.labelVerdictCorrect),

@@ -53,11 +53,16 @@ import { buildApplicationRecord, REPO_ROOT, runOneCase, type CaseRunOutcome } fr
 import { buildAllFieldsFlagged } from "./flagged-fields";
 import { rollUpResolverResolution } from "./resolver-rollup";
 import { summarizeVerdict, type VerdictSummary } from "./summary";
-import { buildMeasuredCost, createUsageCapturingClient, SONNET_5_INTRO_PRICING } from "./usage";
+import { buildMeasuredCost, createUsageCapturingClient, selectSonnetPricing } from "./usage";
 import { scoreVerdict, type ActualVerdict } from "./verdict-scoring";
 import type { EvalCaseFailure, MeasuredCost, VerdictCaseScore } from "./types";
 
 const REPORT_PATH = path.resolve(REPO_ROOT, "scripts/eval/results/benchmark-report.json");
+
+/** Same choice, same reasoning, as `cascade-runner.ts`'s own
+ * `DI_CLIENT_OPTIONS` — matches the real resolver's own default client's
+ * retry policy (`src/server/resolver/index.ts`'s `DEFAULT_CLIENT_MAX_RETRIES`). */
+const DI_CLIENT_OPTIONS = { maxRetries: 0 } as const;
 
 const ALL_ROUTER_FIELDS: readonly RouterFieldKey[] = buildAllFieldsFlagged().map((f) => f.field);
 const SONNET_ONLY_PLACEHOLDER_REASON: ReviewReason = "LOW_MODEL_CONFIDENCE";
@@ -147,18 +152,18 @@ interface BenchmarkReport {
   failures: EvalCaseFailure[];
 }
 
-async function runSonnetOnlyArm(
-  caseSpec: GoldenSetCase,
-  cascadeOutcome: CaseRunOutcome,
-  usageClient: Anthropic,
-  takeLastUsage: () => Anthropic.Usage | null,
-  verificationId: number,
-): Promise<ArmResult> {
+async function runSonnetOnlyArm(caseSpec: GoldenSetCase, cascadeOutcome: CaseRunOutcome, verificationId: number): Promise<ArmResult> {
   const { rawExtraction, rawPreprocessed } = cascadeOutcome;
   if (!rawExtraction || !rawPreprocessed) {
     throw new Error(`benchmark.ts: case "${caseSpec.caseId}" has no captured extraction/preprocessing from the cascade arm to reuse.`);
   }
   const application = buildApplicationRecord(caseSpec);
+  // A dedicated client for this one call — usage.ts's own requirement
+  // (one client, one call, ever), not a client shared across the whole
+  // case loop. maxRetries: 0 matches the real resolver's own default
+  // client (src/server/resolver/index.ts) so this measurement reflects
+  // one real call, at the same retry policy production actually uses.
+  const usageCapture = createUsageCapturingClient(new Anthropic(DI_CLIENT_OPTIONS));
   const resolution = await resolveEscalatedLabel(
     {
       verificationId,
@@ -168,16 +173,16 @@ async function runSonnetOnlyArm(
       router: buildSonnetOnlyRouterInput(),
       flaggedFields: buildAllFieldsFlagged(),
     },
-    { client: usageClient, db: buildFakeResolverDb() },
+    { client: usageCapture.client, db: buildFakeResolverDb() },
   );
-  const usage = takeLastUsage();
+  const usage = usageCapture.takeLastUsage();
   if (!usage) {
     throw new Error(`benchmark.ts: case "${caseSpec.caseId}" — Sonnet-only resolver call completed but no usage was captured — harness bug.`);
   }
   const actualVerdict: ActualVerdict = rollUpResolverResolution(resolution, application, productionComparators);
   return {
     verdict: scoreVerdict(caseSpec, actualVerdict),
-    cost: buildMeasuredCost(SONNET_RESOLVER_MODEL, usage, SONNET_5_INTRO_PRICING),
+    cost: buildMeasuredCost(SONNET_RESOLVER_MODEL, usage, selectSonnetPricing(new Date())),
   };
 }
 
@@ -191,6 +196,13 @@ async function main(): Promise<void> {
   }
 
   const args = parseEvalArgs(process.argv.slice(2));
+  if (args.updateBaseline) {
+    // parseEvalArgs accepts --update-baseline syntactically (it is a
+    // shared flag with check.ts), but this script has no baseline to
+    // update — silently ignoring a typo'd flag would be more confusing
+    // than rejecting it (a PR review finding).
+    throw new Error("benchmark.ts: --update-baseline is not supported here — only pnpm eval:check has a baseline to update.");
+  }
   const manifest = loadGoldenSetManifest();
   const allCaseIds = manifest.cases.map((c) => c.caseId);
   // resolveCaseIds does not consult args.live (see args.ts's own doc
@@ -204,7 +216,6 @@ async function main(): Promise<void> {
   pool.on("error", (err) => console.error("benchmark.ts: unexpected error on idle Postgres client", err));
   const db = drizzle(pool, { schema });
   const scratchDir = await mkdtemp(path.join(tmpdir(), "labelhunter-tro470-benchmark-"));
-  const sonnetOnlyUsage = createUsageCapturingClient(new Anthropic());
 
   const results: BenchmarkCaseResult[] = [];
   const failures: EvalCaseFailure[] = [];
@@ -221,7 +232,7 @@ async function main(): Promise<void> {
       console.log(`    sonnet-only arm...`);
       let sonnetOnly: ArmResult;
       try {
-        sonnetOnly = await runSonnetOnlyArm(caseSpec, cascadeOutcome, sonnetOnlyUsage.client, () => sonnetOnlyUsage.takeLastUsage(), -(i + 1));
+        sonnetOnly = await runSonnetOnlyArm(caseSpec, cascadeOutcome, -(i + 1));
       } catch (cause) {
         failures.push({ caseId: caseSpec.caseId, error: `sonnet-only arm: ${cause instanceof Error ? cause.message : String(cause)}` });
         continue;

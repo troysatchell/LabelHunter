@@ -32,7 +32,7 @@
  */
 import type { ExtractedField } from "../../src/server/extractor/types";
 import { pickHeadlineReason, rollupLabelVerdict } from "../../src/server/router";
-import type { ApplicationRecord, FieldComparators, FieldVerdict, ReviewReason, RouterFieldKey } from "../../src/server/router/types";
+import type { ApplicationRecord, FieldComparators, FieldVerdict, ReviewReason } from "../../src/server/router/types";
 import type {
   CorrectionFieldResolution,
   JudgedFieldResolution,
@@ -40,6 +40,7 @@ import type {
   ResolverResolution,
 } from "../../src/server/resolver";
 import { reconcileWarningChannels } from "../../src/server/warning";
+import { ROUTER_FIELD_KEYS } from "./types";
 import type { ActualVerdict } from "./verdict-scoring";
 
 /**
@@ -91,11 +92,20 @@ function correctionApplicationValue(
  * not a benchmark artifact to explain away.
  */
 function rollUpGovernmentWarning(field: CorrectionFieldResolution): { verdict: FieldVerdict; reviewReason: ReviewReason | null } {
-  // `correctedValue` is guaranteed non-null here — `response.ts`'s
-  // `deriveResolvedFields` rejects a "decided" (non-needsHuman) field whose
-  // `corrected_value` is null before this code ever sees it.
+  if (field.correctedValue === null) {
+    // `response.ts`'s `deriveResolvedFields` rejects a "decided"
+    // (non-needsHuman) field whose `corrected_value` is null before this
+    // code ever sees it — this is a contract violation, not a normal
+    // input. A silent `?? ""` fallback here would feed the real warning
+    // comparator an empty transcription and let it produce a verdict that
+    // LOOKS real but rests on nothing — the exact "confident invention"
+    // shape this repo's boundaries reject elsewhere (PR review finding).
+    throw new Error(
+      "rollUpGovernmentWarning: a decided (non-needsHuman) government_warning resolution has a null correctedValue — resolver contract violated.",
+    );
+  }
   const result = reconcileWarningChannels(
-    { transcription: field.correctedValue ?? "", prefixCasing: "NOT_VISIBLE", confidence: field.confidence },
+    { transcription: field.correctedValue, prefixCasing: "NOT_VISIBLE", confidence: field.confidence },
     // No OCR channel in this simulation — Sonnet's own transcription is the
     // only reading there is (see this file's module comment). `NOT_VISIBLE`
     // on `prefixCasing` skips the model-self-report cross-check
@@ -152,22 +162,17 @@ function rollUpOneField(
   return field.kind === "judged" ? rollUpJudgedField(field) : rollUpCorrectionField(field, application, comparators);
 }
 
-const REQUIRED_FIELDS: readonly RouterFieldKey[] = [
-  "brand_name",
-  "class_type",
-  "alcohol_content",
-  "net_contents",
-  "government_warning",
-];
-
 /**
  * Rolls a resolver resolution (every field decided by Sonnet — see this
  * file's module comment) up into one `ActualVerdict`, using the router's
  * own `rollupLabelVerdict`/`pickHeadlineReason` for the label-level
  * decision. Throws if `resolution.fields` does not cover all five router
  * fields exactly once — the Sonnet-only arm always flags every field
- * (`flagged-fields.ts`'s `buildAllFieldsFlagged`), so an incomplete
- * resolution here is a harness bug, not a normal input to paper over.
+ * (`flagged-fields.ts`'s `buildAllFieldsFlagged`), so an incomplete OR a
+ * duplicated resolution here is a harness bug, not a normal input to paper
+ * over. A duplicate entry would otherwise disappear silently into the
+ * `Map` below (whichever entry is built last wins, the earlier one is
+ * simply discarded) — checked explicitly rather than trusted.
  */
 export function rollUpResolverResolution(
   resolution: ResolverResolution,
@@ -175,8 +180,13 @@ export function rollUpResolverResolution(
   comparators: FieldComparators,
 ): ActualVerdict {
   const byField = new Map(resolution.fields.map((f) => [f.field, f]));
+  if (byField.size !== resolution.fields.length) {
+    throw new Error(
+      `rollUpResolverResolution: resolution.fields has ${resolution.fields.length} entries but only ${byField.size} distinct fields — duplicate field entries are not allowed.`,
+    );
+  }
   const reasons = new Set<ReviewReason>();
-  const fields: ActualVerdict["fields"] = REQUIRED_FIELDS.map((routerField) => {
+  const fields: ActualVerdict["fields"] = ROUTER_FIELD_KEYS.map((routerField) => {
     const resolved = byField.get(routerField);
     if (!resolved) {
       throw new Error(

@@ -55,6 +55,15 @@ describe("summarizeExtraction", () => {
   });
 });
 
+/** A wrong verdict, guaranteed different from `expected` — cycles through
+ * PASS/FAIL/REVIEW rather than hard-coding "REVIEW" (which silently
+ * produced a "wrong" verdict identical to `expected` whenever `expected`
+ * itself was "REVIEW" — a PR review finding in the fixture, not in the
+ * code under test). */
+function aDifferentVerdict(expected: "PASS" | "FAIL" | "REVIEW"): "PASS" | "FAIL" | "REVIEW" {
+  return expected === "REVIEW" ? "PASS" : "REVIEW";
+}
+
 function verdictCase(
   caseId: string,
   opts: { labelCorrect: boolean; reviewReasonCorrect: boolean; expectedLabelVerdict: "PASS" | "FAIL" | "REVIEW"; fieldCorrect: boolean },
@@ -63,7 +72,7 @@ function verdictCase(
     caseId,
     category: "clean-match",
     expectedLabelVerdict: opts.expectedLabelVerdict,
-    actualLabelVerdict: opts.labelCorrect ? opts.expectedLabelVerdict : "REVIEW",
+    actualLabelVerdict: opts.labelCorrect ? opts.expectedLabelVerdict : aDifferentVerdict(opts.expectedLabelVerdict),
     labelVerdictCorrect: opts.labelCorrect,
     expectedReviewReason: opts.expectedLabelVerdict === "REVIEW" ? "LOW_IMAGE_QUALITY" : null,
     actualReviewReason: opts.expectedLabelVerdict === "REVIEW" && opts.reviewReasonCorrect ? "LOW_IMAGE_QUALITY" : null,

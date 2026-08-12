@@ -1,6 +1,6 @@
 {
   "ticket": "TRO-470 / LH-030",
-  "establishedAt": "2026-08-12T04:39:34.853Z",
+  "establishedAt": "2026-08-12T05:16:55.005Z",
   "manifestVersion": "1.0.0",
   "caseIds": [
     "case-01-clean-match-spirits",
@@ -36,14 +36,14 @@
   "summary": {
     "extractionAccuracy": {
       "total": 145,
-      "correct": 138,
-      "rate": 0.9517241379310345
+      "correct": 139,
+      "rate": 0.9586206896551724
     },
     "extractionAccuracyByField": {
       "brandName": {
         "total": 29,
-        "correct": 27,
-        "rate": 0.9310344827586207
+        "correct": 28,
+        "rate": 0.9655172413793104
       },
       "classType": {
         "total": 29,
@@ -68,14 +68,14 @@
     },
     "labelVerdictAccuracy": {
       "total": 29,
-      "correct": 19,
-      "rate": 0.6551724137931034
+      "correct": 18,
+      "rate": 0.6206896551724138
     },
     "fieldVerdictAccuracyByField": {
       "brand_name": {
         "total": 29,
-        "correct": 25,
-        "rate": 0.8620689655172413
+        "correct": 24,
+        "rate": 0.8275862068965517
       },
       "class_type": {
         "total": 29,

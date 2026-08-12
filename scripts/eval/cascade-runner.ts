@@ -8,14 +8,16 @@
  * and `deps.compareGovernmentWarning` below each wrap the real
  * implementation, capturing its result as a side effect before returning it
  * unchanged to `handleVerifyRequest` — the exact same values the response
- * body was built from, not a second, possibly-different re-run. `deps.anthropicClient`
- * is a usage-capturing client (`usage.ts`) so the real Haiku call's token
- * usage is available too, with no second call. `routeLabel` IS called a
- * second time, deliberately: it is pure and deterministic (no I/O, no model
- * call — `src/server/router/index.ts`'s own doc comment), so calling it
- * again with the exact captured inputs `handleVerifyRequest` used
- * internally reproduces its result byte-for-byte, and doing so is the only
- * way to get the escalated case's real `LabelRouterResult` — needed for the
+ * body was built from, not a second, possibly-different re-run. Two
+ * separate usage-capturing clients (`usage.ts`) cover the Haiku call and
+ * the resolver call — one client, one call, ever, so there is no shared
+ * mutable state two calls could race on (see `usage.ts`'s own module
+ * comment for the finding this fixes). `routeLabel` IS called a second
+ * time, deliberately: it is pure and deterministic (no I/O, no model call
+ * — `src/server/router/index.ts`'s own doc comment), so calling it again
+ * with the exact captured inputs `handleVerifyRequest` used internally
+ * reproduces its result byte-for-byte, and doing so is the only way to get
+ * the escalated case's real `LabelRouterResult` — needed for the
  * resolver's own input contract — without a synthetic, placeholder-filled
  * stand-in. A consistency assertion below confirms the re-derived result
  * agrees with the response body's own verdict.
@@ -46,11 +48,23 @@ import { saveLabelImage as defaultSaveLabelImage } from "../../src/server/storag
 import { buildFlaggedFieldsForEscalatedLabel } from "./flagged-fields";
 import { scoreExtraction } from "./extraction-scoring";
 import { parseFullVerifySuccessBody } from "./response-validation";
-import { buildMeasuredCost, createUsageCapturingClient, HAIKU_4_5_PRICING, SONNET_5_INTRO_PRICING } from "./usage";
+import { buildMeasuredCost, createUsageCapturingClient, HAIKU_4_5_PRICING, selectSonnetPricing } from "./usage";
 import { scoreVerdict, type ActualVerdict } from "./verdict-scoring";
 import type { CascadeCaseResult, EvalCaseFailure } from "./types";
 
 export const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
+
+/**
+ * No SDK-level retry on the clients this file constructs for DI — the
+ * SAME choice `src/server/extractor/index.ts` and `src/server/resolver/index.ts`
+ * make on their own default clients (`DEFAULT_CLIENT_MAX_RETRIES = 0`,
+ * both with the same reasoning). A harness client without this override
+ * would silently retry on the SDK's own default policy instead, meaning a
+ * "one real call" measurement could quietly become two or three real
+ * calls, at a cost and a call-count neither this file's own accounting nor
+ * the real production client would produce (a PR review finding).
+ */
+const DI_CLIENT_OPTIONS = { maxRetries: 0 } as const;
 
 const EXTENSION_TO_MEDIA_TYPE: Record<string, string> = {
   jpg: "image/jpeg",
@@ -100,6 +114,43 @@ export function buildApplicationRecord(caseSpec: GoldenSetCase): RouterApplicati
   };
 }
 
+/**
+ * Reads `applicationId` out of an UNVALIDATED response body, for
+ * best-effort cleanup only — never for scoring. Used on the one path
+ * where `parseFullVerifySuccessBody` has already rejected the body (so
+ * nothing about its shape is trusted) but a real `applications` row may
+ * still have been created and deserves a cleanup attempt. Mirrors
+ * `scripts/latency/measure.ts`'s own documented choice on the identical
+ * question (its "200 response body did not match" comment): a malformed
+ * body's `applicationId` is inherently best-effort, never a second,
+ * redundant identity channel — this just widens "best-effort" from "give
+ * up" to "try the one field that's cheap to check," it does not add a new
+ * trust boundary.
+ */
+function extractApplicationIdBestEffort(rawBody: unknown): number | null {
+  if (!rawBody || typeof rawBody !== "object") return null;
+  const candidate = (rawBody as Record<string, unknown>).applicationId;
+  return typeof candidate === "number" && Number.isSafeInteger(candidate) && candidate > 0 ? candidate : null;
+}
+
+async function cleanupApplicationRow(
+  db: ReturnType<typeof drizzle<typeof schema>>,
+  applicationId: number | null,
+  caseId: string,
+): Promise<void> {
+  if (applicationId === null) return;
+  // Same "delete every application row this script creates" discipline as
+  // scripts/latency/measure.ts — best-effort; a delete failure is a
+  // housekeeping problem, not a reason to lose an already-computed score.
+  try {
+    await db.delete(schema.applications).where(eq(schema.applications.id, applicationId));
+  } catch (cleanupError) {
+    console.warn(
+      `cascade-runner.ts: cleanup of application ${applicationId} (case "${caseId}") failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
+    );
+  }
+}
+
 export interface CaseRunOutcome {
   result: CascadeCaseResult | null;
   failure: EvalCaseFailure | null;
@@ -133,7 +184,9 @@ export async function runOneCase(
   let capturedWarningResult: WarningComparatorResult | null = null;
   let haikuUsage: Anthropic.Usage | null = null;
 
-  const usage = createUsageCapturingClient(new Anthropic());
+  // One dedicated client per logical call (usage.ts's own requirement) —
+  // the Haiku call and the resolver call never share one client instance.
+  const haikuUsageCapture = createUsageCapturingClient(new Anthropic(DI_CLIENT_OPTIONS));
 
   const deps: VerifyRouteDeps = {
     db,
@@ -145,7 +198,7 @@ export async function runOneCase(
     extractLabel: async (image, options) => {
       const result = await defaultExtractLabel(image, options);
       capturedExtraction = result;
-      haikuUsage = usage.takeLastUsage();
+      haikuUsage = haikuUsageCapture.takeLastUsage();
       return result;
     },
     compareGovernmentWarning: async (input) => {
@@ -160,7 +213,7 @@ export async function runOneCase(
     },
     saveLabelImage: (bytes, originalFilename) => defaultSaveLabelImage(bytes, originalFilename, { baseDir: scratchDir }),
     comparators: productionComparators,
-    anthropicClient: usage.client,
+    anthropicClient: haikuUsageCapture.client,
   };
 
   const request = buildVerifyRequest(imageBytes, imagePath, mediaType, caseSpec);
@@ -191,6 +244,11 @@ export async function runOneCase(
   }
   const body = parseFullVerifySuccessBody(rawBody);
   if (!body) {
+    // The body's shape is not trusted past this point — but a real
+    // `applications` row may still exist, so a best-effort cleanup by ID
+    // is still worth attempting (see extractApplicationIdBestEffort's own
+    // doc comment).
+    await cleanupApplicationRow(db, extractApplicationIdBestEffort(rawBody), caseSpec.caseId);
     return {
       result: null,
       failure: { caseId: caseSpec.caseId, error: "cascade-runner.ts: 200 response body did not match the expected shape" },
@@ -229,9 +287,10 @@ export async function runOneCase(
     const verdictScore = scoreVerdict(caseSpec, actualVerdict);
     const haikuCost = buildMeasuredCost(HAIKU_EXTRACTOR_MODEL, haikuUsage, HAIKU_4_5_PRICING);
 
-    let resolverCost = null as CascadeCaseResult["resolverCost"];
+    let resolverCost: CascadeCaseResult["resolverCost"] = null;
     let resolverOutcome: CascadeCaseResult["resolverOutcome"] = null;
-    let resolverDurationMs = 0;
+    let resolverDurationMs: CascadeCaseResult["resolverDurationMs"] = null;
+    let resolverError: CascadeCaseResult["resolverError"] = null;
     if (routerResult.labelVerdict === "REVIEW") {
       // handleVerifyRequest's own transaction already inserted a
       // review_queue row for this verification (route.ts: "if
@@ -250,26 +309,46 @@ export async function runOneCase(
       // eventually need to do here too.
       await db.delete(schema.reviewQueue).where(eq(schema.reviewQueue.verificationId, body.verificationId));
 
+      // A resolver-call failure (a transient API error, most likely — this
+      // harness is a real, live caller of a real, paid endpoint) must not
+      // take down the whole sweep and lose every already-computed,
+      // already-paid-for case before it (a PR review finding). Extraction
+      // and verdict scores above are already computed and stay valid
+      // either way; only the resolver evidence for THIS case is missing.
+      // The catch below is scoped to the remote call alone — the
+      // "usage must exist after a successful call" check right after it
+      // stays an uncaught, deliberate harness-bug throw, same as the other
+      // defensive throws in this function; a bug in THIS harness's own
+      // capture code is not a remote failure to record and move past.
+      const resolverUsageCapture = createUsageCapturingClient(new Anthropic(DI_CLIENT_OPTIONS));
       const flaggedFields = buildFlaggedFieldsForEscalatedLabel(routerResult);
       const resolverStart = Date.now();
-      const resolution = await resolveEscalatedLabel(
-        {
-          verificationId: body.verificationId,
-          image: { data: capturedPreprocessed.sonnetVariant.toString("base64"), mediaType: capturedPreprocessed.mediaType },
-          extraction: capturedExtraction,
-          application,
-          router: routerResult,
-          flaggedFields,
-        },
-        { client: usage.client, db },
-      );
-      resolverDurationMs = Date.now() - resolverStart;
-      const sonnetUsage = usage.takeLastUsage();
-      if (!sonnetUsage) {
-        throw new Error(`cascade-runner.ts: case "${caseSpec.caseId}" — resolver call completed but no usage was captured — harness bug.`);
+      let resolution: Awaited<ReturnType<typeof resolveEscalatedLabel>> | null = null;
+      try {
+        resolution = await resolveEscalatedLabel(
+          {
+            verificationId: body.verificationId,
+            image: { data: capturedPreprocessed.sonnetVariant.toString("base64"), mediaType: capturedPreprocessed.mediaType },
+            extraction: capturedExtraction,
+            application,
+            router: routerResult,
+            flaggedFields,
+          },
+          { client: resolverUsageCapture.client, db },
+        );
+      } catch (cause) {
+        resolverError = cause instanceof Error ? cause.message : String(cause);
+        console.warn(`cascade-runner.ts: case "${caseSpec.caseId}" — resolver call failed: ${resolverError}`);
       }
-      resolverCost = buildMeasuredCost(SONNET_RESOLVER_MODEL, sonnetUsage, SONNET_5_INTRO_PRICING);
-      resolverOutcome = resolution.outcome;
+      if (resolution) {
+        resolverDurationMs = Date.now() - resolverStart;
+        const sonnetUsage = resolverUsageCapture.takeLastUsage();
+        if (!sonnetUsage) {
+          throw new Error(`cascade-runner.ts: case "${caseSpec.caseId}" — resolver call completed but no usage was captured — harness bug.`);
+        }
+        resolverCost = buildMeasuredCost(SONNET_RESOLVER_MODEL, sonnetUsage, selectSonnetPricing(new Date()));
+        resolverOutcome = resolution.outcome;
+      }
     }
 
     return {
@@ -281,6 +360,7 @@ export async function runOneCase(
         haikuCost,
         resolverCost,
         resolverOutcome,
+        resolverError,
         resolverDurationMs,
       },
       failure: null,
@@ -288,15 +368,6 @@ export async function runOneCase(
       rawPreprocessed: capturedPreprocessed,
     };
   } finally {
-    // Same "delete every application row this script creates" discipline as
-    // scripts/latency/measure.ts — best-effort; a delete failure is a
-    // housekeeping problem, not a reason to lose an already-computed score.
-    try {
-      await db.delete(schema.applications).where(eq(schema.applications.id, body.applicationId));
-    } catch (cleanupError) {
-      console.warn(
-        `cascade-runner.ts: cleanup of application ${body.applicationId} (case "${caseSpec.caseId}") failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
-      );
-    }
+    await cleanupApplicationRow(db, body.applicationId, caseSpec.caseId);
   }
 }

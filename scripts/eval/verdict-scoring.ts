@@ -1,22 +1,24 @@
 /**
- * Verdict accuracy: did the system's final label-level and field-level
- * verdicts match the golden set's `expected` block (LH-030 / TRO-470,
- * TH-R17)?
+ * Verdict accuracy asks one question: did the system's final verdicts
+ * match the golden set's `expected` block? It checks both the label-level
+ * verdict and each field-level verdict (LH-030 / TRO-470, TH-R17).
  *
- * Deliberately separate from extraction accuracy (`extraction-scoring.ts`)
- * — see that file's module comment for why. `scoreVerdict` takes an
- * `ActualVerdict`, not a `LabelRouterResult` directly, so ONE scorer serves
- * both the real cascade's router output (`check.ts`) and the Sonnet-only
- * arm's synthetic rolled-up verdict (`resolver-rollup.ts`, `benchmark.ts`)
- * — the same comparison, two different sources, matching the benchmark's
- * own requirement to score both arms the identical way.
+ * This file is deliberately separate from extraction accuracy
+ * (`extraction-scoring.ts`) — see that file's module comment for why.
  *
- * A golden-set case whose `expected.labelVerdict` is `"REVIEW"` is scored
- * as CORRECT when the system also lands on REVIEW with the matching
- * reason — the manifest's own design (several cases' `notes`, e.g.
- * case-12/13/17/18) treats "the system correctly escalates" as the right
- * answer for a case a human still needs to look at, not something a
- * verdict scorer should expect to resolve further to PASS/FAIL.
+ * `scoreVerdict` takes an `ActualVerdict`, not a `LabelRouterResult`,
+ * directly. This lets one scorer serve two different callers: the real
+ * cascade's router output (`check.ts`), and the Sonnet-only arm's
+ * synthetic rolled-up verdict (`resolver-rollup.ts`, `benchmark.ts`). Both
+ * callers get the identical comparison — the benchmark's own requirement.
+ *
+ * A golden-set case can expect `"REVIEW"` as its `labelVerdict`. This
+ * scorer marks such a case CORRECT when the system also lands on REVIEW
+ * with the matching reason. Several cases' `notes` (e.g. case-12/13/17/18)
+ * confirm this is the manifest's own design: "the system correctly
+ * escalates" is the right answer for a case a human still needs to look
+ * at. This scorer does not expect the system to resolve such a case
+ * further, to PASS or FAIL.
  */
 import type { GoldenExpectedResult, GoldenSetCase } from "../../src/lib/golden-set/types";
 import type { FieldVerdict, LabelVerdict, ReviewReason, RouterFieldKey } from "../../src/server/router/types";
@@ -47,12 +49,19 @@ const EXPECTED_FIELD_TO_ROUTER_FIELD: Record<keyof GoldenExpectedResult["fields"
 /**
  * Scores one case's verdict accuracy against `actual`. Pure — no I/O.
  * Throws if `actual.fields` is missing an entry for one of the five
- * required fields — a caller bug (an incomplete pipeline result), not a
- * scoring judgment call to paper over.
+ * required fields, or names one twice, — a caller bug (an incomplete or
+ * malformed pipeline result), not a scoring judgment call to paper over. A
+ * duplicate would otherwise disappear silently into the `Map` below
+ * (whichever entry is built last wins) instead of being caught here.
  */
 export function scoreVerdict(caseSpec: GoldenSetCase, actual: ActualVerdict): VerdictCaseScore {
   const expected = caseSpec.expected;
   const actualByField = new Map(actual.fields.map((f) => [f.field, f.verdict]));
+  if (actualByField.size !== actual.fields.length) {
+    throw new Error(
+      `scoreVerdict: case "${caseSpec.caseId}" — actual.fields has ${actual.fields.length} entries but only ${actualByField.size} distinct fields — duplicate field entries are not allowed.`,
+    );
+  }
 
   const fields: VerdictFieldScore[] = (
     Object.keys(EXPECTED_FIELD_TO_ROUTER_FIELD) as (keyof GoldenExpectedResult["fields"])[]

@@ -74,7 +74,31 @@ describe("parseFullVerifySuccessBody", () => {
   });
 
   it("rejects a field with an invalid verdict", () => {
-    const body = validBody({ fields: [validField({ verdict: "SOMETHING_ELSE" })] });
+    // All five required fields present and otherwise valid, so rejection
+    // is isolated to the one bad verdict value — not a side effect of the
+    // separate "all five fields present" check.
+    const body = validBody({
+      fields: [
+        validField({ field: "brand_name", verdict: "SOMETHING_ELSE" }),
+        validField({ field: "class_type" }),
+        validField({ field: "alcohol_content" }),
+        validField({ field: "net_contents" }),
+        validField({ field: "government_warning" }),
+      ],
+    });
+    expect(parseFullVerifySuccessBody(body)).toBeNull();
+  });
+
+  it("rejects a body with a duplicate field entry, even though every required key is still present", () => {
+    const body = validBody({
+      fields: [
+        validField({ field: "brand_name" }),
+        validField({ field: "brand_name" }), // duplicate, in place of class_type
+        validField({ field: "alcohol_content" }),
+        validField({ field: "net_contents" }),
+        validField({ field: "government_warning" }),
+      ],
+    });
     expect(parseFullVerifySuccessBody(body)).toBeNull();
   });
 

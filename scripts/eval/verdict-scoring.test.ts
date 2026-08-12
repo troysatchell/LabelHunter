@@ -127,4 +127,13 @@ describe("scoreVerdict", () => {
     };
     expect(() => scoreVerdict(testGoldenCase(), incomplete)).toThrow(/no entry for "government_warning"/);
   });
+
+  it("throws when actual.fields has a duplicate field entry, rather than silently dropping one", () => {
+    const duplicated: ActualVerdict = {
+      labelVerdict: "PASS",
+      headlineReason: null,
+      fields: [...ALL_MATCH_FIELDS, { field: "brand_name", verdict: "MISMATCH" }],
+    };
+    expect(() => scoreVerdict(testGoldenCase(), duplicated)).toThrow(/duplicate field entries/);
+  });
 });

@@ -2,19 +2,35 @@
  * Shared types for the eval harness (LH-030 / TRO-470, TH-R17, TH-R19,
  * PRD §6).
  *
- * Two accuracy questions, kept structurally separate because they measure
- * different things (a regression in one can hide behind health in the
- * other — see `check.ts`'s module comment):
+ * This file defines two accuracy questions. Extraction accuracy asks: did
+ * Haiku read the label's fields correctly? It checks each field against
+ * the golden set's ground-truth `label` block. Verdict accuracy asks: did
+ * the Validation Router's final verdicts match expectations? It checks the
+ * label-level and field-level verdicts against the golden set's `expected`
+ * block. These two questions measure different things. A regression in one
+ * can hide behind health in the other — see `check.ts`'s module comment.
  *
- *   - Extraction accuracy: did Haiku read the label's fields correctly,
- *     field by field, against the golden set's ground-truth `label` block?
- *   - Verdict accuracy: did the Validation Router's final label-level and
- *     field-level verdicts match the golden set's `expected` block?
- *
- * Pure data shapes only. No import from a module that makes a network call.
+ * This file holds pure data shapes only. No type here may import from a
+ * module that makes a network call.
  */
 import type { GoldenSetCategory, LabelVerdict } from "../../src/lib/golden-set/types";
 import type { FieldVerdict, ReviewReason, RouterFieldKey } from "../../src/server/router/types";
+
+/** The router's five field keys, in one place — `response-validation.ts`,
+ * `flagged-fields.ts`, and `resolver-rollup.ts` each need this exact list
+ * and previously each defined their own local copy (a PR review finding:
+ * three independent copies of the same five-element array can drift). No
+ * production module exports this as a runtime array — `RouterFieldKey` is
+ * a type only (`src/server/router/types.ts`) — so this is the eval
+ * harness's own single source, not a duplicate of one that already exists
+ * elsewhere. */
+export const ROUTER_FIELD_KEYS: readonly RouterFieldKey[] = [
+  "brand_name",
+  "class_type",
+  "alcohol_content",
+  "net_contents",
+  "government_warning",
+];
 
 /** The five fields extraction accuracy scores. Named to match the golden
  * set's own `GoldenLabelFields` keys (`brandName`, not `brand_name`) — this
@@ -110,19 +126,28 @@ export interface CascadeCaseResult {
   extraction: ExtractionCaseScore;
   verdict: VerdictCaseScore;
   haikuCost: MeasuredCost;
-  /** `null` when the router did not escalate this case — the cascade's own
-   * point is that Sonnet never runs then (TH-R19). */
+  /** `null` when the router did not escalate this case (Sonnet never runs
+   * then, TH-R19) OR when it escalated but the real resolver call itself
+   * failed (`resolverError` names the failure then). */
   resolverCost: MeasuredCost | null;
   /** The resolver's own outcome, reported for evidence, never scored
    * against a golden answer — the manifest has no ground truth for what
-   * Sonnet's resolution should say (see `check.ts`'s module comment). */
+   * Sonnet's resolution should say (see `check.ts`'s module comment). `null`
+   * on no escalation OR a failed resolver call — check `resolverError` to
+   * tell the two apart. */
   resolverOutcome: "resolved" | "needs-human" | null;
-  /** Wall-clock time for the resolver call alone, in milliseconds. `0` when
-   * the case did not escalate (`resolverCost` is `null` then too) — not the
-   * whole case's total time (Haiku extraction, preprocessing, and DB I/O
-   * are not included), a narrower, more precisely named number than
-   * "total" would suggest. */
-  resolverDurationMs: number;
+  /** Non-null only when the router escalated this case AND the real
+   * resolver call itself threw (a transient API failure, most likely) —
+   * this case's extraction and verdict scores are still real and valid;
+   * only the resolver evidence is missing for it. `null` on no escalation
+   * and on a successful resolver call alike. */
+  resolverError: string | null;
+  /** Wall-clock time for the resolver call alone, in milliseconds. `null`
+   * when the case did not escalate, or the call itself failed before
+   * producing a duration worth reporting — not the whole case's total time
+   * (Haiku extraction, preprocessing, and DB I/O are not included), a
+   * narrower, more precisely named number than "total" would suggest. */
+  resolverDurationMs: number | null;
 }
 
 export interface EvalReportSummary {

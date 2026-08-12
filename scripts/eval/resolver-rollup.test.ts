@@ -136,4 +136,16 @@ describe("rollUpResolverResolution", () => {
     resolution.fields = resolution.fields.filter((f) => f.field !== "net_contents");
     expect(() => rollUpResolverResolution(resolution, APPLICATION, FAKE_COMPARATORS)).toThrow(/no entry for "net_contents"/);
   });
+
+  it("throws when the resolution has a duplicate field entry, rather than silently dropping one", () => {
+    const resolution = allMatchResolution();
+    resolution.fields.push(correction("net_contents", { correctedValue: "750 mL" }));
+    expect(() => rollUpResolverResolution(resolution, APPLICATION, FAKE_COMPARATORS)).toThrow(/duplicate field entries/);
+  });
+
+  it("throws rather than silently defaulting when a decided government_warning has a null correctedValue", () => {
+    const resolution = allMatchResolution();
+    resolution.fields[4] = correction("government_warning", { needsHuman: false, correctedValue: null });
+    expect(() => rollUpResolverResolution(resolution, APPLICATION, FAKE_COMPARATORS)).toThrow(/null correctedValue/);
+  });
 });

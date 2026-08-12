@@ -82,9 +82,14 @@ describe("validateCheckArgs", () => {
 describe("resolveCaseIds", () => {
   const manifestIds = ["case-01-clean-match-spirits", "case-02-clean-match-beer-no-abv", "case-03-clean-match-wine"];
 
-  it("returns the default sample when neither --full nor --case is set", () => {
+  it("returns the default sample when neither --full nor --case is set, regardless of the manifest passed in", () => {
     const args = parseEvalArgs(["--live"]);
-    expect(resolveCaseIds(args, DEFAULT_SAMPLE_CASE_IDS)).toEqual([...DEFAULT_SAMPLE_CASE_IDS]);
+    // Deliberately passing manifestIds (which shares none of DEFAULT_SAMPLE_CASE_IDS)
+    // rather than DEFAULT_SAMPLE_CASE_IDS itself — the default-sample branch
+    // does not filter against the manifest at all, and asserting that
+    // against a genuinely different list proves it, rather than a
+    // tautological self-comparison.
+    expect(resolveCaseIds(args, manifestIds)).toEqual([...DEFAULT_SAMPLE_CASE_IDS]);
   });
 
   it("returns every manifest case ID when --full is set", () => {

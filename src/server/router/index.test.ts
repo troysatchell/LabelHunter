@@ -156,6 +156,42 @@ describe("routeLabel — beverage_type disagreement is checked after normalizati
   });
 });
 
+describe("routeLabel — LH-029 / TRO-534: an off-menu beverage_type subtype is not a conflict", () => {
+  it("a confident off-menu answer like 'Mead' fires no blocker", () => {
+    // case-11's real pairing: TTB classes mead as a wine. BEVERAGE_TYPES
+    // has no "mead" member, so the extractor named a subtype the closed
+    // enum cannot express — that is no opinion about the application's
+    // declared "wine", not a disagreement with it.
+    const extraction = makeExtraction({
+      beverage_type: { value: "Mead", evidence: "Mead", confidence: 0.95, alternates: [] },
+    });
+    const result = routeLabel(
+      extraction,
+      makeApplication({ beverageType: "wine" }),
+      placeholderComparators,
+      CLEAN_WARNING_RESULT,
+      makePreprocessing(),
+    );
+    expect(result.labelVerdict).toBe("PASS");
+    expect(result.headlineReason).toBeNull();
+  });
+
+  it("does not suppress a statutory government-warning FAIL (case-11)", () => {
+    const extraction = makeExtraction({
+      beverage_type: { value: "Mead", evidence: "Mead", confidence: 0.95, alternates: [] },
+    });
+    const result = routeLabel(
+      extraction,
+      makeApplication({ beverageType: "wine" }),
+      placeholderComparators,
+      { verdict: "MISMATCH", note: "Government Warning wording differs from the required text." },
+      makePreprocessing(),
+    );
+    expect(result.labelVerdict).toBe("FAIL");
+    expect(result.headlineReason).toBeNull();
+  });
+});
+
 describe("routeLabel — the application does not state an alcohol percent to compare", () => {
   it("never falls back to a bare MATCH with nothing compared — it escalates instead (TH-R10)", () => {
     const result = routeLabel(

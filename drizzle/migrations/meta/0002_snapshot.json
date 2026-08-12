@@ -1,0 +1,1339 @@
+{
+  "id": "9577e536-dacf-4c97-8e5f-5015dca9b996",
+  "prevId": "e3844bf8-b68b-46c1-b02e-bf6fe8ccc119",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.applications": {
+      "name": "applications",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "applications_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "2147483647",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "batch_job_id": {
+          "name": "batch_job_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "beverage_type": {
+          "name": "beverage_type",
+          "type": "beverage_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "brand_name": {
+          "name": "brand_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "class_type": {
+          "name": "class_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "alcohol_content_raw": {
+          "name": "alcohol_content_raw",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "abv_percent": {
+          "name": "abv_percent",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "proof": {
+          "name": "proof",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "net_contents_raw": {
+          "name": "net_contents_raw",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "net_contents_value": {
+          "name": "net_contents_value",
+          "type": "numeric(10, 3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "net_contents_unit": {
+          "name": "net_contents_unit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "applications_batch_job_id_idx": {
+          "name": "applications_batch_job_id_idx",
+          "columns": [
+            {
+              "expression": "batch_job_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "applications_batch_job_id_batch_jobs_id_fk": {
+          "name": "applications_batch_job_id_batch_jobs_id_fk",
+          "tableFrom": "applications",
+          "tableTo": "batch_jobs",
+          "columnsFrom": [
+            "batch_job_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.batch_jobs": {
+      "name": "batch_jobs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "batch_jobs_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "2147483647",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "status": {
+          "name": "status",
+          "type": "batch_job_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PENDING'"
+        },
+        "total_count": {
+          "name": "total_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "processed_count": {
+          "name": "processed_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "auto_verified_count": {
+          "name": "auto_verified_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "resolved_by_sonnet_count": {
+          "name": "resolved_by_sonnet_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "needs_human_count": {
+          "name": "needs_human_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "failed_count": {
+          "name": "failed_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "sonnet_call_count": {
+          "name": "sonnet_call_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "batch_jobs_status_idx": {
+          "name": "batch_jobs_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "batch_jobs_total_count_non_negative": {
+          "name": "batch_jobs_total_count_non_negative",
+          "value": "\"batch_jobs\".\"total_count\" >= 0"
+        },
+        "batch_jobs_processed_count_bounded": {
+          "name": "batch_jobs_processed_count_bounded",
+          "value": "\"batch_jobs\".\"processed_count\" >= 0 AND \"batch_jobs\".\"processed_count\" <= \"batch_jobs\".\"total_count\""
+        },
+        "batch_jobs_auto_verified_count_bounded": {
+          "name": "batch_jobs_auto_verified_count_bounded",
+          "value": "\"batch_jobs\".\"auto_verified_count\" >= 0 AND \"batch_jobs\".\"auto_verified_count\" <= \"batch_jobs\".\"total_count\""
+        },
+        "batch_jobs_resolved_by_sonnet_count_bounded": {
+          "name": "batch_jobs_resolved_by_sonnet_count_bounded",
+          "value": "\"batch_jobs\".\"resolved_by_sonnet_count\" >= 0 AND \"batch_jobs\".\"resolved_by_sonnet_count\" <= \"batch_jobs\".\"total_count\""
+        },
+        "batch_jobs_needs_human_count_bounded": {
+          "name": "batch_jobs_needs_human_count_bounded",
+          "value": "\"batch_jobs\".\"needs_human_count\" >= 0 AND \"batch_jobs\".\"needs_human_count\" <= \"batch_jobs\".\"total_count\""
+        },
+        "batch_jobs_failed_count_bounded": {
+          "name": "batch_jobs_failed_count_bounded",
+          "value": "\"batch_jobs\".\"failed_count\" >= 0 AND \"batch_jobs\".\"failed_count\" <= \"batch_jobs\".\"total_count\""
+        },
+        "batch_jobs_sonnet_call_count_bounded": {
+          "name": "batch_jobs_sonnet_call_count_bounded",
+          "value": "\"batch_jobs\".\"sonnet_call_count\" >= 0 AND \"batch_jobs\".\"sonnet_call_count\" <= \"batch_jobs\".\"total_count\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.batch_queue_items": {
+      "name": "batch_queue_items",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "batch_queue_items_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "2147483647",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "batch_job_id": {
+          "name": "batch_job_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "batch_queue_item_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "application_id": {
+          "name": "application_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "label_image_id": {
+          "name": "label_image_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verification_id": {
+          "name": "verification_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolver_input": {
+          "name": "resolver_input",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "batch_queue_item_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PENDING'"
+        },
+        "claimed_by": {
+          "name": "claimed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "claim_token": {
+          "name": "claim_token",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "claimed_at": {
+          "name": "claimed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lease_expires_at": {
+          "name": "lease_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "available_at": {
+          "name": "available_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "batch_queue_items_claim_idx": {
+          "name": "batch_queue_items_claim_idx",
+          "columns": [
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "available_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"batch_queue_items\".\"status\" IN ('PENDING', 'CLAIMED')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "batch_queue_items_batch_job_id_idx": {
+          "name": "batch_queue_items_batch_job_id_idx",
+          "columns": [
+            {
+              "expression": "batch_job_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "batch_queue_items_extract_pairing_unique": {
+          "name": "batch_queue_items_extract_pairing_unique",
+          "columns": [
+            {
+              "expression": "batch_job_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "application_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "label_image_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"batch_queue_items\".\"kind\" = 'EXTRACT'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "batch_queue_items_resolve_verification_unique": {
+          "name": "batch_queue_items_resolve_verification_unique",
+          "columns": [
+            {
+              "expression": "verification_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"batch_queue_items\".\"kind\" = 'RESOLVE'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "batch_queue_items_batch_job_id_batch_jobs_id_fk": {
+          "name": "batch_queue_items_batch_job_id_batch_jobs_id_fk",
+          "tableFrom": "batch_queue_items",
+          "tableTo": "batch_jobs",
+          "columnsFrom": [
+            "batch_job_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "batch_queue_items_application_id_applications_id_fk": {
+          "name": "batch_queue_items_application_id_applications_id_fk",
+          "tableFrom": "batch_queue_items",
+          "tableTo": "applications",
+          "columnsFrom": [
+            "application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "batch_queue_items_label_image_id_label_images_id_fk": {
+          "name": "batch_queue_items_label_image_id_label_images_id_fk",
+          "tableFrom": "batch_queue_items",
+          "tableTo": "label_images",
+          "columnsFrom": [
+            "label_image_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "batch_queue_items_verification_id_verifications_id_fk": {
+          "name": "batch_queue_items_verification_id_verifications_id_fk",
+          "tableFrom": "batch_queue_items",
+          "tableTo": "verifications",
+          "columnsFrom": [
+            "verification_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "batch_queue_items_kind_shape": {
+          "name": "batch_queue_items_kind_shape",
+          "value": "(\n        (\"batch_queue_items\".\"kind\" = 'EXTRACT' AND \"batch_queue_items\".\"application_id\" IS NOT NULL AND \"batch_queue_items\".\"label_image_id\" IS NOT NULL\n          AND \"batch_queue_items\".\"verification_id\" IS NULL AND \"batch_queue_items\".\"resolver_input\" IS NULL)\n        OR\n        (\"batch_queue_items\".\"kind\" = 'RESOLVE' AND \"batch_queue_items\".\"verification_id\" IS NOT NULL AND \"batch_queue_items\".\"resolver_input\" IS NOT NULL\n          AND \"batch_queue_items\".\"application_id\" IS NULL AND \"batch_queue_items\".\"label_image_id\" IS NULL)\n      )"
+        },
+        "batch_queue_items_attempts_non_negative": {
+          "name": "batch_queue_items_attempts_non_negative",
+          "value": "\"batch_queue_items\".\"attempts\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.field_results": {
+      "name": "field_results",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "field_results_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "2147483647",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "verification_id": {
+          "name": "verification_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "field_name": {
+          "name": "field_name",
+          "type": "field_name",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "extracted_value": {
+          "name": "extracted_value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "evidence": {
+          "name": "evidence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "confidence": {
+          "name": "confidence",
+          "type": "numeric(3, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "verdict": {
+          "name": "verdict",
+          "type": "field_verdict",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "field_results_verification_field_unique": {
+          "name": "field_results_verification_field_unique",
+          "columns": [
+            {
+              "expression": "verification_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "field_name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "field_results_verification_id_verifications_id_fk": {
+          "name": "field_results_verification_id_verifications_id_fk",
+          "tableFrom": "field_results",
+          "tableTo": "verifications",
+          "columnsFrom": [
+            "verification_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "field_results_confidence_range": {
+          "name": "field_results_confidence_range",
+          "value": "\"field_results\".\"confidence\" >= 0 AND \"field_results\".\"confidence\" <= 1"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.label_images": {
+      "name": "label_images",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "label_images_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "2147483647",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "application_id": {
+          "name": "application_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "batch_job_id": {
+          "name": "batch_job_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "storage_path": {
+          "name": "storage_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_filename": {
+          "name": "original_filename",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "width_px": {
+          "name": "width_px",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "height_px": {
+          "name": "height_px",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "label_images_application_id_idx": {
+          "name": "label_images_application_id_idx",
+          "columns": [
+            {
+              "expression": "application_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "label_images_batch_job_id_idx": {
+          "name": "label_images_batch_job_id_idx",
+          "columns": [
+            {
+              "expression": "batch_job_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "label_images_batch_filename_unique": {
+          "name": "label_images_batch_filename_unique",
+          "columns": [
+            {
+              "expression": "batch_job_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "original_filename",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "label_images_application_id_applications_id_fk": {
+          "name": "label_images_application_id_applications_id_fk",
+          "tableFrom": "label_images",
+          "tableTo": "applications",
+          "columnsFrom": [
+            "application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "label_images_batch_job_id_batch_jobs_id_fk": {
+          "name": "label_images_batch_job_id_batch_jobs_id_fk",
+          "tableFrom": "label_images",
+          "tableTo": "batch_jobs",
+          "columnsFrom": [
+            "batch_job_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "label_images_belongs_to_something": {
+          "name": "label_images_belongs_to_something",
+          "value": "\"label_images\".\"application_id\" IS NOT NULL OR \"label_images\".\"batch_job_id\" IS NOT NULL"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public._meta": {
+      "name": "_meta",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "_meta_key_unique": {
+          "name": "_meta_key_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "key"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.review_queue": {
+      "name": "review_queue",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "review_queue_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "2147483647",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "verification_id": {
+          "name": "verification_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "review_reason",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resolver_output": {
+          "name": "resolver_output",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolver_skip_reason": {
+          "name": "resolver_skip_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "disposition": {
+          "name": "disposition",
+          "type": "review_disposition",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "disposed_at": {
+          "name": "disposed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "review_queue_verification_id_unique": {
+          "name": "review_queue_verification_id_unique",
+          "columns": [
+            {
+              "expression": "verification_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "review_queue_reason_idx": {
+          "name": "review_queue_reason_idx",
+          "columns": [
+            {
+              "expression": "reason",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "review_queue_unresolved_idx": {
+          "name": "review_queue_unresolved_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"review_queue\".\"disposition\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "review_queue_verification_id_verifications_id_fk": {
+          "name": "review_queue_verification_id_verifications_id_fk",
+          "tableFrom": "review_queue",
+          "tableTo": "verifications",
+          "columnsFrom": [
+            "verification_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "review_queue_disposition_disposed_at_consistency": {
+          "name": "review_queue_disposition_disposed_at_consistency",
+          "value": "(\"review_queue\".\"disposition\" IS NULL) = (\"review_queue\".\"disposed_at\" IS NULL)"
+        },
+        "review_queue_resolver_output_skip_reason_exclusive": {
+          "name": "review_queue_resolver_output_skip_reason_exclusive",
+          "value": "NOT (\"review_queue\".\"resolver_output\" IS NOT NULL AND \"review_queue\".\"resolver_skip_reason\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.verifications": {
+      "name": "verifications",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "verifications_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "2147483647",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "application_id": {
+          "name": "application_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label_image_id": {
+          "name": "label_image_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "batch_job_id": {
+          "name": "batch_job_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verdict": {
+          "name": "verdict",
+          "type": "label_verdict",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resolution_path": {
+          "name": "resolution_path",
+          "type": "resolution_path",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "verifications_application_id_idx": {
+          "name": "verifications_application_id_idx",
+          "columns": [
+            {
+              "expression": "application_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "verifications_label_image_id_idx": {
+          "name": "verifications_label_image_id_idx",
+          "columns": [
+            {
+              "expression": "label_image_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "verifications_batch_job_id_idx": {
+          "name": "verifications_batch_job_id_idx",
+          "columns": [
+            {
+              "expression": "batch_job_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "verifications_verdict_idx": {
+          "name": "verifications_verdict_idx",
+          "columns": [
+            {
+              "expression": "verdict",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "verifications_application_id_applications_id_fk": {
+          "name": "verifications_application_id_applications_id_fk",
+          "tableFrom": "verifications",
+          "tableTo": "applications",
+          "columnsFrom": [
+            "application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "verifications_label_image_id_label_images_id_fk": {
+          "name": "verifications_label_image_id_label_images_id_fk",
+          "tableFrom": "verifications",
+          "tableTo": "label_images",
+          "columnsFrom": [
+            "label_image_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "verifications_batch_job_id_batch_jobs_id_fk": {
+          "name": "verifications_batch_job_id_batch_jobs_id_fk",
+          "tableFrom": "verifications",
+          "tableTo": "batch_jobs",
+          "columnsFrom": [
+            "batch_job_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.batch_job_status": {
+      "name": "batch_job_status",
+      "schema": "public",
+      "values": [
+        "PENDING",
+        "RUNNING",
+        "COMPLETED",
+        "FAILED"
+      ]
+    },
+    "public.batch_queue_item_kind": {
+      "name": "batch_queue_item_kind",
+      "schema": "public",
+      "values": [
+        "EXTRACT",
+        "RESOLVE"
+      ]
+    },
+    "public.batch_queue_item_status": {
+      "name": "batch_queue_item_status",
+      "schema": "public",
+      "values": [
+        "PENDING",
+        "CLAIMED",
+        "DONE",
+        "FAILED"
+      ]
+    },
+    "public.beverage_type": {
+      "name": "beverage_type",
+      "schema": "public",
+      "values": [
+        "beer",
+        "wine",
+        "spirits"
+      ]
+    },
+    "public.field_name": {
+      "name": "field_name",
+      "schema": "public",
+      "values": [
+        "BRAND_NAME",
+        "CLASS_TYPE",
+        "ALCOHOL_CONTENT",
+        "NET_CONTENTS",
+        "GOVERNMENT_WARNING"
+      ]
+    },
+    "public.field_verdict": {
+      "name": "field_verdict",
+      "schema": "public",
+      "values": [
+        "MATCH",
+        "MISMATCH",
+        "NEEDS_REVIEW"
+      ]
+    },
+    "public.label_verdict": {
+      "name": "label_verdict",
+      "schema": "public",
+      "values": [
+        "PASS",
+        "FAIL",
+        "REVIEW"
+      ]
+    },
+    "public.resolution_path": {
+      "name": "resolution_path",
+      "schema": "public",
+      "values": [
+        "EXTRACTOR_ONLY",
+        "EXTRACTOR_RESOLVER"
+      ]
+    },
+    "public.review_disposition": {
+      "name": "review_disposition",
+      "schema": "public",
+      "values": [
+        "APPROVED",
+        "REJECTED"
+      ]
+    },
+    "public.review_reason": {
+      "name": "review_reason",
+      "schema": "public",
+      "values": [
+        "LOW_IMAGE_QUALITY",
+        "AMBIGUOUS_BRAND",
+        "AMBIGUOUS_ABV",
+        "AMBIGUOUS_NET_CONTENTS",
+        "WARNING_MISMATCH",
+        "MISSING_REQUIRED_FIELD",
+        "CONFLICTING_EXTRACTION",
+        "LOW_MODEL_CONFIDENCE"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

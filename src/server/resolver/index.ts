@@ -145,8 +145,8 @@ export {
   deriveResolvedFields,
 } from "./response";
 export { toJudgedFieldResultRow } from "./field-result";
-export { findExistingReviewQueueEntry, insertReviewQueueEntry } from "./queue";
-export type { ExistingReviewQueueEntry, InsertReviewQueueEntryParams, ResolverDb } from "./queue";
+export { findExistingReviewQueueEntry, insertReviewQueueEntry, insertSkippedReviewQueueEntry } from "./queue";
+export type { ExistingReviewQueueEntry, InsertReviewQueueEntryParams, InsertSkippedReviewQueueEntryParams, ResolverDb } from "./queue";
 export type {
   ApplicationRecord,
   CorrectionFieldResolution,

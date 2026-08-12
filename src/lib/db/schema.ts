@@ -10,9 +10,12 @@ import {
   text,
   timestamp,
   uniqueIndex,
+  uuid,
 } from "drizzle-orm/pg-core";
 import {
   batchJobStatusEnum,
+  batchQueueItemKindEnum,
+  batchQueueItemStatusEnum,
   beverageTypeEnum,
   fieldNameEnum,
   fieldVerdictEnum,
@@ -85,6 +88,15 @@ export const batchJobs = pgTable(
       .default(0),
     needsHumanCount: integer("needs_human_count").notNull().default(0),
     failedCount: integer("failed_count").notNull().default(0),
+    // The per-batch Sonnet escalation cap (LH-041 / TRO-474, CP-3 §6).
+    // Counts every reserved Sonnet call ATTEMPT for this batch — first
+    // attempts and retries alike, reserved atomically before the call ever
+    // happens (`reserveSonnetCall`, `../../server/batch-queue/escalation-cap.ts`)
+    // — never settled outcomes alone. CP-3 §6.2's own correction: counting
+    // only `resolvedBySonnetCount + needsHumanCount` cannot bound spend on a
+    // batch where every Sonnet attempt happens to fail, since a failed
+    // attempt increments neither counter.
+    sonnetCallCount: integer("sonnet_call_count").notNull().default(0),
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -128,6 +140,14 @@ export const batchJobs = pgTable(
     check(
       "batch_jobs_failed_count_bounded",
       sql`${table.failedCount} >= 0 AND ${table.failedCount} <= ${table.totalCount}`,
+    ),
+    // ceil(0.25 * totalCount) — the escalation-cap threshold (CP-3 §6.1) —
+    // is at most totalCount for every totalCount >= 0, so a call count that
+    // never exceeds the cap can never exceed totalCount either. Same
+    // defensive-bound pattern as every other counter on this table.
+    check(
+      "batch_jobs_sonnet_call_count_bounded",
+      sql`${table.sonnetCallCount} >= 0 AND ${table.sonnetCallCount} <= ${table.totalCount}`,
     ),
   ],
 );
@@ -332,6 +352,13 @@ export const reviewQueue = pgTable(
       .references(() => verifications.id, { onDelete: "cascade" }),
     reason: reviewReasonEnum("reason").notNull(),
     resolverOutput: jsonb("resolver_output"),
+    // Set only when this row was filed WITHOUT a Sonnet call — today, only
+    // the batch escalation cap (LH-041 / TRO-474, CP-3 §6.2/§6.4). `NULL`
+    // `resolverOutput` is otherwise ambiguous: "Sonnet has not run for this
+    // yet" (the ordinary pending state) vs. "Sonnet was deliberately never
+    // going to run for this" (the cap). This column names the second state
+    // instead of letting absence stand in for it (CP-3 §6.4).
+    resolverSkipReason: text("resolver_skip_reason"),
     disposition: reviewDispositionEnum("disposition"),
     disposedAt: timestamp("disposed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -360,6 +387,131 @@ export const reviewQueue = pgTable(
       "review_queue_disposition_disposed_at_consistency",
       sql`(${table.disposition} IS NULL) = (${table.disposedAt} IS NULL)`,
     ),
+    // A row cannot simultaneously carry a real Sonnet resolution AND a
+    // reason Sonnet was skipped — the two writers (`insertReviewQueueEntry`,
+    // `insertSkippedReviewQueueEntry`, `../../server/resolver/queue.ts`)
+    // are mutually exclusive by construction; this constraint makes that
+    // invariant a database fact, not just a code convention.
+    check(
+      "review_queue_resolver_output_skip_reason_exclusive",
+      sql`NOT (${table.resolverOutput} IS NOT NULL AND ${table.resolverSkipReason} IS NOT NULL)`,
+    ),
+  ],
+);
+
+/**
+ * The batch job queue (LH-041 / TRO-474, CP-3 §2.2). One table serves two
+ * logical queues, discriminated by `kind`: `EXTRACT` rows drive the Haiku
+ * extraction + router pass for one (application, label image) pairing;
+ * `RESOLVE` rows drive the Sonnet resolver for one escalated verification.
+ * A worker never infers "what's pending" from another table (`verifications`
+ * only ever records a FINISHED cascade, CP-3 §2.1) — this table is the one
+ * place that also knows "claimed, by whom, until when" and "why a claim
+ * failed."
+ *
+ * `kind`'s two shapes are mutually exclusive, enforced below by
+ * `batch_queue_items_kind_shape` — an `EXTRACT` row is never missing its
+ * pairing columns, a `RESOLVE` row is never missing its verification/
+ * snapshot columns, and neither ever carries the other's columns.
+ *
+ * Not enforced at the database level (matching the same call already made
+ * for `labelImages`/`verifications`, CP-3 §2.2): that `applicationId`,
+ * `labelImageId`, and `verificationId` here belong to the SAME
+ * `batchJobId`. Every row is written by one trusted writer (this ticket's
+ * own extract-worker, deriving all IDs from its own claimed batch context),
+ * not assembled from arbitrary parts.
+ */
+export const batchQueueItems = pgTable(
+  "batch_queue_items",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    batchJobId: integer("batch_job_id")
+      .notNull()
+      .references(() => batchJobs.id, { onDelete: "cascade" }),
+    kind: batchQueueItemKindEnum("kind").notNull(),
+    // EXTRACT-only. Null for RESOLVE (see the kind-shape CHECK below).
+    applicationId: integer("application_id").references(() => applications.id, { onDelete: "cascade" }),
+    labelImageId: integer("label_image_id").references(() => labelImages.id, { onDelete: "cascade" }),
+    // RESOLVE-only. Null for EXTRACT.
+    verificationId: integer("verification_id").references(() => verifications.id, { onDelete: "cascade" }),
+    // RESOLVE-only: the { schemaVersion, extraction, router, flaggedFields }
+    // snapshot the EXTRACT worker took at the moment it escalated (CP-3
+    // §2.3) — NOT optional, so a resolve-worker never has to re-run Haiku
+    // just to rebuild a ResolverInput.
+    resolverInput: jsonb("resolver_input"),
+    status: batchQueueItemStatusEnum("status").notNull().default("PENDING"),
+    // Opaque worker-instance id (logs/diagnosis only — NOT the fencing
+    // mechanism; see `claimToken` below). CP-3 §2.2/§3.1.
+    claimedBy: text("claimed_by"),
+    // Minted fresh on EVERY claim, including a reclaim by the same
+    // `claimedBy`. This — not `claimedBy` — is what a completion write
+    // must match (CP-3 §3.1/§3.2): `claimedBy` is stable across a worker's
+    // whole lifetime and cannot tell a stale claim episode from a current
+    // one; a fresh token can.
+    claimToken: uuid("claim_token"),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    // Past this time, a CLAIMED row is claimable again by any worker — the
+    // same claim query that claims new work also recovers a crashed
+    // worker's abandoned work (CP-3 §3.2). No separate cleanup job.
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    // A row is claimable only once this time has passed. Defaults to now();
+    // a retryable failure pushes it forward by the backoff delay (CP-3
+    // §5.2) instead of the worker sleeping in place.
+    availableAt: timestamp("available_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    attempts: integer("attempts").notNull().default(0),
+    // Set only on FAILED — the one place a failed item's reason lives,
+    // since a failed EXTRACT never produces a `verifications` row to write
+    // it to (CP-3 §7.3), and a failed RESOLVE must not overwrite the
+    // verification `EXTRACT` already produced.
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    // The claim query's own WHERE clause, almost verbatim (CP-3 §2.2,
+    // §3.1) — partial on the two statuses a claim can ever match, so a
+    // growing pile of DONE/FAILED history never bloats the index the claim
+    // loop scans on every poll.
+    index("batch_queue_items_claim_idx")
+      .on(table.kind, table.status, table.availableAt)
+      .where(sql`${table.status} IN ('PENDING', 'CLAIMED')`),
+    // The progress-summary query LH-042 runs every poll.
+    index("batch_queue_items_batch_job_id_idx").on(table.batchJobId),
+    check(
+      "batch_queue_items_kind_shape",
+      sql`(
+        (${table.kind} = 'EXTRACT' AND ${table.applicationId} IS NOT NULL AND ${table.labelImageId} IS NOT NULL
+          AND ${table.verificationId} IS NULL AND ${table.resolverInput} IS NULL)
+        OR
+        (${table.kind} = 'RESOLVE' AND ${table.verificationId} IS NOT NULL AND ${table.resolverInput} IS NOT NULL
+          AND ${table.applicationId} IS NULL AND ${table.labelImageId} IS NULL)
+      )`,
+    ),
+    check("batch_queue_items_attempts_non_negative", sql`${table.attempts} >= 0`),
+    // A retried batch-creation step must reuse the existing EXTRACT row for
+    // one (batch, application, image) pairing rather than duplicate it —
+    // `verifications` carries no unique constraint on
+    // (applicationId, labelImageId) either, so two EXTRACT rows for one
+    // label would each run its own extraction and double-count the label
+    // downstream (CP-3 §2.2). Enqueue is `INSERT ... ON CONFLICT ...
+    // DO NOTHING` against this index.
+    uniqueIndex("batch_queue_items_extract_pairing_unique")
+      .on(table.batchJobId, table.applicationId, table.labelImageId)
+      .where(sql`${table.kind} = 'EXTRACT'`),
+    // At most one RESOLVE row per verification — the same one-row-per-
+    // verification guarantee `review_queue_verification_id_unique` already
+    // gives that table (CP-3 §2.2), so a retried or duplicated EXTRACT
+    // transaction cannot enqueue two RESOLVE rows for the same escalation.
+    uniqueIndex("batch_queue_items_resolve_verification_unique")
+      .on(table.verificationId)
+      .where(sql`${table.kind} = 'RESOLVE'`),
   ],
 );
 
@@ -367,6 +519,7 @@ export const batchJobsRelations = relations(batchJobs, ({ many }) => ({
   applications: many(applications),
   labelImages: many(labelImages),
   verifications: many(verifications),
+  batchQueueItems: many(batchQueueItems),
 }));
 
 export const applicationsRelations = relations(
@@ -378,6 +531,7 @@ export const applicationsRelations = relations(
     }),
     labelImages: many(labelImages),
     verifications: many(verifications),
+    batchQueueItems: many(batchQueueItems),
   }),
 );
 
@@ -393,6 +547,7 @@ export const labelImagesRelations = relations(
       references: [batchJobs.id],
     }),
     verifications: many(verifications),
+    batchQueueItems: many(batchQueueItems),
   }),
 );
 
@@ -419,6 +574,7 @@ export const verificationsRelations = relations(
       fields: [verifications.id],
       references: [reviewQueue.verificationId],
     }),
+    batchQueueItems: many(batchQueueItems),
   }),
 );
 
@@ -432,6 +588,25 @@ export const fieldResultsRelations = relations(fieldResults, ({ one }) => ({
 export const reviewQueueRelations = relations(reviewQueue, ({ one }) => ({
   verification: one(verifications, {
     fields: [reviewQueue.verificationId],
+    references: [verifications.id],
+  }),
+}));
+
+export const batchQueueItemsRelations = relations(batchQueueItems, ({ one }) => ({
+  batchJob: one(batchJobs, {
+    fields: [batchQueueItems.batchJobId],
+    references: [batchJobs.id],
+  }),
+  application: one(applications, {
+    fields: [batchQueueItems.applicationId],
+    references: [applications.id],
+  }),
+  labelImage: one(labelImages, {
+    fields: [batchQueueItems.labelImageId],
+    references: [labelImages.id],
+  }),
+  verification: one(verifications, {
+    fields: [batchQueueItems.verificationId],
     references: [verifications.id],
   }),
 }));

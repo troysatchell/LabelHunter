@@ -4,6 +4,116 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-518 — Batch image storage now survives the web/worker split (2026-08-12)
+
+**The bug.** `src/server/storage/local-file-storage.ts` saved every uploaded label image
+to a directory on the writing process's own disk. `POST /api/verify` and
+`POST /api/batch/start` write there, on `labelhunter-web`. `extract-worker.ts` and
+`resolve-worker.ts` read from there, on `labelhunter-worker`. `render.yaml` (TRO-481)
+deploys `web` and `worker` as two separate Render services with two separate disks — a
+file `web` wrote was never visible to `worker`. Local dev never showed this (`pnpm dev`
+runs everything in one process), and neither did any worktree's own test suite (same
+reason). Single-label verify was unaffected — one process saves the image and, later in
+the same request, reads that same file back. Batch was not: every queued item would have
+failed to read its image on the real deployed instance.
+
+**The fix.** `src/server/storage/db-image-storage.ts` replaces `local-file-storage.ts`.
+`saveLabelImage`/`readLabelImage` keep the exact same signatures — every real caller
+needed only its import path updated. Bytes now live in a new table,
+`label_image_blobs` (`storage_key` text primary key, `bytes` bytea, `original_filename`,
+`created_at`), read and written through the same `DATABASE_URL` `render.yaml` already
+gives both `web` and `worker` — the one resource this app's architecture already assumes
+they share.
+
+**Option A (Postgres) vs. Option B (S3-compatible bucket) — the real numbers.**
+The ticket's own author suggested S3, written before this repo had confirmed Postgres was
+already shared between both services. Both were evaluated for real:
+
+- **Image size, measured, not assumed.** `preprocessImage`'s `original` output (what
+  `saveLabelImage` actually writes — a full-resolution, mozjpeg-quality-92 re-encode) was
+  run against every one of the 32 golden-set images: 11.4–58.8 KB, average 47.0 KB. Those
+  source images are synthetic and downscaled (1000×800), so a second measurement used
+  `assets/golden/references/spirits-bottle-01.jpg`, a 2483×4088 (~10 MP) reference much
+  closer to a real phone photo's resolution: its `original` output is 513 KB. Call 500 KB–1
+  MB a realistic per-image range for a genuine consumer photo, an order of magnitude above
+  the synthetic golden-set figure.
+- **Batch scale.** TH-R4 names 200–300 labels per batch. This repo's own real tests never
+  exceed ~30 — the golden set itself holds exactly 32 images (`ls golden-set/images | wc
+  -l`), the largest batch anything in this repo has ever actually built.
+- **Projected total for a 300-image batch:** ~13–17 MB at the measured synthetic-image
+  rate, ~150 MB at the realistic-photo estimate. Even accumulating dozens of such batches
+  (thousands of images) stays in the single-digit gigabytes.
+- **Postgres disk quota.** `render.yaml`'s `labelhunter-db` uses `plan: basic-256mb` with
+  no explicit `diskSizeGB`. Render's own Blueprint-spec documentation (`docs/blueprint-spec`,
+  fetched directly on 2026-08-12, corroborated by a second independent fetch of the same
+  figure) states the default disk size when `diskSizeGB` is omitted is set by instance
+  tier: Free 1 GB, **Basic 15 GB**, Pro 100 GB, Accelerated 250 GB. `basic-256mb` is a
+  Basic-tier instance, so the default is 15 GB. **Not verified against a real Render
+  dashboard** — no account exists for this deploy yet, so this is a documentation read, not
+  an observed fact from Troy's own account. Reasoned conservatively from the published
+  default rather than assumed higher.
+- **Conclusion.** Even the realistic-photo estimate for one full 300-image batch (~150 MB)
+  is under 1% of a 15 GB disk, and Postgres storage can be expanded (never reduced) in 5 GB
+  increments at $0.30/GB/month if that default ever proves wrong. Option A needed zero new
+  dependencies (checked `package.json` — no S3 SDK was already present, so Option B would
+  have added one), zero new credentials, and zero new accounts — nothing for Troy to
+  provision before this ticket's own tests could run end to end. Option B remains real code
+  Troy could ask for later if image sizes or batch scale ever genuinely outgrow this
+  number, but nothing in this ticket's own measurements shows that happening.
+
+**A correction to this ticket's own hypothesis.** The brief expected `batch/start`,
+`extract-worker.ts`, and `resolve-worker.ts` to be the callers needing an adapter swap.
+The real caller list was wider: `verify/route.ts` (single-label save),
+`label-images/[labelImageId]/route.ts` (serves image bytes to the Detail view),
+`single-label-resolve/worker.ts`, and two ops scripts (`scripts/latency/measure.ts`,
+`scripts/eval/cascade-runner.ts`) all import the same module. `resolve-worker.ts` and
+`single-label-resolve/worker.ts` turned out to need **no** change at all, not even an
+import — `readLabelImage` is caller-supplied on both, wired only in
+`scripts/batch-worker/run.ts`. One caller needed a real logic change, not just an import
+swap: `label-images/[labelImageId]/route.ts`'s missing-image check used to test a Node
+`fs` error code (`ENOENT`); `db-image-storage.ts` throws a `LabelImageNotFoundError`
+instead, so the check now tests that type (renamed `isMissingImageError`).
+
+**A gap found and fixed in the same pass.** `label_images.storage_path` is deliberately
+not a declared foreign key into `label_image_blobs` (a placeholder test value like
+`"test-fixtures/x.jpg"` must remain a legal, if unmatched, value there). That means
+Postgres's own cascading delete on `applications`/`batch_jobs` never reaches a real saved
+blob row on its own — every test fixture that saved a real image would otherwise leak one
+`label_image_blobs` row into the worktree database for the rest of that database's life.
+Fixed with `deleteLabelImageBlobsWhere` (`db-image-storage.ts`), called by both
+`test-support.ts` fixture files' cleanup helpers and by the four `*.test.ts` files that
+manage their own cleanup inline.
+
+**Regression tests — the cross-process claim, proven two ways.**
+`src/server/storage/db-image-storage.test.ts`:
+- *"the old design's failure mode was real."* `local-file-storage.ts` is deleted by this
+  same change, so this cannot import it to prove its bug directly. It instead reproduces
+  the exact mechanism that made it wrong: write to one directory, read from a different
+  one — the same shape as two separate Render disks, not a stand-in for it. Confirmed to
+  fail (`ENOENT`) exactly as the pre-fix production code would have.
+- *"cross-process round trip through Postgres."* Two INDEPENDENT `pg.Pool` connections
+  against the same `DATABASE_URL` — never two references to one shared pool. Save through
+  one connection, read through the other (and, in a third test, through a third
+  connection). This is the property that actually matters for `web`/`worker`: they share
+  nothing but that connection string.
+- The raw `bytea` round trip was also confirmed directly against the real pg driver before
+  either test file was written: a `Buffer` containing null bytes and high-byte values
+  (`\x00\x01\xff\xfe`, not just printable text) round-tripped byte-for-byte through a real
+  insert/select.
+
+**How to run it.** `source .factory-env` first (every test here needs the worktree's own
+`DATABASE_URL`). `pnpm db:migrate` applies `drizzle/migrations/0004_silent_clea.sql`.
+`pnpm test -- src/server/storage/db-image-storage.test.ts` for the adapter's own suite
+(13 tests); `pnpm test` for everything (138 files, 1532 tests, all passing after this
+change). `pnpm typecheck` and `pnpm lint` are both clean.
+
+**Rollback.** `git revert` this ticket's commits, then `pnpm db:migrate` to leave
+`label_image_blobs` dropped (Drizzle migrations are forward-only in this repo, matching
+every other ticket — a revert here restores `local-file-storage.ts`, which no code will
+call again unless the revert is also applied). No data migration existed to reverse: no
+real Render deployment has ever run, so no production row anywhere depends on a value
+this ticket wrote.
+
 ## TRO-479 — LH-053 · E2E suite (2026-08-12)
 
 **What this builds.** Real, executable Playwright specs for the three PRD §6 flows: verify,

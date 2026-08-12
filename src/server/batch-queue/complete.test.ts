@@ -98,8 +98,11 @@ describe("releaseForRetry", () => {
     // The database's own clock, not Date.now() — availableAt is computed by
     // Postgres's now(), and comparing it against a Node-side timestamp is
     // exactly the clock-skew race test-support.ts's own comment documents
-    // fixing once already in this ticket.
-    const [{ before }] = await db.execute<{ before: Date }>(sql`SELECT now() AS before`).then((r) => r.rows);
+    // fixing once already in this ticket. db.execute()'s raw path returns
+    // timestamptz as an ISO string, not a pre-parsed Date (verified
+    // empirically — see claim.ts's own matching comment) — the type below
+    // says so; new Date(before) below does the parsing explicitly.
+    const [{ before }] = await db.execute<{ before: string }>(sql`SELECT now() AS before`).then((r) => r.rows);
 
     const guarded = await releaseForRetry(db, claimed.id, claimed.claimToken as string, 5000);
     expect(guarded).toBe(true);

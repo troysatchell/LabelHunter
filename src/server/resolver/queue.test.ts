@@ -439,15 +439,26 @@ describe("insertSkippedReviewQueueEntry — real database (LH-041 / TRO-474, CP-
       // insertReviewQueueEntry's own typed param does not allow passing
       // both resolverOutput and resolverSkipReason together — this proves
       // the DATABASE would also refuse it if some future caller bypassed
-      // that type safety with a raw insert.
-      await expect(
-        db.insert(reviewQueue).values({
+      // that type safety with a raw insert. Checks the SPECIFIC constraint
+      // fired, not just "something threw" — Drizzle's node-postgres driver
+      // wraps the real pg error in its own DrizzleQueryError, with the
+      // actual "violates check constraint ..." message one level down, in
+      // `.cause` (verified empirically — same shape resolve-worker.ts's
+      // own `isUniqueViolation` comment documents for a unique violation).
+      let caught: unknown;
+      try {
+        await db.insert(reviewQueue).values({
           verificationId,
           reason: "AMBIGUOUS_ABV",
           resolverOutput: SAMPLE_RESOLUTION,
           resolverSkipReason: "ESCALATION_CAP_EXCEEDED",
-        }),
-      ).rejects.toThrow();
+        });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(Error);
+      const cause = (caught as Error).cause;
+      expect(String(cause instanceof Error ? cause.message : cause)).toMatch(/review_queue_resolver_output_skip_reason_exclusive/);
     } finally {
       await cleanup(applicationId);
     }

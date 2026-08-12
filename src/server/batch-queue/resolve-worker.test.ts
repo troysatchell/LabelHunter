@@ -230,6 +230,7 @@ describe("processResolveClaim — TRO-506 recovery (CP-3 §3.3)", () => {
 
     await db.update(batchQueueItems).set({ leaseExpiresAt: new Date(Date.now() - 1000) }).where(eq(batchQueueItems.id, firstClaim.id));
     const secondClaim = await claimNextBatchQueueItem(db, "RESOLVE", "worker-2", 120, { scopeToBatchJobId: batchJobId });
+    expect(secondClaim).not.toBeNull();
 
     const depsA = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_RESOLVER_BODY) }); // must NEVER be called
     const depsB = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_RESOLVER_BODY) });

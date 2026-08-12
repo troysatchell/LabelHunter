@@ -18,7 +18,7 @@ import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { db as defaultDb } from "../../lib/db";
 import { applications, batchJobs, batchQueueItems, labelImages, verifications } from "../../lib/db/schema";
-import type { BatchQueueItemKind } from "../../lib/db/enums";
+import type { BatchJobStatus, BatchQueueItemKind, BatchQueueItemStatus } from "../../lib/db/enums";
 import { saveLabelImage } from "../storage/local-file-storage";
 
 type Db = typeof defaultDb;
@@ -31,7 +31,10 @@ export async function makeTestJpeg(width = 1200, height = 1600): Promise<Buffer>
 }
 
 export interface BatchJobFixtureOverrides {
-  status?: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+  // Reuses the schema's own closed-set type rather than a hand-written
+  // union — the two cannot silently drift apart if BATCH_JOB_STATUSES
+  // ever changes.
+  status?: BatchJobStatus;
   totalCount?: number;
 }
 
@@ -170,7 +173,7 @@ export async function createVerificationFixture(db: Db = defaultDb, applicationI
 }
 
 export interface EnqueueExtractItemOverrides {
-  status?: "PENDING" | "CLAIMED" | "DONE" | "FAILED";
+  status?: BatchQueueItemStatus;
   availableAt?: Date;
 }
 

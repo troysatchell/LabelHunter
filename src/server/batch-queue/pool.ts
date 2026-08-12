@@ -70,6 +70,26 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Proposed, not measured — this loop's OWN error backoff, distinct from
+ * both the per-item backoff (`backoff.ts`'s `computeBackoffDelayMs`, owned
+ * by the extract/resolve workers) and the rate-limit cooldown
+ * (`noteRateLimited`). A `claimNextBatchQueueItem` call or an uncaught
+ * throw from `processClaim` is a loop-level problem (a DB connectivity
+ * blip, a bug) that this loop does not otherwise account for. Escalating
+ * with consecutive failures — a one-off blip stays cheap (1s), a sustained
+ * outage backs off further (up to 30s) instead of hammering an already-
+ * failing dependency every `pollIntervalMs` — and resetting the moment a
+ * claim attempt succeeds again keeps a transient blip from leaving a loop
+ * needlessly slow afterward.
+ */
+export const LOOP_ERROR_BASE_BACKOFF_MS = 1000;
+export const LOOP_ERROR_MAX_BACKOFF_MS = 30_000;
+
+function computeLoopErrorBackoffMs(consecutiveErrors: number): number {
+  return Math.min(LOOP_ERROR_BASE_BACKOFF_MS * 2 ** (consecutiveErrors - 1), LOOP_ERROR_MAX_BACKOFF_MS);
+}
+
 /** Starts `config.concurrency` concurrent claim+process loops for one
  * queue `kind`, sharing one pool-wide cooldown coordinator (CP-3 §5.3). */
 export function startWorkerPool(config: WorkerPoolConfig): WorkerPoolHandle {
@@ -79,6 +99,7 @@ export function startWorkerPool(config: WorkerPoolConfig): WorkerPoolHandle {
 
   async function runLoop(index: number): Promise<void> {
     const workerId = `${config.workerIdPrefix}-${config.kind}-${index}`;
+    let consecutiveErrors = 0;
     while (!stopped) {
       try {
         const cooldownWaitMs = waitMsForCooldown(cooldown, Date.now());
@@ -90,6 +111,7 @@ export function startWorkerPool(config: WorkerPoolConfig): WorkerPoolHandle {
         const item = await claimNextBatchQueueItem(config.db, config.kind, workerId, config.leaseSeconds, {
           scopeToBatchJobId: config.scopeToBatchJobId,
         });
+        consecutiveErrors = 0; // the claim path itself is healthy again
         if (!item) {
           await sleep(config.pollIntervalMs);
           continue;
@@ -105,11 +127,12 @@ export function startWorkerPool(config: WorkerPoolConfig): WorkerPoolHandle {
           noteRateLimited(cooldown, outcome.delayMs ?? DEFAULT_POOL_COOLDOWN_MS, Date.now());
         }
       } catch (error) {
+        consecutiveErrors += 1;
         onLoopError(error, workerId);
         // A DB blip or an unexpected throw from processClaim must not
-        // spin this loop hot forever — a short, fixed pause, distinct from
+        // spin this loop hot forever — an escalating pause, distinct from
         // the item-level backoff this loop does not own.
-        await sleep(config.pollIntervalMs);
+        await sleep(computeLoopErrorBackoffMs(consecutiveErrors));
       }
     }
   }

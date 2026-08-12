@@ -195,17 +195,29 @@ async function completeCapSkip(
   db: typeof defaultDb,
   item: ClaimedBatchQueueItem,
   headlineReason: NonNullable<ResolverInput["router"]["headlineReason"]>,
+  backoffConfig: BackoffConfig,
 ): Promise<ResolveClaimOutcome> {
   let plan: CompletionPlan;
   try {
-    await insertSkippedReviewQueueEntry(
-      { verificationId: item.verificationId as number, reason: headlineReason, resolverSkipReason: ESCALATION_CAP_EXCEEDED_SKIP_REASON },
-      db,
-    );
-    plan = { setResolverPath: false, counterKey: "needsHumanCount", outcome: "cap-skipped" };
+    try {
+      await insertSkippedReviewQueueEntry(
+        { verificationId: item.verificationId as number, reason: headlineReason, resolverSkipReason: ESCALATION_CAP_EXCEEDED_SKIP_REASON },
+        db,
+      );
+      plan = { setResolverPath: false, counterKey: "needsHumanCount", outcome: "cap-skipped" };
+    } catch (error) {
+      if (!isUniqueViolation(error, "review_queue_verification_id_unique")) throw error;
+      plan = planFromWinningOutcome(await readReviewQueueOutcome(db, item.verificationId as number));
+    }
   } catch (error) {
-    if (!isUniqueViolation(error, "review_queue_verification_id_unique")) throw error;
-    plan = planFromWinningOutcome(await readReviewQueueOutcome(db, item.verificationId as number));
+    // Covers BOTH a genuine insert failure and a throw from
+    // readReviewQueueOutcome itself (its own "expected a row, found none"
+    // defensive check) — neither may escape uncaught. A pool loop's own
+    // catch-all (pool.ts) would keep the process alive either way, but
+    // routing through handleResolveFailure here means the item gets a
+    // real last_error and a retry/fail decision instead of sitting
+    // CLAIMED until its lease times out for no recorded reason.
+    return handleResolveFailure(db, item, backoffConfig, error);
   }
   return completeResolveItem(db, item, plan);
 }
@@ -271,19 +283,23 @@ export async function processResolveClaim(item: ClaimedBatchQueueItem, deps: Par
   const reserved = await reserveSonnetCall(d.db, item.batchJobId, capThreshold);
 
   if (!reserved) {
-    return completeCapSkip(d.db, item, headlineReason);
+    return completeCapSkip(d.db, item, headlineReason, d.backoffConfig);
   }
 
   let plan: CompletionPlan;
   try {
-    const result = await (d.resolveEscalatedLabel ?? defaultResolveEscalatedLabel)(resolverInput, { client: d.anthropicClient, db: d.db });
-    plan = { setResolverPath: true, counterKey: result.outcome === "resolved" ? "resolvedBySonnetCount" : "needsHumanCount", outcome: result.outcome };
-  } catch (error) {
-    if (isUniqueViolation(error, "review_queue_verification_id_unique")) {
+    try {
+      const result = await (d.resolveEscalatedLabel ?? defaultResolveEscalatedLabel)(resolverInput, { client: d.anthropicClient, db: d.db });
+      plan = { setResolverPath: true, counterKey: result.outcome === "resolved" ? "resolvedBySonnetCount" : "needsHumanCount", outcome: result.outcome };
+    } catch (error) {
+      if (!isUniqueViolation(error, "review_queue_verification_id_unique")) throw error;
       plan = planFromWinningOutcome(await readReviewQueueOutcome(d.db, item.verificationId as number));
-    } else {
-      return handleResolveFailure(d.db, item, d.backoffConfig, error);
     }
+  } catch (error) {
+    // Same reasoning as completeCapSkip's own catch: a throw from
+    // readReviewQueueOutcome (or any other unexpected error) must not
+    // escape uncaught — it goes through the normal retry/fail path too.
+    return handleResolveFailure(d.db, item, d.backoffConfig, error);
   }
 
   return completeResolveItem(d.db, item, plan);

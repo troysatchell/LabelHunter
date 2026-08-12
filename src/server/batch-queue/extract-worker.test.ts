@@ -194,7 +194,11 @@ describe("processExtractClaim — retryable failure (CP-3 §5)", () => {
     const headers = new Headers({ "retry-after": "2" });
     const error = new RateLimitError(429, { type: "rate_limit_error", message: "rate limited" }, "429", headers, "rate_limit_error");
     const deps = makeDeps({ anthropicClient: clientThrowing(error) });
-    const before = Date.now();
+    // The database's own clock — a 100ms Node-vs-Postgres margin is tighter
+    // than this suite wants to rely on (see test-support.ts's own
+    // clock-skew comment for the class of flake a Node-side timestamp
+    // risks here).
+    const [{ before }] = await db.execute<{ before: string }>(sql`SELECT now() AS before`).then((r) => r.rows);
 
     const outcome = await processExtractClaim(claimed, deps);
     expect(outcome.kind).toBe("retry");
@@ -202,7 +206,7 @@ describe("processExtractClaim — retryable failure (CP-3 §5)", () => {
     const [item] = await db.select().from(batchQueueItems).where(eq(batchQueueItems.id, claimed.id));
     expect(item.status).toBe("PENDING");
     expect(item.claimedBy).toBeNull();
-    expect(item.availableAt.getTime()).toBeGreaterThanOrEqual(before + 1900); // ~2s retry-after honored
+    expect(item.availableAt.getTime()).toBeGreaterThanOrEqual(new Date(before).getTime() + 1900); // ~2s retry-after honored
 
     const [job] = await db.select().from(batchJobs).where(eq(batchJobs.id, batchJobId));
     expect(job.processedCount).toBe(0);

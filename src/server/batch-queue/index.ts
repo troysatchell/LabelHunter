@@ -20,7 +20,9 @@ export {
   computeSonnetCallCapThreshold,
   ESCALATION_CAP_EXCEEDED_SKIP_REASON,
   reserveSonnetCall,
+  RESOLVER_SKIP_REASONS,
   SONNET_ESCALATION_CAP_FRACTION,
+  type ResolverSkipReason,
 } from "./escalation-cap";
 export {
   buildResolverInputSnapshot,

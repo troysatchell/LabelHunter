@@ -65,7 +65,9 @@ A small worker entry point, `scripts/batch-worker/run.ts` (`pnpm worker`), start
 pools and runs until `SIGINT`/`SIGTERM`. Wiring it into `render.yaml` is LH-060's job, not
 this one's.
 
-**How to run it.** `pnpm db:migrate` applies the new table and columns.
+**How to run it.** Source `.factory-env` (a factory worktree) or set `DATABASE_URL` yourself
+first — every test below writes to a real Postgres database, per this repo's own DATABASE_URL
+discipline. Then `pnpm db:migrate` applies the new table and columns.
 `pnpm test -- src/server/batch-queue src/server/resolver/queue.test.ts` runs this ticket's
 suite (91 new test cases across 11 files — counted from the diff, not estimated). `pnpm worker`
 starts a worker process against `DATABASE_URL`; a manual run against a real batch (documented
@@ -73,10 +75,10 @@ in this PR) processed one label through both the extractor and the resolver, rea
 calls, in about 16 seconds (04:03:31.003 to 04:03:46.995, observed from `batch_jobs.startedAt`/
 `completedAt`).
 
-**Rollback.** Revert this commit, then run `pnpm db:migrate` again on the reverted branch
-(drizzle will not auto-generate a down migration; dropping `batch_queue_items`,
-`batch_jobs.sonnet_call_count`, and `review_queue.resolver_skip_reason` by hand is the
-manual undo if the migration itself must come out).
+**Rollback.** Revert this commit, then run `pnpm db:migrate` again on the reverted branch.
+Drizzle does not generate a down migration — once `0002_batch_queue` is applied and journaled,
+undoing it is a manual step: drop `batch_queue_items`, drop `batch_jobs.sonnet_call_count`, and
+drop `review_queue.resolver_skip_reason` by hand, on top of the code revert.
 
 ## TRO-478 — local CodeRabbit review round 1: 3 findings, 3 fixed (2026-08-11)
 

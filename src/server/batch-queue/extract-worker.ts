@@ -187,8 +187,11 @@ export async function processExtractClaim(item: ClaimedBatchQueueItem, deps: Par
   let application: ApplicationRow;
 
   try {
-    const applicationRow = await d.db.query.applications.findFirst({ where: (a, { eq }) => eq(a.id, item.applicationId as number) });
-    const labelImageRow = await d.db.query.labelImages.findFirst({ where: (li, { eq }) => eq(li.id, item.labelImageId as number) });
+    // Two independent reads — run concurrently, not sequentially.
+    const [applicationRow, labelImageRow] = await Promise.all([
+      d.db.query.applications.findFirst({ where: (a, { eq }) => eq(a.id, item.applicationId as number) }),
+      d.db.query.labelImages.findFirst({ where: (li, { eq }) => eq(li.id, item.labelImageId as number) }),
+    ]);
     if (!applicationRow || !labelImageRow) {
       throw new Error(`application ${item.applicationId} or label image ${item.labelImageId} not found for batch_queue_item ${item.id}`);
     }

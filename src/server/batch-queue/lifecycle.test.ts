@@ -83,6 +83,25 @@ describe("enqueueExtractItems (CP-3 §2.2 — idempotent enqueue)", () => {
     expect(job.totalCount).toBe(1);
   });
 
+  it("is idempotent under REAL concurrency too, not just sequential retries: two simultaneous callers enqueueing the same pairing insert exactly one row and total_count lands on exactly 1", async () => {
+    const batchJobId = await trackBatch({ totalCount: 0 });
+    const a = await createApplicationAndImageFixture(db, batchJobId, "a.jpg");
+    const pairs = [{ applicationId: a.applicationId, labelImageId: a.labelImageId }];
+
+    const [first, second] = await Promise.all([enqueueExtractItems(db, batchJobId, pairs), enqueueExtractItems(db, batchJobId, pairs)]);
+    // Exactly one of the two concurrent callers wins the insert; the other
+    // sees ON CONFLICT DO NOTHING and inserts zero rows — Postgres
+    // serializes the two, the same way claim.test.ts's own concurrency
+    // suite proves for the claim query.
+    expect([first, second].sort()).toEqual([0, 1]);
+
+    const rows = await db.select().from(batchQueueItems).where(eq(batchQueueItems.batchJobId, batchJobId));
+    expect(rows).toHaveLength(1);
+
+    const [job] = await db.select().from(batchJobs).where(eq(batchJobs.id, batchJobId));
+    expect(job.totalCount).toBe(1);
+  });
+
   it("enqueues only the genuinely new pairings in a partially-overlapping retry, and total_count reflects only the real total", async () => {
     const batchJobId = await trackBatch({ totalCount: 0 });
     const a = await createApplicationAndImageFixture(db, batchJobId, "a.jpg");

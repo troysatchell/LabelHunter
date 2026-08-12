@@ -22,6 +22,13 @@
       "when": 1786505445802,
       "tag": "0002_batch_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786538178891,
+      "tag": "0003_single_label_resolve_trigger",
+      "breakpoints": true
     }
   ]
 }

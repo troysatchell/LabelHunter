@@ -18,11 +18,34 @@ function getPool(): Pool {
   // Reuse the pool across Next.js dev-server hot reloads so we don't leak
   // connections on every edit.
   if (!globalThis.__lhPgPool) {
+    // TRO-513: this module's own `globalThis` guard only dedupes calls to
+    // `getPool()` WITHIN one process — it cannot dedupe across processes.
+    // Vitest's default `pool: 'forks'` runs each test file's isolated
+    // environment in its own forked process (measured: one worktree's full
+    // `pnpm test` run opens 17 separate pools, one per fork), so the real
+    // ceiling a TEST run must respect is Postgres's server-wide
+    // `max_connections` (100 on a default local install) divided across
+    // every pool every concurrent worktree's test run opens at once, not
+    // just this one process's own pool. A smaller `max` keeps one pool's
+    // worst case small enough that several worktrees' worth of forks still
+    // fit — but that constraint is a test-run artifact, not a real
+    // production one: the live Next.js server and `scripts/batch-worker/
+    // run.ts` each run as a single long-lived process with a single pool,
+    // so they never hit the same per-process multiplication and should
+    // keep pg's own default capacity (CodeRabbit finding, local review
+    // round 1). `VITEST` is the signal Vitest itself sets on every process
+    // it runs (its own documented behavior) — not a bespoke flag invented
+    // here.
+    const isVitest = process.env.VITEST === "true";
     const pool = new Pool({
       connectionString,
       // pg's default is 0 (no timeout) — an unreachable database would hang
       // a connection attempt forever instead of failing fast.
       connectionTimeoutMillis: 10_000,
+      // pg's own default `max` (10) applies outside a Vitest run. Only a
+      // test run — many forked processes, one pool each — gets the smaller
+      // ceiling; see the comment above.
+      ...(isVitest ? { max: 5 } : {}),
     });
     // An idle client that loses its connection emits "error" on the pool.
     // With no listener, Node treats that as an unhandled error and can

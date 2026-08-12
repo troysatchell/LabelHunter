@@ -21,22 +21,32 @@ export interface BatchThroughputWorkerConcurrency {
   readonly extract: number;
   readonly resolve: number;
   readonly singleLabelResolve: number;
-  /** Whether these numbers came from this script's own environment
-   * variables (an override was set) or are the documented defaults in
-   * `scripts/batch-worker/run.ts` — this script cannot directly observe
-   * the WORKER process's own concurrency; it reports what its own
-   * environment says, which is only as trustworthy as "both processes
-   * were started from the same sourced shell." Recorded plainly so a
-   * reader can judge that for themselves.
+  /** Where each number came from. This script cannot directly observe
+   * the WORKER process's own concurrency. It reports its own environment
+   * instead, and labels that origin here so a reader can judge it.
+   *
+   * "environment override": every value came from a variable set in this
+   * script's own shell. That is an observation of this shell only. The
+   * worker is assumed to have seen the same variables. The assumption
+   * holds only when both processes started from the same sourced shell.
+   *
+   * "scripts/batch-worker/run.ts defaults": no variable was set. Every
+   * value is that file's own documented fallback (5, 2, 1). This is a
+   * configured assumption, not an observation.
+   *
+   * The third form names a partial mix, field by field.
    *
    * A review pass (local review round 1) asked for a live read from the
-   * worker process itself instead. Not done: `scripts/batch-worker/run.ts`
-   * is a bare polling loop with no HTTP server or IPC channel of its own
-   * (`pool.ts`'s `startWorkerPool` never opens one) — building one just to
-   * report a diagnostic field would be new production surface for a
-   * measurement script, not a fix to an existing gap. The environment-echo
-   * approach here is a known, stated limitation, not a silent one. */
-  readonly source: "environment override" | "scripts/batch-worker/run.ts defaults";
+   * worker process itself. Not done: `scripts/batch-worker/run.ts` is a
+   * bare polling loop with no HTTP server or IPC channel of its own
+   * (`pool.ts`'s `startWorkerPool` never opens one). Building one to
+   * serve a diagnostic field would be new production surface for a
+   * measurement script. The environment-echo approach is a known, stated
+   * limitation, not a silent one. */
+  readonly source:
+    | "environment override"
+    | "scripts/batch-worker/run.ts defaults"
+    | `environment override for ${string}`;
 }
 
 /** Every input to the derived cost total, so a reader can recompute it by

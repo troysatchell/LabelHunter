@@ -75,10 +75,12 @@ already documented in `docs/diagnostics/2026-08-12-verdict-miss-triage.md` (21/3
 verdict accuracy). This ticket reports throughput on whatever the cascade actually decides. It
 does not change what the cascade decides.
 
-**Not measured: deployed throughput.** TRO-518 blocks it. `render.yaml` runs the web and
-worker as separate Render services. Each has its own disk. `local-file-storage.ts` writes an
-uploaded image to whichever process saved it. A deployed batch run fails on every image today.
-No claim about deployed throughput appears anywhere in this entry, the code, or the artifact.
+**Not measured: deployed throughput.** This run predates TRO-518's storage fix and ran
+against a local instance only. At measurement time, `local-file-storage.ts` wrote each
+uploaded image to the saving process's own disk, so a deployed batch run would have failed
+on every image. TRO-518 has since landed and moved that storage to Postgres; this branch
+carries it. Deployed throughput is still not measured. No claim about it appears anywhere
+in this entry, the code, or the artifact.
 
 **How to run it.** `pnpm batch:fixture` once. Then, in three terminals: `pnpm dev`, `pnpm
 worker`, `pnpm batch:throughput`. Output lands at
@@ -102,9 +104,9 @@ headless Chromium session against the running app. Every new tile rendered with 
 value. "AUTO-VERIFIED SHARE 56.3%" appeared. So did "ITEMS PER MINUTE 50.48" with its "1.19s
 per label" sub-note. Both sat in the same stat-tile grid as the five existing tiles.
 
-**Local CodeRabbit review triage, three rounds, 15 findings total.** Fourteen fixed; one
-skipped with a documented reason (below). Stopped after round 3 — each round found
-progressively smaller issues, and the gate passed clean twice in a row by then.
+**Local CodeRabbit review triage, three rounds, 15 findings total.** Fourteen were fixed.
+One was skipped, with a documented reason below. The triage stopped after round 3. Each
+round found smaller issues than the round before, and the gate passed clean twice in a row.
 
 Round 1, four findings, all fixed or skipped:
 - `computeAutoVerifiedShare` checked `processedCount <= 0` before validating
@@ -161,6 +163,19 @@ despite round 3's own caveat (fixed — the note now says OBSERVED for Sonnet, U
 for Haiku); and one false positive that read the scorecard's historical fail row as an
 unresolved failure (dismissed — the row records a stale worktree database, fixed by
 applying migration 0004, and the gate now passes).
+
+Round 5 ran on the orchestrator's next gate pass, after the round-4 fixes. Twelve findings.
+Eleven were fixed: the "Not measured" paragraph above no longer claims TRO-518 is unlanded;
+the `measure.ts` header, `args.ts`, and `types.ts` doc comments now use short, single-claim
+sentences; `cost.ts` and its test now call `haikuCallCount` an upper bound on real calls;
+`readWorkerConcurrency` now rejects a non-positive-integer override instead of recording
+`NaN`, and labels each value's origin (override vs. run.ts default) accurately, in the
+generated notes too; the artifact's own concurrency note now says CONFIGURED ASSUMPTION,
+because this run set no override; and the completed-batch fixtures in
+`get-batch-progress.test.ts` and `BatchProgressSummary.test.tsx` now carry counts a real
+completed batch would have. The twelfth was half-accepted: the auto-verified-share fixtures
+keep their RUNNING status, because `get-batch-progress.ts` serves that share mid-run — the
+state is reachable, so only the throughput fixture needed the completed shape.
 
 **Do NOT.** No column was added to `batch_jobs` — every input already existed. No claim was
 extrapolated past this run's real 32 items to TH-R4's 200-300 label reference.

@@ -68,7 +68,19 @@ describe("BatchProgressSummary", () => {
   });
 
   it("shows items/minute and the reciprocal per-item average once the batch has finished (TRO-544, PRD §3.8)", () => {
-    render(<BatchProgressSummary progress={progress({ throughput: { itemsPerMinute: 16.67, avgMsPerItem: 3600 } })} />);
+    // A completed batch, with counts a real one would have — the server
+    // computes throughput only once completedAt exists, so a RUNNING
+    // fixture with a throughput value would be an unreachable state.
+    render(
+      <BatchProgressSummary
+        progress={progress({
+          status: "COMPLETED",
+          processedCount: 10,
+          completedAt: "2026-08-12T00:00:36.000Z",
+          throughput: { itemsPerMinute: 16.67, avgMsPerItem: 3600 },
+        })}
+      />,
+    );
     const tile = screen.getByTestId("batch-stat-throughput");
     expect(tile).toHaveTextContent("16.67");
     expect(tile).toHaveTextContent("3.60s per label, averaged across the whole batch.");

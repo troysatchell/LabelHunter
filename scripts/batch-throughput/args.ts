@@ -7,26 +7,27 @@
  * it runs, so `args.test.ts` must be able to import this file for free.
  */
 
-/** `BatchProgressBrowser.tsx`'s own default poll cadence — reusing it here
+/** `BatchProgressBrowser.tsx`'s own default poll cadence. Reusing it
  * means this script observes the batch at the same granularity the UI
- * does, not an arbitrary different one. */
+ * does, not at an arbitrary different one. */
 export const DEFAULT_POLL_INTERVAL_MS = 3000;
 
-/** Generous upper bound on how long this script waits for a batch to
- * reach a terminal state before giving up. Proposed, not measured against
- * a real multi-hundred-item batch — sized for the 32-case golden-set
- * fixture (this ticket's own real run) plus real headroom for Sonnet
- * escalations and retry backoff, not tuned to it exactly. */
+/** Upper bound on how long this script waits for the batch to reach a
+ * terminal state. Proposed, not measured against a real
+ * multi-hundred-item batch. Sized for the 32-case golden-set fixture —
+ * this ticket's own real run — plus headroom for Sonnet escalations and
+ * retry backoff. */
 export const DEFAULT_MAX_WAIT_MS = 30 * 60_000;
 
 export const DEFAULT_FIXTURE_DIR = "var/batch-fixture";
 
-/** Node (and every browser) silently clamps a `setTimeout`/`AbortSignal.timeout`
- * delay above the 32-bit signed integer range to a near-immediate fire —
- * the HTML timer spec's own documented behavior, not a Node bug. A
- * `--max-wait-ms` above this would silently mean "almost no wait," the
- * opposite of what a caller typing a huge number intends (review finding,
- * local review round 2). Rejected explicitly instead. */
+/** Node and every browser clamp a `setTimeout`/`AbortSignal.timeout`
+ * delay above the 32-bit signed integer range to a near-immediate fire.
+ * The HTML timer spec documents this behavior; it is not a Node bug. A
+ * `--max-wait-ms` above this bound would silently mean "almost no wait" —
+ * the opposite of what a caller typing a huge number intends. This
+ * script rejects such a value explicitly (review finding, local review
+ * round 2). */
 export const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 function defaultBaseUrl(): string {

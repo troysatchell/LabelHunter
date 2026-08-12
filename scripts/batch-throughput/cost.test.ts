@@ -46,8 +46,10 @@ describe("deriveBatchCostUsd", () => {
     expect(usd).toBeCloseTo(0.04668, 6);
   });
 
-  it("counts a retried extraction as more than one call — haikuCallCount is an attempt sum, not a label count", () => {
-    // 5 labels, one of which retried once (6 real Haiku attempts total).
+  it("prices every claimed attempt — haikuCallCount is an upper bound on real Haiku calls, not a label count", () => {
+    // 5 labels, one of which retried once: 6 claimed attempts. An attempt
+    // can fail before its request ever reaches Haiku, so 6 bounds the real
+    // call count from above; it does not certify it.
     const usd = deriveBatchCostUsd({ haikuCallCount: 6, haikuMeanCostUsd: 0.004668, sonnetCallCount: 0, sonnetMeanCostUsd: 0.010969 });
     expect(usd).toBeCloseTo(6 * 0.004668, 6);
   });

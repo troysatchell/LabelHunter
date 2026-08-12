@@ -40,13 +40,14 @@ export interface DeriveBatchCostParams {
 
 /**
  * `(haikuCallCount * haikuMeanCostUsd) + (sonnetCallCount * sonnetMeanCostUsd)`.
- * Every Haiku extraction ATTEMPT counts — `haikuCallCount` is a sum of
- * real attempts, not a bare label count, so a retried extraction is
- * priced as more than one call (`measure.ts`'s own `haikuCallCount`
- * computation). Every Sonnet call ATTEMPT counts too (`sonnetCallCount` —
- * `batch_jobs.sonnet_call_count`, which already counts a retry the same
- * way `escalation-cap.ts`'s own doc comment requires: "first attempts and
- * retries alike").
+ * `haikuCallCount` is an UPPER BOUND on real Haiku calls, not a call
+ * count. It sums extraction claim ATTEMPTS (`measure.ts`'s own
+ * computation). A retry adds one attempt. An attempt that fails before
+ * its request — an unreadable or unresizable image — also adds one, with
+ * zero real calls made. The derived total can therefore overstate the
+ * Haiku side; it cannot understate it. `sonnetCallCount` is a real call
+ * count: `batch_jobs.sonnet_call_count` counts first attempts and
+ * retries alike (`escalation-cap.ts`'s own doc comment).
  *
  * Throws `RangeError` on a call count that is not a non-negative safe
  * integer, or a mean cost that is not finite (review finding, local

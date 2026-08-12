@@ -82,7 +82,7 @@ describe("getBatchProgress", () => {
     // A deterministic 2-minute span, computed in Postgres's own clock — same
     // reasoning as the latency test just below: avoid Node/Postgres clock skew.
     await db.execute(
-      sql`UPDATE batch_jobs SET started_at = now() - interval '2 minutes', completed_at = now(), status = 'COMPLETED' WHERE id = ${batchJobId}`,
+      sql`UPDATE batch_jobs SET started_at = now() - interval '2 minutes', completed_at = now(), status = 'COMPLETED', processed_count = 10 WHERE id = ${batchJobId}`,
     );
 
     const result = await getBatchProgress(db, batchJobId);

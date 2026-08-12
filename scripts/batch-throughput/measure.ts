@@ -1,54 +1,54 @@
 /**
- * Measures REAL batch throughput against a live local LabelHunter instance
- * (TRO-544 / LH-039, PRD §3.8, TH-R4).
+ * Measures REAL batch throughput against a live local LabelHunter
+ * instance (TRO-544 / LH-039, PRD §3.8, TH-R4).
  *
- * Run, in three separate terminals (all with `.factory-env` sourced, or
- * `.env.local` present for a plain checkout):
+ * Run these commands in three separate terminals. Source `.factory-env`
+ * first, or keep `.env.local` present for a plain checkout.
  *
  *   1. pnpm batch:fixture     # builds var/batch-fixture/{manifest.csv,images.zip}
- *   2. pnpm dev                       # terminal A — the web app
- *      pnpm worker                    # terminal B — the batch worker pool
- *   3. pnpm batch:throughput          # terminal C — this script
+ *   2. pnpm dev               # terminal A — the web app
+ *      pnpm worker            # terminal B — the batch worker pool
+ *   3. pnpm batch:throughput  # terminal C — this script
  *
- * **This costs real money.** Every item is one real, live Haiku call; an
- * escalated item adds one real Sonnet call — exactly the calls a real
- * batch upload would make. This script submits through the SAME two HTTP
- * routes `BatchUploadForm.tsx` calls (`POST /api/batch/preview`, then
- * `POST /api/batch/start`), with the same multipart field names
- * (`manifest`, `imagesZip`) — a real HTTP round trip against the real dev
- * server and the real worker process, not an in-process call (unlike
+ * **This costs real money.** Every item makes one real, live Haiku call.
+ * An escalated item adds one real Sonnet call. These are exactly the
+ * calls a real batch upload would make.
+ *
+ * **This measures the real HTTP path.** The script submits through the
+ * same two routes `BatchUploadForm.tsx` calls: `POST /api/batch/preview`,
+ * then `POST /api/batch/start`, with the same multipart field names
+ * (`manifest`, `imagesZip`). Every request crosses a real HTTP boundary
+ * to the real dev server and the real worker process. Compare
  * `scripts/latency/measure.ts`, which deliberately calls
- * `handleVerifyRequest` directly — seeing the real HTTP + worker-process
- * split is this ticket's whole point, and it is also what
- * `--base-url=<deployed URL>` will need once TRO-518 lands).
+ * `handleVerifyRequest` in-process. Seeing the HTTP + worker-process
+ * split is this ticket's whole point.
  *
  * **What this measures.** Wall-clock batch throughput: `totalCount /
- * (completedAt - startedAt)`, and its reciprocal — read back from this
- * run's own `GET /api/batch/:id` response, computed by the exact same
- * `computeBatchThroughput` the product's batch-results screen uses
- * (`../../src/lib/utils/batch-throughput.ts`). This script is therefore
- * also a live, real exercise of that new code path, not only a
- * data-collection exercise.
+ * (completedAt - startedAt)`, and its reciprocal. The script reads both
+ * back from this run's own `GET /api/batch/:id` response. The same
+ * `computeBatchThroughput` the batch-results screen uses computes them
+ * (`../../src/lib/utils/batch-throughput.ts`). Each run is therefore
+ * also a live exercise of that new code path.
  *
- * **What this does NOT measure.** A deployed Render instance.
- * `render.yaml` runs the web and worker as separate services with
- * separate disks, and `local-file-storage.ts` writes to whichever
- * process saved the image — a batch run there fails on every image until
- * TRO-518 lands. Point `--base-url` at a deployed URL only after that
- * ticket is done, and re-run this same script; do not hand-edit its
- * output.
+ * **What this does NOT measure.** A deployed Render instance. The
+ * committed artifact records a local run made before TRO-518 landed. At
+ * that time, `local-file-storage.ts` wrote each image to the saving
+ * process's own disk, so a deployed batch run would have failed on every
+ * image. TRO-518 has since moved that storage to Postgres. To get a
+ * deployed number, point `--base-url` at a deployed URL and re-run this
+ * same script. Do not hand-edit the committed output.
  *
  * **Cost is DERIVED, not measured.** The batch worker
- * (`src/server/batch-queue/`) records no per-call token usage — that seam
+ * (`src/server/batch-queue/`) records no per-call token usage. That seam
  * (`createUsageCapturingClient`) exists only in the eval harness
- * (`scripts/eval/usage.ts`). This script multiplies this run's REAL call
- * counts by the eval harness's own measured MEAN per-call cost, re-read
- * from `scripts/eval/results/eval-report.json` on every run so this
- * number always reflects whatever that file currently says, never a value
- * copied in by hand and left to go stale. The Haiku call count is an
- * UPPER BOUND, not a certainty: the sum of `attempts` over this batch's
- * own EXTRACT queue items, not a bare label count — a retried extraction makes more than one real call. The
- * Sonnet call count is `batch_jobs.sonnet_call_count`, read directly from
+ * (`scripts/eval/usage.ts`). This script multiplies this run's call
+ * counts by the eval harness's measured MEAN per-call cost. It re-reads
+ * `scripts/eval/results/eval-report.json` on every run, so the number
+ * always reflects what that file currently says. The Haiku call count is
+ * an UPPER BOUND, not a certainty. It sums claim `attempts` over this
+ * batch's EXTRACT queue items. A retry adds one attempt. An attempt that
+ * fails before its request also adds one, with zero real calls made. The
+ * Sonnet call count is real: `batch_jobs.sonnet_call_count`, read from
  * the database after the batch completes.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -84,18 +84,46 @@ function readMachineInfo() {
   };
 }
 
+/** Strict harness-side twin of `scripts/batch-worker/run.ts`'s
+ * `envPositiveInt`. The worker warns and falls back on a bad value; this
+ * script THROWS instead. A silent fallback here would record a
+ * concurrency the operator did not ask for, and the artifact's
+ * provenance would be wrong. (run.ts itself is not importable here — the
+ * module starts the worker pool at import time.) */
+function envConcurrencyOverride(name: string): number | null {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return null;
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new Error(`${name}=${JSON.stringify(raw)} is not a positive integer.`);
+  }
+  return parsed;
+}
+
 function readWorkerConcurrency(): BatchThroughputWorkerConcurrency {
-  const extractRaw = process.env.BATCH_WORKER_CONCURRENCY;
-  const resolveRaw = process.env.BATCH_RESOLVE_WORKER_CONCURRENCY;
-  const singleLabelRaw = process.env.SINGLE_LABEL_RESOLVE_WORKER_CONCURRENCY;
+  // Defaults mirror scripts/batch-worker/run.ts's own envPositiveInt
+  // fallbacks (5, 2, 1). This script cannot see the WORKER process's own
+  // concurrency directly, only its own environment. `source` labels each
+  // value's real origin so the artifact never calls a fallback "observed."
+  const extract = envConcurrencyOverride("BATCH_WORKER_CONCURRENCY");
+  const resolveOverride = envConcurrencyOverride("BATCH_RESOLVE_WORKER_CONCURRENCY");
+  const singleLabel = envConcurrencyOverride("SINGLE_LABEL_RESOLVE_WORKER_CONCURRENCY");
+  const overridden = [
+    extract !== null ? "extract" : null,
+    resolveOverride !== null ? "resolve" : null,
+    singleLabel !== null ? "singleLabelResolve" : null,
+  ].filter((name): name is string => name !== null);
+  const source =
+    overridden.length === 0
+      ? ("scripts/batch-worker/run.ts defaults" as const)
+      : overridden.length === 3
+        ? ("environment override" as const)
+        : (`environment override for ${overridden.join(", ")}; scripts/batch-worker/run.ts defaults for the rest` as const);
   return {
-    // Defaults mirror scripts/batch-worker/run.ts's own envPositiveInt
-    // fallbacks (5, 2, 1) — this script cannot see the WORKER process's
-    // own concurrency directly, only its own environment.
-    extract: extractRaw ? Number(extractRaw) : 5,
-    resolve: resolveRaw ? Number(resolveRaw) : 2,
-    singleLabelResolve: singleLabelRaw ? Number(singleLabelRaw) : 1,
-    source: extractRaw || resolveRaw || singleLabelRaw ? "environment override" : "scripts/batch-worker/run.ts defaults",
+    extract: extract ?? 5,
+    resolve: resolveOverride ?? 2,
+    singleLabelResolve: singleLabel ?? 1,
+    source,
   };
 }
 
@@ -399,11 +427,14 @@ async function main(): Promise<void> {
         "own EXTRACT items, so a retried extraction counts as more than one call. This is an UPPER BOUND on real Haiku calls, " +
         "not a certainty — attempts increments at claim time, before the real API call happens, so a claim that fails " +
         "reading or resizing the image before ever reaching Haiku still counts as one attempt.",
-      "cost.derivedTotalUsd is DERIVED: real call counts from this run, multiplied by the eval harness's measured MEAN " +
-        "per-call cost from scripts/eval/results/eval-report.json (see cost.meanCostSource for that file's own measuredAt). " +
+      "cost.derivedTotalUsd is DERIVED: cost.sonnetCallCount is OBSERVED and cost.haikuCallCount is an UPPER BOUND (see the " +
+        "note above), each multiplied by the eval harness's measured MEAN per-call cost from scripts/eval/results/eval-report.json " +
+        "(see cost.meanCostSource for that file's own measuredAt). " +
         "This run's own per-call token usage was not captured — the batch worker has no usage-capturing seam today.",
-      "workerConcurrency is OBSERVED from this script's own environment variables, assumed identical to the separate worker " +
-        "process's environment because both were started from the same sourced shell for this run.",
+      "workerConcurrency provenance is recorded in workerConcurrency.source: an explicitly set environment variable is an " +
+        "observation of this script's own shell; a scripts/batch-worker/run.ts default is a configured assumption, not an " +
+        "observation. Either way, the separate worker process is assumed to match because both processes were started from " +
+        "the same sourced shell.",
       "This ran on a local dev workstation, not a deployed Render instance. Do not quote these figures as deployed throughput.",
     ],
   };

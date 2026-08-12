@@ -12,8 +12,8 @@ and what the Validation Router should decide. Later tickets use it two ways:
 ## Images: rendered and degraded (LH-004, TRO-497)
 
 `golden-set/images/` now holds a real, committed JPEG for every `rendered` and
-`rendered+degraded` case. That is 29 of 29 cases. Total size: about 1.08 MB. Largest file:
-46.7 KB. Every image stays well under the ~500 KB per-image target.
+`rendered+degraded` case. That is 31 of 31 cases. Total size: about 1.16 MB. Largest file:
+47.6 KB. Every image stays well under the ~500 KB per-image target.
 
 The pipeline is the render-first hybrid design doc §2 lays out:
 
@@ -87,7 +87,7 @@ image looks right.
 vectors it provides evidence for (`vectors` field). Two vectors currently have **no** covering
 case: **V7** (net-contents format match, e.g. `"750 mL"` vs `"750ml"` — no case isolates this
 as its distinguishing feature) and **V10** (batch of ≥20 — a property of the manifest as a
-whole, not any single case; the manifest's 29 cases already satisfy the ≥20 count, but no case
+whole, not any single case; the manifest's 31 cases already satisfy the ≥20 count, but no case
 individually claims V10). `loader.test.ts` asserts these two gaps explicitly so they can't
 silently drift — closing V7 means adding a case, not editing the test's exclusion list.
 
@@ -145,7 +145,7 @@ never by upload order or a separate lookup table.
 
 ## The 12 required test categories (PRD §6)
 
-29 cases across all 12 categories named in the PRD: clean match, ABV mismatch, title-case
+31 cases across all 12 categories named in the PRD: clean match, ABV mismatch, title-case
 warning, reworded warning, missing warning, case-variant brand, glare, rotation, low light,
 tiny warning text, odd typography, and conflicting application-vs-label data. Two cases carry
 the brief's named examples directly:
@@ -156,5 +156,18 @@ the brief's named examples directly:
   Warning` in title case on the label instead of `GOVERNMENT WARNING`, must FAIL.
 
 Case counts lean toward the categories most likely to need several variants: clean match (4),
-abv-mismatch (3), case-variant-brand (3), and conflicting-application-vs-label (3). Every
-other category has 2.
+abv-mismatch (3), case-variant-brand (3), conflicting-application-vs-label (3), title-case
+warning (3), and reworded warning (3). Every other category has 2.
+
+**TRO-469 / LH-021 added two cases**, closing two gaps `docs/checkpoints/cp2-warning-subsystem.md`
+§9.2 named at CP-2 (both ship with reasoning and no covering case until this ticket, and both
+are TTB-documented real mistakes, not invented ones — CP-2 §2.6):
+
+- `case-30-title-case-warning-surgeon-general-lowercase` (finding 5) — the warning body prints
+  `surgeon general` in lower case; the `GOVERNMENT WARNING` prefix stays all-caps. Covers the
+  `Surgeon`/`General` capitalization positions CP-2 §5.4 added on TTB's own checklist
+  authority, which no case exercised before.
+- `case-31-reworded-warning-near-miss-missing-comma` (finding 4) — the warning omits the comma
+  after `General`, a genuine one-character (near-miss-band) deviation. Covers CP-2 §5.5's
+  proposed near-miss band (edit distance 1–2), which no case exercised before — the golden
+  set's other reworded-warning cases sit at distance 24 and 38, far outside it.

@@ -22,7 +22,7 @@
  */
 
 /**
- * A fixed, deliberately small subset of the 29-case golden set
+ * A fixed, deliberately small subset of the 31-case golden set
  * (`golden-set/manifest.json`), chosen to span every `LabelVerdict` and a
  * spread of `GoldenSetCategory` values without running (and paying for)
  * the whole set on every `--live` invocation:
@@ -34,7 +34,17 @@
  *   - case-12: missing-warning, REVIEW / MISSING_REQUIRED_FIELD.
  *   - case-14: case-variant-brand, PASS — the STONE'S THROW case (TH-R8).
  *   - case-17: glare, REVIEW / LOW_IMAGE_QUALITY.
- *   - case-23: tiny-warning-text, REVIEW / LOW_MODEL_CONFIDENCE.
+ *   - case-25: odd-typography, REVIEW / LOW_MODEL_CONFIDENCE (brand_name).
+ *
+ * `case-23` (tiny-warning-text) was this list's original LOW_MODEL_CONFIDENCE
+ * exemplar; TRO-469 / LH-021 (CP-2 §9.2 finding 1) corrected its own
+ * expected reviewReason to `LOW_IMAGE_QUALITY` — `WarningComparatorResult`
+ * cannot return `LOW_MODEL_CONFIDENCE` (`docs/checkpoints/cp2-warning-subsystem.md`
+ * §6.2), so a tiny-but-legible warning reaching that comparator always
+ * routes on image quality, never model confidence. Swapped to `case-25`
+ * (a comparator-driven field's own genuine LOW_MODEL_CONFIDENCE path,
+ * `field-resolution.ts`'s `resolveComparatorField`) to keep this sample
+ * covering every reviewReason family it always intended to.
  *
  * Not a statistically representative sample — eight cases cannot be. It is
  * a cheap, fast smoke set that exercises every reviewReason family and both
@@ -50,12 +60,12 @@ export const DEFAULT_SAMPLE_CASE_IDS: readonly string[] = [
   "case-12-missing-warning-spirits",
   "case-14-case-variant-brand-stones-throw",
   "case-17-glare-front-label",
-  "case-23-tiny-warning-text-standard-bottle",
+  "case-25-odd-typography-script-brand",
 ];
 
 /**
  * Hard ceiling on how many cases one `--live` invocation may run — the
- * golden set's own size (29 cases today). `--full` already reaches this
+ * golden set's own size (31 cases today). `--full` already reaches this
  * ceiling by design; this constant exists so a future larger golden set
  * cannot silently make one careless invocation far more expensive than any
  * operator intended, the same backstop role `scripts/latency/args.ts`'s

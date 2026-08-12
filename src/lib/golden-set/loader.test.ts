@@ -667,8 +667,15 @@ describe("loadGoldenSetManifest", () => {
   it("loads and validates the committed golden-set manifest", () => {
     const result = loadGoldenSetManifest();
 
+    // PRD §6's own ballpark ("~20-30 generated labels"), plus the two
+    // warning-relevant cases CP-2 §9.2 findings 4/5 (docs/checkpoints/
+    // cp2-warning-subsystem.md) identified as missing and TRO-469 / LH-021
+    // added: the near-miss band (case-31) and the Surgeon/General
+    // capitalization positions (case-30) both shipped with reasoning and no
+    // covering case until this ticket. 31, not 30 — a deliberate, cited
+    // growth, not drift.
     expect(result.cases.length).toBeGreaterThanOrEqual(20);
-    expect(result.cases.length).toBeLessThanOrEqual(30);
+    expect(result.cases.length).toBeLessThanOrEqual(31);
 
     const ids = result.cases.map((c) => c.caseId);
     expect(new Set(ids).size).toBe(ids.length);

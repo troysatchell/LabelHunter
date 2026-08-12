@@ -339,7 +339,7 @@ describe("POST /api/verify — designed error states (TH-R20)", () => {
     expect(body.error.message).toMatch(/could not reach the verification service/i);
     // No raw SDK detail (class name, "Connection error.", a stack frame)
     // leaks into the response a first-time user sees (TH-R20).
-    expect(JSON.stringify(body)).not.toMatch(/APIConnectionError|ECONNREFUSED|ENOTFOUND/);
+    expect(JSON.stringify(body)).not.toMatch(/APIConnectionError|Connection error\.|ECONNREFUSED|ENOTFOUND/);
 
     const rows = await db.select().from(applications).where(eq(applications.brandName, brandName));
     expect(rows).toHaveLength(0);

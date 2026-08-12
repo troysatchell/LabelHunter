@@ -1,7 +1,7 @@
 # Designed error states (TRO-478 / LH-052)
 
-TH-R20 asks for a UI a first-time, non-technical user can operate with no
-instructions. Every failure mode must produce a useful outcome. None may
+TH-R20 asks for a UI that a first-time, non-technical user can operate with
+no instructions. Every failure mode must produce a useful outcome. None may
 show a raw exception, a stack trace, or a bare error code.
 
 TH-R7 asks for two things: name every outbound network dependency, and
@@ -16,25 +16,25 @@ into the submission's trade-offs section. This file is the working source.
 
 ## Outbound dependencies (TH-R7)
 
-LabelHunter has exactly one outbound dependency while it runs: the Anthropic
-API. Nothing else in the running app calls another host.
+LabelHunter calls two kinds of host while it runs: one public vendor API
+(Anthropic), and its own private database (Postgres). TH-R7's concern is
+the first kind: a vendor's cloud ML endpoint, reachable only through a
+corporate firewall's domain allow-list. The table below names both kinds,
+so the distinction is explicit, not assumed.
 
-| Dependency | When it is called | Required? | If blocked |
+| Dependency | When it is called | Required? | If blocked or unreachable |
 |---|---|---|---|
 | Anthropic API (`api.anthropic.com`) | Every verify request (Haiku extraction). Escalated labels only (Sonnet resolver, LH-014) — never the per-label happy path (TH-R19). | Yes — the core function. | See "Unreachable-endpoint degradation" below. Graceful: a clear message, no crash, no hang, a retry button. |
+| Postgres database | Every verify request, once extraction succeeds — persists the application, image, verdict, and field rows. | Yes — nothing persists without it. | 503 SERVICE: "LabelHunter could not save this verification. Try again." (`route.ts`, tested in `route.test.ts`). Not a TH-R7 concern in the same sense — not a public-internet vendor endpoint behind a firewall allow-list. In production it is a same-network Render service; in local dev it is `localhost`. |
 | Google Generative Language API (Gemini/Imagen) | Dev-time only: golden-set image generation (`GOOGLE_API_KEY`, `.env.local.example`). | No — build-time tooling, not part of the deployed app. | Irrelevant at runtime. The running app has no code path that calls Google. |
 
-The Postgres database is not in this table. It is not a public-internet
-vendor endpoint, so no outbound-domain firewall rule applies to it. In
-production it is a same-network Render service. In local dev it is
-`localhost`. TH-R7's concern is a vendor's cloud ML endpoint, the case the
-interview described.
-
-**Design consequence.** LabelHunter makes exactly one runtime outbound call.
-One function guards it: `extractLabel` (`src/server/extractor/index.ts`).
-One degradation path covers every way that call can fail: a wrong response,
-a timeout, or an unreachable endpoint. `src/app/api/verify/route.ts` catches
-all three around that one call.
+**Design consequence.** LabelHunter makes exactly one outbound call to a
+public vendor API while it runs. One function guards it: `extractLabel`
+(`src/server/extractor/index.ts`). One degradation path covers every way
+that call can fail: a wrong response, a timeout, or an unreachable
+endpoint. `src/app/api/verify/route.ts` catches all three around that one
+call. This is the dependency TH-R7's firewall scenario is about — the one
+address a deployer's network team needs to allow through.
 
 ## The four single-label designed states (TH-R20)
 
@@ -163,9 +163,9 @@ verify request fails this way. The app degrades to "unavailable." It never
 gives a silent wrong answer.
 
 This is the TH-R7 trade-off: LabelHunter has exactly one outbound
-dependency (the table above). There is exactly one address to allow
-through the firewall. There is exactly one honest failure state for when
-that has not been done.
+dependency on a public vendor API (the table above). There is exactly one
+address to allow through the firewall. There is exactly one honest failure
+state for when that has not been done.
 
 **Test.** `src/app/api/verify/route.test.ts` — "the Anthropic endpoint is
 unreachable (TRO-478, TH-R7)." Uses the real `APIConnectionError` class, not

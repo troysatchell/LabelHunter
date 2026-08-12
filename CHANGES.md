@@ -4,6 +4,31 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-478 — local CodeRabbit review round 1: 3 findings, 3 fixed (2026-08-11)
+
+**What changed.** The gate's local CodeRabbit pass reviewed this branch once, before the PR
+opened. It found 3 issues. All were real. All are fixed.
+
+- `docs/error-states.md` (minor): a missing relative pronoun. "A UI a first-time user" read
+  wrong. It now reads "a UI that a first-time user."
+- `docs/error-states.md` (major): the outbound-dependency section claimed "exactly one
+  outbound dependency… nothing else calls another host," then carved out Postgres in the very
+  next paragraph. That is an internal inconsistency, not just loose wording. Postgres now has
+  its own row in the dependency table, with its real degradation behavior (503 SERVICE,
+  "could not save this verification") and an explicit note on why it is a different kind of
+  concern than a public vendor endpoint behind a firewall.
+- `src/app/api/verify/route.test.ts` (minor): the "no SDK detail leaks into the response"
+  assertion checked the error class name and errno-style strings, but not the literal SDK
+  message "Connection error." Added to the same check.
+
+Recorded in `factory/review-findings.jsonl` — categories `prose-style`, `doc-consistency`,
+`test-coverage`.
+
+**How to run it.** `pnpm test -- src/app/api/verify/route.test.ts`.
+
+**Rollback.** `git revert` this commit. Every change here is prose or a test assertion; no
+production code moved.
+
 ## TRO-478 — LH-052: Designed error states (2026-08-11)
 
 **What changed.** This ticket covers four single-label designed error states (TH-R20):

@@ -22,12 +22,12 @@ before it ever read the government warning's own `MISMATCH`. TH-R9's acceptance 
 "reworded warning → fail" (`audit/requirements/inventory.md:87`). case-11 carries a genuinely
 reworded warning. It now returns FAIL.
 
-**Step 1's live read.** Ran `runOneCase` against case-11 from a scratch script, never
-committed. Pointed `DATABASE_URL` at this worktree's own database first. Raw extraction:
-`beverage_type: { value: "mead", evidence: "Mead", confidence: 0.99, alternates: [] }`.
+**Step 1's live read.** A scratch script, never committed, called `runOneCase` against
+case-11. It pointed `DATABASE_URL` at this worktree's own database first. The raw extraction
+was `beverage_type: { value: "mead", evidence: "Mead", confidence: 0.99, alternates: [] }`.
 `"mead"` is not a `BEVERAGE_TYPES` member. Its confidence clears `TRUSTED_THRESHOLD_DEFAULT`
-(0.85). This is an off-menu value at trusted confidence — the ticket's stop condition (step 3)
-does not apply. The fix proceeds on this measured basis, not a guess.
+(0.85). An off-menu value at trusted confidence does not meet the ticket's stop condition
+(step 3). The fix proceeds on this measured basis, not a guess.
 
 **Net effect on label-verdict accuracy: unchanged, still 21/32. This is not a scoreboard win.**
 Two live single-case runs after the fix, both pasted in full in the PR:
@@ -37,13 +37,13 @@ Two live single-case runs after the fix, both pasted in full in the PR:
 - `pnpm eval:check -- --live --case=case-22-low-light-warning-block`: `labelVerdict` `PASS`
   (was REVIEW), `reviewReason` `null`. Now incorrect.
 
-case-22 also declares `wine`/`Mead`. Its `government_warning` field genuinely needs review
-(`expectedVerdict: NEEDS_REVIEW`, `actualVerdict: MATCH`). The old blocker masked that defect.
-It did not produce a correct verdict for a correct reason — it produced the right label
-verdict from the wrong mechanism. Removing the blocker exposes the defect instead of hiding
-it. One case is corrected. One case's masked defect is exposed. The count holds at 21/32.
-Read both as honest-evidence wins under PRD §6, not as a net gain and a net loss that cancel
-out.
+case-22 also declares `wine`/`Mead`. Its `government_warning` field genuinely needs review.
+The golden set expects `NEEDS_REVIEW`. The router now returns `MATCH`. The old blocker masked
+this defect. The blocker did not produce a correct verdict for a correct reason. It produced
+the right label verdict through the wrong mechanism. Removing the blocker exposes the defect
+instead of hiding it. The fix corrects one case. The fix exposes one case's masked defect. The
+count holds at 21/32. Read both results as honest-evidence wins under PRD §6. Neither is a net
+gain or a net loss that cancels the other out.
 
 **How to run it.** `pnpm test` runs the two new tests in `src/server/router/index.test.ts`,
 beside the existing beverage_type block. `pnpm eval:check -- --live --case=<id>` reads one

@@ -1,44 +1,41 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
 import { APIConnectionError } from "@anthropic-ai/sdk";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import sharp from "sharp";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { db } from "../../../lib/db";
-import { applications, fieldResults, reviewQueue, verifications } from "../../../lib/db/schema";
+import { applications, fieldResults, labelImages, reviewQueue, verifications } from "../../../lib/db/schema";
 import { extractLabel } from "../../../server/extractor";
 import { makeMockMessage, WELL_FORMED_EXTRACTION_BODY } from "../../../server/extractor/test-support";
 import { MAX_UPLOAD_BYTES, preprocessImage } from "../../../server/preprocessing";
 import { productionComparators } from "../../../server/comparators";
 import type { WarningComparatorResult } from "../../../server/router";
 import type { CompareGovernmentWarningFromImageInput } from "../../../server/warning";
-import { saveLabelImage } from "../../../server/storage/local-file-storage";
+import { deleteLabelImageBlobsWhere, saveLabelImage } from "../../../server/storage/db-image-storage";
 import { handleVerifyRequest, type VerifyRouteDeps } from "./route";
 import type { VerifyErrorResponse, VerifySuccessResponse } from "./types";
 
-// This suite makes NO live Anthropic call and writes NO file into the real
-// `var/uploads` — every Anthropic response is a canned `makeMockMessage`
-// (same pattern as `src/server/extractor/index.test.ts`), and every saved
-// image lands in a per-test scratch directory, deleted in `afterEach`. It
-// DOES use the real worktree Postgres database (`DATABASE_URL`, sourced
-// from `.factory-env`) to assert persistence — TRO-465's brief calls for
-// this explicitly.
+// This suite makes NO live Anthropic call — every Anthropic response is a
+// canned `makeMockMessage` (same pattern as
+// `src/server/extractor/index.test.ts`). It DOES use the real worktree
+// Postgres database (`DATABASE_URL`, sourced from `.factory-env`) to assert
+// persistence — TRO-465's brief calls for this explicitly — and every saved
+// image (TRO-518: `label_image_blobs`, in that same database) is deleted in
+// `afterEach` alongside its `applications` row.
 
-let scratchDir: string;
 const createdApplicationIds: number[] = [];
 
-beforeEach(async () => {
-  scratchDir = await mkdtemp(path.join(tmpdir(), "labelhunter-tro465-route-"));
-});
-
 afterEach(async () => {
-  await rm(scratchDir, { recursive: true, force: true });
+  const ids = createdApplicationIds.splice(0);
+  if (ids.length > 0) {
+    // TRO-518: label_image_blobs rows are not reached by the cascade below
+    // — see db-image-storage.ts's own deleteLabelImageBlobsWhere comment.
+    await deleteLabelImageBlobsWhere(inArray(labelImages.applicationId, ids));
+  }
   // Cascades to label_images, verifications, field_results, review_queue
   // (every FK in schema.ts is ON DELETE CASCADE) — one delete per test
   // application is enough to leave the shared worktree DB clean.
-  for (const id of createdApplicationIds.splice(0)) {
+  for (const id of ids) {
     await db.delete(applications).where(eq(applications.id, id));
   }
 });
@@ -111,7 +108,7 @@ function makeDeps(overrides: Partial<VerifyRouteDeps> = {}): VerifyRouteDeps {
     preprocessImage,
     extractLabel,
     compareGovernmentWarning: warningNeedsReviewStub,
-    saveLabelImage: (bytes, originalFilename) => saveLabelImage(bytes, originalFilename, { baseDir: scratchDir }),
+    saveLabelImage,
     comparators: productionComparators,
     ...overrides,
   };

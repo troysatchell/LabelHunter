@@ -42,7 +42,7 @@ import { db as defaultDb } from "../../lib/db";
 import { applications, batchJobs, labelImages } from "../../lib/db/schema";
 import { enqueueExtractItems, startBatchJob } from "../batch-queue";
 import { preprocessImage as defaultPreprocessImage, PreprocessingError, type PreprocessedImage } from "../preprocessing";
-import { saveLabelImage as defaultSaveLabelImage, type SavedLabelImage } from "../storage/local-file-storage";
+import { saveLabelImage as defaultSaveLabelImage, type SavedLabelImage } from "../storage/db-image-storage";
 import { eq } from "drizzle-orm";
 import type { StartBatchPairingInput, StartBatchResult, StartBatchSkippedImage } from "./types";
 

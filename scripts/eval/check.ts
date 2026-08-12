@@ -49,9 +49,7 @@
  * path calls it yet) — but its output is reported, never scored against a
  * fabricated ground truth the manifest does not have.
  */
-import { mkdtemp, rm } from "node:fs/promises";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -129,22 +127,26 @@ async function runLive(args: ReturnType<typeof parseEvalArgs>): Promise<void> {
     console.error("check.ts: unexpected error on idle Postgres client", err);
   });
   const db = drizzle(pool, { schema });
-  const scratchDir = await mkdtemp(path.join(tmpdir(), "labelhunter-tro470-eval-"));
 
   const outcomes: CaseRunOutcome[] = [];
   try {
     for (let i = 0; i < caseIds.length; i++) {
       const caseSpec = casesById.get(caseIds[i])!;
-      const outcome = await runOneCase(caseSpec, db, scratchDir);
+      const outcome = await runOneCase(caseSpec, db);
       outcomes.push(outcome);
       printCaseLine(outcome, i + 1, caseIds.length);
     }
   } finally {
+    // TRO-518: `runOneCase` writes label images through `db`, not a scratch
+    // directory, so there is nothing left for the first cleanup step to
+    // remove — kept as a no-op rather than dropping `cleanupScratchDirAndPool`
+    // so this still matches every other caller's two-step shape
+    // (`scripts/latency/cleanup.ts`).
     const { scratchDirCleanupError, closePoolError } = await cleanupScratchDirAndPool(
-      () => rm(scratchDir, { recursive: true, force: true }),
+      async () => {},
       () => pool.end(),
     );
-    if (scratchDirCleanupError) console.warn(`check.ts: failed to remove scratch directory ${scratchDir}: ${scratchDirCleanupError}`);
+    if (scratchDirCleanupError) console.warn(`check.ts: unexpected error during cleanup: ${scratchDirCleanupError}`);
     if (closePoolError) console.warn(`check.ts: failed to close the database pool: ${closePoolError}`);
   }
 

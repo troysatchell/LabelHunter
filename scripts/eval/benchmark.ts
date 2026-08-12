@@ -33,9 +33,7 @@
  * measured — it does not editorialize the recommendation away from that
  * settled position.
  */
-import { mkdtemp, rm } from "node:fs/promises";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -215,7 +213,6 @@ async function main(): Promise<void> {
   const pool = new Pool({ connectionString, connectionTimeoutMillis: 10_000 });
   pool.on("error", (err) => console.error("benchmark.ts: unexpected error on idle Postgres client", err));
   const db = drizzle(pool, { schema });
-  const scratchDir = await mkdtemp(path.join(tmpdir(), "labelhunter-tro470-benchmark-"));
 
   const results: BenchmarkCaseResult[] = [];
   const failures: EvalCaseFailure[] = [];
@@ -223,7 +220,7 @@ async function main(): Promise<void> {
     for (let i = 0; i < caseIds.length; i++) {
       const caseSpec = casesById.get(caseIds[i])!;
       console.log(`  [${i + 1}/${caseIds.length}] ${caseSpec.caseId}: cascade arm...`);
-      const cascadeOutcome = await runOneCase(caseSpec, db, scratchDir);
+      const cascadeOutcome = await runOneCase(caseSpec, db);
       if (cascadeOutcome.failure || !cascadeOutcome.result) {
         failures.push(cascadeOutcome.failure ?? { caseId: caseSpec.caseId, error: "cascade arm produced no result" });
         console.log(`    cascade arm FAILED — ${cascadeOutcome.failure?.error}; skipping the sonnet-only arm for this case too.`);
@@ -261,11 +258,13 @@ async function main(): Promise<void> {
       );
     }
   } finally {
+    // TRO-518: `runOneCase` writes label images through `db`, not a scratch
+    // directory — see check.ts's identical comment on its own matching call.
     const { scratchDirCleanupError, closePoolError } = await cleanupScratchDirAndPool(
-      () => rm(scratchDir, { recursive: true, force: true }),
+      async () => {},
       () => pool.end(),
     );
-    if (scratchDirCleanupError) console.warn(`benchmark.ts: failed to remove scratch directory ${scratchDir}: ${scratchDirCleanupError}`);
+    if (scratchDirCleanupError) console.warn(`benchmark.ts: unexpected error during cleanup: ${scratchDirCleanupError}`);
     if (closePoolError) console.warn(`benchmark.ts: failed to close the database pool: ${closePoolError}`);
   }
 

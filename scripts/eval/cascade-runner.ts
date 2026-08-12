@@ -44,7 +44,7 @@ import { routeLabel } from "../../src/server/router";
 import type { ApplicationRecord as RouterApplicationRecord, LabelRouterResult, WarningComparatorResult } from "../../src/server/router/types";
 import { resolveEscalatedLabel, SONNET_RESOLVER_MODEL } from "../../src/server/resolver";
 import { compareGovernmentWarningFromImage as defaultCompareGovernmentWarning } from "../../src/server/warning";
-import { saveLabelImage as defaultSaveLabelImage } from "../../src/server/storage/local-file-storage";
+import { saveLabelImage as defaultSaveLabelImage } from "../../src/server/storage/db-image-storage";
 import { buildFlaggedFieldsForEscalatedLabel } from "./flagged-fields";
 import { scoreExtraction } from "./extraction-scoring";
 import { parseFullVerifySuccessBody } from "./response-validation";
@@ -190,7 +190,6 @@ export interface CaseRunOutcome {
 export async function runOneCase(
   caseSpec: GoldenSetCase,
   db: ReturnType<typeof drizzle<typeof schema>>,
-  scratchDir: string,
 ): Promise<CaseRunOutcome> {
   const imagePath = caseSpec.imagePath;
   const mediaType = mediaTypeForImagePath(imagePath);
@@ -228,7 +227,10 @@ export async function runOneCase(
         throw cause; // route.ts's own resolveWarningOrDegrade catches this — matches production exactly.
       }
     },
-    saveLabelImage: (bytes, originalFilename) => defaultSaveLabelImage(bytes, originalFilename, { baseDir: scratchDir }),
+    // TRO-518: writes through the SAME `db` connection this script already
+    // opened for its own queries, not a scratch directory — there is no
+    // longer a filesystem detail to isolate a test/eval run from.
+    saveLabelImage: (bytes, originalFilename) => defaultSaveLabelImage(bytes, originalFilename, { db }),
     comparators: productionComparators,
     anthropicClient: haikuUsageCapture.client,
   };

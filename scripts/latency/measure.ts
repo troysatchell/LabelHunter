@@ -18,9 +18,11 @@
  * pattern `route.test.ts` uses, not a real HTTP round-trip — it excludes a
  * real browser's upload time and the Next.js HTTP framing layer, neither of
  * which PRD §3.8's stage table (preprocess / OCR / Haiku / router) budgets
- * for. Uploaded images are saved to a scratch directory, not the real
- * `var/uploads/`. This script deletes every application row it creates as
- * it goes (cascades to that row's label image, verification, field
+ * for. Uploaded images are saved through this script's own database
+ * connection (TRO-518 — `db-image-storage.ts` stores image bytes in
+ * Postgres, not on disk). This script deletes every application row it
+ * creates as it goes (cascades to that row's label image — and, since
+ * TRO-518, that image's `label_image_blobs` row too — verification, field
  * results, and review-queue row) — the same cleanup `route.test.ts` does.
  * A delete failure is recorded, not silently retried or ignored (see
  * `main`'s `cleanupFailures`) — this is best-effort row cleanup, not a
@@ -53,9 +55,8 @@
  * clock. If every run fails, the script still writes an artifact (honest
  * about zero successful samples) and exits non-zero.
  */
-import { mkdtemp, rm } from "node:fs/promises";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import os, { tmpdir } from "node:os";
+import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
@@ -69,7 +70,7 @@ import { handleVerifyRequest, type VerifyRouteDeps } from "../../src/app/api/ver
 import { extractLabel, HAIKU_EXTRACTOR_MODEL } from "../../src/server/extractor";
 import { preprocessImage } from "../../src/server/preprocessing";
 import { productionComparators } from "../../src/server/comparators";
-import { saveLabelImage } from "../../src/server/storage/local-file-storage";
+import { saveLabelImage } from "../../src/server/storage/db-image-storage";
 import { compareGovernmentWarningFromImage } from "../../src/server/warning";
 import { parseArgs } from "./args";
 import { cleanupScratchDirAndPool } from "./cleanup";
@@ -322,14 +323,15 @@ async function main(): Promise<void> {
     console.error("measure.ts: unexpected error on idle Postgres client", err);
   });
   const db = drizzle(pool, { schema });
-  const scratchDir = await mkdtemp(path.join(tmpdir(), "labelhunter-tro471-latency-"));
 
   const deps: VerifyRouteDeps = {
     db,
     preprocessImage,
     extractLabel,
     compareGovernmentWarning: compareGovernmentWarningFromImage,
-    saveLabelImage: (bytes, originalFilename) => saveLabelImage(bytes, originalFilename, { baseDir: scratchDir }),
+    // TRO-518: writes through the SAME `db` connection this script already
+    // opened for its own queries, not a scratch directory.
+    saveLabelImage: (bytes, originalFilename) => saveLabelImage(bytes, originalFilename, { db }),
     comparators: productionComparators,
   };
 
@@ -357,19 +359,26 @@ async function main(): Promise<void> {
       }
     }
   } finally {
-    // `cleanupScratchDirAndPool` never throws (see cleanup.ts) — a failed
-    // `rm` is captured into `scratchDirCleanupError`, not re-thrown, so this
+    // `cleanupScratchDirAndPool` never throws (see cleanup.ts), so this
     // `finally` block always completes normally and `main` always reaches
-    // the report-writing code below. An earlier version let `rm`'s error
-    // propagate past this whole function, silently discarding every
+    // the report-writing code below. An earlier version let a cleanup
+    // error propagate past this whole function, silently discarding every
     // already-completed, already-paid-for run's results (a real PR review
     // finding, not a hypothetical).
+    //
+    // TRO-518: `saveLabelImage` now writes through `db`, not a scratch
+    // directory, so the first step is a no-op — kept, rather than dropped,
+    // so `scratchDirCleanupError` below still matches `HarnessReport`'s and
+    // `computeExitCode`'s existing shape (`exit-status.ts`). It can no
+    // longer be non-null; left in place rather than removed from either
+    // interface, which is a bigger change than this ticket's storage-
+    // adapter scope.
     ({ scratchDirCleanupError, closePoolError } = await cleanupScratchDirAndPool(
-      () => rm(scratchDir, { recursive: true, force: true }),
+      async () => {},
       () => pool.end(),
     ));
     if (scratchDirCleanupError) {
-      console.warn(`measure.ts: failed to remove scratch directory ${scratchDir}: ${scratchDirCleanupError}`);
+      console.warn(`measure.ts: unexpected error during cleanup: ${scratchDirCleanupError}`);
     }
     if (closePoolError) {
       console.warn(`measure.ts: failed to close the database pool: ${closePoolError}`);

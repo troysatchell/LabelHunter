@@ -50,7 +50,7 @@ import {
   type RouterFieldKey,
   type WarningComparatorResult,
 } from "../router";
-import { readLabelImage as defaultReadLabelImage } from "../storage/local-file-storage";
+import { readLabelImage as defaultReadLabelImage } from "../storage/db-image-storage";
 import {
   compareGovernmentWarningFromImage as defaultCompareGovernmentWarning,
   type CompareGovernmentWarningFromImageInput,

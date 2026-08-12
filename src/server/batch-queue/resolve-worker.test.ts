@@ -8,16 +8,13 @@
  * correctly reacts to the REAL unique-constraint violation
  * `insertReviewQueueEntry` throws, not a stand-in for it.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
 import { RateLimitError } from "@anthropic-ai/sdk";
 import { eq } from "drizzle-orm";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { db } from "../../lib/db";
 import { batchJobs, batchQueueItems, reviewQueue, verifications } from "../../lib/db/schema";
-import { readLabelImage } from "../storage/local-file-storage";
+import { readLabelImage } from "../storage/db-image-storage";
 import { makeExtraction } from "../router/test-support";
 import { makeFlaggedFields, makeMockMessage, makeRouterResult, WELL_FORMED_RESOLVER_BODY } from "../resolver/test-support";
 import { DEFAULT_BACKOFF_CONFIG } from "./backoff";
@@ -34,15 +31,9 @@ import {
   enqueueResolveItemFixture,
 } from "./test-support";
 
-let scratchDir: string;
 const createdBatchJobIds: number[] = [];
 
-beforeEach(async () => {
-  scratchDir = await mkdtemp(path.join(tmpdir(), "labelhunter-tro474-resolve-"));
-});
-
 afterEach(async () => {
-  await rm(scratchDir, { recursive: true, force: true });
   for (const id of createdBatchJobIds.splice(0)) {
     await cleanupBatchJobFixture(db, id);
   }
@@ -84,7 +75,7 @@ function countingClientReturning(body: unknown): { client: Anthropic; callCount:
 function makeDeps(overrides: Partial<ResolveWorkerDeps> = {}): ResolveWorkerDeps {
   return {
     db,
-    readLabelImage: (storagePath) => readLabelImage(storagePath, { baseDir: scratchDir }),
+    readLabelImage,
     backoffConfig: DEFAULT_BACKOFF_CONFIG,
     ...overrides,
   };
@@ -93,7 +84,7 @@ function makeDeps(overrides: Partial<ResolveWorkerDeps> = {}): ResolveWorkerDeps
 /** A verification whose escalation snapshot matches `../resolver/test-support.ts`'s
  * own fixtures — guaranteed to pair with `WELL_FORMED_RESOLVER_BODY`. */
 async function escalatedFixture(batchJobId: number, filename: string) {
-  const { applicationId, labelImageId } = await createApplicationAndSavedImageFixture(db, batchJobId, filename, scratchDir);
+  const { applicationId, labelImageId } = await createApplicationAndSavedImageFixture(db, batchJobId, filename);
   const verificationId = await createVerificationFixture(db, applicationId, labelImageId, batchJobId);
   const snapshot = buildResolverInputSnapshot(makeExtraction(), makeRouterResult(), makeFlaggedFields());
   await enqueueResolveItemFixture(db, { batchJobId, verificationId, resolverInput: snapshot });
@@ -178,7 +169,7 @@ describe("processResolveClaim — the escalation cap (CP-3 §6.2)", () => {
 
   it("reserves budget on EVERY attempt, including ones that go on to fail retryably — not only settled outcomes (CP-3 §6.2's own correction)", async () => {
     const batchJobId = await trackBatch({ totalCount: 20 }); // cap = 5
-    const { applicationId, labelImageId } = await createApplicationAndSavedImageFixture(db, batchJobId, "flaky.jpg", scratchDir);
+    const { applicationId, labelImageId } = await createApplicationAndSavedImageFixture(db, batchJobId, "flaky.jpg");
     const verificationId = await createVerificationFixture(db, applicationId, labelImageId, batchJobId);
     const snapshot = buildResolverInputSnapshot(makeExtraction(), makeRouterResult(), makeFlaggedFields());
     await enqueueResolveItemFixture(db, { batchJobId, verificationId, resolverInput: snapshot });
@@ -292,7 +283,7 @@ describe("processResolveClaim — TRO-506 recovery (CP-3 §3.3)", () => {
 describe("processResolveClaim — malformed snapshot (CP-3 §2.3 — reject, never guess)", () => {
   it("fails immediately on an unsupported schemaVersion, without ever reserving Sonnet budget", async () => {
     const batchJobId = await trackBatch({ totalCount: 4 });
-    const { applicationId, labelImageId } = await createApplicationAndSavedImageFixture(db, batchJobId, "bad-snapshot.jpg", scratchDir);
+    const { applicationId, labelImageId } = await createApplicationAndSavedImageFixture(db, batchJobId, "bad-snapshot.jpg");
     const verificationId = await createVerificationFixture(db, applicationId, labelImageId, batchJobId);
     await enqueueResolveItemFixture(db, { batchJobId, verificationId, resolverInput: { schemaVersion: "2" } });
     const claimed = await claimNextBatchQueueItem(db, "RESOLVE", "worker-1", 120, { scopeToBatchJobId: batchJobId });

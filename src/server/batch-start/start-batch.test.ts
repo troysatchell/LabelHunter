@@ -3,29 +3,26 @@
  * TRO-475) — the connection LH-040/LH-041 left open (see this file's
  * sibling `start-batch.ts`'s own header comment).
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import sharp from "sharp";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { db } from "../../lib/db";
 import { applications, batchJobs, batchQueueItems, labelImages } from "../../lib/db/schema";
 import type { ManifestRow } from "../batch/types";
-import { readLabelImage, saveLabelImage } from "../storage/local-file-storage";
+import { deleteLabelImageBlobsWhere, readLabelImage, saveLabelImage } from "../storage/db-image-storage";
 import { startBatchFromPairings } from "./start-batch";
 import type { StartBatchPairingInput } from "./types";
 
-let scratchDir: string;
 const createdBatchJobIds: number[] = [];
 
-beforeEach(async () => {
-  scratchDir = await mkdtemp(path.join(tmpdir(), "labelhunter-tro475-start-batch-"));
-});
-
 afterEach(async () => {
-  await rm(scratchDir, { recursive: true, force: true });
-  for (const id of createdBatchJobIds.splice(0)) {
+  const ids = createdBatchJobIds.splice(0);
+  if (ids.length > 0) {
+    // TRO-518: label_image_blobs rows are not reached by the cascade below
+    // — see db-image-storage.ts's own deleteLabelImageBlobsWhere comment.
+    await deleteLabelImageBlobsWhere(inArray(labelImages.batchJobId, ids));
+  }
+  for (const id of ids) {
     await db.delete(batchJobs).where(eq(batchJobs.id, id));
   }
 });
@@ -50,7 +47,7 @@ function makeRow(overrides: Partial<ManifestRow> = {}): ManifestRow {
 
 function deps() {
   return {
-    saveLabelImage: (bytes: Buffer, filename: string) => saveLabelImage(bytes, filename, { baseDir: scratchDir }),
+    saveLabelImage,
   };
 }
 
@@ -108,8 +105,13 @@ describe("startBatchFromPairings", () => {
     expect(image.widthPx).toBe(1200);
     expect(image.heightPx).toBe(1600);
 
-    const onDisk = await readLabelImage(image.storagePath, { baseDir: scratchDir });
-    expect(onDisk.length).toBeGreaterThan(0);
+    // Not a byte-for-byte comparison against `bytes`: startBatchFromPairings
+    // runs the input through preprocessImage first, which re-encodes the
+    // JPEG (mozjpeg, quality 92) — same as the original test's own
+    // "length > 0" assertion already acknowledged, not strengthened here
+    // into an assumption preprocessing does not actually guarantee.
+    const stored = await readLabelImage(image.storagePath);
+    expect(stored.length).toBeGreaterThan(0);
   });
 
   it("leaves alcoholContentPercent null (legal for beer/wine) as a null abvPercent, not a fabricated 0", async () => {

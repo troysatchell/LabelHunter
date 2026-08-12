@@ -89,4 +89,29 @@ describe("extractZipEntries", () => {
     if (!result.ok) return;
     expect(result.images).toEqual([]);
   });
+
+  it("reduces a path-traversal entry name to its basename, never the raw path (zip-slip protection, review finding)", () => {
+    const zipped = zipSync({
+      "../../../etc/evil.jpg": bytes("data"),
+    });
+    const result = extractZipEntries(zipped);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.images).toEqual([{ filename: "evil.jpg", sizeBytes: bytes("data").length }]);
+  });
+
+  it("does not count directory entries against the entry-count limit (review finding)", () => {
+    const zipped = zipSync({
+      "folder1/": new Uint8Array(0),
+      "folder2/": new Uint8Array(0),
+      "folder3/": new Uint8Array(0),
+      "a.jpg": bytes("1"),
+    });
+    // The limit is exactly enough for the one real file — the three
+    // directory entries must not consume any of that budget.
+    const result = extractZipEntries(zipped, { maxEntries: 1 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.images).toEqual([{ filename: "a.jpg", sizeBytes: bytes("1").length }]);
+  });
 });

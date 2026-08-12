@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "../../../lib/db";
-import { applications, fieldResults, reviewQueue, verifications } from "../../../lib/db/schema";
+import { applications, dailySpend, fieldResults, reviewQueue, verifications } from "../../../lib/db/schema";
 import { extractLabel } from "../../../server/extractor";
 import { makeMockMessage, WELL_FORMED_EXTRACTION_BODY } from "../../../server/extractor/test-support";
 import { MAX_UPLOAD_BYTES, preprocessImage } from "../../../server/preprocessing";
@@ -15,6 +15,9 @@ import { productionComparators } from "../../../server/comparators";
 import type { WarningComparatorResult } from "../../../server/router";
 import type { CompareGovernmentWarningFromImageInput } from "../../../server/warning";
 import { saveLabelImage } from "../../../server/storage/local-file-storage";
+import { BUDGET_EXHAUSTED_MESSAGE, getTodaySpendUsd, recordSpendUsd } from "../../../server/budget/daily-budget";
+import { createFixedWindowLimiter } from "../../../server/rate-limit/fixed-window";
+import { checkRateLimitPair } from "../../../server/rate-limit/instances";
 import { handleVerifyRequest, type VerifyRouteDeps } from "./route";
 import type { VerifyErrorResponse, VerifySuccessResponse } from "./types";
 
@@ -588,5 +591,147 @@ describe("POST /api/verify — government warning wiring (TRO-514, TH-R9)", () =
     expect(capturedInput!.originalImage.equals(originalMarker)).toBe(true);
     expect(capturedHaikuVariant).toBeDefined();
     expect(capturedInput!.originalImage.equals(capturedHaikuVariant!)).toBe(false);
+  });
+});
+
+// TRO-482 / LH-061, PRD §8 — key protection. `checkRateLimit`/`checkBudget`/
+// `recordSpend` are all OPTIONAL on `VerifyRouteDeps` with an always-allow
+// fallback inside `handleVerifyRequest` itself — every test ABOVE this
+// point predates this ticket and needed zero changes to keep passing
+// (confirmed: this file's pre-existing 20 cases pass unmodified). The
+// blocks below are new coverage for the gate itself.
+describe("POST /api/verify — rate limit gate (TRO-482)", () => {
+  it("rejects with a friendly message and never calls the model when checkRateLimit says no", async () => {
+    let extractCalled = false;
+    const deps = makeDeps({
+      checkRateLimit: () => ({
+        allowed: false,
+        message: "LabelHunter is getting more requests than it can handle right now. Wait 30 seconds and try again.",
+      }),
+      extractLabel: async (...args) => {
+        extractCalled = true;
+        return extractLabel(...args);
+      },
+    });
+    const response = await post(await buildFormData(), deps);
+
+    expect(response.status).toBe(429);
+    const body = (await response.json()) as VerifyErrorResponse;
+    expect(body.error.kind).toBe("RATE_LIMITED");
+    expect(body.error.message.toLowerCase()).toMatch(/wait|moment|again/);
+    expect(body.error.message).not.toMatch(/\b429\b/);
+    expect(extractCalled).toBe(false);
+  });
+
+  it("proves the Nth+1 request within a real window is rejected — the real production limiter, not just a stub", async () => {
+    // limit: 2 — real createFixedWindowLimiter/checkRateLimitPair, the same
+    // production code `../../../server/rate-limit/instances.ts` wires by
+    // default, just with a small limit so the test does not need 20+ calls.
+    const ipLimiter = createFixedWindowLimiter({ limit: 2, windowMs: 60_000 });
+    const globalLimiter = createFixedWindowLimiter({ limit: 1000, windowMs: 60_000 });
+    const checkRateLimit = (request: Request) => checkRateLimitPair(request, ipLimiter, globalLimiter);
+
+    const first = await post(await buildFormData(), makeDeps({ checkRateLimit, anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY) }));
+    expect(first.status).toBe(200);
+    createdApplicationIds.push(((await first.json()) as VerifySuccessResponse).applicationId);
+
+    const second = await post(await buildFormData(), makeDeps({ checkRateLimit, anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY) }));
+    expect(second.status).toBe(200);
+    createdApplicationIds.push(((await second.json()) as VerifySuccessResponse).applicationId);
+
+    let thirdCalled = false;
+    const third = await post(
+      await buildFormData(),
+      makeDeps({
+        checkRateLimit,
+        extractLabel: async (...args) => {
+          thirdCalled = true;
+          return extractLabel(...args);
+        },
+      }),
+    );
+    expect(third.status).toBe(429);
+    const thirdBody = (await third.json()) as VerifyErrorResponse;
+    expect(thirdBody.error.kind).toBe("RATE_LIMITED");
+    expect(thirdCalled).toBe(false);
+  });
+});
+
+describe("POST /api/verify — daily budget gate (TRO-482)", () => {
+  it("rejects with a friendly message and never calls the model when the budget is exhausted", async () => {
+    let extractCalled = false;
+    const deps = makeDeps({
+      checkBudget: async () => ({ exhausted: true, spentUsd: 5, budgetUsd: 5 }),
+      extractLabel: async (...args) => {
+        extractCalled = true;
+        return extractLabel(...args);
+      },
+    });
+    const response = await post(await buildFormData(), deps);
+
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as VerifyErrorResponse;
+    expect(body.error.kind).toBe("BUDGET_EXHAUSTED");
+    expect(body.error.message).toBe(BUDGET_EXHAUSTED_MESSAGE);
+    expect(body.error.message).not.toMatch(/\b503\b/);
+    expect(extractCalled).toBe(false);
+  });
+
+  it("still allows the request through when the budget is NOT exhausted", async () => {
+    const deps = makeDeps({
+      checkBudget: async () => ({ exhausted: false, spentUsd: 0.5, budgetUsd: 5 }),
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+    });
+    const response = await post(await buildFormData(), deps);
+    expect(response.status).toBe(200);
+    createdApplicationIds.push(((await response.json()) as VerifySuccessResponse).applicationId);
+  });
+});
+
+describe("POST /api/verify — real spend recording (TRO-482)", () => {
+  // Pinned to a date nothing else in the suite ever uses. `daily_spend` is
+  // a shared, date-keyed table (schema.ts) — daily-budget.test.ts's own
+  // DB-integration tests read/write "today"'s row directly, and
+  // vitest.config.ts's maxWorkers: 4 means a DIFFERENT test file can run
+  // concurrently with this one. Sharing "today" between files would be a
+  // real, if rare, cross-file race (one file's afterEach deleting the row
+  // mid-read of another's); a private, far-future date makes this
+  // describe block's own row impossible for any other test to touch.
+  const ISOLATED_DAY = "2099-01-01";
+  const ISOLATED_NOW = new Date(`${ISOLATED_DAY}T00:00:00Z`);
+
+  afterEach(async () => {
+    await db.delete(dailySpend).where(eq(dailySpend.spendDate, ISOLATED_DAY));
+  });
+
+  it("records the REAL, measured cost of a successful Haiku call into the daily ledger", async () => {
+    const deps = makeDeps({
+      // makeMockMessage's own usage: 100 input tokens, 50 output tokens.
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      recordSpend: (usd) => recordSpendUsd(usd, db, ISOLATED_NOW),
+    });
+    const response = await post(await buildFormData(), deps);
+    expect(response.status).toBe(200);
+    createdApplicationIds.push(((await response.json()) as VerifySuccessResponse).applicationId);
+
+    const spent = await getTodaySpendUsd(db, ISOLATED_NOW);
+    // HAIKU_4_5_PRICING (scripts/eval/usage.ts): $1/MTok in, $5/MTok out.
+    // 100 * (1/1_000_000) + 50 * (5/1_000_000) = 0.00035 — the SAME real
+    // formula the eval harness uses, not a re-derived approximation.
+    expect(spent).toBeCloseTo(0.00035, 6);
+  });
+
+  it("records nothing when the Haiku call itself fails — there is no real cost to record", async () => {
+    const deps = makeDeps({
+      anthropicClient: fakeAnthropicClient(async () => {
+        throw new APIConnectionError({ message: "network down" });
+      }),
+      recordSpend: (usd) => recordSpendUsd(usd, db, ISOLATED_NOW),
+    });
+    const response = await post(await buildFormData(), deps);
+    expect(response.status).toBe(503);
+
+    const spent = await getTodaySpendUsd(db, ISOLATED_NOW);
+    expect(spent).toBe(0);
   });
 });

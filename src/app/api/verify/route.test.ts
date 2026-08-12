@@ -2,14 +2,15 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
+import { APIConnectionError } from "@anthropic-ai/sdk";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "../../../lib/db";
 import { applications, fieldResults, reviewQueue, verifications } from "../../../lib/db/schema";
 import { extractLabel } from "../../../server/extractor";
 import { makeMockMessage, WELL_FORMED_EXTRACTION_BODY } from "../../../server/extractor/test-support";
-import { preprocessImage } from "../../../server/preprocessing";
+import { MAX_UPLOAD_BYTES, preprocessImage } from "../../../server/preprocessing";
 import { productionComparators } from "../../../server/comparators";
 import { saveLabelImage } from "../../../server/storage/local-file-storage";
 import { handleVerifyRequest, type VerifyRouteDeps } from "./route";
@@ -232,7 +233,7 @@ describe("POST /api/verify — designed error states (TH-R20)", () => {
     expect(body.error.message).toBe("Add a label photo before you verify.");
   });
 
-  it("an unreadable image: 422 IMAGE, with the preprocessing module's own human-readable message", async () => {
+  it("an unsupported file type (garbage bytes, no recognizable image format): 422 IMAGE, with the preprocessing module's own human-readable message", async () => {
     const garbage = new File([Buffer.from("this is not an image, just padded text bytes")], "photo.jpg", {
       type: "image/jpeg",
     });
@@ -243,6 +244,46 @@ describe("POST /api/verify — designed error states (TH-R20)", () => {
     const body = (await response.json()) as VerifyErrorResponse;
     expect(body.error.kind).toBe("IMAGE");
     expect(body.error.message).toMatch(/cannot read this file type/i);
+  });
+
+  it("an unreadable image (TRO-478): a valid JPEG header with damaged pixel data — 422 IMAGE, distinct from an unsupported format and from LOW_IMAGE_QUALITY (LH-051's readable-but-blurry case)", async () => {
+    // Same technique as pipeline.test.ts's own UnreadableImageError case: a
+    // real JPEG, truncated — sharp reads enough of the header to recognize
+    // the format, then fails to decode the (now-missing) pixel data. This is
+    // the genuine "damaged file" state; the test above is a different state
+    // (no recognizable format at all).
+    const real = await makeJpeg(400, 300);
+    const truncated = real.subarray(0, Math.floor(real.length / 2));
+    const corrupt = new File([truncated as unknown as BlobPart], "photo.jpg", { type: "image/jpeg" });
+    const create = vi.fn(async () => makeMockMessage(JSON.stringify(WELL_FORMED_EXTRACTION_BODY)));
+    const deps = makeDeps({ anthropicClient: { messages: { create } } as unknown as Anthropic });
+
+    const response = await post(await buildFormData({ image: corrupt }), deps);
+    expect(response.status).toBe(422);
+    const body = (await response.json()) as VerifyErrorResponse;
+    expect(body.error.kind).toBe("IMAGE");
+    expect(body.error.message).toMatch(/cannot open this file/i);
+    expect(body.error.message).not.toMatch(/file type/i);
+    // A damaged file never reaches the extractor.
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("an oversized file (TRO-478): over the upload size ceiling — 422 IMAGE, rejected before Haiku ever sees it", async () => {
+    // Deliberately not a real image — assertUploadSize runs before any
+    // decode attempt (pipeline.ts), so a garbage buffer this large is enough
+    // to prove the ceiling is enforced end to end through the route, not
+    // just in the preprocessing unit tests.
+    const oversized = Buffer.alloc(MAX_UPLOAD_BYTES + 1);
+    const hugeFile = new File([oversized as unknown as BlobPart], "photo.jpg", { type: "image/jpeg" });
+    const create = vi.fn(async () => makeMockMessage(JSON.stringify(WELL_FORMED_EXTRACTION_BODY)));
+    const deps = makeDeps({ anthropicClient: { messages: { create } } as unknown as Anthropic });
+
+    const response = await post(await buildFormData({ image: hugeFile }), deps);
+    expect(response.status).toBe(422);
+    const body = (await response.json()) as VerifyErrorResponse;
+    expect(body.error.kind).toBe("IMAGE");
+    expect(body.error.message).toMatch(/choose a smaller image/i);
+    expect(create).not.toHaveBeenCalled();
   });
 
   it("extraction failure (malformed model response): 502 EXTRACTION, the honest 'could not read the label' state — never a fake verdict", async () => {
@@ -271,6 +312,37 @@ describe("POST /api/verify — designed error states (TH-R20)", () => {
     const body = (await response.json()) as VerifyErrorResponse;
     expect(body.error.kind).toBe("SERVICE");
     expect(body.error.message).toMatch(/could not reach the verification service/i);
+  });
+
+  it("the Anthropic endpoint is unreachable (TRO-478, TH-R7 — a firewall block, DNS failure, or refused connection): 503 SERVICE, no partial record left behind", async () => {
+    // `APIConnectionError` is the real class the Anthropic SDK throws for a
+    // connect-level failure (client.d.ts) — the exact shape a blocked
+    // outbound domain produces, per TH-R7's constrained-network scenario.
+    // Distinct from the generic `Error` above: this pins the actual failure
+    // type, not a stand-in.
+    const deps = makeDeps({
+      extractLabel: async () => {
+        throw new APIConnectionError({ message: "Connection error." });
+      },
+    });
+
+    // A brand name unique to this test, not the shared "Old Tom Distillery"
+    // default other tests in this file (and other files, run in parallel
+    // against this same worktree database) also use and successfully
+    // persist — querying by the shared name below would otherwise race
+    // against unrelated concurrent tests' own rows.
+    const brandName = "TRO-478 Unreachable Endpoint Probe";
+    const response = await post(await buildFormData({ brandName }), deps);
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as VerifyErrorResponse;
+    expect(body.error.kind).toBe("SERVICE");
+    expect(body.error.message).toMatch(/could not reach the verification service/i);
+    // No raw SDK detail (class name, "Connection error.", a stack frame)
+    // leaks into the response a first-time user sees (TH-R20).
+    expect(JSON.stringify(body)).not.toMatch(/APIConnectionError|Connection error\.|ECONNREFUSED|ENOTFOUND/);
+
+    const rows = await db.select().from(applications).where(eq(applications.brandName, brandName));
+    expect(rows).toHaveLength(0);
   });
 
   it("a storage failure surfaces as a designed SERVICE state, not a raw 500", async () => {

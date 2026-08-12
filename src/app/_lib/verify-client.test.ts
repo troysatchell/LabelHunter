@@ -140,4 +140,36 @@ describe("submitVerification — designed error states (TH-R20)", () => {
       message: expect.stringMatching(/took too long/i),
     });
   });
+
+  it("keeps the timeout live through the response body read, not just until fetch() resolves (TRO-478 — the same bug shape review-queue-client.ts fixed for TRO-476)", async () => {
+    // `fetch()` itself resolves right away with headers; the body then
+    // streams in slower than the client's own timeout. A response.json()
+    // that never settles on its own — it only resolves/rejects in reaction
+    // to the abort signal, or after a bounded 200ms fallback so a
+    // regression here fails fast instead of hanging the suite.
+    let signal: AbortSignal | undefined;
+    const fakeResponse = {
+      ok: true,
+      json: () =>
+        new Promise((resolve, reject) => {
+          const fallback = setTimeout(() => resolve(SUCCESS_BODY), 200);
+          signal?.addEventListener("abort", () => {
+            clearTimeout(fallback);
+            const err = new Error("The operation was aborted.");
+            err.name = "AbortError";
+            reject(err);
+          });
+        }),
+    } as unknown as Response;
+
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      signal = init?.signal ?? undefined;
+      return fakeResponse;
+    });
+
+    await expect(submitVerification(values(), { fetchImpl, timeoutMs: 15 })).rejects.toMatchObject({
+      kind: "SERVICE",
+      message: expect.stringMatching(/took too long/i),
+    });
+  });
 });

@@ -146,6 +146,23 @@ up. All five fixed here, none dismissed.
 
 All nine findings across both rounds recorded in `factory/review-findings.jsonl`.
 
+**A flagged gate exception — read before merging.** `scripts/factory/gate.sh`'s G5
+(`tests:not-weakened`) fails on this branch: one new `test.skip(E2E_LIVE, ...)` line, added by
+the fix above for round-2 finding 2. G5's own comment says this is deliberate on the gate's
+part — "`.skip`/`.todo` stays an unconditional fail: no added assertion offsets a disabled
+test" — and this project's own non-negotiables list "never weaken a test... to get a gate
+green" without a carve-out. Read literally, this skip trips that rule. The case for why it is
+not the thing that rule means to stop: `E2E_LIVE` is off by default, never set by the gate or
+CI, and this test runs and passes normally in the mode the gate actually exercises (confirmed:
+11/11 E2E specs pass in the default run). The skip fires only under the opt-in, rarely-run live
+mode, for a test whose entire mechanism — the fake server's own byte-length failure trigger —
+has no live-API equivalent to run at all, not a real assertion this branch is ducking. No other
+`.skip`/`.todo` was added anywhere else. This was not silently routed around: no syntax was
+chosen to dodge G5's grep while keeping the same behavior, and the gate's real, unedited output
+is reported as-is, not claimed as a clean pass it is not. The call on whether this specific
+exception is acceptable is left to the orchestrator's/Troy's own judgment, per gate.sh's own
+"justify in the PR or revert" instruction.
+
 **How to run it.**
 
 ```bash

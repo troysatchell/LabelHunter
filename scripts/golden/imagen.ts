@@ -69,6 +69,28 @@ function assertSafeSlug(value: string, what: string): void {
 }
 
 /**
+ * Resolves a bottle reference's `referencePhoto` (repo-root-relative, e.g.
+ * `"assets/golden/references/amber-whiskey-01.jpg"` — the same convention
+ * the golden manifest's own `imagePath` uses) and confirms it stays inside
+ * `REFERENCES_DIR`. `bottleReference.ts`'s `validateBottleReference` only
+ * requires a non-empty string, so an absolute path or a `../../.env.local`
+ * traversal would otherwise reach `readFileSync` in `generateWithGemini`
+ * completely unvalidated and read an arbitrary file off disk into a real
+ * Gemini API request — a read-side counterpart to the write-side
+ * containment `resolveWithinDir` (below) already applies to output paths.
+ */
+function resolveReferencePhotoPath(referencePhoto: string, what: string): string {
+  const resolved = path.resolve(REPO_ROOT, referencePhoto);
+  const rel = path.relative(REFERENCES_DIR, resolved);
+  if (rel.startsWith("..") || path.isAbsolute(rel) || rel === "") {
+    throw new RangeError(
+      `imagen: ${what} referencePhoto "${referencePhoto}" resolves outside ${REFERENCES_DIR} — refusing to read`,
+    );
+  }
+  return resolved;
+}
+
+/**
  * Every `(scene, cameraCondition)` combination across every bottle reference
  * JSON in `referencesDir`. Throws before generating anything (and before any
  * Gemini API call — `main` calls this to build the full target list first)
@@ -91,12 +113,13 @@ export function enumerateTargets(referencesDir: string = REFERENCES_DIR): Genera
   for (const file of files) {
     const bottle = loadBottleReference(path.join(referencesDir, file));
     assertSafeSlug(bottle.bottleId, `bottleId in ${file}`);
+    const referencePhotoPath = resolveReferencePhotoPath(bottle.referencePhoto, `bottle reference in ${file}`);
     for (const scene of bottle.scenes) {
       assertSafeSlug(scene.sceneId, `scene.sceneId in ${file}`);
       for (const cameraCondition of bottle.cameraConditions) {
         const target: GenerationTarget = {
           bottleId: bottle.bottleId,
-          referencePhotoPath: path.resolve(REPO_ROOT, bottle.referencePhoto),
+          referencePhotoPath,
           scene,
           cameraCondition,
         };

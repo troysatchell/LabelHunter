@@ -211,6 +211,31 @@ describe("path and slug safety", () => {
     }
   });
 
+  it("enumerateTargets rejects a referencePhoto that resolves outside assets/golden/references/", () => {
+    // A read-side counterpart to the write-side tests above: referencePhoto
+    // reaches readFileSync in generateWithGemini, so a traversal here would
+    // let a malformed bottle reference JSON read an arbitrary file (e.g.
+    // .env.local, which holds this repo's real API keys) and send its
+    // bytes to Gemini.
+    const dir = mkdtempSync(path.join(tmpdir(), "imagen-test-unsafe-photo-"));
+    try {
+      writeFileSync(
+        path.join(dir, "amber-whiskey-01.json"),
+        JSON.stringify({
+          bottleId: "amber-whiskey-01",
+          referencePhoto: "../../.env.local",
+          beverageType: "spirits",
+          bottleDescription: "tall amber glass whiskey bottle",
+          scenes: [{ sceneId: "bar-counter", setting: "a bar counter", lighting: "warm light" }],
+          cameraConditions: ["steady"],
+        }),
+      );
+      expect(() => enumerateTargets(dir)).toThrow(/resolves outside/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("generateOne refuses to write outside outDir even given an unvalidated target directly", async () => {
     // enumerateTargets is the normal caller and already rejects an unsafe
     // bottleId/sceneId before this point (tests above), but generateOne is

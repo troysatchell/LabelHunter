@@ -13,6 +13,7 @@
  * (LH-020, its own CP-2-gated subsystem, `types.ts`'s `WarningComparatorResult`).
  * Both are accepted here as contracts, not implemented here.
  */
+import { BEVERAGE_TYPES } from "../../lib/db/enums";
 import type { ExtractedField, HaikuExtractionResult } from "../extractor/types";
 import { isValidConfidence, TRUSTED_THRESHOLD_DEFAULT } from "./confidence";
 import type { FieldState } from "./field-state";
@@ -119,6 +120,23 @@ function computeStructuralHit(
   }
 }
 
+/**
+ * True when `normalizedValue` names one of the three beverage types the
+ * application form itself can declare (LH-029 / TRO-534, CP-1 §5.3's free
+ * cross-check). The extractor's schema leaves `beverage_type` free-form —
+ * no enum (`extractor/schema.ts`) — so it can read an off-menu subtype the
+ * application's closed `BEVERAGE_TYPES` enum has no slot for. "Mead" is
+ * the case that proved it: the label prints "Mead", the application
+ * declares "wine", and TTB classes mead as a wine. Neither record is
+ * wrong. An off-menu answer is no opinion on the application's declared
+ * type — never a conflict — so the cross-check below only fires when the
+ * extractor named an actual member of the vocabulary and that member
+ * disagrees.
+ */
+function isKnownBeverageType(normalizedValue: string): boolean {
+  return (BEVERAGE_TYPES as readonly string[]).includes(normalizedValue);
+}
+
 export function routeLabel(
   extraction: HaikuExtractionResult,
   application: ApplicationRecord,
@@ -163,9 +181,19 @@ export function routeLabel(
   // comparing. `TRUSTED_THRESHOLD_DEFAULT` (not a separate 0.85 literal):
   // CP-1 §5.3's own number for this rule is the Trusted-band floor — the
   // same "confident enough to act on" question the band answers elsewhere.
+  //
+  // A vocabulary guard gates the comparison (LH-029 / TRO-534): the
+  // extractor's free-form field can also read an off-menu subtype
+  // (`isKnownBeverageType`'s own comment has the full "mead" story). Only
+  // a normalized value that is itself a real `BEVERAGE_TYPES` member can
+  // disagree with the application — an off-menu answer is no opinion, not
+  // a conflict, and must not block the label.
+  const normalizedBeverageTypeValue =
+    extraction.beverage_type.value !== null ? normalizeForBoundaryMatch(extraction.beverage_type.value) : null;
   const beverageTypeDisagreesWithApplication =
-    extraction.beverage_type.value !== null &&
-    normalizeForBoundaryMatch(extraction.beverage_type.value) !== normalizeForBoundaryMatch(application.beverageType) &&
+    normalizedBeverageTypeValue !== null &&
+    isKnownBeverageType(normalizedBeverageTypeValue) &&
+    normalizedBeverageTypeValue !== normalizeForBoundaryMatch(application.beverageType) &&
     extraction.beverage_type.confidence >= TRUSTED_THRESHOLD_DEFAULT;
 
   const conflictingExtraction = isConflictingExtraction({

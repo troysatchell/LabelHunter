@@ -4,6 +4,61 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-534 — LH-029 · Guard the beverage_type cross-check (2026-08-12)
+
+**What changed.** The beverage_type cross-check in `src/server/router/index.ts` (CP-1 §5.3's
+free cross-check) now needs two things before it fires `CONFLICTING_EXTRACTION`. First, the
+extractor's normalized `beverage_type.value` must be a real `BEVERAGE_TYPES` member (`beer`,
+`wine`, `spirits`). Second, that member must disagree with the application's declared type.
+Before this fix, the check compared a free-form extractor string against the application's
+closed enum by plain equality. An off-menu subtype — a real TTB category the application form
+has no slot for — read as a conflict.
+
+**Why.** The measurement comes from `scripts/eval/results/eval-report.json`, run
+`2026-08-12T13:26:45.488Z`, mode `live`, model `claude-haiku-4-5`. case-11 declares beverage
+type `wine`. Its label prints class type `Mead`. TTB classes mead as a wine. Neither record is wrong. The old check still
+fired `CONFLICTING_EXTRACTION`. That set a label-level blocker. `rollup.ts:15` returned REVIEW
+before it ever read the government warning's own `MISMATCH`. TH-R9's acceptance evidence reads
+"reworded warning → fail" (`audit/requirements/inventory.md:87`). case-11 carries a genuinely
+reworded warning. It now returns FAIL.
+
+**Step 1's live read.** A scratch script, never committed, called `runOneCase` against
+case-11. It pointed `DATABASE_URL` at this worktree's own database first. The raw extraction
+was `beverage_type: { value: "mead", evidence: "Mead", confidence: 0.99, alternates: [] }`.
+`"mead"` is not a `BEVERAGE_TYPES` member. Its confidence clears `TRUSTED_THRESHOLD_DEFAULT`
+(0.85). An off-menu value at trusted confidence does not meet the ticket's stop condition
+(step 3). The fix proceeds on this measured basis, not a guess.
+
+**Net effect on label-verdict accuracy.** Accuracy stays unchanged at 21/32. This is not a
+scoreboard win. Two live single-case runs followed the fix. The PR pastes both outputs in
+full below:
+
+- `pnpm eval:check -- --live --case=case-11-reworded-warning-clause-two`: `labelVerdict`
+  `FAIL` (was REVIEW), `reviewReason` `null`. This result is now correct.
+- `pnpm eval:check -- --live --case=case-22-low-light-warning-block`: `labelVerdict` `PASS`
+  (was REVIEW), `reviewReason` `null`. This result is now incorrect.
+
+case-22 also declares `wine`/`Mead`. Its `government_warning` field genuinely needs review.
+The golden set expects `NEEDS_REVIEW`. The router now returns `MATCH`. The old blocker masked
+this defect. The blocker did not produce a correct verdict for a correct reason. It produced
+the right label verdict through the wrong mechanism. Removing the blocker exposes the defect
+instead of hiding it. The fix corrects one case. The fix exposes one case's masked defect. The
+count holds at 21/32. Read both results as honest-evidence wins under PRD §6. Neither is a net
+gain or a net loss that cancels the other out.
+
+**How to run it.** `pnpm test` runs the two new tests in `src/server/router/index.test.ts`,
+beside the existing beverage_type block. `pnpm eval:check -- --live --case=<id>` reads one
+case live. It never touches the committed report or baseline (`check.ts`'s own contract).
+
+**Rollback.** Run `git revert` on every commit `git log main..fix/lh-029-beverage-type-crosscheck`
+lists, oldest first. All the changes live in one file, `src/server/router/index.ts`: a new
+import, the `isKnownBeverageType` guard, and the vocabulary check inside `routeLabel`. A
+revert restores the old, unguarded string-equality check.
+
+**Related, not duplicated here.** TRO-502 owns override rule 1
+(`src/server/router/overrides.ts:134`) — a separate defect in the same field. This ticket
+changes only the label-level cross-check in `index.ts`.
+
 ## TRO-537 — LH-032 · Prove the government warning FAIL path on a real image (2026-08-12)
 
 **What this proves.** TH-R9 names three acceptance cases. One passes. Two fail. Until this

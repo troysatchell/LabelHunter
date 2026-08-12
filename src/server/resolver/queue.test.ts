@@ -16,7 +16,7 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "../../lib/db";
 import { applications, labelImages, reviewQueue, verifications } from "../../lib/db/schema";
-import { findExistingReviewQueueEntry, insertReviewQueueEntry } from "./queue";
+import { findExistingReviewQueueEntry, insertReviewQueueEntry, insertSkippedReviewQueueEntry } from "./queue";
 import type { ResolverResolution } from "./types";
 
 async function makeVerificationFixture() {
@@ -393,6 +393,61 @@ describe("findExistingReviewQueueEntry — real database", () => {
       });
 
       await expect(findExistingReviewQueueEntry(verificationId)).rejects.toThrow(/does not match/);
+    } finally {
+      await cleanup(applicationId);
+    }
+  });
+});
+
+describe("insertSkippedReviewQueueEntry — real database (LH-041 / TRO-474, CP-3 §6.2/§6.4)", () => {
+  it("inserts a row with resolverOutput null and resolverSkipReason set — never both null, never both set", async () => {
+    const { applicationId, verificationId } = await makeVerificationFixture();
+    try {
+      const { id } = await insertSkippedReviewQueueEntry({
+        verificationId,
+        reason: "AMBIGUOUS_ABV",
+        resolverSkipReason: "ESCALATION_CAP_EXCEEDED",
+      });
+      expect(id).toBeGreaterThan(0);
+
+      const [row] = await db.query.reviewQueue.findMany({ where: (rq, { eq: eqOp }) => eqOp(rq.id, id) });
+      expect(row.verificationId).toBe(verificationId);
+      expect(row.reason).toBe("AMBIGUOUS_ABV");
+      expect(row.resolverOutput).toBeNull();
+      expect(row.resolverSkipReason).toBe("ESCALATION_CAP_EXCEEDED");
+      expect(row.disposition).toBeNull();
+    } finally {
+      await cleanup(applicationId);
+    }
+  });
+
+  it("still enforces at most one review_queue row per verification", async () => {
+    const { applicationId, verificationId } = await makeVerificationFixture();
+    try {
+      await insertSkippedReviewQueueEntry({ verificationId, reason: "AMBIGUOUS_ABV", resolverSkipReason: "ESCALATION_CAP_EXCEEDED" });
+      await expect(
+        insertSkippedReviewQueueEntry({ verificationId, reason: "AMBIGUOUS_ABV", resolverSkipReason: "ESCALATION_CAP_EXCEEDED" }),
+      ).rejects.toThrow();
+    } finally {
+      await cleanup(applicationId);
+    }
+  });
+
+  it("a skip-marker row and a real resolution are mutually exclusive at the database level (schema.ts's own CHECK constraint)", async () => {
+    const { applicationId, verificationId } = await makeVerificationFixture();
+    try {
+      // insertReviewQueueEntry's own typed param does not allow passing
+      // both resolverOutput and resolverSkipReason together — this proves
+      // the DATABASE would also refuse it if some future caller bypassed
+      // that type safety with a raw insert.
+      await expect(
+        db.insert(reviewQueue).values({
+          verificationId,
+          reason: "AMBIGUOUS_ABV",
+          resolverOutput: SAMPLE_RESOLUTION,
+          resolverSkipReason: "ESCALATION_CAP_EXCEEDED",
+        }),
+      ).rejects.toThrow();
     } finally {
       await cleanup(applicationId);
     }

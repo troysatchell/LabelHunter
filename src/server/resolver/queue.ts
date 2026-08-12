@@ -63,6 +63,52 @@ export async function insertReviewQueueEntry(
   return row;
 }
 
+export interface InsertSkippedReviewQueueEntryParams {
+  verificationId: number;
+  /** The label's headline `ReviewReason` — same source as
+   * `InsertReviewQueueEntryParams.reason`, so a skipped item's queue entry
+   * reads the same as a resolved one, minus the resolver's own output. */
+  reason: ReviewReason;
+  /** Why Sonnet was never called for this verification. Today, only the
+   * batch escalation cap (`../batch-queue/escalation-cap.ts`) produces one
+   * — this module stays decoupled from that vocabulary and accepts
+   * whatever string the caller names. */
+  resolverSkipReason: string;
+}
+
+/**
+ * Inserts one `review_queue` row for an escalated verification that was
+ * deliberately never sent to Sonnet (LH-041 / TRO-474, CP-3 §6.2/§6.4) —
+ * the batch escalation cap's own outcome. `resolverOutput` stays `null`;
+ * `resolverSkipReason` names why, so a `null` `resolverOutput` never has to
+ * mean two different things (CP-3 §6.4). `schema.ts`'s own
+ * `review_queue_resolver_output_skip_reason_exclusive` CHECK constraint
+ * enforces that no row ever carries both a skip reason and a real
+ * resolution, at the database level, not just by this function's own
+ * discipline.
+ *
+ * Same duplicate-insert behavior as `insertReviewQueueEntry`: the table's
+ * unique index on `verificationId` throws on a second call for the same
+ * verification, uncaught — the caller (a resolve-worker) is responsible for
+ * catching that and recovering from the winning row, the same TRO-506
+ * shape this design already requires for a real resolution
+ * (CP-3 §3.3, §12 open question 2).
+ */
+export async function insertSkippedReviewQueueEntry(
+  params: InsertSkippedReviewQueueEntryParams,
+  db: ResolverDb = defaultDb,
+): Promise<{ id: number }> {
+  const [row] = await db
+    .insert(reviewQueue)
+    .values({
+      verificationId: params.verificationId,
+      reason: params.reason,
+      resolverSkipReason: params.resolverSkipReason,
+    })
+    .returning({ id: reviewQueue.id });
+  return row;
+}
+
 export interface ExistingReviewQueueEntry {
   id: number;
   resolverOutput: ResolverResolution;

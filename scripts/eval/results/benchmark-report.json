@@ -1,0 +1,3291 @@
+{
+  "ticket": "TRO-470 / LH-030",
+  "measuredAt": "2026-08-12T04:36:20.558Z",
+  "manifestVersion": "1.0.0",
+  "caseIds": [
+    "case-01-clean-match-spirits",
+    "case-02-clean-match-beer-no-abv",
+    "case-03-clean-match-wine",
+    "case-04-clean-match-spirits-alt-format",
+    "case-05-abv-mismatch-application-higher",
+    "case-06-abv-mismatch-label-higher",
+    "case-07-abv-proof-mismatch-internal",
+    "case-08-title-case-warning-prefix-only",
+    "case-09-title-case-warning-full-statement",
+    "case-10-reworded-warning-clause-one",
+    "case-11-reworded-warning-clause-two",
+    "case-12-missing-warning-spirits",
+    "case-13-missing-warning-wine",
+    "case-14-case-variant-brand-stones-throw",
+    "case-15-case-variant-brand-punctuation",
+    "case-16-case-variant-brand-extra-words",
+    "case-17-glare-front-label",
+    "case-18-glare-warning-block",
+    "case-19-rotation-mild-correctable",
+    "case-20-rotation-severe-upside-down",
+    "case-21-low-light-front-label",
+    "case-22-low-light-warning-block",
+    "case-23-tiny-warning-text-standard-bottle",
+    "case-24-tiny-warning-text-miniature-bottle",
+    "case-25-odd-typography-script-brand",
+    "case-26-odd-typography-blackletter-class-type",
+    "case-27-conflicting-net-contents",
+    "case-28-conflicting-class-type",
+    "case-29-conflicting-brand-name"
+  ],
+  "haikuModel": "claude-haiku-4-5",
+  "sonnetModel": "claude-sonnet-5",
+  "cascade": {
+    "labelVerdictAccuracy": {
+      "total": 29,
+      "correct": 19,
+      "rate": 0.6551724137931034
+    },
+    "fieldVerdictAccuracyByField": {
+      "brand_name": {
+        "total": 29,
+        "correct": 25,
+        "rate": 0.8620689655172413
+      },
+      "class_type": {
+        "total": 29,
+        "correct": 26,
+        "rate": 0.896551724137931
+      },
+      "alcohol_content": {
+        "total": 29,
+        "correct": 29,
+        "rate": 1
+      },
+      "net_contents": {
+        "total": 29,
+        "correct": 29,
+        "rate": 1
+      },
+      "government_warning": {
+        "total": 29,
+        "correct": 25,
+        "rate": 0.8620689655172413
+      }
+    },
+    "reviewReasonAccuracy": {
+      "total": 13,
+      "correct": 4,
+      "rate": 0.3076923076923077
+    },
+    "totalCostUsd": 0.27191200000000004
+  },
+  "sonnetOnly": {
+    "labelVerdictAccuracy": {
+      "total": 29,
+      "correct": 13,
+      "rate": 0.4482758620689655
+    },
+    "fieldVerdictAccuracyByField": {
+      "brand_name": {
+        "total": 29,
+        "correct": 25,
+        "rate": 0.8620689655172413
+      },
+      "class_type": {
+        "total": 29,
+        "correct": 27,
+        "rate": 0.9310344827586207
+      },
+      "alcohol_content": {
+        "total": 29,
+        "correct": 28,
+        "rate": 0.9655172413793104
+      },
+      "net_contents": {
+        "total": 29,
+        "correct": 29,
+        "rate": 1
+      },
+      "government_warning": {
+        "total": 29,
+        "correct": 17,
+        "rate": 0.5862068965517241
+      }
+    },
+    "reviewReasonAccuracy": {
+      "total": 13,
+      "correct": 0,
+      "rate": 0
+    },
+    "totalCostUsd": 0.42742399999999997
+  },
+  "labelVerdictAccuracyDeltaPercentagePoints": -20.68965517241379,
+  "costDeltaUsd": 0.15551199999999993,
+  "costDeltaMultiplier": 1.5719203271646707,
+  "recommendation": "Keep the cascade regardless of this benchmark's outcome (PRD §4, TH-R19) — the cascade is the architecture, not an optimization up for renegotiation. This benchmark exists to produce the evidence for that decision, not to reopen it.",
+  "notes": [
+    "reviewReasonAccuracy for the sonnet-only arm is informational only, not a meaningful cascade-vs-sonnet-only comparison point: this arm has no router pass, so a NEEDS_REVIEW field's reason is a fixed placeholder (LOW_MODEL_CONFIDENCE) rather than one of the router's eight structural reasons — see resolver-rollup.ts.",
+    "Both arms score against the SAME real Haiku extraction per case (reused, not re-called) — the only variable between arms is whether every field or only escalated fields go to Sonnet.",
+    "The sonnet-only arm's government_warning field can only ever reach MATCH or NEEDS_REVIEW, never MISMATCH — it has no second (OCR) channel to corroborate a deviation against. See resolver-rollup.ts's rollUpGovernmentWarning."
+  ],
+  "cases": [
+    {
+      "caseId": "case-01-clean-match-spirits",
+      "category": "clean-match",
+      "cascadeEscalated": false,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-01-clean-match-spirits",
+          "category": "clean-match",
+          "expectedLabelVerdict": "PASS",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": null,
+          "actualReviewReason": null,
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 2700,
+          "outputTokens": 373,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.004565
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-01-clean-match-spirits",
+          "category": "clean-match",
+          "expectedLabelVerdict": "PASS",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": null,
+          "actualReviewReason": null,
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 4021,
+          "outputTokens": 685,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.014891999999999999
+        }
+      }
+    },
+    {
+      "caseId": "case-02-clean-match-beer-no-abv",
+      "category": "clean-match",
+      "cascadeEscalated": false,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-02-clean-match-beer-no-abv",
+          "category": "clean-match",
+          "expectedLabelVerdict": "PASS",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": null,
+          "actualReviewReason": null,
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 2700,
+          "outputTokens": 381,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.004605
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-02-clean-match-beer-no-abv",
+          "category": "clean-match",
+          "expectedLabelVerdict": "PASS",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": null,
+          "actualReviewReason": "LOW_MODEL_CONFIDENCE",
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": false
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 3962,
+          "outputTokens": 686,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.014784000000000002
+        }
+      }
+    },
+    {
+      "caseId": "case-03-clean-match-wine",
+      "category": "clean-match",
+      "cascadeEscalated": false,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-03-clean-match-wine",
+          "category": "clean-match",
+          "expectedLabelVerdict": "PASS",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": null,
+          "actualReviewReason": null,
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 2700,
+          "outputTokens": 406,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.00473
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-03-clean-match-wine",
+          "category": "clean-match",
+          "expectedLabelVerdict": "PASS",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": null,
+          "actualReviewReason": null,
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 4009,
+          "outputTokens": 657,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.014588
+        }
+      }
+    },
+    {
+      "caseId": "case-04-clean-match-spirits-alt-format",
+      "category": "clean-match",
+      "cascadeEscalated": false,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-04-clean-match-spirits-alt-format",
+          "category": "clean-match",
+          "expectedLabelVerdict": "PASS",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": null,
+          "actualReviewReason": null,
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 2700,
+          "outputTokens": 412,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.00476
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-04-clean-match-spirits-alt-format",
+          "category": "clean-match",
+          "expectedLabelVerdict": "PASS",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": null,
+          "actualReviewReason": null,
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 4021,
+          "outputTokens": 677,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.014811999999999999
+        }
+      }
+    },
+    {
+      "caseId": "case-05-abv-mismatch-application-higher",
+      "category": "abv-mismatch",
+      "cascadeEscalated": false,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-05-abv-mismatch-application-higher",
+          "category": "abv-mismatch",
+          "expectedLabelVerdict": "FAIL",
+          "actualLabelVerdict": "FAIL",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": null,
+          "actualReviewReason": null,
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MISMATCH",
+              "actualVerdict": "MISMATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 2700,
+          "outputTokens": 404,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.00472
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-05-abv-mismatch-application-higher",
+          "category": "abv-mismatch",
+          "expectedLabelVerdict": "FAIL",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": null,
+          "actualReviewReason": "LOW_MODEL_CONFIDENCE",
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MISMATCH",
+              "actualVerdict": "MISMATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": false
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 3991,
+          "outputTokens": 574,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.013722
+        }
+      }
+    },
+    {
+      "caseId": "case-06-abv-mismatch-label-higher",
+      "category": "abv-mismatch",
+      "cascadeEscalated": false,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-06-abv-mismatch-label-higher",
+          "category": "abv-mismatch",
+          "expectedLabelVerdict": "FAIL",
+          "actualLabelVerdict": "FAIL",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": null,
+          "actualReviewReason": null,
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MISMATCH",
+              "actualVerdict": "MISMATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 2700,
+          "outputTokens": 397,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.004685
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-06-abv-mismatch-label-higher",
+          "category": "abv-mismatch",
+          "expectedLabelVerdict": "FAIL",
+          "actualLabelVerdict": "FAIL",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": null,
+          "actualReviewReason": null,
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MISMATCH",
+              "actualVerdict": "MISMATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 3984,
+          "outputTokens": 768,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.015648000000000002
+        }
+      }
+    },
+    {
+      "caseId": "case-07-abv-proof-mismatch-internal",
+      "category": "abv-mismatch",
+      "cascadeEscalated": true,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-07-abv-proof-mismatch-internal",
+          "category": "abv-mismatch",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": "CONFLICTING_EXTRACTION",
+          "actualReviewReason": "AMBIGUOUS_ABV",
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 6258,
+          "outputTokens": 1061,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.018341
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-07-abv-proof-mismatch-internal",
+          "category": "abv-mismatch",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": "CONFLICTING_EXTRACTION",
+          "actualReviewReason": "LOW_MODEL_CONFIDENCE",
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 4010,
+          "outputTokens": 657,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.014589999999999999
+        }
+      }
+    },
+    {
+      "caseId": "case-08-title-case-warning-prefix-only",
+      "category": "title-case-warning",
+      "cascadeEscalated": false,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-08-title-case-warning-prefix-only",
+          "category": "title-case-warning",
+          "expectedLabelVerdict": "FAIL",
+          "actualLabelVerdict": "FAIL",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": null,
+          "actualReviewReason": null,
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MISMATCH",
+              "actualVerdict": "MISMATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 2700,
+          "outputTokens": 411,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.004755
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-08-title-case-warning-prefix-only",
+          "category": "title-case-warning",
+          "expectedLabelVerdict": "FAIL",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": null,
+          "actualReviewReason": "LOW_MODEL_CONFIDENCE",
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MISMATCH",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": false
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 4013,
+          "outputTokens": 590,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.013926000000000001
+        }
+      }
+    },
+    {
+      "caseId": "case-09-title-case-warning-full-statement",
+      "category": "title-case-warning",
+      "cascadeEscalated": false,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-09-title-case-warning-full-statement",
+          "category": "title-case-warning",
+          "expectedLabelVerdict": "FAIL",
+          "actualLabelVerdict": "FAIL",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": null,
+          "actualReviewReason": null,
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MISMATCH",
+              "actualVerdict": "MISMATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 2700,
+          "outputTokens": 423,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.004815
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-09-title-case-warning-full-statement",
+          "category": "title-case-warning",
+          "expectedLabelVerdict": "FAIL",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": null,
+          "actualReviewReason": "WARNING_MISMATCH",
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MISMATCH",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": false
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 4035,
+          "outputTokens": 728,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.015349999999999999
+        }
+      }
+    },
+    {
+      "caseId": "case-10-reworded-warning-clause-one",
+      "category": "reworded-warning",
+      "cascadeEscalated": false,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-10-reworded-warning-clause-one",
+          "category": "reworded-warning",
+          "expectedLabelVerdict": "FAIL",
+          "actualLabelVerdict": "FAIL",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": null,
+          "actualReviewReason": null,
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MISMATCH",
+              "actualVerdict": "MISMATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 2700,
+          "outputTokens": 398,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.00469
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-10-reworded-warning-clause-one",
+          "category": "reworded-warning",
+          "expectedLabelVerdict": "FAIL",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": null,
+          "actualReviewReason": "WARNING_MISMATCH",
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MISMATCH",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": false
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 3976,
+          "outputTokens": 638,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.014332
+        }
+      }
+    },
+    {
+      "caseId": "case-11-reworded-warning-clause-two",
+      "category": "reworded-warning",
+      "cascadeEscalated": true,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-11-reworded-warning-clause-two",
+          "category": "reworded-warning",
+          "expectedLabelVerdict": "FAIL",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": null,
+          "actualReviewReason": "CONFLICTING_EXTRACTION",
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MISMATCH",
+              "actualVerdict": "MISMATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 6655,
+          "outputTokens": 936,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.017995000000000004
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-11-reworded-warning-clause-two",
+          "category": "reworded-warning",
+          "expectedLabelVerdict": "FAIL",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": null,
+          "actualReviewReason": "WARNING_MISMATCH",
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MISMATCH",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": false
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 3970,
+          "outputTokens": 653,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.01447
+        }
+      }
+    },
+    {
+      "caseId": "case-12-missing-warning-spirits",
+      "category": "missing-warning",
+      "cascadeEscalated": true,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-12-missing-warning-spirits",
+          "category": "missing-warning",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": "MISSING_REQUIRED_FIELD",
+          "actualReviewReason": "MISSING_REQUIRED_FIELD",
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 6042,
+          "outputTokens": 420,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.012119
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-12-missing-warning-spirits",
+          "category": "missing-warning",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": "MISSING_REQUIRED_FIELD",
+          "actualReviewReason": "LOW_MODEL_CONFIDENCE",
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 3835,
+          "outputTokens": 517,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.01284
+        }
+      }
+    },
+    {
+      "caseId": "case-13-missing-warning-wine",
+      "category": "missing-warning",
+      "cascadeEscalated": true,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-13-missing-warning-wine",
+          "category": "missing-warning",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": "MISSING_REQUIRED_FIELD",
+          "actualReviewReason": "MISSING_REQUIRED_FIELD",
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 6002,
+          "outputTokens": 397,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.011889
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-13-missing-warning-wine",
+          "category": "missing-warning",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": "MISSING_REQUIRED_FIELD",
+          "actualReviewReason": "LOW_MODEL_CONFIDENCE",
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 3795,
+          "outputTokens": 480,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.01239
+        }
+      }
+    },
+    {
+      "caseId": "case-14-case-variant-brand-stones-throw",
+      "category": "case-variant-brand",
+      "cascadeEscalated": false,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-14-case-variant-brand-stones-throw",
+          "category": "case-variant-brand",
+          "expectedLabelVerdict": "PASS",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": null,
+          "actualReviewReason": null,
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 2700,
+          "outputTokens": 414,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.00477
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-14-case-variant-brand-stones-throw",
+          "category": "case-variant-brand",
+          "expectedLabelVerdict": "PASS",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": null,
+          "actualReviewReason": null,
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 4032,
+          "outputTokens": 701,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.015074
+        }
+      }
+    },
+    {
+      "caseId": "case-15-case-variant-brand-punctuation",
+      "category": "case-variant-brand",
+      "cascadeEscalated": true,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-15-case-variant-brand-punctuation",
+          "category": "case-variant-brand",
+          "expectedLabelVerdict": "PASS",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": null,
+          "actualReviewReason": "AMBIGUOUS_BRAND",
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": false
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 6295,
+          "outputTokens": 554,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.01338
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-15-case-variant-brand-punctuation",
+          "category": "case-variant-brand",
+          "expectedLabelVerdict": "PASS",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": null,
+          "actualReviewReason": null,
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 4028,
+          "outputTokens": 730,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.015356
+        }
+      }
+    },
+    {
+      "caseId": "case-16-case-variant-brand-extra-words",
+      "category": "case-variant-brand",
+      "cascadeEscalated": true,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-16-case-variant-brand-extra-words",
+          "category": "case-variant-brand",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": "AMBIGUOUS_BRAND",
+          "actualReviewReason": "AMBIGUOUS_BRAND",
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 6252,
+          "outputTokens": 773,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.015444
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-16-case-variant-brand-extra-words",
+          "category": "case-variant-brand",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": "AMBIGUOUS_BRAND",
+          "actualReviewReason": "LOW_MODEL_CONFIDENCE",
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "MATCH",
+              "correct": false
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": false
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 4027,
+          "outputTokens": 1153,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.019584
+        }
+      }
+    },
+    {
+      "caseId": "case-17-glare-front-label",
+      "category": "glare",
+      "cascadeEscalated": true,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-17-glare-front-label",
+          "category": "glare",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": "LOW_IMAGE_QUALITY",
+          "actualReviewReason": "AMBIGUOUS_BRAND",
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 6240,
+          "outputTokens": 679,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.01449
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-17-glare-front-label",
+          "category": "glare",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": "LOW_IMAGE_QUALITY",
+          "actualReviewReason": null,
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "MATCH",
+              "correct": false
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 4015,
+          "outputTokens": 691,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.014939999999999998
+        }
+      }
+    },
+    {
+      "caseId": "case-18-glare-warning-block",
+      "category": "glare",
+      "cascadeEscalated": true,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-18-glare-warning-block",
+          "category": "glare",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": "LOW_IMAGE_QUALITY",
+          "actualReviewReason": "WARNING_MISMATCH",
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 6185,
+          "outputTokens": 706,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.014709999999999999
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-18-glare-warning-block",
+          "category": "glare",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": "LOW_IMAGE_QUALITY",
+          "actualReviewReason": null,
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "MATCH",
+              "correct": false
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 3981,
+          "outputTokens": 650,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.014462000000000001
+        }
+      }
+    },
+    {
+      "caseId": "case-19-rotation-mild-correctable",
+      "category": "rotation",
+      "cascadeEscalated": true,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-19-rotation-mild-correctable",
+          "category": "rotation",
+          "expectedLabelVerdict": "PASS",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": null,
+          "actualReviewReason": "WARNING_MISMATCH",
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": false
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 7252,
+          "outputTokens": 746,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.016663999999999998
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-19-rotation-mild-correctable",
+          "category": "rotation",
+          "expectedLabelVerdict": "PASS",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": null,
+          "actualReviewReason": "LOW_MODEL_CONFIDENCE",
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": false
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 4528,
+          "outputTokens": 876,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.017816
+        }
+      }
+    },
+    {
+      "caseId": "case-20-rotation-severe-upside-down",
+      "category": "rotation",
+      "cascadeEscalated": true,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-20-rotation-severe-upside-down",
+          "category": "rotation",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": "LOW_IMAGE_QUALITY",
+          "actualReviewReason": "LOW_IMAGE_QUALITY",
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 6448,
+          "outputTokens": 628,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.015511
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-20-rotation-severe-upside-down",
+          "category": "rotation",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": "LOW_IMAGE_QUALITY",
+          "actualReviewReason": "LOW_MODEL_CONFIDENCE",
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 3723,
+          "outputTokens": 469,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.012136000000000001
+        }
+      }
+    },
+    {
+      "caseId": "case-21-low-light-front-label",
+      "category": "low-light",
+      "cascadeEscalated": false,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-21-low-light-front-label",
+          "category": "low-light",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": "LOW_IMAGE_QUALITY",
+          "actualReviewReason": null,
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "MATCH",
+              "correct": false
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "MATCH",
+              "correct": false
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 2700,
+          "outputTokens": 397,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.004685
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-21-low-light-front-label",
+          "category": "low-light",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": "LOW_IMAGE_QUALITY",
+          "actualReviewReason": null,
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "MATCH",
+              "correct": false
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "MATCH",
+              "correct": false
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 3972,
+          "outputTokens": 639,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.014334
+        }
+      }
+    },
+    {
+      "caseId": "case-22-low-light-warning-block",
+      "category": "low-light",
+      "cascadeEscalated": true,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-22-low-light-warning-block",
+          "category": "low-light",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": "LOW_IMAGE_QUALITY",
+          "actualReviewReason": "CONFLICTING_EXTRACTION",
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "MATCH",
+              "correct": false
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 6651,
+          "outputTokens": 1029,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.018927
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-22-low-light-warning-block",
+          "category": "low-light",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": "LOW_IMAGE_QUALITY",
+          "actualReviewReason": null,
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "MATCH",
+              "correct": false
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 3971,
+          "outputTokens": 630,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.014242000000000001
+        }
+      }
+    },
+    {
+      "caseId": "case-23-tiny-warning-text-standard-bottle",
+      "category": "tiny-warning-text",
+      "cascadeEscalated": false,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-23-tiny-warning-text-standard-bottle",
+          "category": "tiny-warning-text",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": "LOW_MODEL_CONFIDENCE",
+          "actualReviewReason": null,
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "MATCH",
+              "correct": false
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 2700,
+          "outputTokens": 399,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.0046949999999999995
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-23-tiny-warning-text-standard-bottle",
+          "category": "tiny-warning-text",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": "LOW_MODEL_CONFIDENCE",
+          "actualReviewReason": null,
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "MATCH",
+              "correct": false
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 3975,
+          "outputTokens": 635,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.0143
+        }
+      }
+    },
+    {
+      "caseId": "case-24-tiny-warning-text-miniature-bottle",
+      "category": "tiny-warning-text",
+      "cascadeEscalated": false,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-24-tiny-warning-text-miniature-bottle",
+          "category": "tiny-warning-text",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": "LOW_MODEL_CONFIDENCE",
+          "actualReviewReason": null,
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "MATCH",
+              "correct": false
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 2700,
+          "outputTokens": 408,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.004739999999999999
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-24-tiny-warning-text-miniature-bottle",
+          "category": "tiny-warning-text",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": "LOW_MODEL_CONFIDENCE",
+          "actualReviewReason": null,
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "MATCH",
+              "correct": false
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 4009,
+          "outputTokens": 655,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.014568
+        }
+      }
+    },
+    {
+      "caseId": "case-25-odd-typography-script-brand",
+      "category": "odd-typography",
+      "cascadeEscalated": false,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-25-odd-typography-script-brand",
+          "category": "odd-typography",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": "LOW_MODEL_CONFIDENCE",
+          "actualReviewReason": null,
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "MATCH",
+              "correct": false
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 2700,
+          "outputTokens": 395,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.004675
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-25-odd-typography-script-brand",
+          "category": "odd-typography",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": "LOW_MODEL_CONFIDENCE",
+          "actualReviewReason": null,
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "MATCH",
+              "correct": false
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 3969,
+          "outputTokens": 633,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.014268
+        }
+      }
+    },
+    {
+      "caseId": "case-26-odd-typography-blackletter-class-type",
+      "category": "odd-typography",
+      "cascadeEscalated": false,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-26-odd-typography-blackletter-class-type",
+          "category": "odd-typography",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": "LOW_MODEL_CONFIDENCE",
+          "actualReviewReason": null,
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "MATCH",
+              "correct": false
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 2700,
+          "outputTokens": 419,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.004795
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-26-odd-typography-blackletter-class-type",
+          "category": "odd-typography",
+          "expectedLabelVerdict": "REVIEW",
+          "actualLabelVerdict": "PASS",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": "LOW_MODEL_CONFIDENCE",
+          "actualReviewReason": null,
+          "reviewReasonCorrect": false,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "NEEDS_REVIEW",
+              "actualVerdict": "MATCH",
+              "correct": false
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 4016,
+          "outputTokens": 660,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.014632
+        }
+      }
+    },
+    {
+      "caseId": "case-27-conflicting-net-contents",
+      "category": "conflicting-application-vs-label",
+      "cascadeEscalated": false,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-27-conflicting-net-contents",
+          "category": "conflicting-application-vs-label",
+          "expectedLabelVerdict": "FAIL",
+          "actualLabelVerdict": "FAIL",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": null,
+          "actualReviewReason": null,
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MISMATCH",
+              "actualVerdict": "MISMATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 2700,
+          "outputTokens": 397,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.004685
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-27-conflicting-net-contents",
+          "category": "conflicting-application-vs-label",
+          "expectedLabelVerdict": "FAIL",
+          "actualLabelVerdict": "FAIL",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": null,
+          "actualReviewReason": null,
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MISMATCH",
+              "actualVerdict": "MISMATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 4001,
+          "outputTokens": 677,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.014772
+        }
+      }
+    },
+    {
+      "caseId": "case-28-conflicting-class-type",
+      "category": "conflicting-application-vs-label",
+      "cascadeEscalated": true,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-28-conflicting-class-type",
+          "category": "conflicting-application-vs-label",
+          "expectedLabelVerdict": "FAIL",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": null,
+          "actualReviewReason": "AMBIGUOUS_BRAND",
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MISMATCH",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": false
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 6231,
+          "outputTokens": 589,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.013547
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-28-conflicting-class-type",
+          "category": "conflicting-application-vs-label",
+          "expectedLabelVerdict": "FAIL",
+          "actualLabelVerdict": "FAIL",
+          "labelVerdictCorrect": true,
+          "expectedReviewReason": null,
+          "actualReviewReason": null,
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MISMATCH",
+              "actualVerdict": "MISMATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 4008,
+          "outputTokens": 698,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.014995999999999999
+        }
+      }
+    },
+    {
+      "caseId": "case-29-conflicting-brand-name",
+      "category": "conflicting-application-vs-label",
+      "cascadeEscalated": true,
+      "cascade": {
+        "verdict": {
+          "caseId": "case-29-conflicting-brand-name",
+          "category": "conflicting-application-vs-label",
+          "expectedLabelVerdict": "FAIL",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": null,
+          "actualReviewReason": "AMBIGUOUS_BRAND",
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MISMATCH",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": false
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            }
+          ]
+        },
+        "cost": {
+          "model": "cascade-total",
+          "inputTokens": 6250,
+          "outputTokens": 561,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.013524999999999999
+        }
+      },
+      "sonnetOnly": {
+        "verdict": {
+          "caseId": "case-29-conflicting-brand-name",
+          "category": "conflicting-application-vs-label",
+          "expectedLabelVerdict": "FAIL",
+          "actualLabelVerdict": "REVIEW",
+          "labelVerdictCorrect": false,
+          "expectedReviewReason": null,
+          "actualReviewReason": "LOW_MODEL_CONFIDENCE",
+          "reviewReasonCorrect": true,
+          "fields": [
+            {
+              "field": "brand_name",
+              "expectedVerdict": "MISMATCH",
+              "actualVerdict": "MISMATCH",
+              "correct": true
+            },
+            {
+              "field": "class_type",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "alcohol_content",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "net_contents",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "MATCH",
+              "correct": true
+            },
+            {
+              "field": "government_warning",
+              "expectedVerdict": "MATCH",
+              "actualVerdict": "NEEDS_REVIEW",
+              "correct": false
+            }
+          ]
+        },
+        "cost": {
+          "model": "claude-sonnet-5",
+          "inputTokens": 4025,
+          "outputTokens": 755,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "usd": 0.0156
+        }
+      }
+    }
+  ],
+  "failures": []
+}

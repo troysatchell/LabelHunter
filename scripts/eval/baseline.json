@@ -1,0 +1,107 @@
+{
+  "ticket": "TRO-470 / LH-030",
+  "establishedAt": "2026-08-12T04:39:34.853Z",
+  "manifestVersion": "1.0.0",
+  "caseIds": [
+    "case-01-clean-match-spirits",
+    "case-02-clean-match-beer-no-abv",
+    "case-03-clean-match-wine",
+    "case-04-clean-match-spirits-alt-format",
+    "case-05-abv-mismatch-application-higher",
+    "case-06-abv-mismatch-label-higher",
+    "case-07-abv-proof-mismatch-internal",
+    "case-08-title-case-warning-prefix-only",
+    "case-09-title-case-warning-full-statement",
+    "case-10-reworded-warning-clause-one",
+    "case-11-reworded-warning-clause-two",
+    "case-12-missing-warning-spirits",
+    "case-13-missing-warning-wine",
+    "case-14-case-variant-brand-stones-throw",
+    "case-15-case-variant-brand-punctuation",
+    "case-16-case-variant-brand-extra-words",
+    "case-17-glare-front-label",
+    "case-18-glare-warning-block",
+    "case-19-rotation-mild-correctable",
+    "case-20-rotation-severe-upside-down",
+    "case-21-low-light-front-label",
+    "case-22-low-light-warning-block",
+    "case-23-tiny-warning-text-standard-bottle",
+    "case-24-tiny-warning-text-miniature-bottle",
+    "case-25-odd-typography-script-brand",
+    "case-26-odd-typography-blackletter-class-type",
+    "case-27-conflicting-net-contents",
+    "case-28-conflicting-class-type",
+    "case-29-conflicting-brand-name"
+  ],
+  "summary": {
+    "extractionAccuracy": {
+      "total": 145,
+      "correct": 138,
+      "rate": 0.9517241379310345
+    },
+    "extractionAccuracyByField": {
+      "brandName": {
+        "total": 29,
+        "correct": 27,
+        "rate": 0.9310344827586207
+      },
+      "classType": {
+        "total": 29,
+        "correct": 28,
+        "rate": 0.9655172413793104
+      },
+      "abv": {
+        "total": 29,
+        "correct": 28,
+        "rate": 0.9655172413793104
+      },
+      "netContents": {
+        "total": 29,
+        "correct": 28,
+        "rate": 0.9655172413793104
+      },
+      "governmentWarning": {
+        "total": 29,
+        "correct": 27,
+        "rate": 0.9310344827586207
+      }
+    },
+    "labelVerdictAccuracy": {
+      "total": 29,
+      "correct": 19,
+      "rate": 0.6551724137931034
+    },
+    "fieldVerdictAccuracyByField": {
+      "brand_name": {
+        "total": 29,
+        "correct": 25,
+        "rate": 0.8620689655172413
+      },
+      "class_type": {
+        "total": 29,
+        "correct": 26,
+        "rate": 0.896551724137931
+      },
+      "alcohol_content": {
+        "total": 29,
+        "correct": 29,
+        "rate": 1
+      },
+      "net_contents": {
+        "total": 29,
+        "correct": 29,
+        "rate": 1
+      },
+      "government_warning": {
+        "total": 29,
+        "correct": 25,
+        "rate": 0.8620689655172413
+      }
+    },
+    "reviewReasonAccuracy": {
+      "total": 13,
+      "correct": 4,
+      "rate": 0.3076923076923077
+    }
+  }
+}

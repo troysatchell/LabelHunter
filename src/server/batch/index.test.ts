@@ -15,7 +15,7 @@ describe("buildBatchPreview", () => {
   it("returns a full pairing preview for a clean manifest with every image present", () => {
     const csvText = [
       HEADER,
-      "spirits,Old Tom Distillery,Straight Bourbon Whiskey,45,750,mL,bottle-01.jpg",
+      "spirits,Highland Peak Distillery,Straight Bourbon Whiskey,45,750,mL,bottle-01.jpg",
       "wine,Rolling Hills,Cabernet Sauvignon,13.5,750,mL,bottle-02.jpg",
     ].join("\n");
     const result = buildBatchPreview({
@@ -38,7 +38,7 @@ describe("buildBatchPreview", () => {
   it("assembles a mixed batch: matched, unmatched row, unmatched image, and an invalid row, all accounted for", () => {
     const csvText = [
       HEADER,
-      "spirits,Old Tom Distillery,Straight Bourbon Whiskey,45,750,mL,bottle-01.jpg", // matched
+      "spirits,Highland Peak Distillery,Straight Bourbon Whiskey,45,750,mL,bottle-01.jpg", // matched
       "wine,Rolling Hills,Cabernet Sauvignon,13.5,750,mL,missing.jpg", // unmatched row
       "ale,Bad Type Co,Lager,5,355,mL,bottle-03.jpg", // invalid row (bad beverage_type)
     ].join("\n");
@@ -55,7 +55,7 @@ describe("buildBatchPreview", () => {
     expect(result.totalRows).toBe(3);
     expect(result.readyCount).toBe(1);
     expect(result.matched).toHaveLength(1);
-    expect(result.matched[0].row.brandName).toBe("Old Tom Distillery");
+    expect(result.matched[0].row.brandName).toBe("Highland Peak Distillery");
     expect(result.unmatchedRows).toHaveLength(1);
     expect(result.unmatchedRows[0].row.brandName).toBe("Rolling Hills");
     expect(result.unmatchedImages).toHaveLength(1);

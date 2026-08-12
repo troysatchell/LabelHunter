@@ -23,7 +23,7 @@ describe("handleBatchPreviewRequest", () => {
   it("returns a 200 pairing preview for a clean multi-file-drop upload", async () => {
     const csvText = [
       HEADER,
-      "spirits,Old Tom Distillery,Straight Bourbon Whiskey,45,750,mL,bottle-01.jpg",
+      "spirits,Highland Peak Distillery,Straight Bourbon Whiskey,45,750,mL,bottle-01.jpg",
       "wine,Rolling Hills,Cabernet Sauvignon,13.5,750,mL,bottle-02.jpg",
     ].join("\n");
     const fd = new FormData();

@@ -12,7 +12,7 @@ describe("parseManifest", () => {
   it("parses valid rows with all fields populated", () => {
     const result = parseManifest(
       csvWith(
-        "spirits,Old Tom Distillery,Straight Bourbon Whiskey,45,750,mL,bottle-001.jpg",
+        "spirits,Highland Peak Distillery,Straight Bourbon Whiskey,45,750,mL,bottle-001.jpg",
         "wine,Rolling Hills,Cabernet Sauvignon,13.5,750,mL,bottle-002.jpg",
       ),
     );
@@ -23,7 +23,7 @@ describe("parseManifest", () => {
       {
         rowNumber: 2,
         beverageType: "spirits",
-        brandName: "Old Tom Distillery",
+        brandName: "Highland Peak Distillery",
         classType: "Straight Bourbon Whiskey",
         alcoholContentPercent: 45,
         netContentsValue: 750,
@@ -53,13 +53,13 @@ describe("parseManifest", () => {
   it("reads columns by name, so a different column order still parses", () => {
     const reordered = [
       "image_filename,brand_name,class_type,beverage_type,net_contents_unit,net_contents_value,alcohol_content_percent",
-      "bottle-01.jpg,Old Tom Distillery,Straight Bourbon Whiskey,spirits,mL,750,45",
+      "bottle-01.jpg,Highland Peak Distillery,Straight Bourbon Whiskey,spirits,mL,750,45",
     ].join("\n");
     const result = parseManifest(reordered);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.rows[0]).toMatchObject({
-      brandName: "Old Tom Distillery",
+      brandName: "Highland Peak Distillery",
       imageFilename: "bottle-01.jpg",
       beverageType: "spirits",
     });

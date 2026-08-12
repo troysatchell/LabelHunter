@@ -7,85 +7,104 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 ## TRO-519 — OCR channel timeout (2026-08-12)
 
 **What this builds.** `runWarningOcr` (`src/server/warning/ocr.ts`) now bounds its whole
-worker lifecycle — creation, parameter set, and recognition — behind one shared deadline,
-`OCR_TIMEOUT_MS` (2000ms), using `Promise.race` against a timer (lessons.md rule 23's
-pattern: one timer across every await in the chain, cleared once at the end). Before this
-ticket, none of those awaits carried a deadline. A hung Node `worker_threads` worker — the
-same shape as a module-resolution failure inside the spawned worker script — hung
-`runWarningOcr` forever, and hung `/api/verify` with it: no error, no database row
-(TRO-480's finding). On a timeout, `runWarningOcr` returns `null` — the exact value its
-existing `catch` block already returned for a thrown error. No new branch, no new field, no
-change to `reconcile.ts` — TRO-519's own scope says stop there, so this does.
+worker lifecycle behind one shared deadline: `OCR_TIMEOUT_MS`, 2000ms. It covers creation,
+parameter set, and recognition. It uses `Promise.race` against a timer — lessons.md rule
+23's pattern, one timer across every await, cleared once at the end. Before this ticket, none
+of those awaits carried a deadline. A hung Node `worker_threads` worker used to hang
+`runWarningOcr` forever, and hang `/api/verify` with it. No error. No database row. That was
+TRO-480's finding. On a timeout, `runWarningOcr` returns `null` — the exact value its
+existing `catch` block already returns for a thrown error. No new branch. No new field. No
+change to `reconcile.ts`. TRO-519's own scope says stop there, so this does.
 
 **Reproduction check.** `pnpm build && pnpm start`, two real `POST /api/verify` submissions
-against golden-set case-01: both completed (HTTP 200, PASS verdict, a database row confirmed
-by direct query), in 3.97s and 6.08s. **Did not reproduce.** That has an explanation, not
-just a negative result: TRO-479 already found and fixed a related but different
+against golden-set case-01. Both completed: HTTP 200, PASS verdict, a database row confirmed
+by direct query. Times were 3.97s and 6.08s. **Did not reproduce.** That has an explanation,
+not just a negative result. TRO-479 already found and fixed a related but different
 production-build bug. Next's build-time output tracing could not follow tesseract.js's own
-runtime-computed path to its worker-thread entry point; `serverExternalPackages:
-["tesseract.js"]` (`next.config.ts`) fixed that before this ticket's worktree existed. That
-fix explains the clean repro. It does not close TRO-519's own gap — the missing timeout is
-real on its own terms, and any other cause of a stuck worker thread hits the identical
-failure mode. A bonus check under `pnpm dev` (TRO-480's original environment, with this
-ticket's fix applied) also completed cleanly (HTTP 200, 4.01s) — consistent with, but not
-proof of, the same config fix also covering dev mode. No hang occurred in that one live
-attempt, so it never exercised the timeout path; the deterministic tests below are the real
-proof the mechanism works, not this live check.
+runtime path to its worker-thread entry point. `serverExternalPackages: ["tesseract.js"]`
+(`next.config.ts`) fixed that before this ticket's worktree existed. That fix explains the
+clean repro. It does not close TRO-519's own gap. The missing timeout was real on its own
+terms — any other cause of a stuck worker thread hits the identical failure mode. A bonus
+check under `pnpm dev` (TRO-480's original environment, with this ticket's fix applied) also
+completed cleanly: HTTP 200, 4.01s. That is consistent with, but not proof of, the same
+config fix also covering dev mode. No hang occurred in that one live attempt, so it never
+exercised the timeout path. The deterministic tests below are the real proof the mechanism
+works, not this live check.
 
 **The timeout value — 2000ms, reasoned from PRD §3.8, not measured.** The OCR channel's own
-p50 target is ~0.5s; 2000ms is 4x that, room for a real slow-but-working recognition. Haiku
-extraction's own p50 target is ~2.5s, and the two channels run concurrently
+p50 target is ~0.5s. 2000ms is 4x that: room for a real, slow-but-working recognition. Haiku
+extraction's own p50 target is ~2.5s. The two channels run concurrently
 (`compareGovernmentWarningFromImage`'s own `Promise.all`). A single OCR hang bounded at
-2000ms stays under Haiku's own typical latency, so the hang hides behind the Haiku call
-already on the critical path instead of becoming the new bottleneck. Named residual risk,
-out of this ticket's file scope: `region-detect.ts`'s band-search fallback can call
-`runWarningOcr` up to four times in one request; a systemic hang cause would hang every one
-of those calls alike, so that specific combination's worst case is roughly 4x this constant.
-That combination is narrower than the single-hang case this ticket targets, and it was
-infinite before this ticket regardless.
+2000ms stays under Haiku's own typical latency. The hang hides behind the Haiku call already
+on the critical path, instead of becoming the new bottleneck. Named residual risk, out of
+this ticket's file scope: `region-detect.ts`'s band-search fallback can call `runWarningOcr`
+up to four times in one request. A systemic hang cause would hang every one of those calls
+alike, so that combination's worst case is roughly 4x this constant, not 1x. That combination
+is narrower than the single-hang case this ticket targets, and it was infinite before this
+ticket regardless.
 
 **Cancellation — investigated, none exists.** Checked the installed `tesseract.js@7.0.0`'s
 own type declarations and `createWorker.js` source directly. Neither `createWorker` nor
 `Worker.recognize` takes a `signal`, or any abort option, anywhere in the public API. This
 ticket falls back to the bare-timer path as the honest fallback.
 
-**Worker termination — explicit in the loser branch, with one honest gap.** When the
-deadline fires during `setParameters`/`recognize` and a worker handle already exists,
-`runWarningOcr` calls `worker.terminate()` — the loser is terminated, not abandoned. When
-the deadline fires during `createWorker` itself — the exact shape of the reported Turbopack
-failure — no worker handle exists yet, because tesseract.js's own promise hands one back
-only on success. Nothing exists to terminate. This is a named, real, residual limitation,
-not a silently ignored one. It does not reopen the hang `/api/verify` saw: this function
-still returns within `OCR_TIMEOUT_MS` either way.
+**Worker termination — fire-and-forget, and it covers a late-arriving worker too.** A first
+draft awaited `worker.terminate()` inside the timeout branch's own cleanup. Local CodeRabbit
+review round 1 (major) caught the real risk: a hanging `.terminate()` would extend the
+deadline it should enforce. Fixed — termination is now fire-and-forget everywhere, logged if
+it fails, never awaited before returning. The same round named a second gap. A worker whose
+`createWorker()` call resolves after the deadline already fired was left running,
+unterminated. It did real OCR work nobody would ever read. Fixed with a `timedOut` flag,
+checked the moment that late worker exists. It terminates the worker immediately and skips
+`setParameters`/`recognize` entirely. One case still cannot be terminated: a `createWorker()`
+call that never settles at all. There is provably no handle to terminate, ever, in that case.
+`runWarningOcr` still returns `null` within `OCR_TIMEOUT_MS` regardless.
 
 **New problem noticed, not fixed here (out of this ticket's scope).** TRO-479's own
 investigation found that tesseract.js's Node backend never attaches a real listener to the
-underlying `worker_threads.Worker`'s `error` event — `createWorker.js` sets
-`worker.onerror = fn`, a hook that only does something for the library's browser backend;
+underlying `worker_threads.Worker`'s `error` event. `createWorker.js` sets
+`worker.onerror = fn`. That hook only does something for the library's browser backend.
 Node's own `Worker` has no such property-style dispatch. TRO-479 removed the one known
-trigger for this (the build-trace failure) with `serverExternalPackages`. The underlying
-gap — no listener on the raw Node worker's `error` event — is still there for any other
-trigger, and it crashes the whole process (Node's default behavior for an `EventEmitter`
-`error` event with no listener), not just one request. No timeout can fix a crashed process,
-and tesseract.js's public API gives no hook to attach a listener to the raw worker from
-outside the library. Worth its own ticket if Troy wants defense in depth here.
+trigger for this — the build-trace failure — with `serverExternalPackages`. The underlying
+gap is still there for any other trigger: no listener on the raw Node worker's `error` event.
+It crashes the whole process, not just one request — Node's default behavior for an
+`EventEmitter` `error` event with no listener. No timeout can fix a crashed process.
+tesseract.js's public API gives no hook to attach a listener to the raw worker from outside
+the library. Worth its own ticket if Troy wants defense in depth here.
 
-**Tests.** `src/server/warning/ocr.test.ts` — 4 new cases: a `createWorker` that never
-resolves degrades to `null` inside the deadline; a `recognize()` that never resolves
-degrades to `null` AND terminates the worker; a fast real success still returns its result
-and still terminates the worker; a thrown `createWorker` error and a `createWorker` timeout
-converge on the identical `null`. `src/server/warning/index.test.ts` — 1 new case: the real
-`runWarningOcr` (not a fake), injected only at its own `createWorker` seam, degrades
-`compareGovernmentWarningFromImage` all the way to a single-channel `MATCH` inside the
-deadline — proof of the production wiring, not just the innermost function. Every new test
-uses vitest's fake timers; none sleeps for real (lessons.md rule 8). Full suite: 1533 tests,
-all pass (`pnpm test`).
+**Tests.** `src/server/warning/ocr.test.ts` — 6 new cases. A `createWorker` that never
+resolves degrades to `null` inside the deadline. A `recognize()` that never resolves degrades
+to `null` and terminates the worker. A fast real success still returns its result and still
+terminates. A thrown `createWorker` error and a `createWorker` timeout converge on the
+identical `null`. A worker whose own `terminate()` never resolves does not block
+`runWarningOcr`'s return. A worker that resolves from `createWorker` after the deadline is
+terminated the moment it exists, with `setParameters`/`recognize` never called on it.
+`src/server/warning/index.test.ts` — 1 new case: the real `runWarningOcr` (not a fake),
+injected only at its own `createWorker` seam. It degrades `compareGovernmentWarningFromImage`
+all the way to a single-channel `MATCH` inside the deadline. That proves the production
+wiring, not just the innermost function. Every new test uses vitest's fake timers; none
+sleeps for real (lessons.md rule 8). Full suite: 1535 tests, all pass (`pnpm test`).
 
-**How to run it.** No new command. `pnpm test` covers the regression;
+**Local CodeRabbit review, round 1 (3 findings, all fixed).**
+- `src/server/warning/ocr.ts` (major): `worker.terminate()` was awaited inside the timeout's
+  own cleanup, so a hanging termination could extend the timeout it was meant to enforce. A
+  worker whose `createWorker()` resolved after the deadline was left running, unterminated.
+  Fixed as described above: fire-and-forget termination everywhere. A `timedOut` check
+  terminates a late-arriving worker the moment it exists, and skips real OCR work on it.
+  Two new tests cover both fixes directly.
+- `src/server/warning/index.ts` (minor): `runOcrChannel`'s own comment overclaimed a
+  channel-wide bound. Only each individual `ocr` call is actually bounded by
+  `OCR_TIMEOUT_MS`. `detectWarningRegion`'s band-search fallback can call it up to four
+  times, and `detectRegion`/`crop` carry no deadline of their own. Fixed by naming the real
+  bound precisely instead of the overclaim.
+- CHANGES.md (minor): several sentences in this entry ran past ASD-STE100's 25-word
+  guidance. Fixed by splitting them — this pass.
+
+**How to run it.** No new command. `pnpm test` covers the regression.
 `pnpm dev`/`pnpm build && pnpm start` both run the real path unchanged.
 
 **Rollback.** `git revert` this ticket's commit(s) on `fix/ocr-channel-timeout`. No schema
-and no config ride along — `ocr.ts`, `index.ts`, their tests, and this entry are the whole
+and no config ride along. `ocr.ts`, `index.ts`, their tests, and this entry are the whole
 diff.
 
 ## TRO-479 — LH-053 · E2E suite (2026-08-12)

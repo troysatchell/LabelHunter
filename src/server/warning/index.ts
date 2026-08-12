@@ -116,19 +116,30 @@ export interface CompareGovernmentWarningFromImageInput {
 }
 
 /** Runs region detection, crops, and OCRs — the OCR "channel" half of the
- * comparison. Never throws, and never hangs past `ocr.ts`'s own
- * `OCR_TIMEOUT_MS` (TRO-519): `detectWarningRegion` returning `null`, or
- * `ocr` returning `null` — whether OCR threw, timed out, or simply found
- * nothing — all degrade to `{ available: false }`, which
- * `reconcileWarningChannels` already treats as "run single-channel" (CP-2
- * §4.4 rule 3: a crashed OR hung OCR path must never fail the request).
- * The outer `try`/`catch` covers the same rule for a REJECTED promise, not
- * just a resolved `null` — `ocr.ts`'s `runWarningOcr` already catches its
- * own errors AND bounds its own hangs, but `deps.detectRegion`/`deps.crop`
- * (sharp calls against a caller-supplied buffer) are not guaranteed to
- * either, and an uncaught rejection here would otherwise reject the
- * `Promise.all` this function is one half of, taking the VLM channel's
- * already-good result down with it. */
+ * comparison. Never throws. `detectWarningRegion` returning `null`, or
+ * `ocr` returning `null`, both degrade this function to
+ * `{ available: false }`, which `reconcileWarningChannels` already treats
+ * as "run single-channel" (CP-2 §4.4 rule 3: a crashed OR hung OCR path
+ * must never fail the request).
+ *
+ * **The precise bound, named exactly (local CodeRabbit review round 1
+ * corrected an earlier overclaim here).** Each individual `ocr` call
+ * (`deps.ocr`, `runWarningOcr` in production) is bounded by its own
+ * `OCR_TIMEOUT_MS` deadline and degrades to `null` on a throw OR a
+ * timeout (TRO-519). That is a bound on ONE call, not yet on this whole
+ * function: `detectWarningRegion`'s band-search fallback can call `ocr`
+ * up to four times in one request (`region-detect.ts`, out of TRO-519's
+ * file scope), and `deps.detectRegion`/`deps.crop` themselves — the
+ * classical-detection and crop `sharp` calls — carry no deadline of
+ * their own at all. `ocr.ts`'s own `OCR_TIMEOUT_MS` comment names this
+ * gap and the follow-up ticket it would take to close it.
+ *
+ * The outer `try`/`catch` here covers a REJECTED promise, not just a
+ * resolved `null` — `deps.detectRegion`/`deps.crop` are not guaranteed to
+ * catch their own errors the way `runWarningOcr` now does, and an
+ * uncaught rejection here would otherwise reject the `Promise.all` this
+ * function is one half of, taking the VLM channel's already-good result
+ * down with it. */
 async function runOcrChannel(
   originalImage: Buffer,
   deps: CompareGovernmentWarningFromImageDeps,

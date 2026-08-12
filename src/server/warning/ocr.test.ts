@@ -176,6 +176,55 @@ describe("runWarningOcr — timeout (TRO-519)", () => {
     expect(terminate).toHaveBeenCalledTimes(1);
   });
 
+  it("does not let a hanging worker.terminate() extend the deadline (local CodeRabbit review round 1)", async () => {
+    vi.useFakeTimers();
+    // Both recognize() and terminate() never resolve. If termination were
+    // ever awaited before returning, this test would itself hang forever —
+    // the assertion completing at all, inside one advance of fake time, is
+    // the proof that cleanup cannot extend the deadline.
+    const terminate = vi.fn(() => new Promise(() => {}));
+    const worker = {
+      setParameters: vi.fn().mockResolvedValue(undefined),
+      recognize: vi.fn(() => new Promise(() => {})),
+      terminate,
+    };
+
+    const resultPromise = runWarningOcr(Buffer.from("crop"), { createWorker: fakeCreateWorker(worker) });
+    await vi.advanceTimersByTimeAsync(OCR_TIMEOUT_MS);
+
+    await expect(resultPromise).resolves.toBeNull();
+    expect(terminate).toHaveBeenCalledTimes(1); // still called — just not awaited
+  });
+
+  it("terminates a worker that resolves from createWorker AFTER the deadline, and never runs setParameters/recognize on it (local CodeRabbit review round 1)", async () => {
+    vi.useFakeTimers();
+    let resolveCreateWorker!: (worker: {
+      setParameters: ReturnType<typeof vi.fn>;
+      recognize: ReturnType<typeof vi.fn>;
+      terminate: ReturnType<typeof vi.fn>;
+    }) => void;
+    const lateCreateWorker: RunWarningOcrDeps["createWorker"] = vi.fn(
+      () => new Promise((resolve) => { resolveCreateWorker = resolve; }),
+    ) as unknown as RunWarningOcrDeps["createWorker"];
+
+    const resultPromise = runWarningOcr(Buffer.from("crop"), { createWorker: lateCreateWorker });
+    await vi.advanceTimersByTimeAsync(OCR_TIMEOUT_MS);
+    await expect(resultPromise).resolves.toBeNull(); // returns promptly — does not wait for the late worker
+
+    // The worker "arrives" only now, after the deadline already fired and
+    // this function already returned.
+    const terminate = vi.fn().mockResolvedValue(undefined);
+    const setParameters = vi.fn().mockResolvedValue(undefined);
+    const recognize = vi.fn().mockResolvedValue({ data: { text: "too late", confidence: 80 } });
+    resolveCreateWorker({ setParameters, recognize, terminate });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(terminate).toHaveBeenCalledTimes(1); // terminated the moment it exists
+    expect(setParameters).not.toHaveBeenCalled(); // no wasted OCR work on a result nobody reads
+    expect(recognize).not.toHaveBeenCalled();
+  });
+
   it("a thrown createWorker error and a createWorker timeout converge on the identical degraded value — CP-2 §4.4 rule 3, one rule for both", async () => {
     // The thrown-error side closes a real, pre-existing coverage gap:
     // nothing in this suite previously forced runWarningOcr's OWN

@@ -121,6 +121,37 @@ export interface RunWarningOcrDeps {
 
 const defaultDeps: RunWarningOcrDeps = { createWorker };
 
+/** The real worker type `createWorker` resolves to, named once so it does
+ * not have to be spelled out at every use below. */
+type TesseractWorker = Awaited<ReturnType<typeof createWorker>>;
+
+/**
+ * Terminates `worker` without making the caller wait for it. Fire-and-
+ * forget on purpose (local CodeRabbit review round 1, TRO-519 — a major
+ * finding): an EARLIER draft `await`ed `worker.terminate()` inside the
+ * timeout branch's own cleanup, so a hanging `.terminate()` could extend
+ * the very deadline this ticket exists to enforce. A failure is still
+ * visible, just asynchronously — logged with the phase named, not a bare
+ * `console.warn` (lessons.md rule 24). Guarded against a SYNCHRONOUS
+ * throw too, not only a rejected promise, so this function itself can
+ * never throw into its caller.
+ */
+function terminateInBackground(worker: TesseractWorker): void {
+  try {
+    worker.terminate().catch((terminateError: unknown) => {
+      console.error("[warning-ocr] worker.terminate() failed during cleanup", {
+        timeoutMs: OCR_TIMEOUT_MS,
+        error: terminateError,
+      });
+    });
+  } catch (terminateError) {
+    console.error("[warning-ocr] worker.terminate() threw synchronously during cleanup", {
+      timeoutMs: OCR_TIMEOUT_MS,
+      error: terminateError,
+    });
+  }
+}
+
 /**
  * Runs OCR on an already-cropped warning-region image and returns its
  * text and confidence. Never throws, and — since TRO-519 — never hangs
@@ -145,17 +176,19 @@ const defaultDeps: RunWarningOcrDeps = { createWorker };
  * `Promise.race` shared across every await in the chain (lessons.md rule
  * 23), never a fresh timer per step.
  *
- * **One honest limitation.** `createWorker`'s promise hands back the
- * worker object only once it resolves — there is no handle to it while
- * still pending. If the deadline fires DURING `createWorker` itself (the
- * exact shape of the Turbopack `MODULE_NOT_FOUND` failure this ticket
- * investigates), there is nothing to call `.terminate()` on, and the
- * `worker_threads` thread `createWorker` already spawned internally is
- * abandoned. What still holds in that case is the actual point of
- * TRO-519: this function returns within `OCR_TIMEOUT_MS` instead of
- * hanging the request forever. Once a worker handle DOES exist — a
- * deadline during `setParameters`/`recognize`, after `createWorker`
- * already resolved — it IS terminated, below.
+ * **Termination covers a worker that arrives late, too.** If the deadline
+ * fires while `setParameters`/`recognize` is still running — a worker
+ * handle already exists — it is terminated immediately, in the
+ * background (`terminateInBackground`, above). If the deadline fires
+ * DURING `createWorker` itself (the exact shape of the Turbopack
+ * `MODULE_NOT_FOUND` failure this ticket investigates) and that worker
+ * later resolves anyway, the `timedOut` check below catches it the
+ * moment it exists: it is terminated then, and `setParameters`/
+ * `recognize` never run against it — no point spending real OCR work on
+ * a result nothing will read. The one case nothing can terminate is a
+ * `createWorker()` call that never settles AT ALL — there is provably no
+ * handle to terminate, ever, in that case. This function still returns
+ * within `OCR_TIMEOUT_MS` regardless: that is TRO-519's actual point.
  *
  * Creates and terminates one worker per call. A pooled/reused worker
  * would shave the ~100-200ms creation cost this ticket measured, but
@@ -168,10 +201,14 @@ export async function runWarningOcr(
   deps: RunWarningOcrDeps = defaultDeps,
 ): Promise<OcrWarningResult | null> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let worker: Awaited<ReturnType<typeof createWorker>> | undefined;
+  let worker: TesseractWorker | undefined;
+  let timedOut = false;
 
   const deadline = new Promise<typeof OCR_TIMED_OUT>((resolve) => {
-    timer = setTimeout(() => resolve(OCR_TIMED_OUT), OCR_TIMEOUT_MS);
+    timer = setTimeout(() => {
+      timedOut = true;
+      resolve(OCR_TIMED_OUT);
+    }, OCR_TIMEOUT_MS);
   });
 
   // One chain, one shared deadline (lessons.md rule 23) — creation,
@@ -181,44 +218,50 @@ export async function runWarningOcr(
   // does, the assignment has already run by the time anything below
   // reads it — JS's single-threaded, run-to-completion semantics make
   // this reliable, not a data race.
-  const work = (async (): Promise<OcrWarningResult> => {
+  const work = (async (): Promise<OcrWarningResult | null> => {
     worker = await deps.createWorker("eng", undefined, {
       langPath: TESSDATA_DIR,
       gzip: true,
       cachePath: TESSDATA_CACHE_DIR,
       cacheMethod: "none",
     });
-    await worker.setParameters({ tessedit_pageseg_mode: OCR_PAGE_SEGMENTATION_MODE });
-    const { data } = await worker.recognize(cropImage);
-    return { text: data.text, confidence: data.confidence };
+    if (timedOut) {
+      // This worker arrived after the deadline already gave up on it —
+      // nobody is still awaiting `work`. Terminate it now instead of
+      // leaving it running unattended, and stop here: no
+      // setParameters/recognize for a result this function will never
+      // return (local CodeRabbit review round 1).
+      terminateInBackground(worker);
+      return null;
+    }
+    try {
+      await worker.setParameters({ tessedit_pageseg_mode: OCR_PAGE_SEGMENTATION_MODE });
+      const { data } = await worker.recognize(cropImage);
+      return { text: data.text, confidence: data.confidence };
+    } finally {
+      // Reached only on a genuinely fast settle (success, or a real
+      // throw that is not a hang) — a truly hung recognize() never
+      // reaches this line, so it can never race the timeout branch's
+      // own termination call below over the same worker.
+      terminateInBackground(worker);
+    }
   })();
 
   try {
     const outcome = await Promise.race([work, deadline]);
-    return outcome === OCR_TIMED_OUT ? null : outcome;
+    if (outcome === OCR_TIMED_OUT) {
+      // A worker handle already exists exactly when the deadline landed
+      // during setParameters/recognize, after createWorker had already
+      // resolved — terminate it now. When no handle exists yet, `work`'s
+      // own branch above terminates it once createWorker finally does
+      // resolve, late.
+      if (worker) terminateInBackground(worker);
+      return null;
+    }
+    return outcome;
   } catch {
     return null;
   } finally {
     clearTimeout(timer);
-    if (worker) {
-      // A termination failure is cleanup noise, not a recognition
-      // failure — it cannot change the `return` already decided above.
-      // Visible rather than silently swallowed (lessons.md rule 24): the
-      // phase is named, not a bare `console.warn`. `.terminate()` does
-      // not reject an already in-flight `recognize()` job — tesseract.js
-      // only settles that promise from a message, and a killed worker
-      // sends none — so the abandoned promise is inert, reclaimed by
-      // ordinary garbage collection once nothing still references it,
-      // not by an explicit settle. It cannot reopen this function's own
-      // hang: the `return` above already happened.
-      try {
-        await worker.terminate();
-      } catch (terminateError) {
-        console.error("[warning-ocr] worker.terminate() failed during cleanup", {
-          timeoutMs: OCR_TIMEOUT_MS,
-          error: terminateError,
-        });
-      }
-    }
   }
 }

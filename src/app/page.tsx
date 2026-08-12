@@ -15,7 +15,10 @@ export default function Home() {
         needs a closer look.
       </p>
       <VerifyForm />
-      <p>
+      <p className="page__nav-links">
+        <Link href="/batch" className="secondary-button">
+          Start a batch
+        </Link>
         <Link href="/review-queue" className="secondary-button">
           Review queue
         </Link>

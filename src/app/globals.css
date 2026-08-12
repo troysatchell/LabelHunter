@@ -708,3 +708,204 @@ fieldset.field legend {
   margin: 0;
   font-size: 0.95rem;
 }
+
+/* ---- Batch (LH-042 / TRO-475, PRD §3.5, §5) --------------------------- */
+
+/* A results table with six columns and up to a few hundred rows does not
+   fit `.page`'s single-label 40rem width — this modifier widens the page
+   shell for the batch upload/progress screens only. */
+.page--wide {
+  max-width: 64rem;
+}
+
+.page__nav-links {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.batch-upload-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.batch-preview,
+.batch-started {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.batch-notice {
+  border: 2px solid var(--color-border);
+  background: var(--color-bg-alt);
+  border-radius: 0.3rem;
+  padding: 1rem 1.25rem;
+}
+
+.batch-notice__title {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+}
+
+.batch-notice__group-title {
+  margin: 0.75rem 0 0.25rem;
+  font-weight: 600;
+}
+
+.batch-notice ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.batch-notice--problems {
+  border-color: var(--color-review);
+  background: var(--color-review-bg);
+}
+
+.batch-notice--partial-failure {
+  border-color: var(--color-mismatch);
+  background: var(--color-mismatch-bg);
+}
+
+.batch-notice--backoff {
+  border-color: var(--color-review);
+  background: var(--color-review-bg);
+}
+
+.batch-notice--backoff p,
+.batch-notice--partial-failure p {
+  margin: 0;
+}
+
+/* ---- Batch progress summary ------------------------------------------- */
+
+.batch-progress-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.batch-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 1rem;
+  margin: 0;
+}
+
+.batch-stat {
+  border: 2px solid var(--color-border);
+  border-radius: 0.3rem;
+  padding: 0.85rem 1rem;
+}
+
+.batch-stat dt {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.batch-stat dd {
+  margin: 0.15rem 0 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.batch-stat__note {
+  /* Nested inside its stat's own <dd> (valid <dl> content model — a <p>
+     sibling of <dt>/<dd> is not, CodeRabbit finding, local review round 1)
+     — reset the weight `.batch-stat dd` sets, an inherited property the
+     note would otherwise pick up from its new parent. */
+  font-weight: 400;
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+/* ---- Batch results table ------------------------------------------------ */
+
+.batch-results-heading {
+  font-size: 1.3rem;
+  margin: 0 0 0.75rem;
+}
+
+/* Wide content scrolls inside its own container — the page body itself
+   never scrolls horizontally. */
+.batch-results-table__scroll {
+  overflow-x: auto;
+}
+
+.batch-results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.batch-results-table th,
+.batch-results-table td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.batch-results-table thead th {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
+  border-bottom: 2px solid var(--color-border);
+}
+
+.batch-results-table__label {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.batch-results-table__row--fail .batch-results-table__status,
+.batch-results-table__row--failed .batch-results-table__status {
+  color: var(--color-mismatch);
+}
+
+.batch-results-table__row--review .batch-results-table__status {
+  color: var(--color-review);
+}
+
+.batch-results-table__row--pass .batch-results-table__status {
+  color: var(--color-match);
+}
+
+.batch-results-table__detail {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.batch-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.batch-mark--match {
+  color: var(--color-match);
+}
+
+.batch-mark--mismatch {
+  color: var(--color-mismatch);
+}
+
+.batch-mark--needs_review {
+  color: var(--color-review);
+}
+
+.batch-mark--none {
+  color: var(--color-text-muted);
+}

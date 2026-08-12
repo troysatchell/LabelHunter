@@ -129,7 +129,7 @@ async function seedVerification(overrides: SeedOverrides = {}): Promise<Fixture>
       evidence: "GOVERNMENT WARNING: (1) text",
       confidence: 0.9,
       verdict: overrides.warningVerdict ?? "NEEDS_REVIEW",
-      reason: "The government warning needs a closer look.",
+      reason: "A reviewer must check the government warning against the label.",
     },
   ]);
 

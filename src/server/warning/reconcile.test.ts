@@ -73,7 +73,7 @@ describe("reconcileWarningChannels — dual-channel, both channels agree (CP-2 �
     expect(result).toEqual({
       verdict: "NEEDS_REVIEW",
       reviewReason: "WARNING_MISMATCH",
-      note: "Government Warning differs by a single character — needs a closer look.",
+      note: "Government Warning differs by a single character. A reviewer must confirm the exact wording.",
     });
   });
 
@@ -135,7 +135,7 @@ describe("reconcileWarningChannels — single channel: OCR unavailable (CP-2 §4
     // The near-miss note stays precise and distance-based even on one
     // channel — CP-2 §5.5's band describes what was found, not how many
     // readers found it.
-    expect(result.note).toBe("Government Warning differs by a single character — needs a closer look.");
+    expect(result.note).toBe("Government Warning differs by a single character. A reviewer must confirm the exact wording.");
   });
 
   it("VLM caps failure (single channel, title case) -> NEEDS_REVIEW, NEVER a hard FAIL", () => {

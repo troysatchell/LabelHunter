@@ -92,7 +92,7 @@ export function makeRouterResult(overrides: Partial<LabelRouterResult> = {}): La
       applicationValue: "the statutory warning text (27 CFR part 16)",
       evidence: "GOVERNMENT WARNING: (1) ...",
       confidence: 0.91,
-      reason: "The government warning needs a closer look.",
+      reason: "A reviewer must check the government warning against the label.",
       resolvedBy: null,
       reviewReason: "WARNING_MISMATCH",
     },

@@ -13,7 +13,7 @@
  *
  * `autoVerifiedCount` is shown with its own one-line caveat (CP-3 §7.1's
  * explicit instruction): it bundles PASS and FAIL together — "decided
- * without a closer look," never "passed."
+ * without Sonnet or a human" (CP-3 §7.1's own wording), never "passed."
  */
 import { formatDuration } from "../../lib/utils/format";
 import type { BatchJobStatus } from "../../lib/db/enums";
@@ -60,7 +60,7 @@ export function BatchProgressSummary({ progress }: BatchProgressSummaryProps) {
           <dd>
             {autoVerifiedCount}
             <p className="batch-stat__note">
-              {passCount} matched. {failCount} did not. Neither needed a closer look.
+              {passCount} matched. {failCount} did not. Neither needed a person to check it.
             </p>
           </dd>
         </div>

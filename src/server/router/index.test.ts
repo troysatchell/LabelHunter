@@ -190,7 +190,7 @@ describe("routeLabel — a required field absent under LOW_IMAGE_QUALITY (CP-1 �
     // reviewReason is null — but the reason text must still say the field
     // needs review, never "Matches the application."
     expect(netRow?.reviewReason).toBeNull();
-    expect(netRow?.reason).toBe("This field needs a closer look.");
+    expect(netRow?.reason).toBe("A reviewer must check this field.");
   });
 });
 

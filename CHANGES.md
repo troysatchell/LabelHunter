@@ -4,7 +4,7 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
-## TRO-498 — PR #17 CI fix + 7 CodeRabbit findings (realistic-corpus Gemini pipeline) (2026-08-11)
+## TRO-498 — PR #17 CI fix + 12 CodeRabbit findings (realistic-corpus Gemini pipeline) (2026-08-11)
 
 **Fixed — CI regression.** CI's verify job failed on `build.test.ts`'s new compositing test.
 The real cause: `.github/workflows/ci.yml` never ran `playwright install`. No test that
@@ -12,12 +12,16 @@ launches a real Chromium could pass on a fresh runner. This is not the same defe
 rescale bug below — confirmed by reading the actual failed CI run's uploaded
 `unit-tests.json` artifact, not by assumption. Added a
 `pnpm exec playwright install --with-deps chromium` step before the unit-test step.
-`render.test.ts`'s pre-existing renderer-determinism tests carried the identical defect,
-silently uncaught: a `beforeAll` hook failure reports as skipped tests plus a failed test
-file with no per-assertion failure, and `testdiff.mjs` only inspects assertion-level
-results. Not fixed here — flagged as a separate gap below.
 
-**Fixed — 7 CodeRabbit findings**, each checked against the real code before any change:
+`render.test.ts`'s pre-existing renderer-determinism tests carried the identical defect.
+This defect stayed silently uncaught. A `beforeAll` hook failure reports as skipped tests,
+plus a failed test file with no per-assertion failure. `testdiff.mjs` only inspects
+assertion-level results, so it never saw this failure either. Not fixed here — flagged as a
+separate gap below.
+
+**Fixed — 12 CodeRabbit findings**, across the original PR review and a fresh local
+CodeRabbit pass run after this round's own fixes, each checked against the real code before
+any change:
 
 1. `scripts/golden/blankRegionDetector.ts` — `toOriginal` reused the horizontal rescale
    factor for the vertical axis too. `detectionHeight` is a rounded value; the real
@@ -50,6 +54,25 @@ results. Not fixed here — flagged as a separate gap below.
 7. `golden-set/README.md` — rewrote the surrounding prose per CLAUDE.md's ASD-STE100
    rule: short, single-actor sentences instead of dense multi-clause ones. No workflow or
    technical detail changed.
+8. `scripts/golden/imagen.ts` — `bottle.referencePhoto` had the same missing-validation gap
+   as finding 3, on the read side: it reached `readFileSync` in `generateWithGemini` with no
+   containment check. A traversal value could read an arbitrary file (including `.env.local`,
+   which holds this repo's real API keys) and send its bytes to Gemini. Now resolved and
+   checked against `assets/golden/references/` before use.
+9. `scripts/golden/imagen.ts` — `generateOne` computed its output-path safety checks after
+   calling Gemini, not before. An unsafe target would already have cost a real API call
+   before `generateOne` refused to write it. Moved the checks first; added a test proving
+   `generate` is never invoked for an unsafe target.
+10. `scripts/golden/imagen.ts` — `ensurePngBytes` trusted Gemini's self-reported `mimeType`
+    label instead of checking the response's real bytes. This is the same unverified-claim
+    pattern finding 4 already removed on the request side. Now detects the format from
+    content only; the `mimeType` parameter is gone.
+11. `src/lib/golden-set/loader.test.ts` — the suite tested a malformed `labelPlacement`
+    corner, and a `generationMetadata` object missing one nested field. It never tested
+    either key missing entirely. Added both cases.
+12. `scripts/golden/build.test.ts` — the compositing test asserted only output dimensions.
+    A regression that silently returned the backdrop untouched would still have passed.
+    Added a center-pixel check against the backdrop's known solid color.
 
 **Known gap, not fixed this round.** `testdiff.mjs`'s vitest adapter only inspects
 `assertionResults`, so a `beforeAll`/`afterAll` hook failure in a file that also has
@@ -57,7 +80,8 @@ passing or skipped tests never becomes a reported failure identity — `render.t
 renderer-determinism suite hit exactly this. Out of scope here (`testdiff.mjs` is shared
 factory infrastructure, not a file this ticket touches); flagged for a follow-up ticket.
 
-**How to run it.**
+**How to run it.** `source .factory-env` first — every test command below needs
+`DATABASE_URL` pointed at this ticket's own worktree database.
 - `pnpm test -- scripts/golden/blankRegionDetector.test.ts scripts/golden/imagen.test.ts src/lib/golden-set/loader.test.ts scripts/golden/build.test.ts` —
   the suites this round's fixes touch. All pass locally (Chromium already cached on this
   machine); CI will confirm the Playwright-install fix on a fresh runner.

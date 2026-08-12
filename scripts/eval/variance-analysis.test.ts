@@ -6,6 +6,7 @@ import {
   computeAccuracySpread,
   computeCaseStability,
   computeCorpusStability,
+  findCompleteCaseIds,
   type RepeatedVerdict,
   type VarianceCaseFailure,
   type VarianceCaseRun,
@@ -131,54 +132,113 @@ describe("computeCaseStability", () => {
   });
 });
 
+describe("findCompleteCaseIds", () => {
+  it("includes only cases whose completed-repeat count equals the nominal K", () => {
+    const byCase = new Map<string, RepeatedVerdict[]>([
+      ["case-full", [repeat(1, "PASS", "case-full"), repeat(2, "PASS", "case-full")]],
+      ["case-partial", [repeat(1, "PASS", "case-partial")]],
+    ]);
+    expect(findCompleteCaseIds(byCase, 2)).toEqual(new Set(["case-full"]));
+  });
+
+  it("returns an empty set when no case completed the nominal K", () => {
+    const byCase = new Map<string, RepeatedVerdict[]>([["case-partial", [repeat(1, "PASS", "case-partial")]]]);
+    expect(findCompleteCaseIds(byCase, 5).size).toBe(0);
+  });
+
+  it("returns every case when all completed the nominal K", () => {
+    const byCase = new Map<string, RepeatedVerdict[]>([
+      ["a", [repeat(1, "PASS", "a")]],
+      ["b", [repeat(1, "PASS", "b")]],
+    ]);
+    expect(findCompleteCaseIds(byCase, 1)).toEqual(new Set(["a", "b"]));
+  });
+});
+
+// PR review finding (TRO-543): stability and accuracy spread must be scored
+// over a SHARED complete-case population, never a case-by-case or
+// run-by-run population that silently varies in size — otherwise a
+// headline number can look more conclusive than the (possibly partial)
+// evidence behind it, or compare mismatched populations across runs. This
+// ticket's own retrospective step already applies the identical discipline
+// by hand: "restrict to the 29 cases present in every run."
 describe("computeCorpusStability", () => {
-  it("computes the '28 of 29'-style corpus rate: mostly-stable cases plus one unstable case", () => {
+  it("computes the '28 of 29'-style corpus rate, scored over completeCaseIds: mostly-stable cases plus one unstable case", () => {
     const byCase = new Map<string, RepeatedVerdict[]>([
       ["case-01", [repeat(1, "PASS", "case-01"), repeat(2, "PASS", "case-01")]],
       ["case-02", [repeat(1, "FAIL", "case-02"), repeat(2, "FAIL", "case-02")]],
       ["case-03", [repeat(1, "REVIEW", "case-03"), repeat(2, "REVIEW", "case-03")]],
       ["case-17", [repeat(1, "REVIEW", "case-17"), repeat(2, "PASS", "case-17")]],
     ]);
-    const result = computeCorpusStability(byCase);
+    const completeCaseIds = new Set(["case-01", "case-02", "case-03", "case-17"]);
+    const result = computeCorpusStability(byCase, completeCaseIds);
     expect(result.stableCaseRate).toEqual({ total: 4, correct: 3, rate: 0.75 });
     expect(result.perCase.find((c) => c.caseId === "case-17")!.stable).toBe(false);
   });
 
-  it("sorts perCase by caseId regardless of Map insertion order", () => {
+  it("excludes a case from stableCaseRate when it is not in completeCaseIds, even though perCase still carries it in full", () => {
+    const byCase = new Map<string, RepeatedVerdict[]>([
+      ["case-01", [repeat(1, "PASS", "case-01"), repeat(2, "PASS", "case-01")]],
+      ["case-17", [repeat(1, "REVIEW", "case-17")]], // only 1 of 2 requested repeats completed
+    ]);
+    const completeCaseIds = new Set(["case-01"]); // case-17 deliberately excluded: incomplete
+    const result = computeCorpusStability(byCase, completeCaseIds);
+    expect(result.stableCaseRate).toEqual({ total: 1, correct: 1, rate: 1 });
+    expect(result.perCase).toHaveLength(2); // nothing dropped from perCase
+    expect(result.perCase.find((c) => c.caseId === "case-17")).toMatchObject({ runCount: 1, stable: true });
+  });
+
+  it("sorts perCase by caseId regardless of Map insertion order, independent of completeCaseIds", () => {
     const byCase = new Map<string, RepeatedVerdict[]>([
       ["case-z", [repeat(1, "PASS", "case-z")]],
       ["case-a", [repeat(1, "PASS", "case-a")]],
       ["case-m", [repeat(1, "PASS", "case-m")]],
     ]);
-    const result = computeCorpusStability(byCase);
+    const result = computeCorpusStability(byCase, new Set());
     expect(result.perCase.map((c) => c.caseId)).toEqual(["case-a", "case-m", "case-z"]);
   });
 
   it("returns an empty, zeroed summary for an empty map", () => {
-    const result = computeCorpusStability(new Map());
+    const result = computeCorpusStability(new Map(), new Set());
     expect(result.perCase).toEqual([]);
     expect(result.stableCaseRate).toEqual({ total: 0, correct: 0, rate: 0 });
   });
 });
 
 describe("computeAccuracySpread", () => {
-  it("computes lowest/highest label-verdict accuracy across runs, reusing summarizeVerdict", () => {
+  it("computes lowest/highest label-verdict accuracy across runs, restricted to completeCaseIds, reusing summarizeVerdict", () => {
+    const completeCaseIds = new Set(["a", "b", "c"]);
     const byRepeat = new Map<number, VerdictCaseScore[]>([
-      [1, [verdictScore("a", "REVIEW"), verdictScore("b", "PASS"), verdictScore("c", "PASS")]], // 1/3 correct (only "a" expects REVIEW)
-      [2, [verdictScore("a", "REVIEW")]], // 1/1 correct
+      [1, [verdictScore("a", "REVIEW"), verdictScore("b", "PASS"), verdictScore("c", "PASS")]], // 1/3 correct
+      [2, [verdictScore("a", "REVIEW"), verdictScore("b", "REVIEW"), verdictScore("c", "PASS")]], // 2/3 correct
     ]);
-    const result = computeAccuracySpread(byRepeat);
+    const result = computeAccuracySpread(byRepeat, completeCaseIds);
+    expect(result.available).toBe(true);
     expect(result.perRun).toEqual([
       { repeatIndex: 1, labelVerdictAccuracy: { total: 3, correct: 1, rate: 1 / 3 } },
-      { repeatIndex: 2, labelVerdictAccuracy: { total: 1, correct: 1, rate: 1 } },
+      { repeatIndex: 2, labelVerdictAccuracy: { total: 3, correct: 2, rate: 2 / 3 } },
     ]);
     expect(result.lowestRate).toBeCloseTo(1 / 3);
-    expect(result.highestRate).toBe(1);
+    expect(result.highestRate).toBeCloseTo(2 / 3);
+  });
+
+  it("excludes a case from every run's accuracy when it is not in completeCaseIds, even when present in the raw byRepeat data", () => {
+    const completeCaseIds = new Set(["a"]); // "d" deliberately excluded (an incomplete case)
+    const byRepeat = new Map<number, VerdictCaseScore[]>([[1, [verdictScore("a", "REVIEW"), verdictScore("d", "FAIL")]]]);
+    const result = computeAccuracySpread(byRepeat, completeCaseIds);
+    expect(result.perRun).toEqual([{ repeatIndex: 1, labelVerdictAccuracy: { total: 1, correct: 1, rate: 1 } }]);
+  });
+
+  it("is unavailable when completeCaseIds is empty — no shared population to compare runs over, never a fabricated 0", () => {
+    const byRepeat = new Map<number, VerdictCaseScore[]>([[1, [verdictScore("a", "REVIEW")]]]);
+    const result = computeAccuracySpread(byRepeat, new Set());
+    expect(result).toEqual({ available: false, perRun: [], lowestRate: null, highestRate: null });
   });
 
   it("reproduces the two-run 62.1% / 65.5% shape this ticket's CHANGES.md already reports by hand", () => {
     // 29 cases, all expecting PASS for simplicity — 18 correct in run 1,
     // 19 correct in run 2 (one case flips, exactly the case-17 shape).
+    const allIds = new Set(Array.from({ length: 29 }, (_, i) => `case-${i}`));
     function runOf(correctCount: number): VerdictCaseScore[] {
       return Array.from({ length: 29 }, (_, i) => verdictScore(`case-${i}`, i < correctCount ? "PASS" : "FAIL", { expectedLabelVerdict: "PASS" }));
     }
@@ -186,22 +246,15 @@ describe("computeAccuracySpread", () => {
       [1, runOf(18)],
       [2, runOf(19)],
     ]);
-    const result = computeAccuracySpread(byRepeat);
+    const result = computeAccuracySpread(byRepeat, allIds);
     expect(result.lowestRate).toBeCloseTo(18 / 29);
     expect(result.highestRate).toBeCloseTo(19 / 29);
   });
 
   it("a single run has lowest === highest", () => {
     const byRepeat = new Map<number, VerdictCaseScore[]>([[1, [verdictScore("a", "REVIEW")]]]);
-    const result = computeAccuracySpread(byRepeat);
+    const result = computeAccuracySpread(byRepeat, new Set(["a"]));
     expect(result.lowestRate).toBe(result.highestRate);
-  });
-
-  it("returns an empty perRun and 0/0 lowest/highest on an empty map", () => {
-    const result = computeAccuracySpread(new Map());
-    expect(result.perRun).toEqual([]);
-    expect(result.lowestRate).toBe(0);
-    expect(result.highestRate).toBe(0);
   });
 
   it("sorts perRun by repeatIndex regardless of Map insertion order", () => {
@@ -210,7 +263,7 @@ describe("computeAccuracySpread", () => {
       [1, [verdictScore("a", "REVIEW")]],
       [2, [verdictScore("a", "REVIEW")]],
     ]);
-    const result = computeAccuracySpread(byRepeat);
+    const result = computeAccuracySpread(byRepeat, new Set(["a"]));
     expect(result.perRun.map((r) => r.repeatIndex)).toEqual([1, 2, 3]);
   });
 });
@@ -252,7 +305,7 @@ describe("buildVarianceReport", () => {
     requestedFull: false,
   };
 
-  it("assembles a full report: sums real measured cost and computes stability + spread together", () => {
+  it("assembles a full report: sums real measured cost and computes stability + spread together, over a complete case set", () => {
     const runs: VarianceCaseRun[] = [
       caseRun("case-01", 1, "PASS", { haikuUsd: 0.004 }),
       caseRun("case-01", 2, "PASS", { haikuUsd: 0.005 }),
@@ -269,29 +322,68 @@ describe("buildVarianceReport", () => {
     expect(report.repeats).toBe(2);
     expect(report.summary.caseCount).toBe(2);
     expect(report.summary.nominalRepeats).toBe(2);
+    // Both cases completed both repeats -- nothing excluded.
+    expect(report.summary.incompleteCaseCount).toBe(0);
     expect(report.summary.stableCaseRate).toEqual({ total: 2, correct: 1, rate: 0.5 });
+    expect(report.summary.accuracySpread.available).toBe(true);
+    // The full per-case detail (Do item 4's own requirement) is present in
+    // the report, not just folded into the aggregate rate.
+    expect(report.summary.perCase.map((c) => c.caseId)).toEqual(["case-01", "case-17"]);
+    // case-17's two repeats are REVIEW then PASS -- a 1-1 tie, broken by
+    // the fixed PASS/FAIL/REVIEW order, so PASS wins the modal slot.
+    expect(report.summary.perCase.find((c) => c.caseId === "case-17")).toMatchObject({ modalVerdict: "PASS", modalCount: 1, stable: false });
     expect(report.totalCostUsd).toBeCloseTo(0.004 + 0.005 + 0.004 + 0.011 + 0.004);
     expect(report.runs).toHaveLength(4);
     expect(report.failures).toEqual([]);
   });
 
-  it("keeps a case's stability computed only from its OWN completed repeats when a sibling repeat failed (the ragged-grid case)", () => {
+  it("excludes a case from stableCaseRate and accuracySpread when a sibling repeat failed (the ragged-grid case), without dropping it from the report", () => {
     const runs: VarianceCaseRun[] = [caseRun("case-17", 1, "REVIEW")];
     const failures: VarianceCaseFailure[] = [{ caseId: "case-17", repeatIndex: 2, error: "transient API error" }];
     const report = buildVarianceReport({ ...baseInput, caseIds: ["case-17"], repeats: 2, runs, failures });
 
     expect(report.failures).toHaveLength(1);
     expect(report.failures[0]).toEqual({ caseId: "case-17", repeatIndex: 2, error: "transient API error" });
-    // Only one repeat completed for case-17 -- runCount reflects that
-    // honestly (1), not the nominal K (2).
-    expect(report.summary.accuracySpread.perRun).toEqual([{ repeatIndex: 1, labelVerdictAccuracy: { total: 1, correct: 1, rate: 1 } }]);
+    // case-17 completed only 1 of its 2 requested repeats -- it is NOT a
+    // member of the complete-case set, so PR review's fix keeps it out of
+    // the headline rate/spread entirely (never blended in on partial
+    // evidence), while still recording it, in full, in perCase.
+    expect(report.summary.incompleteCaseCount).toBe(1);
+    expect(report.summary.stableCaseRate).toEqual({ total: 0, correct: 0, rate: 0 });
+    expect(report.summary.accuracySpread).toEqual({ available: false, perRun: [], lowestRate: null, highestRate: null });
   });
 
-  it("returns a zeroed summary when every repeat failed (no runs at all)", () => {
+  it("mixed sweep: a complete case counts toward stableCaseRate/spread, an incomplete sibling does not", () => {
+    const runs: VarianceCaseRun[] = [
+      caseRun("case-01", 1, "PASS"),
+      caseRun("case-01", 2, "PASS"), // complete: 2/2
+      caseRun("case-17", 1, "REVIEW"), // incomplete: 1/2
+    ];
+    const failures: VarianceCaseFailure[] = [{ caseId: "case-17", repeatIndex: 2, error: "transient API error" }];
+    const report = buildVarianceReport({ ...baseInput, caseIds: ["case-01", "case-17"], repeats: 2, runs, failures });
+
+    expect(report.summary.caseCount).toBe(2); // both cases still counted as attempted
+    expect(report.summary.incompleteCaseCount).toBe(1); // only case-17
+    expect(report.summary.stableCaseRate).toEqual({ total: 1, correct: 1, rate: 1 }); // case-01 only
+    expect(report.summary.accuracySpread.available).toBe(true); // case-01 alone is a non-empty complete set
+    expect(report.summary.accuracySpread.perRun).toEqual([
+      { repeatIndex: 1, labelVerdictAccuracy: { total: 1, correct: 0, rate: 0 } }, // case-01 expects REVIEW by default, got PASS
+      { repeatIndex: 2, labelVerdictAccuracy: { total: 1, correct: 0, rate: 0 } },
+    ]);
+    // case-17 itself is still fully recorded, in full, just outside the
+    // headline rate -- nothing about a case's own data is dropped for
+    // being incomplete.
+    expect(report.summary.perCase.map((c) => c.caseId)).toEqual(["case-01", "case-17"]);
+    expect(report.summary.perCase.find((c) => c.caseId === "case-17")).toMatchObject({ runCount: 1, verdicts: ["REVIEW"], stable: true });
+  });
+
+  it("returns a zeroed, unavailable summary when every repeat failed (no runs at all)", () => {
     const failures: VarianceCaseFailure[] = [{ caseId: "case-17", repeatIndex: 1, error: "boom" }];
     const report = buildVarianceReport({ ...baseInput, caseIds: ["case-17"], repeats: 1, runs: [], failures });
     expect(report.summary.caseCount).toBe(0);
+    expect(report.summary.incompleteCaseCount).toBe(0); // nothing to be incomplete -- no case has ANY data
     expect(report.summary.stableCaseRate).toEqual({ total: 0, correct: 0, rate: 0 });
+    expect(report.summary.accuracySpread).toEqual({ available: false, perRun: [], lowestRate: null, highestRate: null });
     expect(report.totalCostUsd).toBe(0);
   });
 

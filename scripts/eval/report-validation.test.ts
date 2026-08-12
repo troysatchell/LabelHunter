@@ -115,16 +115,36 @@ describe("validateEvalReport", () => {
 });
 
 // LH-038 / TRO-543 — the variance runner's own committed artifact.
+// perRun carries exactly RATE's own 0.9 rate, and lowestRate/highestRate
+// both equal it too (a single-run spread's low and high are the same
+// value) — every field in this fixture agrees with every other, unlike an
+// earlier draft that set lowestRate/highestRate to unrelated numbers (a PR
+// review finding: a "valid" example fixture should itself be a realistic,
+// internally-consistent report, not just individually well-typed fields).
 const VALID_ACCURACY_SPREAD = {
+  available: true,
   perRun: [{ repeatIndex: 1, labelVerdictAccuracy: RATE }],
-  lowestRate: 0.8,
-  highestRate: 0.9,
+  lowestRate: RATE.rate,
+  highestRate: RATE.rate,
+};
+const UNAVAILABLE_ACCURACY_SPREAD = { available: false, perRun: [], lowestRate: null, highestRate: null };
+const VALID_CASE_STABILITY = {
+  caseId: "case-17-glare-front-label",
+  runCount: 5,
+  verdicts: ["REVIEW", "PASS", "REVIEW", "REVIEW", "PASS"],
+  headlineReasons: ["AMBIGUOUS_BRAND", null, "AMBIGUOUS_BRAND", "AMBIGUOUS_BRAND", null],
+  modalVerdict: "REVIEW",
+  modalCount: 3,
+  stabilityRate: 0.6,
+  stable: false,
 };
 const VALID_VARIANCE_SUMMARY = {
   caseCount: 8,
   nominalRepeats: 5,
+  incompleteCaseCount: 0,
   stableCaseRate: RATE,
   accuracySpread: VALID_ACCURACY_SPREAD,
+  perCase: [VALID_CASE_STABILITY],
 };
 
 function validVarianceReport(overrides: Record<string, unknown> = {}) {
@@ -199,6 +219,50 @@ describe("validateVarianceReport", () => {
       accuracySpread: { ...VALID_ACCURACY_SPREAD, perRun: [{ repeatIndex: 1, labelVerdictAccuracy: { total: 5, correct: 9, rate: 1.8 } }] },
     };
     expect(() => validateVarianceReport(validVarianceReport({ summary: badSummary }), "variance-report.json")).toThrow(/summary/);
+  });
+
+  it("rejects a perRun entry with repeatIndex 0 — repeatIndex is 1-based, not merely non-negative", () => {
+    const badSummary = {
+      ...VALID_VARIANCE_SUMMARY,
+      accuracySpread: { ...VALID_ACCURACY_SPREAD, perRun: [{ repeatIndex: 0, labelVerdictAccuracy: RATE }] },
+    };
+    expect(() => validateVarianceReport(validVarianceReport({ summary: badSummary }), "variance-report.json")).toThrow(/summary/);
+  });
+
+  it("accepts an unavailable accuracySpread (no case completed every repeat)", () => {
+    const summary = { ...VALID_VARIANCE_SUMMARY, incompleteCaseCount: 8, stableCaseRate: { total: 0, correct: 0, rate: 0 }, accuracySpread: UNAVAILABLE_ACCURACY_SPREAD };
+    expect(() => validateVarianceReport(validVarianceReport({ summary }), "variance-report.json")).not.toThrow();
+  });
+
+  it("rejects available: true paired with null extrema (an inconsistent accuracySpread)", () => {
+    const badSummary = { ...VALID_VARIANCE_SUMMARY, accuracySpread: { ...VALID_ACCURACY_SPREAD, lowestRate: null } };
+    expect(() => validateVarianceReport(validVarianceReport({ summary: badSummary }), "variance-report.json")).toThrow(/summary/);
+  });
+
+  it("rejects available: false paired with a non-empty perRun (an inconsistent accuracySpread)", () => {
+    const badSummary = { ...VALID_VARIANCE_SUMMARY, accuracySpread: { ...UNAVAILABLE_ACCURACY_SPREAD, perRun: VALID_ACCURACY_SPREAD.perRun } };
+    expect(() => validateVarianceReport(validVarianceReport({ summary: badSummary }), "variance-report.json")).toThrow(/summary/);
+  });
+
+  it("rejects a summary missing incompleteCaseCount", () => {
+    const { incompleteCaseCount: _drop, ...summaryRest } = VALID_VARIANCE_SUMMARY;
+    expect(() => validateVarianceReport(validVarianceReport({ summary: summaryRest }), "variance-report.json")).toThrow(/summary/);
+  });
+
+  it("rejects a summary missing perCase", () => {
+    const { perCase: _drop, ...summaryRest } = VALID_VARIANCE_SUMMARY;
+    expect(() => validateVarianceReport(validVarianceReport({ summary: summaryRest }), "variance-report.json")).toThrow(/summary/);
+  });
+
+  it("rejects a perCase entry missing stabilityRate", () => {
+    const { stabilityRate: _drop, ...caseRest } = VALID_CASE_STABILITY;
+    const badSummary = { ...VALID_VARIANCE_SUMMARY, perCase: [caseRest] };
+    expect(() => validateVarianceReport(validVarianceReport({ summary: badSummary }), "variance-report.json")).toThrow(/summary/);
+  });
+
+  it("accepts a perCase entry with a null headlineReasons entry (a PASS/FAIL repeat carries no reason)", () => {
+    expect(() => validateVarianceReport(validVarianceReport(), "variance-report.json")).not.toThrow();
+    expect(VALID_CASE_STABILITY.headlineReasons).toContain(null);
   });
 
   it("rejects a report missing runs", () => {

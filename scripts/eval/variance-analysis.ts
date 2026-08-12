@@ -129,23 +129,55 @@ export function computeCaseStability(caseId: string, repeats: readonly RepeatedV
   };
 }
 
+/**
+ * Case IDs that completed every one of the `nominalRepeats` requested
+ * repeats — the only cases strong enough evidence to count toward
+ * `stableCaseRate` or `computeAccuracySpread` (PR review finding, TRO-543).
+ * A case with fewer completed repeats than K cannot demonstrate stability
+ * OR instability with the same strength a full-K case can (standing rule
+ * 12: uncertain beats wrong) — it still appears in `perCase`, in full,
+ * never dropped from the report, but it does not get to look like
+ * equal-strength evidence in a headline rate.
+ *
+ * Because `computeCaseStability` already rejects a duplicate `repeatIndex`
+ * for one case, a case with exactly `nominalRepeats` completed entries
+ * necessarily has ONE entry at every index `1..nominalRepeats` (a
+ * same-size subset of a `nominalRepeats`-element set is the whole set) —
+ * so filtering `computeAccuracySpread`'s per-run population down to this
+ * set is safe: every repeat index still has a score for every case in it.
+ */
+export function findCompleteCaseIds(byCase: ReadonlyMap<string, readonly RepeatedVerdict[]>, nominalRepeats: number): ReadonlySet<string> {
+  return new Set([...byCase.entries()].filter(([, repeats]) => repeats.length === nominalRepeats).map(([caseId]) => caseId));
+}
+
 export interface VarianceCorpusSummary {
   /** One entry per distinct case, sorted by `caseId` — deterministic report
-   * ordering, never insertion/Map-iteration order. */
+   * ordering, never insertion/Map-iteration order. Every case the sweep
+   * attempted, complete or not — nothing is dropped here. */
   readonly perCase: readonly CaseStability[];
-  /** count/total of cases where `CaseStability.stable` is `true` — the "28
-   * of 29" shape this ticket's retrospective step measured by hand. */
+  /** count/total of cases where `CaseStability.stable` is `true`, over
+   * `completeCaseIds` ONLY — the "28 of 29" shape this ticket's
+   * retrospective step measured by hand. A case that did not complete
+   * every requested repeat never enters this population (see
+   * `findCompleteCaseIds`), so it can neither inflate nor deflate the
+   * rate on partial evidence. */
   readonly stableCaseRate: AccuracySummary;
 }
 
-/** Rolls `computeCaseStability` up across every case in the sample. Pure. */
-export function computeCorpusStability(byCase: ReadonlyMap<string, readonly RepeatedVerdict[]>): VarianceCorpusSummary {
+/** Rolls `computeCaseStability` up across every case in the sample, scoring
+ * `stableCaseRate` over `completeCaseIds` only (see `findCompleteCaseIds`).
+ * Pure. */
+export function computeCorpusStability(
+  byCase: ReadonlyMap<string, readonly RepeatedVerdict[]>,
+  completeCaseIds: ReadonlySet<string>,
+): VarianceCorpusSummary {
   const perCase = [...byCase.entries()]
     .map(([caseId, repeats]) => computeCaseStability(caseId, repeats))
     .sort((a, b) => a.caseId.localeCompare(b.caseId));
+  const complete = perCase.filter((c) => completeCaseIds.has(c.caseId));
   return {
     perCase,
-    stableCaseRate: summarize(perCase.length, perCase.filter((c) => c.stable).length),
+    stableCaseRate: summarize(complete.length, complete.filter((c) => c.stable).length),
   };
 }
 
@@ -155,38 +187,57 @@ export interface RunAccuracy {
 }
 
 export interface AccuracySpread {
+  /** `false` when `completeCaseIds` was empty — no case completed every
+   * requested repeat, so there is no shared population to compare runs
+   * over. `perRun`/`lowestRate`/`highestRate` all read as "no data" then
+   * (`[]`/`null`/`null`), never a fabricated `0` that could be misread as
+   * "0% accuracy" (standing rule 2: never fabricate a number). */
+  readonly available: boolean;
   /** One `AccuracySummary` per repeat actually run, sorted by
-   * `repeatIndex` — each treats that repeat's own pass over the sample as
-   * one independent run, the same "a run = one full sweep" framing
-   * `CHANGES.md`'s two-run 62.1%/65.5% finding already uses by hand. */
+   * `repeatIndex` — each treats that repeat's own pass over the SAME
+   * shared complete-case population as one independent run, the same "a
+   * run = one full sweep over an identical case set" framing
+   * `CHANGES.md`'s two-run 62.1%/65.5% finding, and this ticket's own
+   * retrospective step, both already use by hand ("restrict to the 29
+   * cases present in every run"). Empty when `available` is `false`. */
   readonly perRun: readonly RunAccuracy[];
-  /** Lowest `labelVerdictAccuracy.rate` across `perRun`. `0` when `perRun`
-   * is empty. */
-  readonly lowestRate: number;
-  /** Highest `labelVerdictAccuracy.rate` across `perRun`. `0` when
-   * `perRun` is empty. */
-  readonly highestRate: number;
+  /** Lowest `labelVerdictAccuracy.rate` across `perRun`. `null` when
+   * `available` is `false`. */
+  readonly lowestRate: number | null;
+  /** Highest `labelVerdictAccuracy.rate` across `perRun`. `null` when
+   * `available` is `false`. */
+  readonly highestRate: number | null;
 }
 
 /**
  * Computes the cross-run accuracy spread: for each repeat index, one
- * label-verdict-accuracy rate over however many cases actually completed
- * that repeat. Reuses `summarizeVerdict` — the same computation
- * `check.ts`/`benchmark.ts` already trust, not a second implementation.
- * Pure.
+ * label-verdict-accuracy rate over `completeCaseIds` ONLY (see
+ * `findCompleteCaseIds`) — every run's accuracy is computed over the exact
+ * same case population, so the spread reflects genuine run-to-run model
+ * variance, never an artifact of two runs scoring different, differently
+ * sized case sets (PR review finding, TRO-543). Reuses `summarizeVerdict` —
+ * the same computation `check.ts`/`benchmark.ts` already trust, not a
+ * second implementation. Pure.
  */
-export function computeAccuracySpread(byRepeat: ReadonlyMap<number, readonly VerdictCaseScore[]>): AccuracySpread {
+export function computeAccuracySpread(
+  byRepeat: ReadonlyMap<number, readonly VerdictCaseScore[]>,
+  completeCaseIds: ReadonlySet<string>,
+): AccuracySpread {
+  if (completeCaseIds.size === 0) {
+    return { available: false, perRun: [], lowestRate: null, highestRate: null };
+  }
   const perRun = [...byRepeat.entries()]
     .map(([repeatIndex, scores]) => ({
       repeatIndex,
-      labelVerdictAccuracy: summarizeVerdict(scores).labelVerdictAccuracy,
+      labelVerdictAccuracy: summarizeVerdict(scores.filter((s) => completeCaseIds.has(s.caseId))).labelVerdictAccuracy,
     }))
     .sort((a, b) => a.repeatIndex - b.repeatIndex);
   const rates = perRun.map((r) => r.labelVerdictAccuracy.rate);
   return {
+    available: true,
     perRun,
-    lowestRate: rates.length === 0 ? 0 : Math.min(...rates),
-    highestRate: rates.length === 0 ? 0 : Math.max(...rates),
+    lowestRate: Math.min(...rates),
+    highestRate: Math.max(...rates),
   };
 }
 
@@ -210,8 +261,22 @@ export interface VarianceReportSummary {
   /** K, as requested. A case's own `CaseStability.runCount` can be lower,
    * on a real per-repeat failure. */
   readonly nominalRepeats: number;
+  /** How many of `caseCount` cases did NOT complete all `nominalRepeats`
+   * repeats — the cases `stableCaseRate`/`accuracySpread` exclude from
+   * their own population (see `findCompleteCaseIds`). `0` on a clean sweep
+   * with no per-repeat failures; surfaced explicitly here so a partial
+   * sweep's headline numbers never look more conclusive than the evidence
+   * behind them (PR review finding, TRO-543). */
+  readonly incompleteCaseCount: number;
   readonly stableCaseRate: AccuracySummary;
   readonly accuracySpread: AccuracySpread;
+  /** Every case's own verdict/headline-reason sequence, modal verdict, and
+   * stability rate — LH-038's brief, Do item 4: "for each case record all
+   * K verdicts and all K headline reasons, the modal verdict, and a
+   * stability rate." Every case the sweep attempted, complete or not
+   * (never filtered by `completeCaseIds` — see `CaseStability`'s own doc
+   * comment). Sorted by `caseId`. */
+  readonly perCase: readonly CaseStability[];
 }
 
 /** The committed evidence artifact `pnpm eval:variance -- --live` writes
@@ -293,8 +358,9 @@ export function buildVarianceReport(input: BuildVarianceReportInput): VarianceRe
     byRepeat.set(run.repeatIndex, repeatScores);
   }
 
-  const corpusStability = computeCorpusStability(byCase);
-  const accuracySpread = computeAccuracySpread(byRepeat);
+  const completeCaseIds = findCompleteCaseIds(byCase, input.repeats);
+  const corpusStability = computeCorpusStability(byCase, completeCaseIds);
+  const accuracySpread = computeAccuracySpread(byRepeat, completeCaseIds);
   const totalCostUsd = input.runs.reduce((sum, r) => sum + r.haikuCost.usd + (r.resolverCost?.usd ?? 0), 0);
 
   return {
@@ -312,8 +378,10 @@ export function buildVarianceReport(input: BuildVarianceReportInput): VarianceRe
     summary: {
       caseCount: byCase.size,
       nominalRepeats: input.repeats,
+      incompleteCaseCount: byCase.size - completeCaseIds.size,
       stableCaseRate: corpusStability.stableCaseRate,
       accuracySpread,
+      perCase: corpusStability.perCase,
     },
     totalCostUsd,
     runs: input.runs,

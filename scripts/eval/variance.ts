@@ -100,14 +100,24 @@ function printReportSummary(report: VarianceReport): void {
   console.log(
     `variance.ts: ${report.summary.caseCount} case(s) x ${report.repeats} repeat(s) nominal, ${report.failures.length} failure(s).`,
   );
+  if (report.summary.incompleteCaseCount > 0) {
+    console.log(
+      `variance.ts: ${report.summary.incompleteCaseCount} case(s) did not complete all ${report.summary.nominalRepeats} repeat(s) — ` +
+        "excluded from corpus stability and accuracy spread below (still recorded in full under \"perCase\").",
+    );
+  }
   console.log(
     `variance.ts: corpus stability ${(report.summary.stableCaseRate.rate * 100).toFixed(1)}% ` +
       `(${report.summary.stableCaseRate.correct}/${report.summary.stableCaseRate.total} cases returned the same verdict every repeat)`,
   );
-  console.log(
-    `variance.ts: label-verdict accuracy spread ${(report.summary.accuracySpread.lowestRate * 100).toFixed(1)}% - ` +
-      `${(report.summary.accuracySpread.highestRate * 100).toFixed(1)}% across ${report.summary.accuracySpread.perRun.length} repeat(s)`,
-  );
+  if (report.summary.accuracySpread.available) {
+    console.log(
+      `variance.ts: label-verdict accuracy spread ${(report.summary.accuracySpread.lowestRate! * 100).toFixed(1)}% - ` +
+        `${(report.summary.accuracySpread.highestRate! * 100).toFixed(1)}% across ${report.summary.accuracySpread.perRun.length} repeat(s)`,
+    );
+  } else {
+    console.log("variance.ts: label-verdict accuracy spread unavailable — no case completed every requested repeat.");
+  }
   console.log(`variance.ts: total measured cost $${report.totalCostUsd.toFixed(4)}`);
 }
 

@@ -24,6 +24,13 @@
  * already treats as fatal elsewhere, not a value worth guessing at
  * (review finding).
  *
+ * A bare carriage return — a `\r` not immediately followed by `\n` — is
+ * also a syntax error, in both a quoted and an unquoted field, rather
+ * than silently dropped or silently kept as literal content (review
+ * finding). Silently dropping it would merge two lines into one cell
+ * with no separator between them: real data corruption, not a cosmetic
+ * choice. A genuine CRLF pair is unaffected, quoted or not.
+ *
  * Every cell is normalized to Unicode NFC (standing rule 20) — two CSV
  * files that look identical on screen must compare equal downstream,
  * whichever export tool produced the accented characters in a brand name
@@ -93,6 +100,15 @@ export function parseCsv(text: string): ParseCsvResult {
         i += 1;
         continue;
       }
+      if (ch === "\r" && input[i + 1] !== "\n") {
+        return {
+          ok: false,
+          error: {
+            line,
+            message: `Line ${line} has a carriage return that is not followed by a line feed. Use standard CRLF or LF line endings.`,
+          },
+        };
+      }
       if (ch === "\n") line += 1;
       field += ch;
       i += 1;
@@ -135,10 +151,23 @@ export function parseCsv(text: string): ParseCsvResult {
       continue;
     }
     if (ch === "\r") {
-      // Consumed silently — the paired "\n" (CRLF) ends the line on its
-      // own below. A bare "\r" with no following "\n" is not a line
-      // ending this parser recognizes (classic Mac OS 9 CSVs are not a
-      // realistic input in 2026); its "\r" is simply dropped.
+      if (input[i + 1] !== "\n") {
+        // A bare "\r" with no following "\n" is not a line ending this
+        // parser recognizes (classic Mac OS 9 CSVs are not a realistic
+        // input in 2026) — and silently dropping it, as an earlier draft
+        // did, would merge two lines' content into one cell with no
+        // separator between them, an invisible data-corruption risk
+        // (review finding). Reject it instead of guessing.
+        return {
+          ok: false,
+          error: {
+            line,
+            message: `Line ${line} has a carriage return that is not followed by a line feed. Use standard CRLF or LF line endings.`,
+          },
+        };
+      }
+      // A genuine CRLF pair — consumed silently here; the paired "\n"
+      // ends the record on its own, below.
       i += 1;
       continue;
     }

@@ -49,6 +49,38 @@ describe("parseCsv", () => {
     });
   });
 
+  it("rejects a bare carriage return not followed by a line feed, in an unquoted field (review finding)", () => {
+    const result = parseCsv("a,b\na\rb\n");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toMatch(/carriage return/i);
+  });
+
+  it("rejects a bare carriage return not followed by a line feed, inside a quoted field (review finding)", () => {
+    const result = parseCsv('a,b\n"a\rb",c\n');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toMatch(/carriage return/i);
+  });
+
+  it("rejects a bare trailing carriage return at end of file, with nothing after it", () => {
+    const result = parseCsv("a,b\n1,2\r");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toMatch(/carriage return/i);
+  });
+
+  it("still accepts a real CRLF pair embedded inside a quoted field", () => {
+    const result = parseCsv('a,b\n"multi\r\nline",ok\n');
+    expect(result).toEqual({
+      ok: true,
+      rows: [
+        ["a", "b"],
+        ["multi\r\nline", "ok"],
+      ],
+    });
+  });
+
   it("strips a leading UTF-8 BOM so it never becomes part of the first header cell", () => {
     const bom = "﻿";
     const result = parseCsv(`${bom}a,b\n1,2\n`);

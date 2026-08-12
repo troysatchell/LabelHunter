@@ -77,19 +77,22 @@ worktrees running full suites at the same moment would now draw at most 80 of th
 |---|---|---|
 | Reproduce, before the fix | 0 failures | 4 concurrent full suites, same worktree DB, no artificial pressure |
 | Reproduce, before the fix | 57 failed tests, 9 files, all `sorry, too many clients already` | Full suite while a throwaway script held 96 of 100 server-wide connection slots |
-| After the fix, same pressure | 5 failed tests, 3 files, same error class | Full suite while the same script held 96 of 100 slots |
-| After the fix, realistic load | 0 failures, all 3 runs | 3 concurrent full suites (`--maxWorkers=4`), same worktree DB, simulating concurrent worktree gates |
+| After the fix, same pressure | 5–21 failed tests across two separate runs, 3–4 files, same error class both times | Full suite while the same script held 96 of 100 slots, run twice |
+| After the fix, realistic load | 0 failures, across two separate batches of 3 concurrent runs each (6 runs total) | Concurrent full suites (`--maxWorkers=4`), same worktree DB, simulating concurrent worktree gates |
 | Full suite, repeated | 0 failures, every run | `pnpm test`, run standalone 4 separate times after the fix |
 | `pnpm typecheck` | clean | — |
 
 **Observed:** the exact Postgres error (`53300`, `sorry, too many clients already`)
-reproduced twice under engineered connection pressure, on this ticket's own worktree
-database — once before the fix, once after. The "before" run used the unmodified pool
-config. The only change was one instrumentation line that added a log write and nothing
-else. The fix cut the failure count by roughly 90%, under that same artificial pressure
-(96% of server capacity held by something else). It produced zero failures across three
-separate, realistic-load reproductions: concurrent full suites, with no artificial
-pressure at all.
+reproduced repeatedly under engineered connection pressure, on this ticket's own worktree
+database — once before the fix, twice after, on two separate runs at the same artificial
+pressure. The "before" run used the unmodified pool config. The only change was one
+instrumentation line that added a log write and nothing else. The fix cut the failure
+count by 63–91% under that same artificial pressure (96% of server capacity held by
+something else), varying by run. That pressure level is a deliberately extreme stress
+test. The range is not a claim of one fixed, exactly-reproducible number — this class of
+bug is inherently timing-dependent. Under no artificial pressure at all, simulating the
+realistic condition this ticket actually cares about (several worktrees' gates running
+at once), the fix produced zero failures across six separate concurrent-suite runs.
 
 **Derived:** the connection-pool mechanism is the actively firing cause on this branch
 today, not the shared literal by itself. The two historical value-collision sites were

@@ -42,6 +42,49 @@ describe("enumerateTargets", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("throws before generating anything when two reference files share a bottleId/scene/cameraCondition", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "imagen-test-dup-"));
+    const bottle = {
+      bottleId: "amber-whiskey-01",
+      referencePhoto: "assets/golden/references/amber-whiskey-01.jpg",
+      beverageType: "spirits",
+      bottleDescription: "tall amber glass whiskey bottle",
+      scenes: [{ sceneId: "bar-counter", setting: "a bar counter", lighting: "warm light" }],
+      cameraConditions: ["steady"],
+    };
+    try {
+      // Two files, same bottleId — same (scene, cameraCondition) product.
+      writeFileSync(path.join(dir, "a.json"), JSON.stringify(bottle));
+      writeFileSync(path.join(dir, "b.json"), JSON.stringify(bottle));
+      expect(() => enumerateTargets(dir)).toThrow(/duplicate generation target/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("throws when one reference file repeats the same sceneId", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "imagen-test-dup-scene-"));
+    try {
+      writeFileSync(
+        path.join(dir, "amber-whiskey-01.json"),
+        JSON.stringify({
+          bottleId: "amber-whiskey-01",
+          referencePhoto: "assets/golden/references/amber-whiskey-01.jpg",
+          beverageType: "spirits",
+          bottleDescription: "tall amber glass whiskey bottle",
+          scenes: [
+            { sceneId: "bar-counter", setting: "a bar counter", lighting: "warm light" },
+            { sceneId: "bar-counter", setting: "a different description, same ID", lighting: "dim light" },
+          ],
+          cameraConditions: ["steady"],
+        }),
+      );
+      expect(() => enumerateTargets(dir)).toThrow(/duplicate generation target/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("targetCaseId", () => {

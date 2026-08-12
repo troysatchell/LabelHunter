@@ -46,7 +46,16 @@ export interface GenerationTarget {
   readonly cameraCondition: CameraCondition;
 }
 
-/** Every `(scene, cameraCondition)` combination across every bottle reference JSON in `referencesDir`. */
+/**
+ * Every `(scene, cameraCondition)` combination across every bottle reference
+ * JSON in `referencesDir`. Throws before generating anything (and before any
+ * Gemini API call — `main` calls this to build the full target list first)
+ * when two targets would produce the same `targetCaseId`: two reference
+ * files sharing a `bottleId`, or one reference repeating a `sceneId` or
+ * `cameraCondition`. Left undetected, the later target's `generateOne` call
+ * would silently overwrite the earlier one's backdrop and sidecar on disk
+ * after already paying for a real Gemini image-generation call.
+ */
 export function enumerateTargets(referencesDir: string = REFERENCES_DIR): GenerationTarget[] {
   let files: string[];
   try {
@@ -56,16 +65,30 @@ export function enumerateTargets(referencesDir: string = REFERENCES_DIR): Genera
   }
 
   const targets: GenerationTarget[] = [];
+  const seenCaseIds = new Map<string, string>(); // caseId -> source file, for a readable error
   for (const file of files) {
     const bottle = loadBottleReference(path.join(referencesDir, file));
     for (const scene of bottle.scenes) {
       for (const cameraCondition of bottle.cameraConditions) {
-        targets.push({
+        const target: GenerationTarget = {
           bottleId: bottle.bottleId,
           referencePhotoPath: path.resolve(REPO_ROOT, bottle.referencePhoto),
           scene,
           cameraCondition,
-        });
+        };
+        const caseId = targetCaseId(target);
+        const firstSeenIn = seenCaseIds.get(caseId);
+        if (firstSeenIn) {
+          throw new RangeError(
+            `imagen: duplicate generation target "${caseId}" — bottleId "${bottle.bottleId}", ` +
+              `scene "${scene.sceneId}", cameraCondition "${cameraCondition}" (from ${file}) ` +
+              `produces the same case ID as an earlier target from ${firstSeenIn}. Two reference ` +
+              `files may share a bottleId, or one reference file may repeat a scene or camera ` +
+              `condition — fix the reference JSON before generating anything.`,
+          );
+        }
+        seenCaseIds.set(caseId, file);
+        targets.push(target);
       }
     }
   }

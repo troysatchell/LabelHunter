@@ -4,6 +4,15 @@
  * item the same way; this module is the one place that setup and its
  * cleanup live now, so a schema change only needs updating once (CodeRabbit
  * finding, PR #16 review round 2).
+ *
+ * `brandName` is "TRO-476 Test Fixture", not the canonical "Old Tom
+ * Distillery" example — TRO-513: this suite runs alongside every other
+ * `*.test.ts` file sharing this worktree's database, and none of these
+ * tests need the real canonical brand text (they check disposition and
+ * list behavior, not a comparator MATCH against it). `src/app/api/verify/
+ * route.test.ts` is where "Old Tom Distillery" stays load-bearing — TH-R11's
+ * canonical example needs to extract and verify end to end somewhere, and
+ * that is the one place a real comparator runs against it.
  */
 import { eq } from "drizzle-orm";
 import { db } from "../../../lib/db";
@@ -12,7 +21,7 @@ import { applications, labelImages, reviewQueue, verifications } from "../../../
 export async function makeQueueItemFixture(disposed = false) {
   const [application] = await db
     .insert(applications)
-    .values({ beverageType: "spirits", brandName: "Old Tom Distillery", classType: "Straight Bourbon Whiskey", netContentsValue: 750, netContentsUnit: "mL" })
+    .values({ beverageType: "spirits", brandName: "TRO-476 Test Fixture", classType: "Straight Bourbon Whiskey", netContentsValue: 750, netContentsUnit: "mL" })
     .returning();
   const [labelImage] = await db
     .insert(labelImages)

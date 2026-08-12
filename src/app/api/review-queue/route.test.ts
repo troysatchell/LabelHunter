@@ -19,7 +19,7 @@ describe("GET /api/review-queue", () => {
       const body = (await response.json()) as ReviewQueueListResponse;
       const item = body.items.find((row) => row.id === queueId);
       expect(item).toBeDefined();
-      expect(item?.brandName).toBe("Old Tom Distillery");
+      expect(item?.brandName).toBe("TRO-476 Test Fixture");
       expect(item?.reasonText.length).toBeGreaterThan(0);
       // Canonical round-trip, not only "parseable" — matches the same rigor
       // review-queue-client.ts's isCanonicalTimestamp requires on the client

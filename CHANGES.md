@@ -26,9 +26,9 @@ synchronous throw, either one. It mirrors TRO-514's own helper of the same name 
 It passes `null` for that one field: the same "uncertain beats wrong" behavior the
 single-label route uses. `resolveGovernmentWarningField` already routes a `null` result to
 `NEEDS_REVIEW`. It never fabricates a match. The item still completes. The worker marks it
-`DONE` and escalates it to a `RESOLVE` queue item — the same path any other REVIEW verdict
-takes. A warning-check failure degrades one field. It never fails the item. It never crashes
-the worker loop.
+`DONE`. It escalates the item to a `RESOLVE` queue item — the same path any other REVIEW
+verdict takes. A warning-check failure degrades one field. It never fails the item. It never
+crashes the worker loop.
 
 **Image source (CP-2 §8.3).** The comparator reads `original`, the full-resolution buffer
 `readLabelImage` returns. It never reads the resized `haikuVariant`. The resized variant falls
@@ -38,22 +38,22 @@ below Tesseract's usable x-height floor at the statute's legal minimum print siz
 `warningResult` field. `warningResult` was a provisional, constructor-injected value. This
 worker's own header comment named it temporary: it existed "purely so this ticket's own tests
 can exercise the PASS/FAIL/`autoVerifiedCount` code paths without waiting on LH-020." TRO-517
-deletes the stand-in and adds the real function dependency instead. The new field matches
+deletes the stand-in. It adds the real function dependency instead. The new field matches
 `VerifyRouteDeps.compareGovernmentWarning`'s own DI shape. `defaultDeps()` sets the default to
 the real `compareGovernmentWarningFromImage`. `scripts/batch-worker/run.ts` is the production
-entry point. It never set `warningResult`, and it does not need to set `compareGovernmentWarning`
+entry point. It never set `warningResult`. It does not need to set `compareGovernmentWarning`
 either. It inherits the real comparator automatically.
 
 **Regression tests.** `src/server/batch-queue/extract-worker.test.ts` gets a new "government
 warning wiring" describe block, with 6 cases. Each case failed for the right reason before
-this ticket's implementation code existed: a value mismatch against the old
+this ticket's code existed. Three reasons explain why: a value mismatch against the old
 `NEEDS_REVIEW`-only behavior, a `wasCalled`/`capturedOriginalImage` flag proving the
-dependency was never called, or a 5-second timeout for the concurrency case, since the old
-code never called the dependency at all.
+dependency was never called, or a 5-second timeout for the concurrency case. The old code
+never called the dependency at all.
 
 - The comparator starts before the Haiku call's own promise resolves. The test proves this: a
-  fake Anthropic client holds its response open on a gate the test controls. The test waits
-  for an observable "the comparator was called" signal — never a fixed sleep.
+  fake Anthropic client holds its response open on a gate that the test controls. The test
+  waits for an observable "the comparator was called" signal — never a fixed sleep.
 - A compliant warning (`MATCH`) rolls the label verdict up to a clean `PASS`.
 - A non-compliant warning (`MISMATCH`) rolls the label verdict up to `FAIL`.
 - A comparator that rejects its promise degrades that field to `NEEDS_REVIEW`. The item still
@@ -65,9 +65,9 @@ code never called the dependency at all.
   buffers are provably different.
 
 Three pre-existing tests changed too. Each one used the deleted `warningResult` literal. Each
-now uses the new `compareGovernmentWarning` function instead. The behavior stays the same —
-only the mechanism changes. The PASS test and the FAIL test each now pass
-`compareGovernmentWarning: async () => ({ verdict: "MATCH" })` where they used to pass
+now uses the new `compareGovernmentWarning` function instead. The behavior stays the same.
+Only the mechanism changes. The PASS test and the FAIL test each now pass
+`compareGovernmentWarning: async () => ({ verdict: "MATCH" })`. They used to pass
 `warningResult: { verdict: "MATCH" }`. The lost-lease test does the same at both of its two
 completion points.
 
@@ -77,8 +77,10 @@ reason is now false. The field still resolves to REVIEW, but for a different rea
 `makeDeps()`'s default `compareGovernmentWarning` is a deliberately neutral stub. The wiring
 itself is not missing.
 
-**How to run it.** `pnpm test -- src/server/batch-queue/extract-worker.test.ts`. `pnpm
-typecheck` and `pnpm lint` both run clean across the whole repo.
+**How to run it.** Source `.factory-env` first — this suite writes to a real Postgres
+database, per this repo's own `DATABASE_URL` discipline. Then run
+`pnpm test -- src/server/batch-queue/extract-worker.test.ts`. `pnpm typecheck` and `pnpm lint`
+both run clean across the whole repo.
 
 **Not measured.** This entry reports no new latency number. TRO-514's own entry gives the same
 reason: a number from before this ticket and a number from after it are not comparable.
@@ -87,7 +89,7 @@ ticket's scope.
 
 **Rollback.** `git revert` this ticket's commits on `feat/wire-warning-into-batch`. The revert
 restores `extract-worker.ts`'s old `warningResult: null` behavior. It removes
-`compareGovernmentWarning` and restores the old `warningResult` field on `ExtractWorkerDeps`.
+`compareGovernmentWarning` from `ExtractWorkerDeps`. It restores the old `warningResult` field.
 
 ## TRO-474 — PR #26 review: GitHub CodeRabbit, 24 findings, 21 fixed, 3 dismissed (2026-08-12)
 

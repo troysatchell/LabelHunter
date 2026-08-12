@@ -39,9 +39,9 @@ This is real call-to-call model variance. It is not a harness bug — the code p
 and the image held steady. `CHANGES.md:699-702` named the phenomenon on this one case first.
 `CHANGES.md:1518-1521` measured the same effect as an aggregate spread. Two same-corpus runs
 produced 62.1% (18/29, `62cdf1b`'s run) and 65.5% (19/29, the benchmark cascade arm's run) — a
-3.4-point swing. Both figures are re-confirmed directly from their own committed artifacts above.
-This entry adds the number those two did not yet have: the retrospective, whole-corpus stability
-rate. **28/29 stable (96.6%), N=29, K=5.**
+3.4-point swing. This entry verifies both figures directly against their own committed artifacts
+above. This entry adds the number those two did not yet have: the retrospective, whole-corpus
+stability rate. **28/29 stable (96.6%), N=29, K=5.**
 
 **New tooling: `scripts/eval/variance.ts`, run with `pnpm eval:variance`.** It reuses
 `runOneCase` (`cascade-runner.ts`) — no second cascade path (TH-R19). It reuses `parseEvalArgs`
@@ -88,8 +88,8 @@ measured per-call costs:
 
 | Sweep | No escalation | Every run escalates | At the 13:26 run's own rate |
 |---|---|---|---|
-| 8 cases x 5 repeats (40 calls) | ~$0.19 | ~$0.63 | — |
-| 32 cases x 3 repeats (96 calls) | ~$0.45 | ~$1.50 | ~$0.88 |
+| 8 cases x 5 repeats (40 cascade runs) | ~$0.19 | ~$0.63 | — |
+| 32 cases x 3 repeats (96 cascade runs) | ~$0.45 | ~$1.50 | ~$0.88 |
 
 **How to run it.** `pnpm eval:variance` alone reads the last committed report, or says plainly
 that none exists yet — no live call. `pnpm eval:variance -- --live --case=case-01-clean-match-spirits
@@ -104,7 +104,7 @@ the two new `scripts/eval/variance*.ts` files disappear with the revert.
 **Not done here, on purpose.**
 - No fix for the variance. CP-1 already names it as a property of the model, not a defect this
   ticket owns. No retry. No lower temperature. No self-consistency vote.
-- No golden-set expectation changed. TRO-516's own finding C8 already confirms case-17's pixels
+- No golden-set expectation changed. TRO-516's own finding C8 already shows case-17's pixels
   support the manifest note. A variance figure explains the flip. It does not license a corpus
   edit.
 - No entry in `docs/approach.md`. That file does not exist yet — TRO-485 creates it. This

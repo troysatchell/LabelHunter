@@ -75,13 +75,14 @@ export async function compositeLabelOntoBackdrop(
   const linear = solveLinearMap(labelWidth, labelHeight, quad);
   const inverse = invert(linear);
 
-  // The warp above uses only topLeft/topRight/bottomLeft. It never reaches
-  // the detected quad.bottomRight when the quad is a true trapezoid (see
-  // solveLinearMap's docstring). A bounding box built from the four
-  // detected corners can then be smaller than the parallelogram the warp
-  // actually draws. Pixels in that gap never get drawn (TRO-509). Use the
-  // warp's own implied 4th corner instead. The box then always covers
-  // everything the loop below can draw.
+  // The warp above uses only topLeft/topRight/bottomLeft (see
+  // solveLinearMap's docstring). Its own implied 4th corner is
+  // topRight + bottomLeft - topLeft, not the detected quad.bottomRight. On
+  // a true trapezoid quad, those two points differ. A bounding box built
+  // from the four detected corners can then be smaller than the
+  // parallelogram the warp actually draws. Pixels in that gap never get
+  // drawn (TRO-509). Use the implied corner instead. The box then always
+  // covers everything the loop below can draw.
   const impliedBottomRight = {
     x: quad.topRight.x + quad.bottomLeft.x - quad.topLeft.x,
     y: quad.topRight.y + quad.bottomLeft.y - quad.topLeft.y,

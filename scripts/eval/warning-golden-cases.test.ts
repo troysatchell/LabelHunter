@@ -143,7 +143,7 @@ describe("case-32 (new) — CP-2 §9.2 finding 4 / §11 open question 9: the nea
     if (result.verdict === "NEEDS_REVIEW") {
       expect(result.reviewReason).toBe("WARNING_MISMATCH");
     }
-    expect(result.note).toBe("Government Warning differs by a single character — needs a closer look.");
+    expect(result.note).toBe("Government Warning differs by a single character. A reviewer must confirm the exact wording.");
   });
 
   it("caps positions are all clean — the defect is wording distance alone, isolating the near-miss band", () => {

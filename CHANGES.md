@@ -4,6 +4,239 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-480 — LH-054: UX polish pass — heuristic review record (2026-08-12)
+
+**What this is.** A heuristic UX audit against TH-R3's own quote ("something my mother could
+figure out... Clean, obvious, no hunting for buttons"), walking every real screen in a running
+`pnpm dev` instance, not just the JSX. Five real defects found and fixed. Ran under: this
+worktree's own Postgres (seeded via `pnpm db:seed`), `pnpm dev` on port 3180, Chromium via
+Playwright (already a dependency — `@playwright/test`) for screenshots and live DOM
+measurement, plus one real `/api/verify` submission against the golden set.
+
+### Screen-by-screen walkthrough
+
+**Verify (`/`).** Empty state: one clear primary flow, six fields top to bottom, "Verify"
+the only filled control on the page. Filled state: values render correctly. Validation-error
+state (no photo, no network call): specific message ("Add a label photo before you verify."),
+plain-English title ("Check the form"). Loading state: button label and an
+`aria-live="polite"` status line both say "Checking the label…". Found: intro copy said
+"flags anything that needs a closer look" (vague — fixed, see below); the "Try again" button
+rendered full-width inside the error panel (layout bug — fixed, see below).
+
+**Verify detail (`/verify/:id`).** Walked all three verdict tones using seeded data
+(id 1 PASS, id 2 REVIEW with a "Resolved by Sonnet" note, id 3 FAIL — the title-case warning,
+Jenny's real catch). Checklist rows, evidence text, and the warning's own "Detected on the
+label" / "What TTB requires" column framing all render clearly, large type, high contrast.
+Found: no way back to `/` except the browser's own Back button — fixed. Not-found state
+(bad id): plain message, one clear link back, real 404 status.
+
+**Review queue (`/review-queue`, `/review-queue/:id`).** List: one seeded REVIEW item,
+"Refresh" control, reason headline in bold review-amber. Detail: Sonnet's suggestion box,
+per-field comparison, Approve/Reject as the two largest, most prominent controls on the page
+(TH-R3 — no dead actions: confirmed the buttons are hidden entirely once an item is already
+resolved, not shown disabled). Found: no way back to `/` (list) or to `/review-queue` (detail)
+except browser Back — fixed on both.
+
+**Batch (`/batch`, `/batch/:id`).** Upload: three file inputs, "Preview batch" the one filled
+control. Progress/results: live-summary stat grid, results table with Label/Brand/ABV/Net/
+Warning/Status columns per PRD §5, matching icon vocabulary to the single-label checklist.
+Confirmed at a 400px viewport: the results table scrolls inside its own container
+(`document.body.scrollWidth === window.innerWidth`, measured 400 === 400) — the page itself
+never scrolls horizontally, exactly PRD §5's requirement, not just eyeballed. Found: the
+"Auto-verified" stat's caveat line also read "needs a closer look" (fixed); no way back
+anywhere on this page (fixed, placed at the TOP — see below for why this one screen differs
+from the other four).
+
+**Dark mode.** Walked the full set above a second time with `prefers-color-scheme: dark`
+forced in the browser context. This is where the most serious finding turned up (below) —
+every primary/filled button (Verify, Preview batch, Start batch, Approve) was genuinely hard
+to read.
+
+**Keyboard/focus.** First Tab from page load lands on the first real control; the focus ring
+renders solid, 3px, `#2491ff` — matches `globals.css`'s own `:focus-visible` rule.
+
+### Findings and fixes
+
+**1. Dark-mode filled buttons: real WCAG AA contrast failure, measured, not eyeballed
+(`src/app/globals.css`).** `.primary-button` (Verify, Preview batch, Start batch, Approve —
+the one primary action on five different screens) sets white text on `var(--color-primary)`.
+In dark mode that variable is `#7fb3ff`, a light blue chosen for *text* legibility on the dark
+page (links, `.secondary-button`'s outline). White text on top of it as a solid fill measures
+**2.14:1** — WCAG AA needs 4.5:1 for normal text; this misses by more than half. Confirmed
+visually (screenshot) and by `getComputedStyle` in a live Chromium render, not just computed
+from the CSS source.
+
+Fix: a new pair of tokens, `--color-button-bg` / `--color-button-bg-hover`, used only by
+`.primary-button`. Light mode reuses the exact existing values (pixel-identical to before).
+Dark mode uses `#3468ad` / `#2a5490` — chosen by solving for two constraints at once: white
+text on top stays ≥4.5:1 (measured **5.63:1** resting, **7.58:1** hover), and the fill itself
+stays ≥3:1 against the dark page background (measured **3.26:1**) so the button still reads as
+a distinct shape, not one that blends into the page.
+
+**2. `.secondary-button` had no `align-self: flex-start` — stretched full-width inside any
+flex-column ancestor with no `align-items` override of its own (`src/app/globals.css`).**
+`.primary-button` already carries this rule, for the identical reason; `.secondary-button` was
+the one place it was missing. Observed directly: the verify screen's "Try again" button
+(inside `.error-panel`, a flex column) rendered 675px wide — the full width of its panel —
+instead of content-sized. Same class, same bug, in `BatchProgressBrowser.tsx`'s and
+`ReviewQueueBrowser.tsx`'s own "Try again" retry buttons, and in `ResultsChecklist.tsx`'s "See
+the label photo and full comparison" link (`.results` is also an unguarded flex column) — not
+independently re-screenshotted in those three, but the same deterministic CSS rule, confirmed
+once. Fixed by adding `align-self: flex-start` to `.secondary-button`, mirroring
+`.primary-button`. Re-measured after the fix: the same button now renders 124px wide (its
+panel is still 675px) — content-sized, matching every other secondary button on the site.
+
+**3. Input/box borders: real WCAG 1.4.11 (non-text contrast) failure, measured
+(`src/app/globals.css`).** `--color-border` (`#a9aeb1`, USWDS gray-30) measured **2.24:1**
+against the page background — below the 3:1 floor for a UI component's own boundary (visible
+on every text input, `.batch-stat` box, and `.status-banner`). Dark mode's border cleared 3:1
+against the main page background (3.13:1) but not against `--color-bg-alt` (2.74:1). Fixed:
+light mode to `#838a90` (3.50:1 / 3.07:1 against the two backgrounds it borders), dark mode to
+`#657078` (3.62:1 / 3.17:1) — the smallest shift that clears the floor in every context the
+variable is used, not a redesign.
+
+**4. "Needs a closer look" — the vague reason text standing rule 26 already banned, still
+present in four real UI-facing strings.** A prior round (see this file's own TRO-461-area
+history) fixed the three `AMBIGUOUS_*` reason texts to name what a reviewer must check, but
+left the phrase in four places it missed:
+- `src/app/page.tsx` — the verify screen's own intro copy.
+- `src/app/_components/BatchProgressSummary.tsx` — the "Auto-verified" stat's caveat line.
+- `src/server/router/reason-text.ts` — **`WARNING_MISMATCH`'s label-level fallback text.**
+  This is the most visible instance: it is the headline banner text on the verify screen after
+  a live REVIEW-verdict submission, the review-queue row's own bold headline, the review-queue
+  detail page's headline, and the batch results table's Status-column link text — the phrase
+  a first-time user sees most often for exactly the review reason PRD §5's own government-
+  warning example centers on. Also the generic `NEEDS_REVIEW`-with-no-reason fallback one line
+  below it.
+- `src/server/warning/reconcile.ts` — the near-miss note's vague trailing clause (the specific
+  factual part, "differs by a single character," was already fine — only the "— needs a
+  closer look" tail was vague; kept the fact, replaced the tail).
+
+Every replacement reuses this codebase's own already-established "A reviewer must check X"
+vocabulary (the same fix the AMBIGUOUS_* round used) rather than inventing new wording. Where
+the function genuinely has no field name to name (the generic verdict-only fallback), the
+replacement stays honest rather than fabricating specificity it does not have — "A reviewer
+must check this field," not a made-up field name. Two test-only fixtures (`DetailView.test.tsx`,
+`get-verification-detail.test.ts`) and one shared test-support fixture
+(`src/server/resolver/test-support.ts`) also carried the old phrase as sample data, unasserted
+elsewhere; updated for consistency, not because a test required it. A code comment in
+`BatchProgressSummary.tsx` quoted a paraphrase of this phrase attributed to CP-3 §7.1 — checked
+against the actual checkpoint document (`docs/checkpoints/cp3-batch-queue.md` §7.1), which
+reads "decided without Sonnet or a human," not "closer look." Corrected the comment to CP-3's
+own real wording. `docs/checkpoints/cp2-warning-subsystem.md`'s own decision table (§6.1) also
+quotes the old near-miss string verbatim, as CP-2's reviewed record of what LH-020 shipped at
+the time — left that file untouched: it is a dated review record, not a living spec, and
+CHANGES.md is the right place to record the supersession, not a silent rewrite of what CP-2
+actually showed Troy.
+
+**5. Five deep screens had no on-page way back — only the browser's own Back button.**
+`/verify/:id`, `/review-queue`, `/review-queue/:id`, `/batch`, and `/batch/:id` all had zero
+navigational links once you were on them (confirmed by reading every component on each route,
+then confirmed again live). Only each route's own `not-found.tsx` sibling had one. TH-R3's own
+quote — "no hunting for buttons" — is about finding the one you want, but a screen with no way
+out at all is the same failure in the other direction for anyone who arrived by a bookmark or
+a shared link, not by clicking through from `/`.
+
+Fixed by adding one `.secondary-button`-styled link to each, reusing wording already
+established elsewhere in this exact codebase rather than inventing new copy:
+- `/verify/:id` → "Verify a label" → `/` (same text `not-found.tsx` already uses for this
+  route).
+- `/review-queue` → "Verify a label" → `/`.
+- `/review-queue/:id` → "Back to the review queue" → `/review-queue` (same text that route's
+  own `not-found.tsx` already uses).
+- `/batch` → "Verify a label" → `/`.
+- `/batch/:id` → "Start a batch" → `/batch` (same text that route's own `not-found.tsx`
+  already uses).
+
+Placement: bottom of the page, matching `src/app/page.tsx`'s own `.page__nav-links`
+convention, for four of the five. `/batch/:id` is the one exception — placed at the TOP,
+directly under the heading — because PRD §5 itself says this one results table can run to "a
+few hundred rows"; a link only below the table would make a reviewer scroll through all of
+them first just to leave. This is a deliberate, screen-specific call, not an inconsistency.
+
+None of these five changes rename, remove, or restructure any existing element — every new
+link is a new, additional node. TRO-479 (the concurrent E2E-suite ticket) was told to expect
+additive changes like these.
+
+### A new problem found, not fixed here (out of scope)
+
+`tesseract.js`'s Node worker-script path resolution fails under `pnpm dev`'s Turbopack
+bundler: `Error: Cannot find module '.../tesseract.js/src/worker-script/node/index.js'`,
+logged as an `uncaughtException` during a live `/api/verify` request. This looks like it hangs
+the warning comparator's OCR half well past its own intended budget — PRD §3.8 budgets OCR at
+~0.5s; the client's own `DEFAULT_TIMEOUT_MS` (`src/app/_lib/verify-client.ts`) is 45s,
+"generous above the Haiku extractor's own 30s client timeout," by that file's own comment,
+meaning this should not fire under normal conditions. One real submission (golden-set
+case-01, correct application fields) did not return within 120 seconds; the dev server log
+showed the same module-resolution error three times during that request. No new
+`verifications`/`applications` row was written (checked directly against the database), so
+this was not merely slow — it did not complete. This blocked a live capture of the
+`ResultsChecklist` "happy path" render specifically. Stood in for it: the loading state
+(screenshotted), the timeout/service-error message text (captured via `textContent` — "Something
+went wrong" / "LabelHunter took too long to respond. Check your connection and try again.", not
+separately screenshotted; its `.error-panel` styling is the same class the validation-error
+screenshots above already show directly), and the seeded DetailView pages (same CSS/verdict
+system as `ResultsChecklist`).
+
+**Not fixed here.** This is a warning-subsystem/OCR pipeline issue (TH-R9, CP-2's own
+checkpoint), not a CSS/copy defect — out of this ticket's scope per its own instructions.
+**Not verified:** whether this also reproduces under `pnpm build && pnpm start` (the
+production mode Render actually runs) — `pnpm build` itself completed cleanly, but a
+production build does not exercise this runtime request path, so that is not evidence either
+way. Worth its own ticket if it also reproduces in production — it would blow TH-R2's 5-second
+budget outright if so.
+
+### Claim provenance
+
+**Observed** (live Chromium render, this worktree's `pnpm dev`, port 3180): every screenshot
+cited above; the two contrast fixes' `getComputedStyle` re-checks; the `.secondary-button`
+width re-check (124px vs. the panel's 675px); the timeout/service-error message's exact text
+(via `textContent`, not a screenshot of that specific state).
+**Derived** (computed from the actual `globals.css` custom-property hex values via the WCAG
+2.x relative-luminance formula, cross-checked against one live `getComputedStyle` reading per
+fixed pair): every contrast ratio number quoted above.
+**Not verified:** the tesseract/Turbopack issue under production mode (`next start`); a
+directly-observed live render of `ResultsChecklist`'s success state (blocked by the tesseract
+issue above; substituted with the seeded DetailView pages, which share its verdict/checklist
+CSS).
+
+### How to run it / verify
+
+```bash
+source .factory-env
+pnpm db:migrate && pnpm db:seed   # only if the worktree DB is empty
+PORT=$APP_PORT pnpm dev           # next dev honors PORT directly
+```
+Visit `/`, `/verify/1`, `/verify/2`, `/verify/3`, `/review-queue`, `/review-queue/1`, `/batch`,
+`/batch/1` — light and with the OS/browser set to dark mode. `pnpm typecheck`, `pnpm lint`,
+`pnpm test`, `pnpm build` all green (`pnpm test`: 135 files, 1503 tests).
+
+### Regression tests
+
+- `src/app/_components/BatchProgressSummary.test.tsx` — asserts the new caveat text and a
+  `not.toMatch(/closer look/i)` guard.
+- `src/server/router/reason-text.test.ts` — new test sweeps every `ReviewReason` plus the
+  null-reason fallback, asserting none produce "closer look" text.
+- Confirmed both new/changed assertions fail for the right reason: reverted each source fix
+  locally, re-ran the two test files, saw the expected diffs, restored the fix, re-ran green.
+- The remaining changed test files (`reconcile.test.ts`, `router/index.test.ts`,
+  `warning-golden-cases.test.ts`) update exact-string assertions to match the new copy — the
+  full suite catching a stale string was itself the check (it did: `warning-golden-cases.test.ts`
+  failed on the first full-suite run after the `reconcile.ts` copy fix, before that file was
+  updated).
+- The CSS fixes (contrast, layout) have no unit-level regression coverage — this codebase has
+  no visual-regression/screenshot test harness yet, and inventing one for two CSS rules would
+  be new test infrastructure, not a regression test for existing behavior. The `getComputedStyle`
+  re-checks in this entry are the evidence; not a substitute for a real automated check, named
+  here rather than left implicit.
+
+### Rollback
+
+`git revert` this ticket's commits on `feat/lh-054-ux-polish-pass`. The three fix groups (CSS —
+findings 1-3, copy — finding 4, nav links — finding 5) sit in three separate commits, each
+touching a disjoint file set, and revert independently. No schema change, no migration,
+nothing to undo outside the app source tree.
+
 ## TRO-511 — Single-label REVIEW verdicts now get an automatic resolution trigger (2026-08-12)
 
 **The gap.** `src/app/api/verify/route.ts` inserts a `review_queue` row on every REVIEW

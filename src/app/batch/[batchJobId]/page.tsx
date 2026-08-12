@@ -11,7 +11,15 @@
  * better fit for a page someone may have bookmarked while the batch was
  * still running than a hard dead end. `notFound()` below is reserved for a
  * URL segment that could never be a real id at all.
+ *
+ * TRO-480: before this ticket, this page had no on-page way back at all.
+ * The nav link sits at the TOP here, unlike the other four screens this
+ * ticket adds one to (which match `src/app/page.tsx`'s bottom-of-page
+ * convention) — PRD §5's own results table can run to "a few hundred
+ * rows," so a link only below the table would make a reviewer scroll
+ * through all of them first just to leave.
  */
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BatchProgressBrowser } from "../../_components/BatchProgressBrowser";
 
@@ -33,6 +41,11 @@ export default async function BatchProgressPage({ params }: { params: Promise<{ 
   return (
     <main className="page page--wide">
       <h1 className="page__title">Batch progress</h1>
+      <p className="page__nav-links">
+        <Link href="/batch" className="secondary-button">
+          Start a batch
+        </Link>
+      </p>
       <BatchProgressBrowser batchJobId={batchJobId} />
     </main>
   );

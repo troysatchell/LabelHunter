@@ -96,65 +96,75 @@ per the ticket's own instruction not to add a database column here.
 4. `pnpm eval:benchmark -- --full` regenerates the benchmark report.
 
 **Measured — real, live run against the full 32-case golden set, `claude-haiku-4-5` /
-`claude-sonnet-5`, today, now committed as the baseline (`scripts/eval/results/eval-report.json`,
-`measuredAt: 2026-08-12T21:31:15.150Z`).**
+`claude-sonnet-5`. This ticket's own branch measured one set of numbers first. Merging this
+branch with TRO-534, TRO-535, TRO-536, TRO-537, and TRO-519 changed the code under test, so
+the numbers below are a full re-run against the merged result, not the original branch's own
+run. They are what is actually committed as the baseline
+(`scripts/eval/results/eval-report.json`, `measuredAt: 2026-08-12T22:15:52.776Z`).**
 
 | Metric | Result |
 |---|---|
-| Extraction accuracy | 95.6% (153/160 fields) |
-| Router-verdict accuracy (before any resolver call) | **68.8%** (22/32) |
+| Extraction accuracy | 96.3% (154/160 fields) |
+| Router-verdict accuracy (before any resolver call) | **75.0%** (24/32) |
 | Cascade-verdict accuracy (end state) | **68.8%** (22/32) |
 | Review-reason accuracy | 35.7% (5/14) |
-| Total measured cost | $0.2987 |
+| Total measured cost | $0.2706 |
 
-**The old 65.6% (21/32) was a router number, not a cascade number.** This run's own router
-number moved to 68.8% (22/32), on real, independent model calls — known call-to-call variance,
-already documented in this file and in `docs/diagnostics/2026-08-12-verdict-miss-triage.md`.
-This run's cascade number is also 68.8% (22/32): the same headline rate, but not because
-nothing changed underneath it. Eight of the 32 cases move between the two stages:
+**The old 65.6% (21/32) was a router number, not a cascade number.** This run's router number
+is 75.0% (24/32) — TRO-534's `beverage_type` guard and TRO-535's `OCR_CONFIDENCE_FLOOR` sweep
+are both now live, and both move real cases from wrong to correct at the router stage alone.
+The cascade end-state number is lower, at 68.8% (22/32). Six of the 32 cases move between the
+two stages:
 
-- **Correct to wrong (4 cases):** case-16, case-17, case-18, case-22. Each held a correct
-  router `REVIEW`. A resolver call resolved each one to an incorrect `PASS`.
-- **Wrong to correct (4 cases):** case-15, case-19, case-28, case-29. Each held an incorrect
-  router `REVIEW`. A resolver call resolved each one correctly. `eval-report.json` now records
-  the reason directly: case-28's `class_type` and case-29's `brand_name` both resolved
-  `RESOLVED_MISMATCH`.
+- **Correct to wrong (4 cases):** case-16, case-18, case-23, case-24. Each held a correct
+  router `REVIEW`. A resolver call resolved each one to an incorrect `PASS`. case-23 and
+  case-24 are new to this list — TRO-535's floor fix is what makes their router stage correctly
+  read `REVIEW` for the first time; the resolver then resolves them wrong. case-17 and case-22,
+  which carried this label in the ticket's own original branch run, do **not** appear here now:
+  both are wrong already at the router stage in the merged code (`PASS` where `REVIEW` is
+  expected), so there is no stage to flip between — case-17 is model-call variance on an
+  unrelated field (TRO-543 measures this directly), and case-22 is a separate,
+  already-diagnosed defect (TRO-546, filed from this same merge).
+- **Wrong to correct (2 cases):** case-28, case-29. Each held an incorrect router `REVIEW`. A
+  resolver call resolved each one correctly. `eval-report.json` records the reason directly:
+  case-28's `class_type` and case-29's `brand_name` both resolved `RESOLVED_MISMATCH`.
 
-The net cancels in the headline rate. The underlying evidence does not. **Derived, not a claim
-this ticket investigates further:** the golden set expects all four new "wrong" cases to stay
-in `REVIEW`. Sonnet's own judgment resolved them past that point instead — real evidence about
-the resolver's own behavior on this corpus, not a regression this ticket caused or fixes.
+24 (router) − 4 (newly wrong) + 2 (newly correct) = 22 (cascade) — the arithmetic behind the
+table above, not a separate claim. **Derived, not a claim this ticket investigates further:**
+the golden set expects all four new "wrong" cases to stay in `REVIEW`. Sonnet's own judgment
+resolved them past that point instead — real evidence about the resolver's own behavior on this
+corpus, not a regression this ticket caused or fixes.
 
 **The cascade-vs-Sonnet-only benchmark, corrected — both arms scored post-resolution,
-`pnpm eval:benchmark -- --full`, `measuredAt: 2026-08-12T21:40:59.900Z`.** 31 of 32 cases
-scored on both arms. `case-02-clean-match-beer-no-abv`'s Sonnet-only arm failed response
-validation: Sonnet returned `RESOLVED_MATCH` with a null `corrected_value`, for an
-`alcohol_content` field the label genuinely states nothing about. This is a pre-existing gap in
-the Sonnet-only arm's own "flag every field, always" design (`buildAllFieldsFlagged`). This
-ticket did not cause it and does not fix it here; this entry only notes it.
+`pnpm eval:benchmark -- --full`, `measuredAt: 2026-08-12T22:30:58.027Z`, also re-run against the
+merged code.** 32 of 32 cases scored on both arms this time — the `case-02` Sonnet-only
+response-validation failure the original branch run hit did not reproduce here. That gap
+(`buildAllFieldsFlagged` forcing Sonnet to comment on an ABV field the label states nothing
+about) is still real and still unfixed; it is a pre-existing, intermittent, out-of-scope issue
+this ticket does not own, not something this run disproves.
 
 | | Cascade end state (post-resolution) | Sonnet-only (post-resolution) |
 |---|---|---|
-| Label-verdict accuracy | **67.7%** (21/31) | **38.7%** (12/31) |
-| Total measured cost | $0.2950 | $0.4543 |
+| Label-verdict accuracy | **71.9%** (23/32) | **37.5%** (12/32) |
+| Total measured cost | $0.2816 | $0.4710 |
 
-Accuracy delta: **-29.0 percentage points** (Sonnet-only minus cascade end state). Cost delta:
-**+$0.1593, 1.5x** (Sonnet-only costs more). **This replaces the earlier -24.1 point figure
+Accuracy delta: **-34.4 percentage points** (Sonnet-only minus cascade end state). Cost delta:
+**+$0.1894, 1.7x** (Sonnet-only costs more). **This replaces the earlier -24.1 point figure
 recorded in this file** (`CHANGES.md`, the TRO-470 entry: cascade 65.5%/19/29 vs sonnet-only
 41.4%/12/29). That older number compared the cascade arm's router-only verdict against the
 Sonnet-only arm's post-resolution verdict — a stage mismatch, and the exact one this ticket
 fixes. The corrected comparison still shows the cascade winning on accuracy and cost, by a
-wider margin than the router-only reading suggested. Do not read the smaller headline-rate move
-(65.5% to 67.7%) as "the fix changed little." The fair comparison moved by 4.9 points, from
--24.1 to -29.0. This run measures the cascade arm's own accuracy at its real, final stage for
-the first time.
+wider margin than the router-only reading suggested. This run also carries TRO-535's
+`singleChannelPass` field for the first time: 1 of 32 cascade cases (3.1%) is a clean PASS
+decided by one channel alone, the residual false-PASS exposure CP-2 §8.4 names.
 
-**Not verified by this ticket.** Three open questions. Does Troy agree with the
-label-level-blocker design decision above? Do the four newly-exposed router-to-cascade
-regressions (case-16/17/18/22) warrant a resolver-prompt change — flagged here as evidence,
-not diagnosed further? Does `case-02`'s Sonnet-only-arm validation failure reproduce on a
-second run? (Not re-run, to avoid spending money chasing a known, pre-existing, out-of-scope
-edge case.)
+**Not verified by this ticket.** Two open questions remain, one from the original analysis and
+one narrowed by the merged re-run. Does Troy agree with the label-level-blocker design decision
+above? Do the two newly-exposed router-to-cascade regressions still present in the merged code
+(case-16, case-18; case-23 and case-24 join them, per the corrected list above) warrant a
+resolver-prompt change — flagged here as evidence, not diagnosed further? `case-02`'s
+Sonnet-only-arm validation failure did not reproduce in this run, narrowing but not closing that
+question — it is an intermittent, pre-existing, out-of-scope gap, not confirmed fixed.
 
 **Rollback.** `git revert` this commit. `scripts/eval/results/eval-report.json`,
 `scripts/eval/baseline.json`, and `scripts/eval/results/benchmark-report.json` revert to their

@@ -14,7 +14,7 @@
  * module that makes a network call.
  */
 import type { GoldenSetCategory, LabelVerdict } from "../../src/lib/golden-set/types";
-import type { ExtractedImageQuality } from "../../src/server/extractor/types";
+import type { ExtractedField, ExtractedImageQuality } from "../../src/server/extractor/types";
 import type { FieldVerdict, ReviewReason, RouterFieldKey, WarningComparatorChannel } from "../../src/server/router/types";
 
 /** The router's five field keys, in one place — `response-validation.ts`,
@@ -215,8 +215,11 @@ export interface CascadeCaseResult {
    * `docs/diagnostics/2026-08-12-verdict-miss-triage.md` §3C, and this
    * ticket's own "Do NOT add beverage_type to the extraction-accuracy
    * denominator"). Case-11's diagnosis needs these recorded values, not a
-   * score. */
-  beverageType: { value: string | null; evidence: string; confidence: number };
+   * score. Derived from `ExtractedField` via `Pick`, not a hand-copied
+   * shape, so a change to the extractor's own field type cannot silently
+   * drift out of sync with this report type (CodeRabbit finding, TRO-538
+   * triage). */
+  beverageType: Pick<ExtractedField, "value" | "evidence" | "confidence">;
 }
 
 /** One class's count in the PRD §3.7 / CP-2 §8.4 warning-check-outcome

@@ -667,15 +667,16 @@ describe("loadGoldenSetManifest", () => {
   it("loads and validates the committed golden-set manifest", () => {
     const result = loadGoldenSetManifest();
 
-    // PRD §6's own ballpark ("~20-30 generated labels"), plus the two
-    // warning-relevant cases CP-2 §9.2 findings 4/5 (docs/checkpoints/
-    // cp2-warning-subsystem.md) identified as missing and TRO-469 / LH-021
-    // added: the near-miss band (case-31) and the Surgeon/General
-    // capitalization positions (case-30) both shipped with reasoning and no
-    // covering case until this ticket. 31, not 30 — a deliberate, cited
-    // growth, not drift.
+    // PRD §6's own ballpark ("~20-30 generated labels"), plus two deliberate,
+    // cited additions: TRO-515's net-contents format-variant case (case-30,
+    // closing rubric vector V7) and TRO-469 / LH-021's two warning-relevant
+    // cases CP-2 §9.2 findings 4/5 (docs/checkpoints/cp2-warning-subsystem.md)
+    // identified as missing — the near-miss band (case-32) and the
+    // Surgeon/General capitalization positions (case-31), numbered after
+    // case-30 since TRO-515 landed on main first. 32, not 30 — growth, not
+    // drift.
     expect(result.cases.length).toBeGreaterThanOrEqual(20);
-    expect(result.cases.length).toBeLessThanOrEqual(31);
+    expect(result.cases.length).toBeLessThanOrEqual(32);
 
     const ids = result.cases.map((c) => c.caseId);
     expect(new Set(ids).size).toBe(ids.length);
@@ -712,19 +713,72 @@ describe("loadGoldenSetManifest", () => {
     expect(stonesThrow?.expected.fields.brandName.verdict).toBe("MATCH");
   });
 
-  it("covers 8 of 10 rubric vectors; V7 and V10 are known gaps (design doc §4)", () => {
-    // V7 (net-contents format match, e.g. "750 mL" vs "750ml") has no
-    // dedicated case yet. V10 (batch of >=20) is a property of the manifest
-    // as a whole, not any single case, and is asserted separately below.
-    // If this test starts failing because V7 got covered, DELETE the
-    // exclusion, don't widen it — that is the gap closing, which is good.
+  it("includes the net-contents format-variant case required by rubric vector V7 (TRO-515)", () => {
+    const result = loadGoldenSetManifest();
+    const baseline = result.cases.find((c) => c.caseId === "case-01-clean-match-spirits");
+    const altFormat = result.cases.find(
+      (c) => c.caseId === "case-30-clean-match-net-contents-alt-format",
+    );
+
+    expect(baseline).toBeDefined();
+    expect(altFormat).toBeDefined();
+
+    // case-30 isolates the net-contents format difference as its ONE
+    // distinguishing feature from case-01-clean-match-spirits (golden-set/
+    // README.md's own claim about this case). Check that claim directly,
+    // field by field, instead of trusting the prose: every field besides
+    // net contents (and net contents' own VALUE, which the two cases still
+    // share) must match case-01 exactly.
+    expect(altFormat?.application.brandName).toBe(baseline?.application.brandName);
+    expect(altFormat?.application.classType).toBe(baseline?.application.classType);
+    expect(altFormat?.application.abvPercent).toBe(baseline?.application.abvPercent);
+    expect(altFormat?.label.brandName).toBe(baseline?.label.brandName);
+    expect(altFormat?.label.classType).toBe(baseline?.label.classType);
+    expect(altFormat?.label.abvPresent).toBe(baseline?.label.abvPresent);
+    expect(altFormat?.label.abvText).toBe(baseline?.label.abvText);
+    expect(altFormat?.label.abvPercent).toBe(baseline?.label.abvPercent);
+    expect(altFormat?.label.proof).toBe(baseline?.label.proof);
+    expect(altFormat?.label.netContentsValue).toBe(baseline?.label.netContentsValue);
+    expect(altFormat?.label.governmentWarningPresent).toBe(baseline?.label.governmentWarningPresent);
+    expect(altFormat?.label.governmentWarningText).toBe(baseline?.label.governmentWarningText);
+    expect(altFormat?.label.governmentWarningPrefixAllCaps).toBe(
+      baseline?.label.governmentWarningPrefixAllCaps,
+    );
+
+    // audit/rubric.md Appendix A, V7: net contents "750 mL" vs "750ml" ->
+    // MATCH. The label carries the odd format; the application carries the
+    // canonical one — only `label` has a free-text netContentsText field.
+    // This is the ONE thing that should differ from case-01 above.
+    expect(altFormat?.label.netContentsText).toBe("750ml");
+    expect(altFormat?.label.netContentsText).not.toBe(baseline?.label.netContentsText);
+    expect(altFormat?.application.netContentsValue).toBe(750);
+    expect(altFormat?.application.netContentsUnit).toBe("mL");
+    expect(altFormat?.label.netContentsText).not.toBe(
+      `${altFormat?.application.netContentsValue} ${altFormat?.application.netContentsUnit}`,
+    );
+    expect(altFormat?.expected.fields.netContents.verdict).toBe("MATCH");
+    expect(altFormat?.vectors).toContain("V7");
+  });
+
+  it("covers all nine per-case rubric vectors; V10 stays a manifest-wide property, not a per-case gap (design doc §4)", () => {
+    // V10 (batch of >=20) is a property of the manifest as a whole, not any
+    // single case. The "at least 20 cases" test below asserts V10 directly.
+    // No case may EVER individually tag it, so it is excluded from this
+    // per-case loop on purpose — that exclusion is not a gap.
+    //
+    // TRO-515 closed the one real per-case gap, V7 (net-contents format
+    // match, e.g. "750 mL" vs "750ml"): case-30-clean-match-net-contents-
+    // alt-format now carries it. If this test starts failing because one of
+    // the other eight vectors lost its only covering case, add a real
+    // replacement case first — don't widen the exclusion below to paper
+    // over a real regression.
     const result = loadGoldenSetManifest();
     const covered = new Set(result.cases.flatMap((c) => c.vectors));
     const allVectors = ["V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10"] as const;
-    const knownGaps = new Set(["V7", "V10"]);
+    const manifestWideOnly = new Set(["V10"]);
     for (const v of allVectors) {
-      if (knownGaps.has(v)) {
-        expect(covered.has(v), `${v} was expected to still be a known gap`).toBe(false);
+      if (manifestWideOnly.has(v)) {
+        expect(covered.has(v), `${v} is a manifest-wide property; no case should tag it individually`).toBe(false);
       } else {
         expect(covered.has(v), `${v} should be covered by at least one case`).toBe(true);
       }

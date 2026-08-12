@@ -1,6 +1,6 @@
 {
   "ticket": "TRO-470 / LH-030",
-  "establishedAt": "2026-08-12T12:59:28.746Z",
+  "establishedAt": "2026-08-12T13:26:45.488Z",
   "manifestVersion": "1.0.0",
   "caseIds": [
     "case-01-clean-match-spirits",
@@ -32,72 +32,73 @@
     "case-27-conflicting-net-contents",
     "case-28-conflicting-class-type",
     "case-29-conflicting-brand-name",
-    "case-30-title-case-warning-surgeon-general-lowercase",
-    "case-31-reworded-warning-near-miss-missing-comma"
+    "case-30-clean-match-net-contents-alt-format",
+    "case-31-title-case-warning-surgeon-general-lowercase",
+    "case-32-reworded-warning-near-miss-missing-comma"
   ],
   "summary": {
     "extractionAccuracy": {
-      "total": 155,
-      "correct": 148,
-      "rate": 0.9548387096774194
+      "total": 160,
+      "correct": 154,
+      "rate": 0.9625
     },
     "extractionAccuracyByField": {
       "brandName": {
-        "total": 31,
-        "correct": 29,
-        "rate": 0.9354838709677419
+        "total": 32,
+        "correct": 31,
+        "rate": 0.96875
       },
       "classType": {
-        "total": 31,
-        "correct": 30,
-        "rate": 0.967741935483871
+        "total": 32,
+        "correct": 31,
+        "rate": 0.96875
       },
       "abv": {
-        "total": 31,
-        "correct": 30,
-        "rate": 0.967741935483871
+        "total": 32,
+        "correct": 31,
+        "rate": 0.96875
       },
       "netContents": {
-        "total": 31,
-        "correct": 30,
-        "rate": 0.967741935483871
+        "total": 32,
+        "correct": 31,
+        "rate": 0.96875
       },
       "governmentWarning": {
-        "total": 31,
-        "correct": 29,
-        "rate": 0.9354838709677419
+        "total": 32,
+        "correct": 30,
+        "rate": 0.9375
       }
     },
     "labelVerdictAccuracy": {
-      "total": 31,
+      "total": 32,
       "correct": 21,
-      "rate": 0.6774193548387096
+      "rate": 0.65625
     },
     "fieldVerdictAccuracyByField": {
       "brand_name": {
-        "total": 31,
+        "total": 32,
         "correct": 27,
-        "rate": 0.8709677419354839
+        "rate": 0.84375
       },
       "class_type": {
-        "total": 31,
-        "correct": 28,
-        "rate": 0.9032258064516129
+        "total": 32,
+        "correct": 29,
+        "rate": 0.90625
       },
       "alcohol_content": {
-        "total": 31,
-        "correct": 31,
+        "total": 32,
+        "correct": 32,
         "rate": 1
       },
       "net_contents": {
-        "total": 31,
-        "correct": 31,
+        "total": 32,
+        "correct": 32,
         "rate": 1
       },
       "government_warning": {
-        "total": 31,
-        "correct": 27,
-        "rate": 0.8709677419354839
+        "total": 32,
+        "correct": 28,
+        "rate": 0.875
       }
     },
     "reviewReasonAccuracy": {
@@ -106,22 +107,22 @@
       "rate": 0.35714285714285715
     },
     "warningSegmentation": {
-      "total": 31,
+      "total": 32,
       "clean": {
-        "count": 20,
-        "rate": 0.6451612903225806
+        "count": 21,
+        "rate": 0.65625
       },
       "trueMismatch": {
         "count": 5,
-        "rate": 0.16129032258064516
+        "rate": 0.15625
       },
       "resolutionSuspect": {
         "count": 4,
-        "rate": 0.12903225806451613
+        "rate": 0.125
       },
       "notFound": {
         "count": 2,
-        "rate": 0.06451612903225806
+        "rate": 0.0625
       }
     }
   }

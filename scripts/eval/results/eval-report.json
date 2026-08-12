@@ -1,6 +1,6 @@
 {
   "ticket": "TRO-470 / LH-030",
-  "measuredAt": "2026-08-12T12:59:28.746Z",
+  "measuredAt": "2026-08-12T13:26:45.488Z",
   "mode": "live",
   "haikuModel": "claude-haiku-4-5",
   "sonnetModel": "claude-sonnet-5",
@@ -35,73 +35,74 @@
     "case-27-conflicting-net-contents",
     "case-28-conflicting-class-type",
     "case-29-conflicting-brand-name",
-    "case-30-title-case-warning-surgeon-general-lowercase",
-    "case-31-reworded-warning-near-miss-missing-comma"
+    "case-30-clean-match-net-contents-alt-format",
+    "case-31-title-case-warning-surgeon-general-lowercase",
+    "case-32-reworded-warning-near-miss-missing-comma"
   ],
   "requestedFull": true,
   "summary": {
     "extractionAccuracy": {
-      "total": 155,
-      "correct": 148,
-      "rate": 0.9548387096774194
+      "total": 160,
+      "correct": 154,
+      "rate": 0.9625
     },
     "extractionAccuracyByField": {
       "brandName": {
-        "total": 31,
-        "correct": 29,
-        "rate": 0.9354838709677419
+        "total": 32,
+        "correct": 31,
+        "rate": 0.96875
       },
       "classType": {
-        "total": 31,
-        "correct": 30,
-        "rate": 0.967741935483871
+        "total": 32,
+        "correct": 31,
+        "rate": 0.96875
       },
       "abv": {
-        "total": 31,
-        "correct": 30,
-        "rate": 0.967741935483871
+        "total": 32,
+        "correct": 31,
+        "rate": 0.96875
       },
       "netContents": {
-        "total": 31,
-        "correct": 30,
-        "rate": 0.967741935483871
+        "total": 32,
+        "correct": 31,
+        "rate": 0.96875
       },
       "governmentWarning": {
-        "total": 31,
-        "correct": 29,
-        "rate": 0.9354838709677419
+        "total": 32,
+        "correct": 30,
+        "rate": 0.9375
       }
     },
     "labelVerdictAccuracy": {
-      "total": 31,
+      "total": 32,
       "correct": 21,
-      "rate": 0.6774193548387096
+      "rate": 0.65625
     },
     "fieldVerdictAccuracyByField": {
       "brand_name": {
-        "total": 31,
+        "total": 32,
         "correct": 27,
-        "rate": 0.8709677419354839
+        "rate": 0.84375
       },
       "class_type": {
-        "total": 31,
-        "correct": 28,
-        "rate": 0.9032258064516129
+        "total": 32,
+        "correct": 29,
+        "rate": 0.90625
       },
       "alcohol_content": {
-        "total": 31,
-        "correct": 31,
+        "total": 32,
+        "correct": 32,
         "rate": 1
       },
       "net_contents": {
-        "total": 31,
-        "correct": 31,
+        "total": 32,
+        "correct": 32,
         "rate": 1
       },
       "government_warning": {
-        "total": 31,
-        "correct": 27,
-        "rate": 0.8709677419354839
+        "total": 32,
+        "correct": 28,
+        "rate": 0.875
       }
     },
     "reviewReasonAccuracy": {
@@ -110,22 +111,22 @@
       "rate": 0.35714285714285715
     },
     "warningSegmentation": {
-      "total": 31,
+      "total": 32,
       "clean": {
-        "count": 20,
-        "rate": 0.6451612903225806
+        "count": 21,
+        "rate": 0.65625
       },
       "trueMismatch": {
         "count": 5,
-        "rate": 0.16129032258064516
+        "rate": 0.15625
       },
       "resolutionSuspect": {
         "count": 4,
-        "rate": 0.12903225806451613
+        "rate": 0.125
       },
       "notFound": {
         "count": 2,
-        "rate": 0.06451612903225806
+        "rate": 0.0625
       }
     }
   },
@@ -856,14 +857,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3558,
-        "outputTokens": 469,
+        "outputTokens": 737,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.011806
+        "usd": 0.014486
       },
-      "resolverOutcome": "resolved",
+      "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 7483
+      "resolverDurationMs": 9268
     },
     {
       "caseId": "case-08-title-case-warning-prefix-only",
@@ -1279,14 +1280,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3955,
-        "outputTokens": 649,
+        "outputTokens": 541,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.0144
+        "usd": 0.013320000000000002
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 6973
+      "resolverDurationMs": 5919
     },
     {
       "caseId": "case-12-missing-warning-spirits",
@@ -1390,14 +1391,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3342,
-        "outputTokens": 118,
+        "outputTokens": 157,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.007864
+        "usd": 0.008254000000000001
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 5967
+      "resolverDurationMs": 4254
     },
     {
       "caseId": "case-13-missing-warning-wine",
@@ -1501,14 +1502,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3302,
-        "outputTokens": 141,
+        "outputTokens": 131,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.008014
+        "usd": 0.007914
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 3800
+      "resolverDurationMs": 3797
     },
     {
       "caseId": "case-14-case-variant-brand-stones-throw",
@@ -1604,10 +1605,10 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2700,
-        "outputTokens": 414,
+        "outputTokens": 375,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.00477
+        "usd": 0.004575
       },
       "resolverCost": null,
       "resolverOutcome": null,
@@ -1716,14 +1717,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3595,
-        "outputTokens": 156,
+        "outputTokens": 297,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.008749999999999999
+        "usd": 0.010159999999999999
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 4407
+      "resolverDurationMs": 5645
     },
     {
       "caseId": "case-16-case-variant-brand-extra-words",
@@ -1827,14 +1828,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3552,
-        "outputTokens": 479,
+        "outputTokens": 584,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.011894
+        "usd": 0.012944
       },
-      "resolverOutcome": "resolved",
+      "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 6396
+      "resolverDurationMs": 9695
     },
     {
       "caseId": "case-17-glare-front-label",
@@ -1845,10 +1846,10 @@
         "fields": [
           {
             "field": "brandName",
-            "correct": false,
+            "correct": true,
             "expected": "Sable Ridge Distillery",
-            "actual": "Sable Ridge",
-            "detail": "Haiku read \"Sable Ridge\"; the label prints \"Sable Ridge Distillery\"."
+            "actual": "Sable Ridge Distillery",
+            "detail": "Haiku read the brand name correctly."
           },
           {
             "field": "classType",
@@ -1884,18 +1885,18 @@
         "caseId": "case-17-glare-front-label",
         "category": "glare",
         "expectedLabelVerdict": "REVIEW",
-        "actualLabelVerdict": "REVIEW",
-        "labelVerdictCorrect": true,
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": false,
         "expectedReviewReason": "LOW_IMAGE_QUALITY",
-        "actualReviewReason": "AMBIGUOUS_BRAND",
+        "actualReviewReason": null,
         "reviewReasonCorrect": false,
         "fields": [
           {
             "field": "brand_name",
             "expectedVerdict": "NEEDS_REVIEW",
-            "actualVerdict": "NEEDS_REVIEW",
-            "correct": true,
-            "actualReviewReason": "AMBIGUOUS_BRAND"
+            "actualVerdict": "MATCH",
+            "correct": false,
+            "actualReviewReason": null
           },
           {
             "field": "class_type",
@@ -1930,22 +1931,15 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2700,
-        "outputTokens": 416,
+        "outputTokens": 419,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.0047799999999999995
+        "usd": 0.004795
       },
-      "resolverCost": {
-        "model": "claude-sonnet-5",
-        "inputTokens": 3540,
-        "outputTokens": 165,
-        "cacheCreationInputTokens": 0,
-        "cacheReadInputTokens": 0,
-        "usd": 0.00873
-      },
-      "resolverOutcome": "resolved",
+      "resolverCost": null,
+      "resolverOutcome": null,
       "resolverError": null,
-      "resolverDurationMs": 3774
+      "resolverDurationMs": null
     },
     {
       "caseId": "case-18-glare-warning-block",
@@ -2049,14 +2043,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3485,
-        "outputTokens": 300,
+        "outputTokens": 316,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.00997
+        "usd": 0.01013
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 7143
+      "resolverDurationMs": 7838
     },
     {
       "caseId": "case-19-rotation-mild-correctable",
@@ -2160,14 +2154,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 4042,
-        "outputTokens": 332,
+        "outputTokens": 372,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.011404
+        "usd": 0.011803999999999999
       },
-      "resolverOutcome": "resolved",
+      "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 5626
+      "resolverDurationMs": 4679
     },
     {
       "caseId": "case-20-rotation-severe-upside-down",
@@ -2271,14 +2265,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3748,
-        "outputTokens": 430,
+        "outputTokens": 416,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.011796000000000001
+        "usd": 0.011656
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 8606
+      "resolverDurationMs": 7298
     },
     {
       "caseId": "case-21-low-light-front-label",
@@ -2486,14 +2480,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3951,
-        "outputTokens": 646,
+        "outputTokens": 647,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.014362
+        "usd": 0.014372
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 7540
+      "resolverDurationMs": 7116
     },
     {
       "caseId": "case-23-tiny-warning-text-standard-bottle",
@@ -3117,14 +3111,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3531,
-        "outputTokens": 164,
+        "outputTokens": 187,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.008702
+        "usd": 0.008931999999999999
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 3830
+      "resolverDurationMs": 4717
     },
     {
       "caseId": "case-29-conflicting-brand-name",
@@ -3228,20 +3222,124 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3550,
-        "outputTokens": 188,
+        "outputTokens": 159,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.00898
+        "usd": 0.00869
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 3902
+      "resolverDurationMs": 7105
     },
     {
-      "caseId": "case-30-title-case-warning-surgeon-general-lowercase",
+      "caseId": "case-30-clean-match-net-contents-alt-format",
+      "category": "clean-match",
+      "extraction": {
+        "caseId": "case-30-clean-match-net-contents-alt-format",
+        "category": "clean-match",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Old Tom Distillery",
+            "actual": "Old Tom Distillery",
+            "detail": "Haiku read the brand name correctly."
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Straight Bourbon Whiskey",
+            "actual": "Straight Bourbon Whiskey",
+            "detail": "Haiku read the class/type correctly."
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "45%",
+            "actual": "45%",
+            "detail": "Haiku read the correct ABV."
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 ml",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents."
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly."
+          }
+        ]
+      },
+      "verdict": {
+        "caseId": "case-30-clean-match-net-contents-alt-format",
+        "category": "clean-match",
+        "expectedLabelVerdict": "PASS",
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
+        "actualReviewReason": null,
+        "reviewReasonCorrect": true,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "actualReviewReason": null
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "actualReviewReason": null
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "actualReviewReason": null
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "actualReviewReason": null
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "actualReviewReason": null
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2700,
+        "outputTokens": 408,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004739999999999999
+      },
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null
+    },
+    {
+      "caseId": "case-31-title-case-warning-surgeon-general-lowercase",
       "category": "title-case-warning",
       "extraction": {
-        "caseId": "case-30-title-case-warning-surgeon-general-lowercase",
+        "caseId": "case-31-title-case-warning-surgeon-general-lowercase",
         "category": "title-case-warning",
         "fields": [
           {
@@ -3282,7 +3380,7 @@
         ]
       },
       "verdict": {
-        "caseId": "case-30-title-case-warning-surgeon-general-lowercase",
+        "caseId": "case-31-title-case-warning-surgeon-general-lowercase",
         "category": "title-case-warning",
         "expectedLabelVerdict": "FAIL",
         "actualLabelVerdict": "FAIL",
@@ -3342,10 +3440,10 @@
       "resolverDurationMs": null
     },
     {
-      "caseId": "case-31-reworded-warning-near-miss-missing-comma",
+      "caseId": "case-32-reworded-warning-near-miss-missing-comma",
       "category": "reworded-warning",
       "extraction": {
-        "caseId": "case-31-reworded-warning-near-miss-missing-comma",
+        "caseId": "case-32-reworded-warning-near-miss-missing-comma",
         "category": "reworded-warning",
         "fields": [
           {
@@ -3386,7 +3484,7 @@
         ]
       },
       "verdict": {
-        "caseId": "case-31-reworded-warning-near-miss-missing-comma",
+        "caseId": "case-32-reworded-warning-near-miss-missing-comma",
         "category": "reworded-warning",
         "expectedLabelVerdict": "REVIEW",
         "actualLabelVerdict": "REVIEW",
@@ -3450,9 +3548,9 @@
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 4368
+      "resolverDurationMs": 5747
     }
   ],
-  "totalCostUsd": 0.291426,
+  "totalCostUsd": 0.29197600000000007,
   "failures": []
 }

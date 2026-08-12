@@ -11,7 +11,7 @@
  *    golden set is present, the default `--live` sample always includes
  *    it (`args.ts`), and the real comparator (imported, not reimplemented)
  *    agrees with the manifest's own ground truth.
- * 2. Prove the two new cases this ticket adds (case-30, case-31 — CP-2
+ * 2. Prove the two new cases this ticket adds (case-31, case-32 — CP-2
  *    §9.2 findings 4 and 5, `docs/checkpoints/cp2-warning-subsystem.md`
  *    §9.2/§11 open question 9) are computationally correct, not just
  *    hand-asserted: the manifest's `expected` block must match what
@@ -93,15 +93,15 @@ describe("case-23/case-24 (tiny warning text) — CP-2 §9.2 finding 1: LOW_IMAG
   });
 });
 
-describe("case-30 (new) — CP-2 §9.2 finding 5 / §11 open question 9: surgeon general in lower case", () => {
+describe("case-31 (new) — CP-2 §9.2 finding 5 / §11 open question 9: surgeon general in lower case", () => {
   it("is present, category title-case-warning, vector V2", () => {
-    const goldenCase = findCase("case-30-title-case-warning-surgeon-general-lowercase");
+    const goldenCase = findCase("case-31-title-case-warning-surgeon-general-lowercase");
     expect(goldenCase.category).toBe("title-case-warning");
     expect(goldenCase.vectors).toContain("V2");
   });
 
   it("isolates the defect to Surgeon/General ONLY — the GOVERNMENT WARNING prefix stays all-caps", () => {
-    const goldenCase = findCase("case-30-title-case-warning-surgeon-general-lowercase");
+    const goldenCase = findCase("case-31-title-case-warning-surgeon-general-lowercase");
     expect(goldenCase.label.governmentWarningPrefixAllCaps).toBe(true);
     expect(goldenCase.label.governmentWarningText).toContain("GOVERNMENT WARNING:");
     expect(goldenCase.label.governmentWarningText).toContain("surgeon general");
@@ -109,33 +109,33 @@ describe("case-30 (new) — CP-2 §9.2 finding 5 / §11 open question 9: surgeon
   });
 
   it("MISMATCHes on capitalization against the real comparator — 'Surgeon General must print with capital letters.'", () => {
-    const { goldenCase, result } = reconcileCase("case-30-title-case-warning-surgeon-general-lowercase", "ALL_CAPS");
+    const { goldenCase, result } = reconcileCase("case-31-title-case-warning-surgeon-general-lowercase", "ALL_CAPS");
     expect(result.verdict).toBe(goldenCase.expected.fields.governmentWarning.verdict);
     expect(result.verdict).toBe("MISMATCH");
     expect(result.note).toBe("Surgeon General must print with capital letters.");
   });
 
   it("is otherwise a wording EXACT_MATCH — the caps check is the only thing that catches it (same shape as case-08/09)", () => {
-    const text = findCase("case-30-title-case-warning-surgeon-general-lowercase").label.governmentWarningText;
+    const text = findCase("case-31-title-case-warning-surgeon-general-lowercase").label.governmentWarningText;
     expect(evaluateCandidate(text).wording).toBe("EXACT_MATCH");
   });
 });
 
-describe("case-31 (new) — CP-2 §9.2 finding 4 / §11 open question 9: the near-miss band, comma after General removed", () => {
+describe("case-32 (new) — CP-2 §9.2 finding 4 / §11 open question 9: the near-miss band, comma after General removed", () => {
   it("is present, category reworded-warning", () => {
-    const goldenCase = findCase("case-31-reworded-warning-near-miss-missing-comma");
+    const goldenCase = findCase("case-32-reworded-warning-near-miss-missing-comma");
     expect(goldenCase.category).toBe("reworded-warning");
   });
 
   it("is a genuine distance-1 near miss, not an exact match and not a plain mismatch", () => {
-    const text = findCase("case-31-reworded-warning-near-miss-missing-comma").label.governmentWarningText;
+    const text = findCase("case-32-reworded-warning-near-miss-missing-comma").label.governmentWarningText;
     const evaluation = evaluateCandidate(text);
     expect(evaluation.distance).toBe(1);
     expect(evaluation.wording).toBe("NEAR_MISS");
   });
 
   it("routes to REVIEW/WARNING_MISMATCH against the real comparator, never a hard FAIL — CP-2 §5.5 guard: near-miss never turns into MISMATCH", () => {
-    const { goldenCase, result } = reconcileCase("case-31-reworded-warning-near-miss-missing-comma", "ALL_CAPS");
+    const { goldenCase, result } = reconcileCase("case-32-reworded-warning-near-miss-missing-comma", "ALL_CAPS");
     expect(goldenCase.expected.labelVerdict).toBe("REVIEW");
     expect(goldenCase.expected.reviewReason).toBe("WARNING_MISMATCH");
     expect(result.verdict).toBe(goldenCase.expected.fields.governmentWarning.verdict);
@@ -147,7 +147,7 @@ describe("case-31 (new) — CP-2 §9.2 finding 4 / §11 open question 9: the nea
   });
 
   it("caps positions are all clean — the defect is wording distance alone, isolating the near-miss band", () => {
-    const text = findCase("case-31-reworded-warning-near-miss-missing-comma").label.governmentWarningText;
+    const text = findCase("case-32-reworded-warning-near-miss-missing-comma").label.governmentWarningText;
     expect(evaluateCandidate(text).caps).toEqual({ government: "OK", warning: "OK", surgeon: "OK", general: "OK" });
   });
 });

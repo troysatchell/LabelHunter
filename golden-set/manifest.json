@@ -1693,11 +1693,71 @@
       "verified": false
     },
     {
-      "caseId": "case-30-title-case-warning-surgeon-general-lowercase",
+      "caseId": "case-30-clean-match-net-contents-alt-format",
+      "description": "Spirits label prints net contents with no space and a lowercase unit; still a clean match.",
+      "category": "clean-match",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/images/case-30-clean-match-net-contents-alt-format.jpg",
+      "application": {
+        "brandName": "Old Tom Distillery",
+        "classType": "Straight Bourbon Whiskey",
+        "abvPercent": 45,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Old Tom Distillery",
+        "classType": "Straight Bourbon Whiskey",
+        "abvPresent": true,
+        "abvText": "45% Alc./Vol. (90 Proof)",
+        "abvPercent": 45,
+        "proof": 90,
+        "netContentsText": "750ml",
+        "netContentsValue": 750,
+        "netContentsUnit": "ml",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true
+      },
+      "expected": {
+        "labelVerdict": "PASS",
+        "fields": {
+          "brandName": {
+            "verdict": "MATCH",
+            "reason": "Label brand matches the application exactly."
+          },
+          "classType": {
+            "verdict": "MATCH",
+            "reason": "Label class/type matches the application exactly."
+          },
+          "abv": {
+            "verdict": "MATCH",
+            "reason": "Label states 45% ABV, matching the application."
+          },
+          "netContents": {
+            "verdict": "MATCH",
+            "reason": "Label states 750ml, matching the application once the unit is normalized."
+          },
+          "governmentWarning": {
+            "verdict": "MATCH",
+            "reason": "Warning text matches the statute word for word; prefix is all-caps."
+          }
+        }
+      },
+      "notes": "Isolates rubric vector V7 (audit/rubric.md Appendix A). The only difference from case-01 is net-contents format: \"750ml\" here vs \"750 mL\" there. Case-27 already covers a genuine size mismatch; this case covers a same-size format difference instead.",
+      "vectors": [
+        "V1",
+        "V7"
+      ],
+      "provenance": "rendered",
+      "verified": false
+    },
+    {
+      "caseId": "case-31-title-case-warning-surgeon-general-lowercase",
       "description": "Warning body prints 'surgeon general' in lower case; the GOVERNMENT WARNING prefix stays all-caps.",
       "category": "title-case-warning",
       "beverageType": "spirits",
-      "imagePath": "golden-set/images/case-30-title-case-warning-surgeon-general-lowercase.jpg",
+      "imagePath": "golden-set/images/case-31-title-case-warning-surgeon-general-lowercase.jpg",
       "application": {
         "brandName": "Redstone Hollow Distillery",
         "classType": "Straight Bourbon Whiskey",
@@ -1744,7 +1804,7 @@
           }
         }
       },
-      "notes": "CP-2 \u00a79.2 finding 5 / \u00a711 open question 9 (docs/checkpoints/cp2-warning-subsystem.md): no prior case exercised the Surgeon/General capitalization positions TTB's own Checklist of Mandatory Label Information requires (its Boot Camp for Brewers deck names lower-case 'surgeon general' a common real mistake). Isolates the defect to exactly those two words \u2014 the GOVERNMENT WARNING prefix and every other word stay canonical, so with case folded this body is a genuine exact match; only the caps check catches it (same shape as case-08/09). Added by TRO-469 / LH-021.",
+      "notes": "CP-2 \u00a79.2 finding 5 / \u00a711 open question 9 (docs/checkpoints/cp2-warning-subsystem.md): no prior case exercised the Surgeon/General capitalization positions TTB's own Checklist of Mandatory Label Information requires (its Boot Camp for Brewers deck names lower-case 'surgeon general' a common real mistake). Isolates the defect to exactly those two words \u2014 the GOVERNMENT WARNING prefix and every other word stay canonical, so with case folded this body is a genuine exact match; only the caps check catches it (same shape as case-08/09). Added by TRO-469 / LH-021. Renumbered from case-30 to case-31 when TRO-515's case-30-clean-match-net-contents-alt-format landed on main first.",
       "vectors": [
         "V2"
       ],
@@ -1752,11 +1812,11 @@
       "verified": false
     },
     {
-      "caseId": "case-31-reworded-warning-near-miss-missing-comma",
+      "caseId": "case-32-reworded-warning-near-miss-missing-comma",
       "description": "Warning omits the comma after 'General' \u2014 a genuine one-character deviation, the near-miss band's only covering case.",
       "category": "reworded-warning",
       "beverageType": "beer",
-      "imagePath": "golden-set/images/case-31-reworded-warning-near-miss-missing-comma.jpg",
+      "imagePath": "golden-set/images/case-32-reworded-warning-near-miss-missing-comma.jpg",
       "application": {
         "brandName": "Larkspur Hollow Brewing",
         "classType": "Amber Ale",
@@ -1803,7 +1863,7 @@
           }
         }
       },
-      "notes": "CP-2 \u00a79.2 finding 4 / \u00a711 open question 9 (docs/checkpoints/cp2-warning-subsystem.md): no prior case exercised the near-miss band (edit distance 1-2) \u2014 case-10/11's deviations sit at distance 38 and 24, far outside it. TTB's own Boot Camp for Brewers deck names a missing comma after 'General' a common real mistake, so this is a case TTB's own specialist sees, not one invented for coverage. Exactly one character is removed (the comma after 'General'); every capitalization position stays clean, isolating the defect to wording distance alone. Routes REVIEW, never FAIL \u2014 CP-2 \u00a75.5's own guard: the near-miss band never turns a would-be FAIL into a PASS, but it also never lets a one-character slip read as confidently as a 24+ character rewording. Added by TRO-469 / LH-021.",
+      "notes": "CP-2 \u00a79.2 finding 4 / \u00a711 open question 9 (docs/checkpoints/cp2-warning-subsystem.md): no prior case exercised the near-miss band (edit distance 1-2) \u2014 case-10/11's deviations sit at distance 38 and 24, far outside it. TTB's own Boot Camp for Brewers deck names a missing comma after 'General' a common real mistake, so this is a case TTB's own specialist sees, not one invented for coverage. Exactly one character is removed (the comma after 'General'); every capitalization position stays clean, isolating the defect to wording distance alone. Routes REVIEW, never FAIL \u2014 CP-2 \u00a75.5's own guard: the near-miss band never turns a would-be FAIL into a PASS, but it also never lets a one-character slip read as confidently as a 24+ character rewording. Added by TRO-469 / LH-021. Renumbered from case-31 to case-32 when TRO-515's case-30-clean-match-net-contents-alt-format landed on main first.",
       "vectors": [],
       "provenance": "rendered",
       "verified": false

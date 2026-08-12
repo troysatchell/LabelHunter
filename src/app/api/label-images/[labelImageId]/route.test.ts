@@ -44,7 +44,12 @@ async function seedLabelImage(bytes: Buffer): Promise<number> {
     .insert(applications)
     .values({
       beverageType: "spirits",
-      brandName: "Old Tom Distillery",
+      // "TRO-466 Test Fixture", not "Old Tom Distillery" (TRO-513): no
+      // assertion in this file reads brandName, and this suite runs
+      // alongside every other `*.test.ts` file sharing this worktree's
+      // database — see src/app/api/verify/route.test.ts for where the
+      // canonical example stays load-bearing.
+      brandName: "TRO-466 Test Fixture",
       classType: "Straight Bourbon Whiskey",
       netContentsValue: 750,
       netContentsUnit: "mL",

@@ -10,6 +10,9 @@
  * that tries to violate it directly (bypassing `recordDisposition`
  * entirely) and confirms the DATABASE itself rejects it, not just this
  * module's own guarded write path.
+ *
+ * The fixture brand is "TRO-476 Test Fixture", matching `list.test.ts`'s
+ * own default (TRO-513) — no assertion in this file reads brandName.
  */
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
@@ -22,7 +25,7 @@ async function makeQueueItemFixture() {
     .insert(applications)
     .values({
       beverageType: "spirits",
-      brandName: "Old Tom Distillery",
+      brandName: "TRO-476 Test Fixture",
       classType: "Straight Bourbon Whiskey",
       netContentsValue: 750,
       netContentsUnit: "mL",

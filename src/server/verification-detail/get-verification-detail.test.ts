@@ -11,6 +11,14 @@ import { getVerificationDetail } from "./get-verification-detail";
 // Run this file only with DATABASE_URL pointed at the worktree's own
 // database (source .factory-env first): it inserts and deletes real
 // rows, and provisioning resets that database's schema.
+//
+// The fixture brand is "TRO-466 Test Fixture" (this module's own origin
+// ticket), not "Old Tom Distillery" (TRO-513) — this suite inserts
+// field_results directly with hardcoded verdicts, so it never runs a real
+// comparator against the brand text; it only needs a value that echoes
+// back through the read path. The canonical example stays load-bearing in
+// src/app/api/verify/route.test.ts, the one place a real comparator runs
+// against it.
 
 const createdApplicationIds: number[] = [];
 
@@ -45,7 +53,7 @@ async function seedVerification(overrides: SeedOverrides = {}): Promise<Fixture>
     .insert(applications)
     .values({
       beverageType: "spirits",
-      brandName: "Old Tom Distillery",
+      brandName: "TRO-466 Test Fixture",
       classType: "Straight Bourbon Whiskey",
       alcoholContentRaw: overrides.alcoholContentRaw === undefined ? "45%" : overrides.alcoholContentRaw,
       abvPercent: 45,
@@ -81,8 +89,8 @@ async function seedVerification(overrides: SeedOverrides = {}): Promise<Fixture>
     {
       verificationId: verification.id,
       fieldName: "BRAND_NAME",
-      extractedValue: "Old Tom Distillery",
-      evidence: "OLD TOM DISTILLERY",
+      extractedValue: "TRO-466 Test Fixture",
+      evidence: "TRO-466 TEST FIXTURE",
       confidence: 0.95,
       verdict: "MATCH",
       reason: "Matches the application.",
@@ -157,9 +165,9 @@ describe("getVerificationDetail — a clean PASS", () => {
 
     const brand = result.detail.fields.find((f) => f.field === "brand_name");
     expect(brand?.fieldLabel).toBe("Brand name");
-    expect(brand?.labelValue).toBe("Old Tom Distillery");
-    expect(brand?.applicationValue).toBe("Old Tom Distillery");
-    expect(brand?.evidence).toBe("OLD TOM DISTILLERY");
+    expect(brand?.labelValue).toBe("TRO-466 Test Fixture");
+    expect(brand?.applicationValue).toBe("TRO-466 Test Fixture");
+    expect(brand?.evidence).toBe("TRO-466 TEST FIXTURE");
     expect(brand?.verdict).toBe("MATCH");
 
     // alcohol_content's application value comes from the persisted raw

@@ -186,6 +186,244 @@ wiring, and reverts `ActualVerdict`'s field shape. `scripts/eval/results/eval-re
 a fresh baseline under the old code is needed instead of the reverted commit's own, re-run
 `pnpm eval:check -- --live --full --update-baseline` after reverting.
 
+## TRO-513 — Fix the flaky "Old Tom Distillery" fixture in route.test.ts (2026-08-12)
+
+**What changed.** This fix has two parts. The ticket's own description bundled two
+different problems into one.
+
+**Problem 1: shared fixture text.** Nine test files write real `applications` rows with
+the literal brand name `"Old Tom Distillery"`. That text is TH-R11's canonical example.
+`src/app/api/verify/route.test.ts` needs the exact words to get a real comparator
+`MATCH` against `WELL_FORMED_EXTRACTION_BODY`. Five of the nine files did not need the
+real text at all. Each one inserts a filler row and checks disposition, list membership,
+or display shaping — never a comparator match, and every lookup in those five files
+already used the row's own generated id, never the brand-name text. Those five files now
+default to a new, ticket-scoped name instead. This matches the pattern already used in
+`src/server/batch-queue/test-support.ts` and `src/server/review-queue/list.test.ts`:
+
+- `src/app/api/review-queue/test-support.ts` (`makeQueueItemFixture`, shared by both
+  `review-queue/route.test.ts` files) → `"TRO-476 Test Fixture"`
+- `src/app/api/label-images/[labelImageId]/route.test.ts` → `"TRO-466 Test Fixture"`
+- `src/server/review-queue/get-item.test.ts` → `"TRO-476 Test Fixture"`
+- `src/server/review-queue/record-disposition.test.ts` → `"TRO-476 Test Fixture"`
+- `src/server/verification-detail/get-verification-detail.test.ts` → `"TRO-466 Test Fixture"`
+
+Each new name matches the file's own origin ticket — the same convention already used
+safely in its sibling files. `route.test.ts`'s own default stays `"Old Tom Distillery"`,
+the one fixture in the whole suite that still needs the real text, because it is the one
+place a real comparator runs against it. TH-R11's coverage is not incidental test data.
+The ticket's own brief is explicit here: do not remove it, and do not rename it out of
+the suite.
+
+**Problem 2: the actual reproducible cause.** Checking all nine files found only two
+places that looked a row up by brand-name VALUE, instead of by its own generated id. Both
+are in `route.test.ts`. TRO-514 and TRO-478 already fixed both, before this ticket
+started. No live value-collision remained to fix. But the flake kept recurring after
+those fixes landed. A value-collision explanation does not fit that fact on its own.
+`factory/config.yaml`'s own `knownLimits` note, written at scaffold time, already named
+the real suspect. It flagged concurrent, cross-worktree gate runs as untested. The
+sibling "ship" factory's own experience says that is exactly where load-sensitive flakes
+cluster.
+
+Measured directly: one worktree's full `pnpm test` run opens 17 separate `pg.Pool`
+instances, not one. `src/lib/db/index.ts`'s `globalThis` guard is real. It only dedupes
+calls to `getPool()` WITHIN one process. Vitest's default pool setting, "forks", isolates
+every test file into its own forked process. A "singleton" pool in the source code still
+becomes 17 independent pools at runtime — one pool per fork. Every worktree shares one
+Postgres server. Its 17 pools compete for the same server-wide `max_connections` limit
+(100 on a default local install) as every other worktree's own test run. Under real
+connection pressure, Postgres can refuse one pool's connection attempt. Its own error
+says so directly: `sorry, too many clients already`. This failure lands on whatever test
+is running a query at that moment. It clears on a standalone re-run, because a standalone
+run only ever opens one pool. This matches the bug's own signature exactly.
+
+Two changes close this gap:
+- `vitest.config.ts` sets `maxWorkers: 4`. This bounds how many forked processes — and so
+  how many pools — one `pnpm test` run can open at once. An unbounded run scales with the
+  host's CPU count instead.
+- `src/lib/db/index.ts` drops the pool's `max` from pg's default of 10 to 5, but only
+  under a real Vitest run (`process.env.VITEST`, Vitest's own signal). The live Next.js
+  server and `scripts/batch-worker/run.ts` each run as one long-lived process with one
+  pool. Neither one hits the per-process multiplication a test run does, so production
+  keeps pg's own default capacity untouched (local review round 1).
+
+Combined worst case: 4 pools × 5 connections = 20 per worktree, down from an unbounded
+17 × 10 = 170. Nothing in this fix caps how many worktrees actually run at once — the
+factory's own concurrency limit, if any, lives elsewhere. As one illustration only: four
+worktrees running full suites at the same moment would now draw at most 80 of the shared
+100 connections, comfortable headroom, against the old numbers' 680, which left none.
+
+**Evidence.**
+
+| Check | Result | Ran under |
+|---|---|---|
+| Reproduce, before the fix | 0 failures | 4 concurrent full suites, same worktree DB, no artificial pressure |
+| Reproduce, before the fix | 57 failed tests, 9 files, all `sorry, too many clients already` | Full suite while a throwaway script held 96 of 100 server-wide connection slots |
+| After the fix, same pressure | 5–21 failed tests across two separate runs, 3–4 files, same error class both times | Full suite while the same script held 96 of 100 slots, run twice |
+| After the fix, realistic load | 0 failures, across two separate batches of 3 concurrent runs each (6 runs total) | Concurrent full suites (`--maxWorkers=4`), same worktree DB, simulating concurrent worktree gates |
+| Full suite, repeated | 0 failures, every run | `pnpm test`, run standalone 4 separate times after the fix |
+| `pnpm typecheck` | clean | — |
+
+**Observed:** the exact Postgres error (`53300`, `sorry, too many clients already`)
+reproduced repeatedly under engineered connection pressure, on this ticket's own worktree
+database — once before the fix, twice after, on two separate runs at the same artificial
+pressure. The "before" run used the unmodified pool config. The only change was one
+instrumentation line that added a log write and nothing else. The fix cut the failure
+count by 63–91% under that same artificial pressure (96% of server capacity held by
+something else), varying by run. That pressure level is a deliberately extreme stress
+test. The range is not a claim of one fixed, exactly-reproducible number — this class of
+bug is inherently timing-dependent. Under no artificial pressure at all, simulating the
+realistic condition this ticket actually cares about (several worktrees' gates running
+at once), the fix produced zero failures across six separate concurrent-suite runs.
+
+**Derived:** the connection-pool mechanism is the actively firing cause on this branch
+today, not the shared literal by itself. The two historical value-collision sites were
+already closed before this ticket started. The flake still recurred after that. The
+fixture-text change closes a real risk, but a latent one today: a future test that
+queries by that shared value would reopen it. It is not, by itself, an independently
+reproducible cause of the current flake.
+
+**Not verified:** the precise number of concurrently-running worktrees needed to trigger
+this organically, without an artificial connection hog, in the real factory environment.
+This machine had comfortable headroom: 4 concurrent full suites alone, with no other
+pressure, did not reproduce a failure, either before or after the fix. The mechanism is
+proven. The exact real-world trigger threshold is not measured.
+
+**Regression test.** `src/lib/db/index.test.ts` (new file) asserts the pool's own `max`
+stays at or below 5, under this file's own real Vitest run. It failed for the right
+reason before the fix (`expected 10 to be less than or equal to 5`, pg's default with
+`max` unset). It passed after the fix. Both runs were standalone.
+
+**How to run it.** Source `.factory-env` first. Every file this ticket touches writes to
+a real Postgres database. `pnpm test` runs the whole suite. `pnpm test --
+src/lib/db/index.test.ts` runs just the new regression test.
+
+**Rollback.** `git revert` this ticket's commits. `vitest.config.ts`'s `maxWorkers`
+returns to unbounded. `src/lib/db/index.ts`'s pool `max` returns to pg's default of 10.
+The five fixture files return to writing `"Old Tom Distillery"`. Rolling back also
+restores the pre-TRO-513 flake risk.
+
+## TRO-481 — LH-060: Render deploy config (2026-08-12)
+
+**What changed.** This ticket builds the deploy config that PRD §3.6 and §8
+describe. `render.yaml`, at the repo root, wires three resources: a `web`
+service (the Next.js app), a `worker` service (the batch worker —
+LH-041/TRO-474's `scripts/batch-worker/run.ts`), and a Postgres database.
+All three deploy from `main`. This advances TH-R16 — a deployed URL an
+evaluator can open and test.
+
+This ticket does not create a live deployment. Troy must still give Render
+his real Anthropic key by hand. Deploying that key to a third-party platform
+is a hard stop — the factory does not do this on its own
+(`.claude/skills/labelhunter-factory/references/escalation.md`, item 4).
+Instead, this ticket builds the config for Troy's own first deploy — no
+further code change needed — plus the runbook for that manual step
+(`docs/deploy.md`).
+
+**Design decisions.**
+- Every secret (`ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`) is `sync: false`.
+  This is Render's own convention: the operator fills the value in by hand,
+  once, in the dashboard. Neither key, nor a placeholder shaped like one,
+  appears anywhere in `render.yaml`.
+- `DATABASE_URL` is wired through `fromDatabase`, never a literal connection
+  string.
+- Migrations run as a `preDeployCommand` on the web service only
+  (`pnpm db:migrate`) — Render's release-phase hook: it runs after build,
+  before the new code starts serving traffic. Not duplicated on the worker:
+  running the same migration from two services on one deploy risks a race
+  between them.
+- The worker's `buildCommand` skips `pnpm build`. It runs
+  `scripts/batch-worker/run.ts` directly through `tsx`, never the Next.js
+  build output, so building it would spend build minutes on nothing.
+- The worker's pool-size env vars (`BATCH_WORKER_CONCURRENCY`,
+  `BATCH_RESOLVE_WORKER_CONCURRENCY`, `BATCH_WORKER_SHUTDOWN_TIMEOUT_MS`)
+  are plain, non-secret env vars, set to `run.ts`'s own in-code defaults.
+  That file's own header comment names this as the intended lever for
+  tuning the pools with no redeploy, once the real deployed key's
+  rate-limit tier is known.
+- Every resource defaults to a paid plan tier (`starter` / `starter` /
+  `basic-256mb`), not free. Render has no free-tier option for `type:
+  worker` services at all. A free Postgres database also auto-deletes 30
+  days after creation — a real risk for a submission evaluators may revisit
+  past that window. `render.yaml`'s own comment and `docs/deploy.md` both
+  flag this as a default, not a Troy-confirmed budget decision.
+- `autoDeployTrigger: checksPass`: Render will not deploy a commit until its
+  GitHub Actions checks (`.github/workflows/ci.yml`) pass. This is the same
+  green-CI bar this repo's merge policy already requires, applied a second
+  time at the deploy step.
+
+**Flagged, not fixed: batch image storage does not survive the web/worker
+split.** `src/server/storage/local-file-storage.ts`'s own header comment
+already names local disk as "a prototype-appropriate stand-in, not a
+durable object store." `POST /api/batch/start` (LH-042/TRO-475, merged to
+`main` after this branch started) saves a batch's images this way, on the
+`web` service. The `worker` service (`extract-worker.ts`, `resolve-worker.ts`)
+reads them back the same way. Once both are real, separate Render services —
+exactly what this ticket wires up — they are two different disks. A real
+batch run will fail to read every image it queues. Single-label verify is
+unaffected: one process saves the image and, later, reads that same file
+back. This needs a shared or durable store before batch is real on Render.
+Documented in `docs/deploy.md`'s "Known limitations." Not fixed here — out
+of this ticket's scope, and it touches application code this ticket does
+not own.
+
+**Flagged, not fixed: no deploy-ordering guarantee between the migration
+and the worker.** Render deploys `labelhunter-web` and `labelhunter-worker`
+independently, so nothing guarantees the web service's `preDeployCommand`
+finishes migrating before the worker starts polling. Render's Blueprint
+spec has no documented field for cross-service deploy ordering — this
+ticket did not omit a setting; Render does not currently offer one. Only a
+deploy that adds a migration is exposed, and `run.ts`'s own error handling
+does not crash the worker on one failed claim. Documented in
+`docs/deploy.md`'s "Known limitations." Closing it needs either a
+Render-wide migration step or a worker-side readiness check; neither is
+built here.
+
+**Regression test.** `scripts/deploy/render-yaml.test.ts` (23 cases) parses
+`render.yaml` with `js-yaml` and checks its real structure: exactly one
+`web` service, one `worker` service, and one database named
+`labelhunter-db`; both services redeploy only after CI checks pass
+(`autoDeployTrigger: checksPass`); every build, start, and migrate command
+matches a real `package.json` script (a drift between the two files fails
+this test); `DATABASE_URL` references that same database resource, by name
+and by connection property; every secret-shaped env var is `sync: false`
+with no literal `value`; and the file's raw text contains no string shaped
+like a real Anthropic key. Confirmed failing for the right reason:
+temporarily hardcoding a fake `sk-ant-...` value in place of `sync: false`
+failed 3 cases — the two structural secret checks and the raw-text scan,
+all naming the injected value — before the fix was reverted.
+
+**How to run it.** `pnpm test -- scripts/deploy/render-yaml.test.ts` runs
+the regression suite. It needs no `DATABASE_URL` — it only reads
+`render.yaml` and `package.json` from disk. `pnpm typecheck` and `pnpm lint`
+both run clean across the whole repo.
+
+**Observed.** `pnpm install --frozen-lockfile && pnpm build` — the web
+service's exact `buildCommand` — exits 0. `PORT=3791 pnpm start` — the web
+service's exact `startCommand`; `APP_PORT` from `.factory-env` stands in for
+Render's own injected `PORT` — serves `GET /api/health` at HTTP 200 with
+`{"status":"ok", ...}`, and `GET /` at HTTP 200. `pnpm worker` — the
+worker's exact `startCommand` — starts both pools with zero errors across
+several 2-second poll cycles against this worktree's real database, then
+shuts down cleanly on `SIGTERM` ("stopped cleanly", matching `run.ts`'s own
+shutdown log).
+
+**Derived.** `render.yaml`'s field names and service types match Render's
+currently-documented Blueprint spec (`services[].type`: `web` / `worker` /
+`pserv` / `cron` / `keyvalue`; `runtime: node`; `envVars[].sync` /
+`fromDatabase`; `databases[].plan`), and its free-tier and Postgres-expiry
+behavior, both checked against Render's own docs during this ticket, not
+recalled from memory.
+
+**Not verified.** A real Render deployment. No Render account was available
+to this ticket — that is Troy's own step, documented in `docs/deploy.md`.
+
+**Rollback.** `git revert` this ticket's commits. This deletes `render.yaml`,
+`docs/deploy.md`, and `scripts/deploy/render-yaml.test.ts`, and drops the
+`js-yaml` / `@types/js-yaml` devDependencies (run `pnpm install` after
+reverting, to sync `node_modules`). No other file in the repo references
+any of these three, so nothing else breaks.
+
 ## TRO-515 — Golden set: rubric vector V7 (net-contents format match) has zero coverage (2026-08-12)
 
 **What changed.** `golden-set/manifest.json` gains one new case:

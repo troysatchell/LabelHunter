@@ -5,6 +5,11 @@
  * its own id, never by scanning the whole table, so this suite is safe to
  * run alongside every other `*.test.ts` file sharing this worktree's
  * database.
+ *
+ * The fixture brand is "TRO-476 Test Fixture", matching `list.test.ts`'s
+ * own default (TRO-513) — this file's assertions only need a value that
+ * echoes back through the read path, not the canonical "Old Tom Distillery"
+ * example, which stays load-bearing in `src/app/api/verify/route.test.ts`.
  */
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
@@ -25,7 +30,7 @@ async function makeQueueItemFixture(options: FixtureOptions = {}) {
     .insert(applications)
     .values({
       beverageType: "spirits",
-      brandName: "Old Tom Distillery",
+      brandName: "TRO-476 Test Fixture",
       classType: "Straight Bourbon Whiskey",
       // `??` would treat an explicit `null` override the same as "not
       // provided" — this fixture needs to tell the two apart, so it checks
@@ -63,8 +68,8 @@ async function makeQueueItemFixture(options: FixtureOptions = {}) {
     {
       verificationId: verification.id,
       fieldName: "BRAND_NAME",
-      extractedValue: "Old Tom Distillery",
-      evidence: "OLD TOM DISTILLERY",
+      extractedValue: "TRO-476 Test Fixture",
+      evidence: "TRO-476 TEST FIXTURE",
       confidence: 0.7,
       verdict: "NEEDS_REVIEW",
       reason: "A reviewer must check the brand name or class and type against the label.",
@@ -137,8 +142,8 @@ describe("getReviewQueueItem — real database", () => {
       const brandRow = result.item.fields.find((f) => f.field === "BRAND_NAME");
       expect(brandRow?.fieldLabel).toBe("Brand name");
       expect(brandRow?.verdict).toBe("NEEDS_REVIEW");
-      expect(brandRow?.evidence).toBe("OLD TOM DISTILLERY");
-      expect(brandRow?.applicationValue).toBe("Old Tom Distillery");
+      expect(brandRow?.evidence).toBe("TRO-476 TEST FIXTURE");
+      expect(brandRow?.applicationValue).toBe("TRO-476 Test Fixture");
 
       const abvRow = result.item.fields.find((f) => f.field === "ALCOHOL_CONTENT");
       expect(abvRow?.applicationValue).toBe("45%");

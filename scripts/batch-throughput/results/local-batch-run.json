@@ -59,7 +59,7 @@
   "notes": [
     "throughput and autoVerifiedShare are OBSERVED: read verbatim from this run's own GET /api/batch/:id response, computed by the same computeBatchThroughput/computeAutoVerifiedShare the product's batch-results screen uses.",
     "sonnetCallCount is OBSERVED: read directly from the batch_jobs row after the batch reached COMPLETED, and cross-checked against the polled API response's totalCount/processedCount.",
-    "cost.derivedTotalUsd is DERIVED: real call counts from this run, multiplied by the eval harness's measured MEAN per-call cost from scripts/eval/results/eval-report.json (see cost.meanCostSource for that file's own measuredAt). This run's own per-call token usage was not captured — the batch worker has no usage-capturing seam today.",
+    "cost.derivedTotalUsd is DERIVED: sonnetCallCount is OBSERVED, but haikuCallCount is an UPPER BOUND — it sums claim attempts, and an attempt is counted when an item is claimed, before any real Haiku call happens. Each count is multiplied by the eval harness's measured MEAN per-call cost from scripts/eval/results/eval-report.json (see cost.meanCostSource for that file's own measuredAt). This run's own per-call token usage was not captured — the batch worker has no usage-capturing seam today.",
     "workerConcurrency is OBSERVED from this script's own environment variables, assumed identical to the separate worker process's environment because both were started from the same sourced shell for this run.",
     "This ran on a local dev workstation, not a deployed Render instance. Do not quote these figures as deployed throughput."
   ]

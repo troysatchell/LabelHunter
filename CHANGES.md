@@ -102,7 +102,7 @@ headless Chromium session against the running app. Every new tile rendered with 
 value. "AUTO-VERIFIED SHARE 56.3%" appeared. So did "ITEMS PER MINUTE 50.48" with its "1.19s
 per label" sub-note. Both sat in the same stat-tile grid as the five existing tiles.
 
-**Local CodeRabbit review triage, three rounds, 19 findings total.** Eighteen fixed; one
+**Local CodeRabbit review triage, three rounds, 15 findings total.** Fourteen fixed; one
 skipped with a documented reason (below). Stopped after round 3 — each round found
 progressively smaller issues, and the gate passed clean twice in a row by then.
 
@@ -153,6 +153,14 @@ Round 3, four findings, all fixed:
   and this entry now call it an upper bound, not a certainty.
 - This entry's own cost paragraph did not say WHERE the Haiku and Sonnet call counts each
   came from. Fixed: it now names both sources and the upper-bound caveat above.
+
+Round 4 ran after the `origin/main` merge, by the orchestrator's own gate run. Three
+findings: this section's total said 19 findings where the rounds themselves sum to 15
+(fixed above); the run artifact's `notes` still called `haikuCallCount` a real call count
+despite round 3's own caveat (fixed — the note now says OBSERVED for Sonnet, UPPER BOUND
+for Haiku); and one false positive that read the scorecard's historical fail row as an
+unresolved failure (dismissed — the row records a stale worktree database, fixed by
+applying migration 0004, and the gate now passes).
 
 **Do NOT.** No column was added to `batch_jobs` — every input already existed. No claim was
 extrapolated past this run's real 32 items to TH-R4's 200-300 label reference.

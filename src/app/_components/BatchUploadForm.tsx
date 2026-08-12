@@ -209,6 +209,22 @@ export function BatchUploadForm({ submitPreview = submitBatchPreview, submitStar
     void runPreview();
   }
 
+  /**
+   * Changing any file input after a preview is on screen must not leave a
+   * STALE preview (its ready count, its unmatched/invalid lists) sitting
+   * above a "Start batch" button that would actually submit a DIFFERENT,
+   * never-previewed upload (CodeRabbit finding, local review round 1) —
+   * "Start batch" re-reads whatever the inputs hold at click time, so a
+   * changed selection with an unrefreshed preview on screen would silently
+   * start something the user never actually saw previewed. Resetting back
+   * to "idle" here forces a fresh preview before "Start batch" can appear
+   * again.
+   */
+  function handleFileInputChange() {
+    setFormError(null);
+    setPhase((current) => (current.status === "idle" ? current : { status: "idle" }));
+  }
+
   if (phase.status === "started") {
     const { result } = phase;
     return (
@@ -247,7 +263,16 @@ export function BatchUploadForm({ submitPreview = submitBatchPreview, submitStar
           <label className="field__label" htmlFor="batch-manifest">
             CSV manifest
           </label>
-          <input ref={manifestInputRef} id="batch-manifest" name="manifest" type="file" accept=".csv,text/csv" className="file-input" disabled={isBusy} />
+          <input
+            ref={manifestInputRef}
+            id="batch-manifest"
+            name="manifest"
+            type="file"
+            accept=".csv,text/csv"
+            className="file-input"
+            disabled={isBusy}
+            onChange={handleFileInputChange}
+          />
         </div>
 
         <div className="field">
@@ -267,6 +292,7 @@ export function BatchUploadForm({ submitPreview = submitBatchPreview, submitStar
             aria-describedby="batch-images-hint"
             className="file-input"
             disabled={isBusy}
+            onChange={handleFileInputChange}
           />
         </div>
 
@@ -274,7 +300,16 @@ export function BatchUploadForm({ submitPreview = submitBatchPreview, submitStar
           <label className="field__label" htmlFor="batch-zip">
             Or a zip file of images
           </label>
-          <input ref={zipInputRef} id="batch-zip" name="imagesZip" type="file" accept=".zip,application/zip" className="file-input" disabled={isBusy} />
+          <input
+            ref={zipInputRef}
+            id="batch-zip"
+            name="imagesZip"
+            type="file"
+            accept=".zip,application/zip"
+            className="file-input"
+            disabled={isBusy}
+            onChange={handleFileInputChange}
+          />
         </div>
 
         <button type="submit" className="primary-button" disabled={isBusy}>

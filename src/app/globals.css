@@ -817,6 +817,11 @@ fieldset.field legend {
 }
 
 .batch-stat__note {
+  /* Nested inside its stat's own <dd> (valid <dl> content model — a <p>
+     sibling of <dt>/<dd> is not, CodeRabbit finding, local review round 1)
+     — reset the weight `.batch-stat dd` sets, an inherited property the
+     note would otherwise pick up from its new parent. */
+  font-weight: 400;
   margin: 0.35rem 0 0;
   font-size: 0.85rem;
   color: var(--color-text-muted);

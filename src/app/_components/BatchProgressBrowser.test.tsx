@@ -74,6 +74,31 @@ describe("BatchProgressBrowser", () => {
     await waitFor(() => expect(screen.getByTestId("batch-status-banner")).toHaveTextContent("2 of 2"));
   });
 
+  it("never has two polls in flight at once — an interval tick is skipped while a poll is still pending (CodeRabbit finding, local review round 1)", async () => {
+    let resolveHeldPoll!: (value: BatchProgressResponse) => void;
+    const heldPoll = new Promise<BatchProgressResponse>((resolve) => {
+      resolveHeldPoll = resolve;
+    });
+
+    const fetchProgress = vi
+      .fn<(batchJobId: number) => Promise<BatchProgressResponse>>()
+      .mockResolvedValueOnce(progress({ processedCount: 1 })) // initial mount load
+      .mockReturnValueOnce(heldPoll) // first poll tick — held open deliberately
+      .mockResolvedValue(progress({ processedCount: 3 })); // any poll after that
+
+    render(<BatchProgressBrowser batchJobId={7} fetchProgress={fetchProgress} pollIntervalMs={FAST_POLL_MS} />);
+    await screen.findByTestId("batch-status-banner");
+
+    // Long enough for several interval ticks to have fired if nothing
+    // guarded against overlap — with the guard, exactly one poll call
+    // happens (the one still held open) no matter how many ticks pass.
+    await new Promise((resolve) => setTimeout(resolve, FAST_POLL_MS * 8));
+    expect(fetchProgress).toHaveBeenCalledTimes(2);
+
+    resolveHeldPoll(progress({ processedCount: 2 }));
+    await waitFor(() => expect(screen.getByTestId("batch-status-banner")).toHaveTextContent("2 of 2"));
+  });
+
   it("stops polling once the batch reaches a terminal status (COMPLETED)", async () => {
     const fetchProgress = vi.fn(async () => progress({ status: "COMPLETED", processedCount: 2 }));
     render(<BatchProgressBrowser batchJobId={7} fetchProgress={fetchProgress} pollIntervalMs={FAST_POLL_MS} />);

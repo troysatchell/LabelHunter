@@ -57,10 +57,12 @@ export function BatchProgressSummary({ progress }: BatchProgressSummaryProps) {
 
         <div className="batch-stat" data-testid="batch-stat-auto-verified">
           <dt>Auto-verified</dt>
-          <dd>{autoVerifiedCount}</dd>
-          <p className="batch-stat__note">
-            {passCount} matched. {failCount} did not. Neither needed a closer look.
-          </p>
+          <dd>
+            {autoVerifiedCount}
+            <p className="batch-stat__note">
+              {passCount} matched. {failCount} did not. Neither needed a closer look.
+            </p>
+          </dd>
         </div>
 
         <div className="batch-stat" data-testid="batch-stat-resolved-by-sonnet">
@@ -80,8 +82,10 @@ export function BatchProgressSummary({ progress }: BatchProgressSummaryProps) {
 
         <div className="batch-stat" data-testid="batch-stat-p95-latency">
           <dt>p95 time per label</dt>
-          <dd>{latency ? formatDuration(latency.p95Ms) : "Not measured yet"}</dd>
-          <p className="batch-stat__note">19 of 20 labels finish this fast or faster.</p>
+          <dd>
+            {latency ? formatDuration(latency.p95Ms) : "Not measured yet"}
+            <p className="batch-stat__note">19 of 20 labels finish this fast or faster.</p>
+          </dd>
         </div>
       </dl>
 

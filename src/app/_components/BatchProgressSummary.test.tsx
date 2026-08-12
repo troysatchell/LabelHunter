@@ -80,8 +80,14 @@ describe("BatchProgressSummary", () => {
   });
 
   it("never shows a raw model identifier or a bare confidence number in the status banner", () => {
+    // The percentage check must be UNANCHORED (CodeRabbit finding, local
+    // review round 1) — the banner's real text is a whole sentence
+    // ("In progress. 4 of 10 labels processed."), so an anchored ^...$
+    // pattern could never match regardless of whether a percentage crept
+    // in somewhere inside it. This checks for one ANYWHERE in the text.
     render(<BatchProgressSummary progress={progress()} />);
     const banner = screen.getByTestId("batch-status-banner");
-    expect(banner.textContent).not.toMatch(/claude-(haiku|sonnet)|^\d+(\.\d+)?%$/i);
+    expect(banner.textContent).not.toMatch(/claude-(haiku|sonnet)/i);
+    expect(banner.textContent).not.toMatch(/\d+(\.\d+)?\s*%/);
   });
 });

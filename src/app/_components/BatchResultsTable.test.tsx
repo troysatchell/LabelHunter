@@ -36,6 +36,12 @@ describe("BatchResultsTable", () => {
     expect(screen.getAllByText("✗")).toHaveLength(1); // warning is MISMATCH
   });
 
+  it("renders the ⚠ NEEDS_REVIEW mark, with its own visually-hidden status text (CodeRabbit finding, local review round 1)", () => {
+    render(<BatchResultsTable results={[row({ warning: "NEEDS_REVIEW", statusTone: "review", statusText: "Needs review." })]} />);
+    expect(screen.getByText("⚠")).toBeInTheDocument();
+    expect(screen.getByText("Needs review.", { selector: ".visually-hidden" })).toBeInTheDocument();
+  });
+
   it("shows a click-through link to the single-label detail view when a verificationId is present", () => {
     render(<BatchResultsTable results={[row({ verificationId: 42 })]} />);
     const link = screen.getByRole("link", { name: /View detail for Highland Peak Distillery \(bottle-01\.jpg\)/ });

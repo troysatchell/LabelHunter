@@ -69,7 +69,7 @@ async function runRequest(
   init: RequestInit,
   options: BatchClientRequestOptions,
   timeoutFallbackMs: number,
-): Promise<{ ok: boolean; status: number; payload: unknown } | { ok: false; timedOutOrNetwork: true }> {
+): Promise<{ ok: boolean; status: number; payload: unknown } | { ok: false; timedOutOrNetwork: true; controllerAborted: boolean }> {
   const fetchImpl = options.fetchImpl ?? defaultFetch();
   const timeoutMs = options.timeoutMs ?? timeoutFallbackMs;
   const controller = new AbortController();
@@ -80,7 +80,12 @@ async function runRequest(
     response = await fetchImpl(url, { ...init, signal: controller.signal });
   } catch {
     clearTimeout(timeoutId);
-    return { ok: false, timedOutOrNetwork: true };
+    // `controller.signal.aborted` is the same real check
+    // verify-client.ts/review-queue-client.ts use to tell "our own timeout
+    // fired" from "a genuine network failure" — read here, not hardcoded,
+    // so a plain network failure gets its own distinct message instead of
+    // always claiming a timeout.
+    return { ok: false, timedOutOrNetwork: true, controllerAborted: controller.signal.aborted };
   }
 
   let payload: unknown;
@@ -88,7 +93,7 @@ async function runRequest(
     payload = await readJsonBody(response);
   } catch {
     clearTimeout(timeoutId);
-    return { ok: false, timedOutOrNetwork: true };
+    return { ok: false, timedOutOrNetwork: true, controllerAborted: controller.signal.aborted };
   }
   clearTimeout(timeoutId);
 
@@ -121,7 +126,7 @@ function isBatchPreviewSuccessResponse(payload: unknown): payload is BatchPrevie
 export async function submitBatchPreview(formData: FormData, options: BatchClientRequestOptions = {}): Promise<BatchPreviewSuccessResponse> {
   const outcome = await runRequest("/api/batch/preview", { method: "POST", body: formData }, options, DEFAULT_READ_TIMEOUT_MS);
   if ("timedOutOrNetwork" in outcome) {
-    throw networkOrTimeoutError(true);
+    throw networkOrTimeoutError(outcome.controllerAborted);
   }
   if (!outcome.ok) {
     if (isErrorResponse(outcome.payload, BATCH_PREVIEW_ERROR_KINDS)) {
@@ -158,7 +163,7 @@ function isBatchStartSuccessResponse(payload: unknown): payload is BatchStartSuc
 export async function startBatch(formData: FormData, options: BatchClientRequestOptions = {}): Promise<BatchStartSuccessResponse> {
   const outcome = await runRequest("/api/batch/start", { method: "POST", body: formData }, options, DEFAULT_START_TIMEOUT_MS);
   if ("timedOutOrNetwork" in outcome) {
-    throw networkOrTimeoutError(true);
+    throw networkOrTimeoutError(outcome.controllerAborted);
   }
   if (!outcome.ok) {
     if (isErrorResponse(outcome.payload, BATCH_START_ERROR_KINDS)) {
@@ -192,7 +197,7 @@ function isBatchProgressResponse(payload: unknown): payload is BatchProgressResp
 export async function fetchBatchProgress(batchJobId: number, options: BatchClientRequestOptions = {}): Promise<BatchProgressResponse> {
   const outcome = await runRequest(`/api/batch/${batchJobId}`, { method: "GET" }, options, DEFAULT_READ_TIMEOUT_MS);
   if ("timedOutOrNetwork" in outcome) {
-    throw networkOrTimeoutError(true);
+    throw networkOrTimeoutError(outcome.controllerAborted);
   }
   if (!outcome.ok) {
     if (isErrorResponse(outcome.payload, ["VALIDATION", "NOT_FOUND", "SERVICE"])) {

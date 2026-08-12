@@ -62,15 +62,30 @@ upload a manifest and images, or open `/` and follow "Start a batch."
 **Rollback.** `git revert` this ticket's commits. No schema change — every table this ticket
 writes to already existed before it.
 
-**Observed.** Every new server/API/component file has a red-before-green test against a real
-Postgres database or a real DOM render — 1399 tests pass across the full suite (128 files),
-`pnpm typecheck`/`pnpm lint`/`pnpm build` all clean. Beyond the unit suite, this ticket's own
-flow was also run once against a live `pnpm dev` server with `curl`: a real CSV manifest and two
-real JPEGs through `POST /api/batch/preview`, then `POST /api/batch/start` (a real batch job
-created, id confirmed), then `GET /api/batch/:id` (both labels showed as queued), then `/batch`
-and `/batch/:id` (both rendered, 200), then `/batch/abc` (404, malformed id) and a well-formed
-but nonexistent id (200 — the client-side NOT_FOUND state, not a hard page 404). The test batch
-job and its uploaded files were deleted afterward; they never reached this branch's history.
+**Observed.** Every new server, API, and component file has a red-before-green test. Each test
+runs against a real Postgres database or a real DOM render. The full suite passes:
+1409 tests across 128 files. `pnpm typecheck`, `pnpm lint`, and `pnpm build`
+are all clean.
+
+This ticket's own flow also ran once against a live `pnpm dev` server, over real HTTP with
+`curl`. The run posted a real CSV manifest and two real JPEGs to `POST /api/batch/preview`. It
+then called `POST /api/batch/start`, which created a real batch job and returned its id.
+`GET /api/batch/:id` showed both labels as queued. `/batch` and `/batch/:id` both rendered with
+status 200. `/batch/abc` returned 404 for a malformed id. A well-formed but nonexistent id
+returned 200 and showed the client-side NOT_FOUND state, not a hard page 404. The test batch job
+and its uploaded files were deleted afterward. They never reached this branch's history.
+
+A local CodeRabbit review pass on this ticket's own diff found 9 real issues, all fixed here, not
+described and left for later: two real bugs (a stale/overlapping-poll race in
+`BatchProgressBrowser.tsx`, and every network failure in `batch-client.ts` showing the timeout
+message instead of its own — traced back to a hardcoded `true` two commits up), one accessibility
+fix (a `<p>` inside a `<dl>`'s `<div>`, outside the `<dt>`/`<dd>` content model that spec allows),
+one real UX gap (changing a file input after previewing left a stale "Start batch" button that
+would have submitted a different, unpreviewed upload), and five test-quality findings (an
+assertion inside a mock that would have been swallowed as a network error, an anchored regex that
+could never match its own target string, three added assertions and one added case tightening
+coverage this ticket's own tests already claimed but did not fully prove). See
+`factory/review-findings.jsonl` for the full record.
 
 **Not measured.** Real multi-hundred-image batch-start latency — `startBatchFromPairings`
 processes matched images sequentially, a deliberate simplicity-over-throughput trade-off stated

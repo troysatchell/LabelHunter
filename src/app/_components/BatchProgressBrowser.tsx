@@ -74,12 +74,46 @@ export function BatchProgressBrowser({ batchJobId, fetchProgress = fetchBatchPro
   }, [batchJobId, requestId, fetchProgress]);
 
   useEffect(() => {
+    // Two race conditions a naive "fire a fetch every tick" loop invites
+    // (CodeRabbit finding, local review round 1), both closed here:
+    //
+    // 1. Overlapping requests. If one poll takes longer than
+    //    `pollIntervalMs` to resolve — a slow network, a slow query on a
+    //    large batch — the next tick would fire a SECOND request before the
+    //    first one returns. `requestInFlight` skips a tick while one is
+    //    still outstanding, so at most one poll is ever in flight.
+    // 2. Out-of-order responses. Even with (1) closed, a browser can still
+    //    deliver two responses out of the order their requests were sent
+    //    (a retry, a proxy, real network jitter). `sequence`/`latestApplied`
+    //    is a monotonic counter — a response older than the newest one
+    //    already applied is discarded rather than overwriting fresher data
+    //    with stale data.
+    let requestInFlight = false;
+    let sequence = 0;
+    let latestApplied = 0;
+
     const interval = setInterval(() => {
       const current = phaseRef.current;
-      if (current.status !== "success" || isTerminal(current.progress.status)) return;
+      if (current.status !== "success") return;
+      if (isTerminal(current.progress.status)) {
+        clearInterval(interval);
+        return;
+      }
+      if (requestInFlight) return;
+
+      requestInFlight = true;
+      const thisSequence = ++sequence;
       fetchProgress(batchJobId).then(
-        (progress) => setPhase({ status: "success", progress, pollErrorMessage: null }),
+        (progress) => {
+          requestInFlight = false;
+          if (thisSequence < latestApplied) return;
+          latestApplied = thisSequence;
+          setPhase({ status: "success", progress, pollErrorMessage: null });
+        },
         (error: unknown) => {
+          requestInFlight = false;
+          if (thisSequence < latestApplied) return;
+          latestApplied = thisSequence;
           const message = error instanceof BatchClientError ? error.message : "LabelHunter could not refresh this batch just now.";
           setPhase((p) => (p.status === "success" ? { ...p, pollErrorMessage: message } : p));
         },

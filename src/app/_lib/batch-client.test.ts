@@ -50,15 +50,21 @@ function fd(): FormData {
 
 describe("submitBatchPreview", () => {
   it("posts the given FormData to /api/batch/preview and returns the parsed body", async () => {
-    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-      expect(url).toBe("/api/batch/preview");
-      expect(init?.method).toBe("POST");
-      expect(init?.body).toBeInstanceOf(FormData);
-      return new Response(JSON.stringify(PREVIEW_SUCCESS), { status: 200 });
-    });
+    // Assertions run AFTER the await, not inside the mock (CodeRabbit
+    // finding, local review round 1) — an assertion failure inside
+    // fetchImpl would otherwise throw INSIDE the client's own try/catch
+    // around fetch(), which converts it into a generic "network failure"
+    // BatchClientError instead of surfacing the real assertion failure.
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(PREVIEW_SUCCESS), { status: 200 }));
 
     const result = await submitBatchPreview(fd(), { fetchImpl });
     expect(result).toEqual(PREVIEW_SUCCESS);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe("/api/batch/preview");
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBeInstanceOf(FormData);
   });
 
   it("classifies a structured non-2xx error body", async () => {
@@ -87,12 +93,10 @@ describe("submitBatchPreview", () => {
 
 describe("startBatch", () => {
   it("posts to /api/batch/start and returns the parsed body", async () => {
-    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
-      expect(url).toBe("/api/batch/start");
-      return new Response(JSON.stringify(START_SUCCESS), { status: 200 });
-    });
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(START_SUCCESS), { status: 200 }));
     const result = await startBatch(fd(), { fetchImpl });
     expect(result).toEqual(START_SUCCESS);
+    expect(fetchImpl.mock.calls[0][0]).toBe("/api/batch/start");
   });
 
   it("classifies NO_READY_ROWS from a structured 422", async () => {
@@ -108,13 +112,12 @@ describe("startBatch", () => {
 
 describe("fetchBatchProgress", () => {
   it("GETs /api/batch/:id and returns the parsed body", async () => {
-    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-      expect(url).toBe("/api/batch/7");
-      expect(init?.method).toBe("GET");
-      return new Response(JSON.stringify(PROGRESS_SUCCESS), { status: 200 });
-    });
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(PROGRESS_SUCCESS), { status: 200 }));
     const result = await fetchBatchProgress(7, { fetchImpl });
     expect(result).toEqual(PROGRESS_SUCCESS);
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe("/api/batch/7");
+    expect(init?.method).toBe("GET");
   });
 
   it("classifies a 404 as NOT_FOUND", async () => {
@@ -127,12 +130,39 @@ describe("fetchBatchProgress", () => {
     await expect(fetchBatchProgress(7, { fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
   });
 
-  it("classifies a timeout as SERVICE with a distinct, retry-worthy message", async () => {
-    const fetchImpl = vi.fn(async () => {
-      const err = new Error("The operation was aborted");
-      err.name = "AbortError";
-      throw err;
+  it("classifies a timeout as SERVICE with its own distinct, retry-worthy message — not the plain network-failure one", async () => {
+    // A real `fetch` never rejects until the request's own `signal` fires
+    // — this mock waits for that same signal, so the timer `runRequest`
+    // itself starts (`timeoutMs: 10`) is what actually triggers the
+    // rejection, exactly like production. A fetchImpl that throws
+    // immediately (this repo's `submitBatchPreview` "network failure"
+    // test does that) never sets `controller.signal.aborted`, so it could
+    // not tell "our own timeout fired" from "a plain network failure"
+    // apart — the bug this test guards against (CodeRabbit finding, local
+    // review round 1): every branch previously hardcoded `true`, so a
+    // plain network failure always showed the "took too long" message too.
+    const fetchImpl = vi.fn<typeof fetch>((_url, init) => {
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const err = new Error("The operation was aborted");
+          err.name = "AbortError";
+          reject(err);
+        });
+      });
     });
-    await expect(fetchBatchProgress(7, { fetchImpl, timeoutMs: 10 })).rejects.toMatchObject({ kind: "SERVICE" });
+    await expect(fetchBatchProgress(7, { fetchImpl, timeoutMs: 10 })).rejects.toMatchObject({
+      kind: "SERVICE",
+      message: expect.stringMatching(/too long/i),
+    });
+  });
+
+  it("classifies a genuine network failure with its OWN distinct message, never the timeout one", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+    await expect(fetchBatchProgress(7, { fetchImpl })).rejects.toMatchObject({
+      kind: "SERVICE",
+      message: expect.stringMatching(/could not reach the server/i),
+    });
   });
 });

@@ -138,9 +138,27 @@ describe("BatchUploadForm", () => {
     expect(screen.getByText("Fix the problems above, then upload again.")).toBeInTheDocument();
   });
 
+  it("resets a stale preview when a file input changes afterward, so 'Start batch' never submits an unpreviewed upload (CodeRabbit finding, local review round 1)", async () => {
+    const submitPreview = vi.fn(async () => cleanPreview());
+    render(<BatchUploadForm submitPreview={submitPreview} onStarted={vi.fn()} />);
+
+    await selectManifestAndImages();
+    await userEvent.click(screen.getByRole("button", { name: "Preview batch" }));
+    expect(await screen.findByRole("button", { name: "Start batch (2)" })).toBeInTheDocument();
+
+    // The user picks a different image after already previewing — the
+    // stale preview (and its "Start batch" button) must disappear rather
+    // than stay on screen describing an upload that is no longer selected.
+    await userEvent.upload(screen.getByLabelText("Label images"), imageFile("c.jpg"));
+
+    expect(screen.queryByRole("button", { name: /Start batch/ })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("batch-preview-summary")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Preview batch" })).toBeInTheDocument();
+  });
+
   it("starts the batch and shows the confirmation, calling onStarted only when the user clicks through", async () => {
     const submitPreview = vi.fn(async () => cleanPreview());
-    const submitStart = vi.fn(async () => startSuccess());
+    const submitStart = vi.fn<(formData: FormData) => Promise<BatchStartSuccessResponse>>(async () => startSuccess());
     const onStarted = vi.fn();
     render(<BatchUploadForm submitPreview={submitPreview} submitStart={submitStart} onStarted={onStarted} />);
 
@@ -151,6 +169,13 @@ describe("BatchUploadForm", () => {
     const started = await screen.findByTestId("batch-started");
     expect(started).toHaveTextContent("2 labels are now processing.");
     expect(onStarted).not.toHaveBeenCalled();
+
+    // "Start batch" resubmits the SAME files the preview was built from
+    // (CodeRabbit finding, local review round 1) — the server re-derives
+    // pairing from this upload rather than trusting a client-held decision.
+    const sentFormData = submitStart.mock.calls[0][0];
+    expect((sentFormData.get("manifest") as File).name).toBe("manifest.csv");
+    expect(sentFormData.getAll("images").map((file) => (file as File).name)).toEqual(["a.jpg", "b.jpg"]);
 
     await userEvent.click(screen.getByRole("button", { name: "View batch progress" }));
     expect(onStarted).toHaveBeenCalledWith(42);

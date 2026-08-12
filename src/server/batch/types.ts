@@ -34,6 +34,19 @@ export const MANIFEST_COLUMNS = [
 export type ManifestColumn = (typeof MANIFEST_COLUMNS)[number];
 
 /**
+ * Net-contents unit values this manifest format accepts. Mirrors
+ * `src/app/api/verify/types.ts`'s `NET_CONTENTS_UNIT_OPTIONS` exactly —
+ * duplicated here, not imported, because `server/*` code does not depend
+ * on `app/*` in this codebase (`manifest.ts`'s file comment explains the
+ * direction of that boundary). The canonical list now lives here, not
+ * re-declared inline in `manifest.ts`, so `ManifestRow.netContentsUnit`
+ * can carry the real literal type instead of a bare `string` a caller
+ * would have to re-validate before trusting (review finding).
+ */
+export const NET_CONTENTS_UNITS = ["mL", "L", "fl oz"] as const;
+export type NetContentsUnit = (typeof NET_CONTENTS_UNITS)[number];
+
+/**
  * One valid, fully-parsed manifest row — the same application fields
  * `src/app/api/verify/parse-request.ts` collects for a single-label
  * verify, plus the `image_filename` column this ticket adds (PRD §3.5).
@@ -52,7 +65,7 @@ export interface ManifestRow {
    * `parse-request.ts`'s own `alcoholContentPercent` rule. */
   alcoholContentPercent: number | null;
   netContentsValue: number;
-  netContentsUnit: string;
+  netContentsUnit: NetContentsUnit;
   imageFilename: string;
 }
 

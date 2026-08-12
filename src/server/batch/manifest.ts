@@ -23,18 +23,15 @@
  */
 import { BEVERAGE_TYPES } from "../../lib/db/enums";
 import { parseCsv } from "./csv";
-import { MANIFEST_COLUMNS, type ManifestColumn, type ManifestRow, type ManifestRowError, type ParseManifestResult } from "./types";
-
-/**
- * Duplicated from `src/app/api/verify/types.ts` on purpose, not imported:
- * that file is the API/UI layer for the single-label route, and `server/*`
- * code does not depend on `app/*` — the dependency runs the other way
- * through this codebase. Three strings, unlikely to drift; if they ever
- * do, every batch row using the new unit fails validation immediately and
- * visibly, rather than silently accepting a value the rest of the app
- * does not recognize.
- */
-const NET_CONTENTS_UNIT_OPTIONS: readonly string[] = ["mL", "L", "fl oz"];
+import {
+  MANIFEST_COLUMNS,
+  NET_CONTENTS_UNITS,
+  type ManifestColumn,
+  type ManifestRow,
+  type ManifestRowError,
+  type NetContentsUnit,
+  type ParseManifestResult,
+} from "./types";
 
 function normalizeHeaderName(cell: string): string {
   return cell.trim().toLowerCase();
@@ -166,7 +163,7 @@ export function parseManifest(csvText: string): ParseManifestResult {
       return;
     }
 
-    if (!NET_CONTENTS_UNIT_OPTIONS.includes(netContentsUnit)) {
+    if (!(NET_CONTENTS_UNITS as readonly string[]).includes(netContentsUnit)) {
       rowErrors.push({ rowNumber, message: `Row ${rowNumber}: choose a net contents unit: mL, L, or fl oz.` });
       return;
     }
@@ -183,7 +180,11 @@ export function parseManifest(csvText: string): ParseManifestResult {
       classType,
       alcoholContentPercent,
       netContentsValue,
-      netContentsUnit,
+      // Safe: the check directly above already confirmed membership in
+      // NET_CONTENTS_UNITS — this cast narrows the type, it does not
+      // bypass the validation (review finding: the type now reflects the
+      // guarantee this function already enforced at runtime).
+      netContentsUnit: netContentsUnit as NetContentsUnit,
       imageFilename,
     });
   });

@@ -4,6 +4,97 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-479 — LH-053 · E2E suite (2026-08-12)
+
+**What this builds.** Real, executable Playwright specs for the three PRD §6 flows — verify,
+batch, review queue — against a real, live app instance (`playwright.config.ts`'s `webServer`),
+never a mocked server.
+
+- `e2e/verify.spec.ts` — the verify happy path (a real golden-set image, a full per-field
+  checklist, click-through to detail), plus three error states: unreadable image, oversized
+  file, and an API failure with a retry affordance that genuinely recovers, not just appears.
+- `e2e/batch.spec.ts` — manifest upload → pairing preview → run → live progress → results
+  table → click-through to detail, plus two error states: malformed CSV and unpairable
+  rows/images.
+- `e2e/review-queue.spec.ts` — a needs-human item with its reason visible; both Approve and
+  Reject record a disposition.
+- `e2e/health.spec.ts` — unchanged (LH-001's own scaffold spec).
+
+**Scope cut, stated explicitly.** Two of the seven PRD §5 error states are not built as E2E
+specs: partial batch failure and the rate-limit backoff notice. Both already have precise,
+deterministic unit coverage (`src/server/batch-progress/get-batch-progress.test.ts`) that does
+not depend on timing. A true E2E repro of either needs a deliberately-broken item inside an
+otherwise-good batch (partial failure), or a live 429 racing a real `available_at` timestamp
+against the browser's own poll window (backoff). Both are exactly the shape of timing-dependent
+state that produces a flaky E2E test, for marginal signal beyond what the unit suite already
+proves deterministically. Five of seven is the real, honest count — not a silently dropped two.
+
+**Real model calls or fakes — decided, and load-bearing.** Every existing HTTP-level test in
+this repo (`src/app/api/verify/route.test.ts` and its siblings) injects a fake Anthropic client
+by dependency injection. A live browser test has no such seam into a separate server process.
+`scripts/e2e/fake-anthropic-server.ts` is a small, real HTTP server standing in for
+`api.anthropic.com`. `getDefaultExtractorClient()` and the resolver's own default client
+(`src/server/extractor/index.ts`, `src/server/resolver/index.ts`) both fall back to
+`process.env.ANTHROPIC_BASE_URL` when no client is injected — the same seam production code
+already has, for the same reason. `playwright.config.ts` points the app's and the worker's
+`webServer` processes at this fake server by default, so an E2E run never spends real API
+money. `E2E_LIVE=1 pnpm test:e2e` runs the real cascade against the real API instead — the same
+"cheap by default, an explicit flag pays for the real thing" shape `scripts/eval/check.ts
+--live` already established. Every other part of the cascade — preprocessing, the deterministic
+router and comparators, the warning subsystem (real tesseract.js OCR against the real uploaded
+photo, included), and persistence — stays 100% real in every mode.
+
+The fake server's default response is `WELL_FORMED_EXTRACTION_BODY`
+(`src/server/extractor/test-support.ts`), the same fixture the unit suite already trusts. It is
+also the verified ground truth for `golden-set/images/case-01-clean-match-spirits.jpg` — every
+spec that needs a working extraction uploads that real, committed image (TH-R12), so the fake
+response and the real photo describe the same label. A spec that needs a specific failure or a
+REVIEW verdict gets one by choosing a deliberately different application value, or a
+deliberately tiny synthetic "trigger" image (`scripts/e2e/fixtures.ts`) — never a shared, racy
+"current scenario" control endpoint. The whole suite stays safe to run fully in parallel
+(`fullyParallel: true`, unchanged from LH-001's own scaffold).
+
+**A real production bug found and fixed, in scope for this ticket.** The first real
+`next build && next start` run that uploaded a real photo crashed the whole app server process:
+`Cannot find module '.../tesseract.js/src/worker-script/node/index.js'`, an `uncaughtException`
+that killed every request after it, not only the one that triggered it. Next's production build
+traces server-side `require()` calls to decide what ships. tesseract.js resolves its own Node
+worker-thread entry point at call time — a path Next's static trace cannot see. Nothing before
+this ticket ever exercised this: the unit suite runs OCR directly in Node, with no Next bundler
+involved at all, and no prior ticket ran a production build with a real image through the
+warning subsystem. Fixed with `serverExternalPackages: ["tesseract.js"]` in `next.config.ts` —
+Next's own documented escape hatch for a package whose runtime module resolution a static trace
+cannot follow. This is exactly the class of bug real E2E against a real production server exists
+to catch, and it would have hit the real deployed Render instance too, not only this suite.
+
+**Confirmed each spec exercises the real flow, not a vacuous green run.** Six separate
+break/restore trials, each against a different mechanism the suite depends on: the checklist's
+own MATCH text, the batch progress testid the live-polling assertion waits on, the review
+queue's `AMBIGUOUS_BRAND` reason text, `ErrorPanel`'s `role="alert"`, the fake server's own
+failure-trigger threshold, and the pairing module's unmatched-row reason text. Every trial: broke
+it, watched the affected spec fail for the right reason, restored it, watched the suite go green
+again. One trial caught a real gap in the test itself, not just in the app: the unpairable-rows
+assertion originally checked the whole problems panel against one regex that either reported
+problem could satisfy. It stayed green even with the row-specific message broken, because the
+(unbroken) image-specific message alone still matched the pattern. Fixed by asserting each
+reported problem against its own list item, not the panel as a whole.
+
+**How to run it.**
+```bash
+source .factory-env        # or your own .env.local — no ANTHROPIC_API_KEY needed by default
+pnpm db:migrate             # once, if this worktree is not already current
+pnpm test:e2e                # fakes the Anthropic API — no spend, ~12s once servers are warm
+E2E_LIVE=1 pnpm test:e2e     # the real cascade, real API spend — needs a real ANTHROPIC_API_KEY
+```
+`scripts/factory/gate.sh` does not run `pnpm test:e2e` itself — G4 only runs `pnpm test`, the
+vitest unit suite. That is unchanged by this ticket; run `pnpm test:e2e` as a separate check,
+exactly as this ticket's own brief asked for.
+
+**Rollback.** `git revert` this ticket's commits. `next.config.ts`'s `serverExternalPackages`
+line is safe, and worth keeping, independently of the rest of this PR — reverting it
+re-introduces a real production crash the next time a real photo reaches the warning subsystem
+in a production build.
+
 ## TRO-511 — Single-label REVIEW verdicts now get an automatic resolution trigger (2026-08-12)
 
 **The gap.** `src/app/api/verify/route.ts` inserts a `review_queue` row on every REVIEW

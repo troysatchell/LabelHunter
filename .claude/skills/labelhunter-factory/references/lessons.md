@@ -126,6 +126,12 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     foreground and wait for it to print an actual verdict line before doing anything else. Hit
     twice in one session (TRO-473, TRO-474) — both times the work itself was fine, safely
     committed, just never pushed or reported.
+29. **A `try/catch` guards a synchronous throw, not automatically an async one.** Code that runs
+    after the `catch` block, or inside a bare `Promise.all`, still needs its own guard — a
+    rejected promise there propagates unhandled, or (in `Promise.all`) discards every other
+    already-good result alongside it. Check every `await` after error-handling code has actually
+    ended, not just the one the `try` block visibly wraps.
+    (`unhandled-rejection`, 2 tickets: TRO-468, TRO-476.)
 
 ## Mechanized (no longer prompt-dependent)
 

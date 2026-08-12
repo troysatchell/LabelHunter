@@ -14,8 +14,19 @@
  * `autoVerifiedCount` is shown with its own one-line caveat (CP-3 §7.1's
  * explicit instruction): it bundles PASS and FAIL together — "decided
  * without Sonnet or a human" (CP-3 §7.1's own wording), never "passed."
+ *
+ * TRO-544 (LH-039, PRD §3.8, TH-R4): adds the "Auto-verified share" and
+ * "Items per minute" tiles. Both read straight off `progress.throughput`/
+ * `progress.autoVerifiedShare` — this component computes neither; see
+ * `../../lib/utils/batch-throughput.ts` and `../../server/batch-progress/
+ * get-batch-progress.ts`. "Items per minute" is a DIFFERENT number from
+ * "Average time per label" below it: that tile averages one label's own
+ * EXTRACT-phase duration, blind to the worker pool running several labels
+ * at once; "Items per minute" is the whole batch's real wall-clock rate,
+ * which concurrency speeds up. Both are real and both are worth showing —
+ * neither replaces the other.
  */
-import { formatDuration } from "../../lib/utils/format";
+import { formatDuration, formatPercent } from "../../lib/utils/format";
 import type { BatchJobStatus } from "../../lib/db/enums";
 import type { BatchProgressResponse } from "../api/batch/[batchJobId]/types";
 
@@ -35,7 +46,21 @@ function labelWord(count: number): string {
 }
 
 export function BatchProgressSummary({ progress }: BatchProgressSummaryProps) {
-  const { status, totalCount, processedCount, autoVerifiedCount, passCount, failCount, resolvedBySonnetCount, needsHumanCount, failedCount, latency, rateLimitBackoff } = progress;
+  const {
+    status,
+    totalCount,
+    processedCount,
+    autoVerifiedCount,
+    passCount,
+    failCount,
+    resolvedBySonnetCount,
+    needsHumanCount,
+    failedCount,
+    latency,
+    throughput,
+    autoVerifiedShare,
+    rateLimitBackoff,
+  } = progress;
 
   return (
     <div className="batch-progress-summary">
@@ -73,6 +98,26 @@ export function BatchProgressSummary({ progress }: BatchProgressSummaryProps) {
         <div className="batch-stat" data-testid="batch-stat-needs-human">
           <dt>Needs a person</dt>
           <dd>{needsHumanCount}</dd>
+        </div>
+
+        <div className="batch-stat" data-testid="batch-stat-auto-verified-share">
+          <dt>Auto-verified share</dt>
+          <dd>
+            {autoVerifiedShare !== null ? formatPercent(autoVerifiedShare) : "Not measured yet"}
+            <p className="batch-stat__note">Decided without Sonnet or a person, out of every label finished so far.</p>
+          </dd>
+        </div>
+
+        <div className="batch-stat" data-testid="batch-stat-throughput">
+          <dt>Items per minute</dt>
+          <dd>
+            {throughput ? throughput.itemsPerMinute : "Not measured yet"}
+            <p className="batch-stat__note">
+              {throughput
+                ? `${formatDuration(throughput.avgMsPerItem)} per label, averaged across the whole batch.`
+                : "LabelHunter reports this once the batch finishes."}
+            </p>
+          </dd>
         </div>
 
         <div className="batch-stat" data-testid="batch-stat-avg-latency">

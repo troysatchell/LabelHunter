@@ -19,6 +19,8 @@ function progress(overrides: Partial<BatchProgressResponse> = {}): BatchProgress
     startedAt: "2026-08-12T00:00:00.000Z",
     completedAt: null,
     latency: { count: 4, avgMs: 3200, p95Ms: 4800 },
+    throughput: null,
+    autoVerifiedShare: 0.75,
     rateLimitBackoff: { active: false, itemCount: 0 },
     results: [],
     ...overrides,
@@ -63,6 +65,39 @@ describe("BatchProgressSummary", () => {
     render(<BatchProgressSummary progress={progress({ latency: null })} />);
     expect(screen.getByTestId("batch-stat-avg-latency")).toHaveTextContent("Not measured yet");
     expect(screen.getByTestId("batch-stat-p95-latency")).toHaveTextContent("Not measured yet");
+  });
+
+  it("shows items/minute and the reciprocal per-item average once the batch has finished (TRO-544, PRD §3.8)", () => {
+    render(<BatchProgressSummary progress={progress({ throughput: { itemsPerMinute: 16.67, avgMsPerItem: 3600 } })} />);
+    const tile = screen.getByTestId("batch-stat-throughput");
+    expect(tile).toHaveTextContent("16.67");
+    expect(tile).toHaveTextContent("3.60s per label, averaged across the whole batch.");
+  });
+
+  it("shows 'Not measured yet' for throughput instead of a fabricated rate while the batch is still running", () => {
+    render(<BatchProgressSummary progress={progress({ throughput: null })} />);
+    const tile = screen.getByTestId("batch-stat-throughput");
+    expect(tile).toHaveTextContent("Not measured yet");
+    expect(tile).toHaveTextContent("LabelHunter reports this once the batch finishes.");
+  });
+
+  it("shows the auto-verified share as a percentage (CP-1 §4.5 step 3: 'the share of labels finished without a resolver call')", () => {
+    render(<BatchProgressSummary progress={progress({ autoVerifiedShare: 0.72 })} />);
+    const tile = screen.getByTestId("batch-stat-auto-verified-share");
+    expect(tile).toHaveTextContent("72.0%");
+    expect(tile).toHaveTextContent("Decided without Sonnet or a person");
+  });
+
+  it("shows 'Not measured yet' for the auto-verified share instead of a fabricated 0% before anything has processed", () => {
+    render(<BatchProgressSummary progress={progress({ autoVerifiedShare: null })} />);
+    expect(screen.getByTestId("batch-stat-auto-verified-share")).toHaveTextContent("Not measured yet");
+  });
+
+  it("shows a genuine 0% auto-verified share as a real measured rate, not as 'Not measured yet'", () => {
+    // Regression: a naive `autoVerifiedShare ? ... : "Not measured yet"` check
+    // would treat a real 0 as falsy and misreport it as unmeasured.
+    render(<BatchProgressSummary progress={progress({ autoVerifiedShare: 0 })} />);
+    expect(screen.getByTestId("batch-stat-auto-verified-share")).toHaveTextContent("0.0%");
   });
 
   it("shows the partial-failure notice only when failedCount > 0 (TH-R20 designed state)", () => {

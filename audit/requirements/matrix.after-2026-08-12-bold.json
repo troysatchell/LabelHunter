@@ -1,0 +1,1350 @@
+{
+ "mode": "compare",
+ "commit": "8fa89998eecf7fad2331f079eca0f43de6ba0fc9",
+ "dirty": false,
+ "dirty_paths": [],
+ "date": "2026-08-12T18:05:00Z",
+ "config_hash": "7f50443d68066298042d808ef08611b49393ed14ace13ee810c9807a9f59d2e4",
+ "baselineRef": "matrix.after-2026-08-11-pm.json",
+ "ticket_mapping": {
+  "status": "OK",
+  "provider": "linear",
+  "team": "Troysatchell",
+  "project": "LabelHunter",
+  "issues_pulled": 68
+ },
+ "requirements": [
+  {
+   "id": "TH-R1",
+   "verdict": "VERIFIED",
+   "priorVerdict": "VERIFIED",
+   "changed": false,
+   "tickets": [
+    "TRO-461",
+    "TRO-462",
+    "TRO-463",
+    "TRO-465",
+    "TRO-514",
+    "TRO-479"
+   ],
+   "evidence": [
+    {
+     "file": "src/app/_components/VerifyForm.tsx",
+     "line": 200,
+     "supports": "`<button type=\"submit\" className=\"primary-button\" disabled={isLoading}>` \u2014 the form carries one submit button. Confirmed by reading the line."
+    },
+    {
+     "file": "src/app/api/verify/route.ts",
+     "line": 259,
+     "supports": "`const result = routeLabel(extraction, application, deps.comparators, warningResult, {` \u2014 the pipeline call that turns one submission into per-field verdicts. Confirmed."
+    },
+    {
+     "file": "src/app/api/verify/route.ts",
+     "line": 233,
+     "supports": "`[extraction, warningResult] = await Promise.all([extractionPromise, warningPromise]);` \u2014 the request awaits the Haiku extractor and the warning comparator together. Confirmed."
+    },
+    {
+     "file": "src/app/api/verify/route.test.ts",
+     "line": 134,
+     "supports": "`expect(body.fields).toHaveLength(5);` inside the happy-path test that also reads the applications and verifications tables. Confirmed."
+    },
+    {
+     "file": "src/app/_components/ResultsChecklist.tsx",
+     "line": 80,
+     "supports": "`{result.fields.map((row) => (` \u2014 one checklist row per field, each row keyed to its own verdict class. Confirmed."
+    },
+    {
+     "file": "scripts/eval/results/eval-report.json",
+     "line": 183,
+     "supports": "`\"labelVerdictCorrect\": true,` inside the case-01 verdict block (caseId at line 179). A real model call through the real route produced the expected verdict. Confirmed."
+    },
+    {
+     "file": "CHANGES.md",
+     "line": 188,
+     "supports": "\"confirmed: 11/11 E2E specs pass in the default run\" \u2014 a recorded Playwright run through a real browser. I did not re-run it. Added by the citation check; the tracer missed it."
+    },
+    {
+     "file": "playwright.config.ts",
+     "line": 97,
+     "supports": "`command: \"pnpm build && pnpm start\",` \u2014 the E2E suite runs against a production build, not `next dev`. Added by the citation check."
+    },
+    {
+     "file": "scripts/eval/results/eval-report.json",
+     "line": 78,
+     "supports": "`\"correct\": 21,` under `labelVerdictAccuracy` (total 32 at line 77). Only 21 of 32 cases matched the expected label verdict. Added to correct the tracer's \"zero failures\" phrasing."
+    }
+   ],
+   "verification": {
+    "command": "pnpm test (vitest) with DATABASE_URL pointed at labelhunter_audit_0812 \u2014 re-run by this citation check",
+    "outputTail": " Test Files  137 passed (137)\n      Tests  1524 passed (1524)\n   Start at  13:13:37\n   Duration  12.12s (transform 887ms, setup 7.88s, import 11.03s, tests 13.61s, environment 3.54s)"
+   },
+   "notes": "Verdict held. Every cited line exists and says what the tracer claimed. I re-ran pnpm test myself; the counts match the tracer's tail exactly (137 files, 1524 tests), so that tail is real, not invented. Two corrections to the tracer's notes. First, the tracer wrote that the live eval run had \"zero failures\". The report's `failures` array is empty, which means no case crashed. It does not mean every case was right: labelVerdictAccuracy is 21 of 32, a rate of 0.656 (line 78). I added that citation. The distinction does not move this row, because TH-R1 asks for a working core loop, not for verdict accuracy. It does matter for honesty. Second, the tracer missed the strongest evidence for this row's acceptance line. CHANGES.md line 188 records 11 of 11 Playwright specs passing against a real production build (playwright.config.ts line 97), with real tesseract.js OCR on a real photo. That is the browser-level render TH-R1 asks for. I did not re-run pnpm test:e2e, per the sweep rules. On the TRO-519 caveat: I read the ticket in Linear and it is real \u2014 Urgent, Backlog, a POST /api/verify that stalled past 120 seconds twice and wrote no row. The ticket's own text limits the observed stall to `pnpm dev` under Turbopack, and says reproduction under `pnpm build && pnpm start` is not yet checked. The 11/11 E2E run is on that production path. One caveat the tracer left out: pnpm test injects a fake Anthropic client, so the suite proves the loop, not the model. citation-checked",
+   "suggested_scope": ""
+  },
+  {
+   "id": "TH-R2",
+   "verdict": "PARTIAL",
+   "priorVerdict": "VERIFIED",
+   "changed": true,
+   "tickets": [
+    "TRO-471",
+    "TRO-514",
+    "TRO-519"
+   ],
+   "evidence": [
+    {
+     "file": "scripts/latency/results/single-label-verify.json",
+     "line": 3,
+     "supports": "`\"measuredAt\": \"2026-08-12T02:17:14.475Z\",` \u2014 the date of the only committed latency measurement. Confirmed."
+    },
+    {
+     "file": "scripts/latency/results/single-label-verify.json",
+     "line": 11,
+     "supports": "`pipelineScope` states in the artifact's own words: \"No OCR/warning-subsystem comparator (LH-020 not merged -- warningResult is always null).\" Confirmed."
+    },
+    {
+     "file": "scripts/latency/results/single-label-verify.json",
+     "line": 30,
+     "supports": "`\"p50\": 3690,` \u2014 under the 5000 ms target at line 34 for the configuration that was measured. Confirmed."
+    },
+    {
+     "file": "scripts/latency/measure.ts",
+     "line": 41,
+     "supports": "Opens the paragraph \"**What IS in this measurement, since TRO-514.**\" The paragraph runs to line 47 and ends \"the two are not directly comparable.\" Confirmed; the claim spans lines 41-47, not line 41 alone."
+    },
+    {
+     "file": "src/app/api/verify/route.ts",
+     "line": 233,
+     "supports": "`[extraction, warningResult] = await Promise.all([extractionPromise, warningPromise]);` \u2014 the response waits for the OCR channel, so OCR sits inside the clock. Confirmed."
+    },
+    {
+     "file": "src/server/warning/index.ts",
+     "line": 132,
+     "supports": "`const result = await deps.ocr(crop);` \u2014 the OCR call carries no deadline. Confirmed."
+    },
+    {
+     "file": "src/server/warning/index.ts",
+     "line": 153,
+     "supports": "`const [extracted, ocrChannel] = await Promise.all([extractedPromise, ocrChannelPromise]);` \u2014 no deadline here either. Confirmed."
+    },
+    {
+     "file": "CHANGES.md",
+     "line": 3364,
+     "supports": "`| p50 | **4232 ms** |` \u2014 the changelog still reports the older figure. I grepped the whole file: 3690 appears nowhere in CHANGES.md. Confirmed."
+    }
+   ],
+   "notes": "Verdict held at PARTIAL. Every cited line exists and reads as claimed. I checked the tracer's ordering claim with git, not by inference: commit c5e49f8 wired the warning comparator into the route at 2026-08-11T22:30:19-05:00, and commit 5a16263 committed the latency artifact at 2026-08-11T21:17:48-05:00. The measurement therefore predates the wiring, and the artifact's own pipelineScope field says so independently. I confirmed the missing OCR deadline by reading src/server/warning/index.ts. I read TRO-519 in Linear; it is real, Urgent, and still in Backlog. I did not run pnpm latency:check, because it makes billed API calls. Two additions the tracer left out. First, the changelog gap is one-directional: CHANGES.md line 3364 records p50 4232 ms and never records 3690 ms. Second, evidence that partly offsets the risk: CHANGES.md line 188 records 11 of 11 E2E specs passing against a production build with real OCR, so the wired pipeline did complete there. That run bounds the failure risk. It does not measure p50, so it does not close this row. The needsRuling question stays open. The verdict does not depend on it: the row is PARTIAL under either reading, because no measurement covers the pipeline that ships. citation-checked",
+   "suggested_scope": "Two steps close this. Step 1: fix TRO-519 \u2014 race the OCR channel against an explicit deadline, and degrade to { available: false } on timeout, which reconcileWarningChannels already handles. Step 2: re-run pnpm latency:check against the wired route, commit the fresh artifact, and update the CHANGES.md p50 figure to match it. Without step 1 the p95 is unbounded, so step 2 alone is not enough."
+  },
+  {
+   "id": "TH-R3",
+   "verdict": "VERIFIED",
+   "priorVerdict": "IMPLEMENTED-UNVERIFIED",
+   "changed": true,
+   "tickets": [
+    "TRO-465",
+    "TRO-466",
+    "TRO-475",
+    "TRO-476",
+    "TRO-479",
+    "TRO-480"
+   ],
+   "evidence": [
+    {
+     "file": "src/app/_components/VerifyForm.tsx",
+     "line": 200,
+     "supports": "`<button type=\"submit\" className=\"primary-button\" disabled={isLoading}>` \u2014 the form's only action. No second control to hunt for."
+    },
+    {
+     "file": "src/app/_components/VerifyForm.test.tsx",
+     "line": 69,
+     "supports": "`expect(screen.getAllByRole(\"button\")).toHaveLength(1);` inside the describe block named \"VerifyForm \u2014 TH-R3, the primary flow is reachable with no hunting\" (line 52). I re-ran it green this sweep."
+    },
+    {
+     "file": "src/app/globals.css",
+     "line": 82,
+     "supports": "`font-size: 18px;` on `html`, under the line-81 comment \"Large type by default (TH-R3) \u2014 every rem-based size below scales from this.\""
+    },
+    {
+     "file": "src/app/globals.css",
+     "line": 63,
+     "supports": "`--color-button-bg: #3468ad;` \u2014 TRO-480's dark-mode fix. CORRECTED: the comment above it (lines 58-62) records the measured 5.63:1 white-on-fill and 3.26:1 fill-on-page ratios. It does not record the 2.14:1 failure the tracer attributed to it."
+    },
+    {
+     "file": "src/app/globals.css",
+     "line": 30,
+     "supports": "ADDED by the checker. \"solid fill (measured 2.14:1 in dark mode before this fix \u2014 WCAG AA\" \u2014 this is where the replaced failure ratio is actually recorded, not line 63."
+    },
+    {
+     "file": "src/app/globals.css",
+     "line": 22,
+     "supports": "`--color-border: #838a90;` \u2014 TRO-480's fix. The comment above (lines 16-21) names the measured 2.24:1 border, below WCAG 1.4.11's 3:1 floor."
+    },
+    {
+     "file": "src/app/globals.css",
+     "line": 270,
+     "supports": "ADDED by the checker. `align-self: flex-start;` inside `.secondary-button` \u2014 TRO-480 finding 2, the fifth fix the tracer claimed to have confirmed but never cited. The comment above (lines 262-269) names the observed full-width \"Try again\" bug."
+    },
+    {
+     "file": "src/app/globals.css",
+     "line": 106,
+     "supports": "`outline: 3px solid var(--color-focus-ring);` on `:focus-visible` (line 105), under the line-104 comment \"One high-contrast focus style everywhere \u2014 never remove the outline.\""
+    },
+    {
+     "file": "src/app/page.tsx",
+     "line": 14,
+     "supports": "Intro copy reads \"LabelHunter checks each field and marks any that need a\" [\"person to review.\", line 15]. TRO-480 removed the vague \"needs a closer look\" phrasing here."
+    },
+    {
+     "file": "src/app/batch/[batchJobId]/page.tsx",
+     "line": 45,
+     "supports": "`<Link href=\"/batch\" className=\"secondary-button\">` sits directly under the line-43 heading, above the results table \u2014 TRO-480 finding 5, the one screen where placement differs on purpose (CHANGES.md:361-364)."
+    },
+    {
+     "file": "src/app/verify/[verificationId]/page.tsx",
+     "line": 64,
+     "supports": "`<Link href=\"/\" className=\"secondary-button\">` in a `.page__nav-links` paragraph \u2014 one of the five deep screens TRO-480 gave an on-page way back (CHANGES.md:341-358)."
+    },
+    {
+     "file": "CHANGES.md",
+     "line": 216,
+     "supports": "\"## TRO-480 \u2014 LH-054: UX polish pass \u2014 heuristic review record (2026-08-12)\" \u2014 the heuristic UX review the inventory's acceptance evidence names, dated and recorded."
+    },
+    {
+     "file": "CHANGES.md",
+     "line": 419,
+     "supports": "ADDED by the checker. \"Visit `/`, `/verify/1`, `/verify/2`, `/verify/3`, `/review-queue`, `/review-queue/1`, `/batch`,\" [\"/batch/1\", line 420] \u2014 eight screens, which backs the tracer's count."
+    },
+    {
+     "file": "CHANGES.md",
+     "line": 400,
+     "supports": "\"**Observed** (live Chromium render, this worktree's `pnpm dev`, port 3180)\" \u2014 the walkthrough's own provenance line, separating observed from derived claims."
+    },
+    {
+     "file": "CHANGES.md",
+     "line": 408,
+     "supports": "\"a directly-observed live render of `ResultsChecklist`'s success state (blocked by the tesseract\" \u2014 the record's own admission of what it could not see."
+    },
+    {
+     "file": "e2e/verify.spec.ts",
+     "line": 26,
+     "supports": "The happy-path spec uploads a real committed golden-set image, fills the form, and asserts a full per-field checklist plus click-through to detail. Not re-run this sweep. CHECKER CAVEAT: the file header (lines 7-10) states the Anthropic API is faked by default, so this spec proves the UI flow, never live model behavior."
+    }
+   ],
+   "verification": {
+    "command": "DATABASE_URL=<throwaway labelhunter_audit_0812> pnpm exec vitest run --reporter=verbose -t \"TH-R3\" src/app/_components/VerifyForm.test.tsx src/app/_components/ReviewActions.test.tsx",
+    "outputTail": " \u2713 src/app/_components/ReviewActions.test.tsx > ReviewActions \u2014 TH-R3, two large obvious buttons, no hidden actions > also logs an asynchronous rejection from onResolved, not only a synchronous throw 10ms\n\n Test Files  2 passed (2)\n      Tests  10 passed | 6 skipped (16)\n   Start at  13:11:24\n   Duration  865ms (transform 76ms, setup 212ms, import 440ms, tests 232ms, environment 628ms)"
+   },
+   "notes": "Verdict held at VERIFIED. I opened all thirteen cited lines. Twelve read exactly as claimed. One overreached: globals.css:63 records 5.63:1 and 3.26:1, not the 2.14:1 failure. That figure sits at globals.css:30. I added line 30 as its own evidence row and rewrote line 63's claim. I re-ran the cited command against the throwaway database. It reproduced: 2 files passed, 10 passed, 6 skipped. The tracer's outputTail quoted real lines, but not the literal last lines. I replaced it with the true tail I saw. I also ran the full suite: 137 files passed, 1524 tests passed. That run matters here. The inventory asks for two things: a primary action reachable without hunting, and a completable flow. The filtered command proves only the first. VerifyForm's happy-path test proves the second at jsdom level, and the -t filter skips it. So the tracer's own verification command under-covered its own row; the full run closes that. I checked TRO-480 in Linear, read-only: Done, completedAt 2026-08-12T14:45:46.343Z. I confirmed the fifth TRO-480 fix the tracer left uncited, `align-self: flex-start` at globals.css:270, and added it. I confirmed the banned phrase \"needs a closer look\" now survives in test comments only. The limits the tracer named all hold. No live browser ran this sweep. The heuristic review is the implementing agent's own in-repo record; this sweep did not observe it, and no screenshot is committed. The E2E suite was not re-run, by instruction. Commit 8fa8999 is still unpushed, but it adds assets, docs, tickets, and two .gitignore lines only. It changes no source file this row cites. Ticket mapping holds: factory/tickets.md lines 127, 133, 246, and 271 each name TH-R3 for LH-015, LH-016, LH-042, and LH-054. TRO-476 and TRO-479 stay content mappings, exactly as the tracer said. citation-checked"
+  },
+  {
+   "id": "TH-R4",
+   "verdict": "PARTIAL",
+   "priorVerdict": "PARTIAL",
+   "changed": false,
+   "tickets": [
+    "TRO-473",
+    "TRO-474",
+    "TRO-475",
+    "TRO-472",
+    "TRO-518",
+    "TRO-506",
+    "TRO-522"
+   ],
+   "evidence": [
+    {
+     "file": "src/server/batch-start/start-batch.ts",
+     "line": 138,
+     "supports": "const queuedCount = await enqueueExtractItems(d.db, batchJobId, queuedPairs); \u2014 the upload path enqueues one work item per matched pairing."
+    },
+    {
+     "file": "src/server/batch-start/start-batch.test.ts",
+     "line": 58,
+     "supports": "it(\"creates a RUNNING batch with one queued EXTRACT item per readable pairing\") \u2014 N pairings produce N queue items, checked against real Postgres."
+    },
+    {
+     "file": "src/server/batch-queue/pool.test.ts",
+     "line": 86,
+     "supports": "it(\"N=3 concurrent workers process M=10 seeded items, each exactly once, then idle\") \u2014 the pool drains a multi-item queue without duplicating or dropping work."
+    },
+    {
+     "file": "src/app/batch/[batchJobId]/page.tsx",
+     "line": 49,
+     "supports": "<BatchProgressBrowser batchJobId={batchJobId} /> \u2014 the per-batch progress screen exists and mounts the live poller."
+    },
+    {
+     "file": "src/app/_components/BatchProgressSummary.tsx",
+     "line": 47,
+     "supports": "{STATUS_TEXT[status]} {processedCount} of {totalCount} {labelWord(totalCount)} processed. \u2014 the summary view the requirement asks for."
+    },
+    {
+     "file": "src/app/_components/BatchResultsTable.tsx",
+     "line": 58,
+     "supports": "<th scope=\"col\">Label</th> \u2014 first column of the per-item results table (Label / Brand / ABV / Net / Warning / Status)."
+    },
+    {
+     "file": "src/server/batch/constants.ts",
+     "line": 24,
+     "supports": "export const MAX_IMAGE_COUNT = 1000; \u2014 the input ceiling sits above the 200-300 scale the requirement names."
+    },
+    {
+     "file": "src/server/batch-start/start-batch.ts",
+     "line": 38,
+     "supports": "\"measured against a real multi-hundred-image upload; a future ticket can\" \u2014 the implementation states its own scale is unmeasured. CORRECTED from the tracer's line 39, which carries the next clause."
+    },
+    {
+     "file": "src/server/storage/local-file-storage.ts",
+     "line": 23,
+     "supports": "const DEFAULT_BASE_DIR = path.join(process.cwd(), \"var\", \"uploads\"); \u2014 batch images land on the writing process's own disk."
+    },
+    {
+     "file": "src/server/batch-queue/extract-worker.ts",
+     "line": 245,
+     "supports": "const original = await d.readLabelImage(labelImageRow.storagePath); \u2014 the worker reads that same file from its own filesystem."
+    },
+    {
+     "file": "render.yaml",
+     "line": 62,
+     "supports": "- type: worker \u2014 Render runs the worker as a service separate from the web service. I read the whole file; it declares no disk for either service."
+    },
+    {
+     "file": "docs/deploy.md",
+     "line": 94,
+     "supports": "\"- **Batch image storage does not yet survive the web/worker split.**\" \u2014 the repo records the same defect in its own words, with the consequence spelled out at line 103: \"they are two separate disks. A real batch\" run fails."
+    }
+   ],
+   "notes": "The batch subsystem is real code. The last sweep found only a schema table and a .gitkeep. Citation check: one line number was wrong. The sentence \"measured against a real multi-hundred-image upload; a future ticket can\" sits on line 38 of start-batch.ts, not line 39. I corrected the entry. Every other citation opened at the cited line and said what the entry claims. I reproduced the tracer's own runs against the throwaway database labelhunter_audit_0812. The batch server suites gave 22 files, 249 tests, all passed. The four batch UI suites gave 4 files, 33 tests, all passed. Both numbers match the tracer exactly. I also proved the suites need a real database. I pointed DATABASE_URL at a database name that does not exist. src/server/batch-start then failed 7 of its 14 tests. So the green run is Postgres evidence, not a mock. The verdict stays PARTIAL for one confirmed defect. The web service writes each batch image to its own container disk. The worker reads it from a different container. On the deployed instance every queued item will fail to read its image. I added docs/deploy.md:94, where the repo states this defect itself, so the row's most serious claim no longer rests on code reading alone. I read TRO-518 in Linear: priority Urgent, status Backlog. Linear has no file:line form, so that stays here. Second gap: nothing exercises the 200-300 scale. The largest batch any test drains is 10 items. e2e/batch.spec.ts exists and covers the chain in one browser run, but I did not run it, by instruction. citation-checked",
+   "suggested_scope": "Two changes close this. First, replace local-file-storage.ts with a shared object store behind its existing interface, so the worker reads what the web service wrote (TRO-518, already ticketed, Urgent). Second, run one real batch at 200-300 items and record the measured result, or state the untested scale in the docs. Wiring `pnpm test:e2e` into CI (TRO-522) would then keep the whole chain honest on every push."
+  },
+  {
+   "id": "TH-R5",
+   "verdict": "IMPLEMENTED-UNVERIFIED",
+   "priorVerdict": "IMPLEMENTED-UNVERIFIED",
+   "changed": false,
+   "tickets": [],
+   "evidence": [
+    {
+     "file": "docs/PRD.md",
+     "line": 46,
+     "supports": "\"- **No COLA integration** (TH-R5). **No sensitive data** (TH-R6). No auth/user accounts \u2014\" \u2014 the scope constraint is written down and names the requirement ID. Line confirmed by opening the file."
+    },
+    {
+     "file": "src/server/router/required-fields.ts",
+     "line": 21,
+     "supports": "\" * not required \u2014 this system models the federal (TTB/COLA) rule only, not\" \u2014 the single COLA string under src/ is a regulatory citation in a doc comment, not integration code. Line confirmed."
+    },
+    {
+     "file": "docs/error-states.md",
+     "line": 27,
+     "supports": "The outbound-dependency table's Anthropic row: `api.anthropic.com`, called on every verify request, required yes. CORRECTED WORDING: this line names the Anthropic dependency. It does not itself say Anthropic is the only vendor API \u2014 see line 31."
+    },
+    {
+     "file": "docs/error-states.md",
+     "line": 31,
+     "supports": "\"**Design consequence.** LabelHunter makes exactly one outbound call to a\" (continues line 32: \"public vendor API while it runs.\") \u2014 this is the line that carries the \"only\" claim the prior evidence entry attached to line 27. Added by the citation check."
+    },
+    {
+     "file": "render.yaml",
+     "line": 51,
+     "supports": "\"      - key: ANTHROPIC_API_KEY\" \u2014 the web service declares one vendor secret. Line 47 is DATABASE_URL and line 53 is GOOGLE_API_KEY; all three confirmed by opening the file. No registry credential is declared."
+    },
+    {
+     "file": "src/app/_components/VerifyForm.tsx",
+     "line": 131,
+     "supports": "\"<input id=\\\"verify-brand-name\\\" name=\\\"brandName\\\" type=\\\"text\\\" required className=\\\"field__input\\\" disabled={isLoading} />\" \u2014 a person types the application data. The app fetches it from no external record. Line confirmed."
+    }
+   ],
+   "notes": "CITATION CHECK. I opened all five original cited lines. Four matched their claim exactly. One overclaimed: docs/error-states.md:27 is the Anthropic table row, and it does not state that Anthropic is the only vendor API. I rewrote that entry and added docs/error-states.md:31, which states \"exactly one outbound call to a public vendor API\". I also re-ran the tracer's greps and queries. (1) Case-insensitive \"cola\" across src/, scripts/ and e2e/ (.ts/.tsx): 1 match, the doc comment cited above. Reproduces. (2) External hosts in src/: the tracer reported \"4 matches, all the SVG XML namespace\". The full pattern https?:// returns 12 matches in src/ .ts/.tsx files. Eight are \"http://localhost\" request URLs inside test files. Four are the SVG namespace \"http://www.w3.org/2000/svg\", also inside test files. No external host appears, so the conclusion holds, but the stated count of 4 is only reachable with an undisclosed narrower pattern. (3) Database: docker exec labelhunter-pg psql -U labelhunter -d labelhunter_audit_0812 returns 8 tables and 88 columns (4+12+13+17+9+8+17+8), and \"registry_shaped_columns 0\". Both figures reproduce exactly. (4) New check this pass: grep for GOOGLE_API_KEY, @google/ and generativelanguage across src/ returns 0 matches, and src/server plus src/app contain no outbound fetch() call outside comments. That independently supports the self-contained claim. Verdict holds. The requirement asks that something not exist, and a green command cannot prove an absence. The unpushed commit 8fa8999 touches no file cited here \u2014 I read its diff. citation-checked",
+   "suggested_scope": ""
+  },
+  {
+   "id": "TH-R6",
+   "verdict": "PARTIAL",
+   "priorVerdict": "PARTIAL",
+   "changed": false,
+   "tickets": [
+    "TRO-457",
+    "TRO-484",
+    "TRO-482"
+   ],
+   "evidence": [
+    {
+     "file": "src/lib/db/schema.ts",
+     "line": 59,
+     "supports": "\" * No PII anywhere (TH-R6). Every column below is alcohol-label compliance\" \u2014 the schema states the posture at the top of the product tables. Line confirmed."
+    },
+    {
+     "file": "src/lib/db/schema.ts",
+     "line": 340,
+     "supports": "\" * TH-R6: this table records what a human decided (approve/reject) and\" (continues line 341: \"when, but never who \u2014 no reviewer name, email, or ID column.\"). Line confirmed."
+    },
+    {
+     "file": "src/server/review-queue/record-disposition.ts",
+     "line": 11,
+     "supports": "\" * No reviewer identity is recorded anywhere here \u2014 deliberate, per TH-R6\" \u2014 the write path enforces what the schema comment promises. Line confirmed."
+    },
+    {
+     "file": "src/lib/db/seed.ts",
+     "line": 10,
+     "supports": "\" * (TH-R6): no names, emails, or addresses of real people anywhere.\" \u2014 the seed fixtures carry no real-person data. Line confirmed."
+    },
+    {
+     "file": ".gitignore",
+     "line": 9,
+     "supports": "\".env.local\" \u2014 the real key file is excluded from git. Line 8 excludes .factory-env. CORRECTED: the unpushed commit 8fa8999 appends two lines at the END of this 36-line file (.gstack/ and .codacy/, new lines 35-36), not at lines 33-34 as the prior note said. Line 9 is unchanged, so the citation also holds on origin/main. I read the commit diff."
+    },
+    {
+     "file": "playwright.config.ts",
+     "line": 59,
+     "supports": "\"      ANTHROPIC_API_KEY: \\\"sk-ant-e2e-fake-key-not-a-real-credential\\\",\" \u2014 the only secret-shaped assignment in the repo names itself a fake. Line confirmed."
+    },
+    {
+     "file": "src/server/batch-queue/pool.ts",
+     "line": 44,
+     "supports": "\"  /** Prefix for each loop's own `claimed_by` id \u2014 combined with `kind` and\" \u2014 claimed_by holds a machine worker id, not a person. Added by the citation check; the prior row asserted this line in notes only."
+    }
+   ],
+   "notes": "CITATION CHECK. I opened all six original cited lines plus pool.ts:44. All exist and all say what the row claims. I corrected one factual detail inside a supports string: commit 8fa8999 appends to .gitignore at lines 35-36, not 33-34. Two note claims needed correction. (1) Secret scan. The tracer wrote \"1 match, the declared fake\". That count reproduces under no pattern I tried. The prior sweep's strict pattern sk-ant-[a-zA-Z0-9]{20,}|AIza[a-zA-Z0-9_-]{30,} across .ts/.tsx/.md/.json/.yaml/.yml/.cjs/.mjs returns 0 matches, because the fake key contains hyphens. A loose \"sk-ant\" grep over the same file types, excluding audit/requirements (the audit's own output), returns 3 matches: playwright.config.ts:59 (the declared fake), CHANGES.md:923 (prose about a red-before-green test), and scripts/deploy/render-yaml.test.ts:256 (an assertion that render.yaml contains no key). None is a credential, so the conclusion stands and the count does not. (2) Database. I re-ran the query against labelhunter_audit_0812: \"pii_shaped_columns 0\" across 88 columns in 8 tables. Reproduces exactly. README clause: confirmed absent two ways. git ls-files lists one README, golden-set/README.md, and ls of the repo root finds no README file at all. TRO-484 (LH-063) is Backlog \u2014 confirmed by a live Linear query this pass. The access-code gate is also unbuilt: find over src/ returns no middleware file, and TRO-482 (LH-061) is Backlog, priority Urgent. Verdict holds at PARTIAL. citation-checked",
+   "suggested_scope": "Two small, independent pieces, both already ticketed and both Backlog. (a) TRO-484 (LH-063, README) adds a short \"Data handling\" section: what the database stores (label and application fields only), what it never stores (no PII, no reviewer identity), where uploaded images live (local disk, gitignored), and where the API key lives (Render env config, never the repo). That closes the acceptance clause. (b) TRO-482 (LH-061) builds the access-code gate PRD \u00a78 already designs; it should land before the deployment is public."
+  },
+  {
+   "id": "TH-R7",
+   "verdict": "PARTIAL",
+   "priorVerdict": "MISSING",
+   "changed": true,
+   "tickets": [
+    "TRO-478",
+    "TRO-468",
+    "TRO-485",
+    "TRO-519"
+   ],
+   "evidence": [
+    {
+     "file": "docs/error-states.md",
+     "line": 17,
+     "supports": "\"## Outbound dependencies (TH-R7)\" \u2014 the section the last sweep recorded as absent now exists. Line confirmed."
+    },
+    {
+     "file": "docs/error-states.md",
+     "line": 27,
+     "supports": "Table row: Anthropic API (`api.anthropic.com`), every verify request, required yes, and the blocked behavior \u2014 \"Graceful: a clear message, no crash, no hang, a retry button.\" Line confirmed."
+    },
+    {
+     "file": "docs/error-states.md",
+     "line": 29,
+     "supports": "Table row: Google Generative Language API, \"Dev-time only\", \"The running app has no code path that calls Google.\" Line confirmed. I also checked the claim: grep for GOOGLE_API_KEY, @google/ and generativelanguage across src/ returns 0 matches."
+    },
+    {
+     "file": "docs/error-states.md",
+     "line": 130,
+     "supports": "\"### 4. Unreachable-endpoint degradation (TH-R7)\" \u2014 names the firewall case and the designed SERVICE state it produces. Line confirmed."
+    },
+    {
+     "file": "docs/error-states.md",
+     "line": 165,
+     "supports": "\"This is the TH-R7 trade-off: LabelHunter has exactly one outbound\" (continues line 166: \"dependency on a public vendor API (the table above).\"). Line confirmed."
+    },
+    {
+     "file": "src/app/api/verify/route.test.ts",
+     "line": 363,
+     "supports": "The test title \"the Anthropic endpoint is unreachable (TRO-478, TH-R7 \u2014 a firewall block, DNS failure, or refused connection): 503 SERVICE, no partial record left behind\". Line confirmed. Line 371 throws the SDK's real APIConnectionError, line 388 asserts no SDK detail leaks, line 391 asserts zero application rows."
+    },
+    {
+     "file": "src/server/warning/ocr.ts",
+     "line": 83,
+     "supports": "\"      langPath: TESSDATA_DIR,\" \u2014 OCR reads its language data from the committed tessdata/ directory (TESSDATA_DIR is defined at line 30). CORRECTED WORDING: this line sets the path only. The proof that no network call happens is the network-blocked test below, not this line."
+    },
+    {
+     "file": "src/server/warning/ocr-startup.test.ts",
+     "line": 106,
+     "supports": "The test title \"recognizes text using the real committed language data, with fetch/http/https blocked\". Line confirmed; the it() call opens at line 105."
+    },
+    {
+     "file": "docs/checkpoints/cp2-warning-subsystem.md",
+     "line": 416,
+     "supports": "\"> Only after those land does the dependency appear in the README's outbound-dependency list\" (continues line 417: \"(TH-R7, rubric D2) as \\\"none at runtime\\\"\"). Line confirmed."
+    },
+    {
+     "file": "src/server/warning/index.ts",
+     "line": 153,
+     "supports": "\"  const [extracted, ocrChannel] = await Promise.all([extractedPromise, ocrChannelPromise]);\" \u2014 the OCR channel (runOcrChannel, line 123) is awaited with no deadline. Line confirmed. grep for timeout, setTimeout and AbortSignal across ocr.ts, index.ts and region-detect.ts returns 0 matches."
+    }
+   ],
+   "notes": "CITATION CHECK. I opened all ten cited lines. All ten exist and all support their claim. I tightened one supports string: ocr.ts:83 sets langPath, and by itself proves configuration, not the absence of a network call; the network-blocked test carries that proof. I re-ran both commands the row leans on, DATABASE_URL pointed at labelhunter_audit_0812. (1) pnpm test -- src/app/api/verify/route.test.ts --reporter=verbose: \"Test Files 1 passed (1) / Tests 20 passed (20)\", including the named unreachable-endpoint case. (2) pnpm test -- src/server/warning/ocr-startup.test.ts --reporter=verbose: \"Test Files 1 passed (1) / Tests 2 passed (2)\", both cases named, including the negative control. Both reproduce; only the per-test millisecond figures differ, as expected. I also tested the gap claim instead of trusting it: grep for tesseract, ocr and tessdata across docs/error-states.md returns 0 matches, so the OCR language data appears nowhere in that document, not merely outside the table. TRO-519 reproduces in Linear (checkable there, no file:line): title \"OCR channel has no timeout \u2014 a hung tesseract.js worker stalls /api/verify indefinitely\", status Backlog, priority Urgent, and its body records the 120-second stall with no database row. TRO-478 and TRO-468 are Done; TRO-485 is Backlog. Verdict holds at PARTIAL, and changed=true is correct against the MISSING baseline. One correction to the tracer's framing: its ruling question implied that a permissive answer alone lifts the row above PARTIAL. That is wrong, because the second gap stands on its own. Whether that second gap belongs to TH-R7 is itself an ambiguity the tracer resolved silently, so I added it to needsRuling. citation-checked",
+   "suggested_scope": "Small and concrete. Add one row to docs/error-states.md's outbound table for the OCR language data: tesseract.js, loaded from the committed tessdata/eng.traineddata.gz, no runtime network call, proven by src/server/warning/ocr-startup.test.ts. Add one line naming what a stuck OCR worker does, once TRO-519 gives it a deadline and a degrade path. Then TRO-485 (LH-064, approach.md) folds the finished section into the submission doc."
+  },
+  {
+   "id": "TH-R8",
+   "verdict": "VERIFIED",
+   "priorVerdict": "VERIFIED",
+   "changed": false,
+   "tickets": [
+    "TRO-462",
+    "TRO-463",
+    "TRO-504",
+    "TRO-465"
+   ],
+   "evidence": [
+    {
+     "file": "src/server/comparators/brand.ts",
+     "line": 57,
+     "supports": "return { verdict: \"MATCH\", note: `Matches once formatting is normalized: \"${labelText}\" = \"${applicationText}\".` } \u2014 a judged match that carries an explanation, not a silent pass"
+    },
+    {
+     "file": "src/server/comparators/brand.ts",
+     "line": 64,
+     "supports": "verdict: \"NEEDS_REVIEW\" on the below-threshold branch of the return at line 63 \u2014 the brand comparator never returns MISMATCH, so a formatting difference can never hard-fail"
+    },
+    {
+     "file": "src/server/comparators/brand.test.ts",
+     "line": 24,
+     "supports": "compareBrandOrClass(field(\"STONE'S THROW\"), \"Stone's Throw\", CONTEXT) \u2014 the brief's own named case; lines 25 and 26 assert MATCH and a truthy note"
+    },
+    {
+     "file": "src/server/comparators/normalize.test.ts",
+     "line": 21,
+     "supports": "expect(normalizeForFuzzyMatch(\"STONE'S THROW\")).toBe(normalizeForFuzzyMatch(\"Stone's Throw\")) \u2014 the casefold step that makes the two equal"
+    },
+    {
+     "file": "src/app/api/verify/route.test.ts",
+     "line": 206,
+     "supports": "route-level test titled \"brand_name MATCHes a case/apostrophe-normalized read, with a note (TH-R8's named STONE'S THROW case, real comparators post-LH-013)\"; lines 218 and 219 assert MATCH and a /normalized/i reason"
+    },
+    {
+     "file": "src/app/api/verify/route.ts",
+     "line": 155,
+     "supports": "comparators: productionComparators inside defaultDeps \u2014 the live route uses the real comparator set, not a stand-in"
+    },
+    {
+     "file": "src/server/resolver/prompt.ts",
+     "line": 42,
+     "supports": "resolver prompt rule 4 starts here: \"Judge equivalence, not spelling. \\\"STONE'S THROW\\\" and \\\"Stone's Throw\\\" are the\" \u2014 line 43 completes it with \"same brand.\" The escalation path applies the same lenient regime."
+    }
+   ],
+   "verification": {
+    "command": "DATABASE_URL=<labelhunter_audit_0812> pnpm exec vitest run src/app/api/verify/route.test.ts",
+    "outputTail": " Test Files  1 passed (1)\n      Tests  20 passed (20)\n   Start at  13:12:16\n   Duration  1.35s (transform 97ms, setup 65ms, import 328ms, tests 877ms, environment 0ms)"
+   },
+   "notes": "I opened all seven cited lines. Every line exists and says what the row claims. No line number needed correction. I re-ran the row's command against labelhunter_audit_0812 and saw 1 file / 20 tests green, matching the traced counts. I re-ran the unit half too: 17 files / 198 tests green. I re-ran the whole suite: 137 files / 1524 tests green, so the traced 1524 figure is real, not copied. Both git claims hold. `git log -1 -- src/server/comparators` returns 1acd682, dated 2026-08-11. `git show --stat 9a75c3b` is \"feat(verify): swap in LH-013 real comparators, delete provisional set (TRO-465)\" and it touches src/app/api/verify/route.ts, so adding TRO-465 to the ticket list is correct. One qualification the traced row omits. route.test.ts injects a fake Anthropic client, so the route tests prove the comparator and the route wiring, not model behavior. TH-R8 asks about deterministic comparison code, so a stubbed model does not weaken this row. Verdict unchanged. Sweep commit 8fa8999 is unpushed, so CI has never run this tree and every result here is local. I did not run pnpm test:e2e or pnpm latency:check. citation-checked",
+   "suggested_scope": ""
+  },
+  {
+   "id": "TH-R9",
+   "verdict": "PARTIAL",
+   "priorVerdict": "MISSING",
+   "changed": true,
+   "tickets": [
+    "TRO-467",
+    "TRO-468",
+    "TRO-469",
+    "TRO-514",
+    "TRO-517",
+    "TRO-533"
+   ],
+   "evidence": [
+    {
+     "file": "src/app/api/verify/route.ts",
+     "line": 153,
+     "supports": "defaultDeps sets compareGovernmentWarning: defaultCompareGovernmentWarning \u2014 line 106 imports compareGovernmentWarningFromImage under that alias from ../../../server/warning. The live route calls the real comparator."
+    },
+    {
+     "file": "src/app/api/verify/route.ts",
+     "line": 259,
+     "supports": "routeLabel(extraction, application, deps.comparators, warningResult, {...}) \u2014 warningResult is the value awaited at line 233, not the literal null the prior sweep found"
+    },
+    {
+     "file": "src/server/router/field-resolution.ts",
+     "line": 296,
+     "supports": "return { verdict: result.verdict, reviewReason: null, comparatorNote: result.note } \u2014 the comparator's MATCH or MISMATCH becomes the government_warning field verdict"
+    },
+    {
+     "file": "src/server/warning/canonical.ts",
+     "line": 22,
+     "supports": "the statutory first paragraph, verbatim, with the all-caps \"GOVERNMENT WARNING:\" prefix. The eCFR provenance is claimed in this file's header at lines 4 to 12, and canonical.test.ts:71 re-derives the value from the committed fixture fixtures/ecfr-16-21.xml."
+    },
+    {
+     "file": "src/server/warning/wording-compare.ts",
+     "line": 65,
+     "supports": "const distance = folded === FOLDED_CANONICAL ? 0 : levenshteinDistance(folded, FOLDED_CANONICAL) \u2014 the word-for-word comparison against the statute"
+    },
+    {
+     "file": "src/server/warning/caps.ts",
+     "line": 97,
+     "supports": "government: checkFullyCapitalizedPosition(tokens[0] ?? \"\", \"GOVERNMENT\") \u2014 the all-caps prefix check; line 98 does the same for WARNING"
+    },
+    {
+     "file": "src/server/warning/golden-case.test.ts",
+     "line": 55,
+     "supports": "case-01-clean-match-spirits asserts result.verdict === \"MATCH\", after line 54 checks it against the manifest's own expected verdict"
+    },
+    {
+     "file": "src/server/warning/golden-case.test.ts",
+     "line": 64,
+     "supports": "case-08-title-case-warning-prefix-only asserts result.verdict === \"MISMATCH\", after line 63 checks the manifest's own expected verdict. The input is manifest text, not a photo \u2014 see line 47."
+    },
+    {
+     "file": "src/server/warning/golden-case.test.ts",
+     "line": 86,
+     "supports": "case-10-reworded-warning-clause-one asserts MISMATCH; line 87 asserts the note \"Government Warning wording differs from the required text.\" The input is manifest text, not a photo."
+    },
+    {
+     "file": "src/server/warning/golden-case.test.ts",
+     "line": 47,
+     "supports": "return { goldenCase, result: reconcileWarningChannels(vlm, { available: true, text, confidence: 92 }) } \u2014 the helper feeds BOTH channels the same manifest string. Every MISMATCH case above runs on simulated input, never on a real image."
+    },
+    {
+     "file": "src/server/warning/index.test.ts",
+     "line": 173,
+     "supports": "inside \"real image, real OCR, real region detection\": compareGovernmentWarningFromImage on golden-set/images/case-01-clean-match-spirits.jpg returns MATCH. This is the only real-image pipeline test, and it covers the pass case only."
+    },
+    {
+     "file": "src/server/warning/region-detect.test.ts",
+     "line": 244,
+     "supports": "real tesseract OCR of the detected crop contains \"GOVERNMENT WARNING\"; line 251 asserts confidence above OCR_CONFIDENCE_FLOOR, so the second channel is genuinely usable on a real image"
+    },
+    {
+     "file": "src/app/api/verify/route.test.ts",
+     "line": 518,
+     "supports": "expect(body.labelVerdict).toBe(\"FAIL\"); line 498 asserts PASS. Both tests inject a fake compareGovernmentWarning (lines 483 and 505), so they prove the route and router plumbing, not the comparator's own read."
+    },
+    {
+     "file": "src/server/batch-queue/extract-worker.ts",
+     "line": 276,
+     "supports": "routeLabel(extraction, applicationRecord, d.comparators, warningResult, {...}) \u2014 the batch path passes a real comparator result too (TRO-517)"
+    },
+    {
+     "file": "next.config.ts",
+     "line": 34,
+     "supports": "serverExternalPackages: [\"tesseract.js\"] \u2014 the entry that keeps the OCR channel alive under next build/start. The comment at lines 12 to 33 records that without it the worker's MODULE_NOT_FOUND killed the server process."
+    },
+    {
+     "file": "src/server/warning/reconcile.ts",
+     "line": 129,
+     "supports": "return reviewResult(\"WARNING_MISMATCH\", note) \u2014 the single-channel path's only non-MATCH exit. The doc comment at line 115 states it: \"Never returns MISMATCH.\" With OCR unavailable, a title-case warning yields NEEDS_REVIEW, not FAIL."
+    },
+    {
+     "file": "src/server/extractor/schema.ts",
+     "line": 80,
+     "supports": "bold: { type: \"string\", enum: [\"true\", \"false\", \"uncertain\"] } \u2014 the bold signal sits on the HAIKU extraction schema. docs/PRD.md line 40 credits Sonnet for it, and src/server/resolver/prompt.ts:44 tells Sonnet not to judge the warning at all."
+    },
+    {
+     "file": "factory/scorecard.jsonl",
+     "line": 47,
+     "supports": "TRO-480 attempt 1 note: \"surfaced TRO-519 (OCR channel has no timeout, hung a real verify submission 120s+ with zero DB row) -- filed as its own Urgent ticket after independently confirming the code-level gap\". An observed live failure of TH-R9's own subsystem, dated 2026-08-12."
+    },
+    {
+     "file": "docs/checkpoints/cp2-warning-subsystem.md",
+     "line": 848,
+     "supports": "\"statement. LabelHunter checks neither rule. It reports a three-valued advisory signal from the\" \u2014 the bold limitation sentence. The blockquote opens at line 846. The traced row cited 846 for this quote."
+    },
+    {
+     "file": "src/server/warning/index.ts",
+     "line": 19,
+     "supports": "stale comment: \"currently passes `warningResult: null` on purpose, per its own file\" \u2014 contradicts route.ts:153 and :259. The traced row cited line 21, which reads \"to a follow-up rather than folded in here.\""
+    },
+    {
+     "file": "src/server/router/index.ts",
+     "line": 236,
+     "supports": "stale comment: \"// --- The government warning: contract only (LH-020, gated by CP-2) -----\" \u2014 the code below it consumes a real warningResult"
+    }
+   ],
+   "notes": "Downgraded from VERIFIED to ASSUMED. The code is real and the tests are green. The verdict is not yet earned.\n\nTwo citations were wrong, and I corrected both. src/server/warning/index.ts: the quoted stale comment sits on line 19, not line 21. docs/checkpoints/cp2-warning-subsystem.md: \"LabelHunter checks neither rule\" sits on line 848, not line 846. I opened the other fifteen cited lines. All fifteen exist and say what the row claims. I added five evidence rows for findings the traced row buried in prose.\n\nI re-ran both commands. `DATABASE_URL=<labelhunter_audit_0812> pnpm exec vitest run src/server/warning src/server/comparators` printed \"Test Files  17 passed (17) / Tests  198 passed (198) / Start at 13:12:10\". The route suite printed 1 file / 20 tests green. The full suite printed \"Test Files  137 passed (137) / Tests  1524 passed (1524)\". No output tail was invented.\n\nWhy ASSUMED, not VERIFIED. The traced row raises two rulings, TH-R9-a and TH-R9-b, and the verdict swings on both answers. VERIFIED picks the favorable answer to each and moves the open question into a footnote. The report format reserves ASSUMED for a row that waits on a human ruling. The assumption I trace under, stated plainly: a MISMATCH proven at the comparator level satisfies \"title-case fails\", and an internal checkpoint document satisfies \"explicitly documented as a limitation\". Rule both questions for the row and it becomes VERIFIED with no new code. Rule against TH-R9-a and it becomes PARTIAL.\n\nThree things the traced row understated.\n1. The fail half of the acceptance bar has never run on a real image. golden-set/images/case-08-title-case-warning-prefix-only.jpg and case-10-reworded-warning-clause-one.jpg are both committed. I grepped src, scripts and e2e: no test reads either file. Only case-01, the pass case, runs the real pipeline. Every MISMATCH assertion feeds reconcileWarningChannels the manifest's own string on both channels (golden-case.test.ts:47), and the route-level FAIL test injects a fake comparator. So nothing proves a real photo of a title-case warning reaches FAIL.\n2. The OCR channel has no timeout and it hung a real submission. factory/scorecard.jsonl:47 records 120s+ with zero database row, filed Urgent as TRO-519 on 2026-08-12. I grepped src/server/warning/ocr.ts, region-detect.ts and index.ts for timeout, setTimeout, AbortSignal and race. There is none in this tree. The traced row described this as a backlog note about a missing timeout. The repo's own scorecard describes an observed live hang.\n3. The e2e artifact citation is selective. TRO-479 attempt 1 passed at headSha e7bd9e9. Attempts 2 and 3 failed. Attempt 3, headSha d20d6b6, is recorded as \"HUMAN-OVERRIDE MERGE, not a passing gate\". A reader of the traced row would not learn that. I confirmed e2e/verify.spec.ts:76 to :78 does assert the government_warning row shows \"Match\". I did not run pnpm test:e2e.\n\nThe bold branch is weaker than the traced row states. CP-2 \u00a77.3's drafted paragraph says LabelHunter \"reports a three-valued advisory signal from the vision model\". The signal exists on the Haiku schema and in the Haiku prompt at src/server/extractor/prompt.ts:46. Nothing consumes it: grep over src finds no reader outside the extractor, and no component renders it. So the one document that records the limitation also misstates the behavior. `ls` confirms README.md and docs/approach.md do not exist.\n\nSweep commit 8fa8999 is unpushed. CI has never run this tree. Every result here is local. I did not run pnpm test:e2e or pnpm latency:check. citation-checked || INT-001: ruled 2026-08-12 \u2014 a real-image FAIL test is required. Ambiguity settled, bar not yet met, so PARTIAL rather than ASSUMED.",
+   "suggested_scope": "Add one test calling compareGovernmentWarningFromImage against golden-set/images/case-08-title-case-warning-prefix-only.jpg asserting MISMATCH, mirroring index.test.ts's case-01 test. Then land TRO-533's PRD correction and copy CP-2 \u00a77.3's limitation paragraph into a graded deliverable."
+  },
+  {
+   "id": "TH-R10",
+   "verdict": "VERIFIED",
+   "priorVerdict": "PARTIAL",
+   "changed": true,
+   "tickets": [
+    "TRO-477",
+    "TRO-460",
+    "TRO-497",
+    "TRO-470",
+    "TRO-516"
+   ],
+   "evidence": [
+    {
+     "file": "src/server/router/golden-image-quality.test.ts",
+     "line": 7,
+     "supports": "\"verdict. This file checks that bar against the six golden-set cases\" \u2014 a dedicated suite for TH-R10's own bar over case-17 through case-22."
+    },
+    {
+     "file": "src/server/router/golden-image-quality.test.ts",
+     "line": 13,
+     "supports": "\".test.ts` uses for case-01. This is NOT a live model call. No real image\" \u2014 the suite states plainly that it feeds synthetic extractions, not real photos."
+    },
+    {
+     "file": "src/server/router/label-blockers.ts",
+     "line": 25,
+     "supports": "if (imageQuality.legible === \"no\") return true; \u2014 the real LOW_IMAGE_QUALITY blocker the router uses."
+    },
+    {
+     "file": "golden-set/manifest.json",
+     "line": 929,
+     "supports": "\"category\": \"glare\", \u2014 case-17 carries a real imperfect-image category tag."
+    },
+    {
+     "file": "golden-set/manifest.json",
+     "line": 931,
+     "supports": "\"imagePath\": \"golden-set/images/case-17-glare-front-label.jpg\", \u2014 the degraded image is a committed file, not a placeholder."
+    },
+    {
+     "file": "scripts/eval/results/eval-report.json",
+     "line": 2214,
+     "supports": "\"actualLabelVerdict\": \"REVIEW\", \u2014 case-20 (upside down) returned REVIEW in a real live run, not a confident verdict."
+    },
+    {
+     "file": "scripts/eval/results/eval-report.json",
+     "line": 2217,
+     "supports": "\"actualReviewReason\": \"LOW_IMAGE_QUALITY\", \u2014 that REVIEW carried the explicit unreadable-image reason. Case-20 is the only one of the six that did."
+    },
+    {
+     "file": "scripts/eval/check.ts",
+     "line": 7,
+     "supports": "\"`pnpm eval:check` (no flags) never makes a live API call. It reads the\" \u2014 the command the tracer cited as its verification spends no money AND exercises no model."
+    },
+    {
+     "file": "scripts/eval/baseline.json",
+     "line": 3,
+     "supports": "\"establishedAt\": \"2026-08-12T13:26:45.488Z\", \u2014 the baseline carries the same instant as the report's measuredAt, so the cheap gate compares the run against itself."
+    }
+   ],
+   "notes": "Verdict downgraded from the tracer's VERIFIED, and two statements of fact corrected. All eight of the tracer's citations hold. Each line exists and says what the entry claims. Corrected fact 1. The tracer wrote that case-18, case-20 and case-22 returned REVIEW with reason LOW_IMAGE_QUALITY. I read the committed report case by case. Only case-20 carried LOW_IMAGE_QUALITY. Case-18 returned REVIEW with WARNING_MISMATCH. Case-22 returned REVIEW with CONFLICTING_EXTRACTION. Corrected fact 2. The tracer wrote that Haiku mistranscribed three words of case-19's warning. The report shows one word: \"because use of the risk\" for \"because of the risk\". The inventory bar still holds on the committed evidence. Case-17 and case-21 read all five fields correctly and returned PASS. Case-18 and case-22 read all five fields correctly and still escalated to REVIEW. Case-19 escalated to REVIEW after the one-word error. Case-20 read nothing and escalated with LOW_IMAGE_QUALITY. No case produced a confident wrong verdict. Why the downgrade. This row's claim is about model behavior on real degraded photos. No command in this sweep exercises that path. I re-ran `pnpm eval:check` and got the tracer's exact two lines and exit 0, so the outputTail was real, not invented. But check.ts line 7 says the command never makes a live API call, and baseline.json line 3 shows the baseline was established at the report's own measured instant. A green gate proves the artifact is intact. It proves nothing about image handling. I also ran golden-image-quality.test.ts: 12 tests passed. That file's own line 13 says it feeds synthetic extractions and calls no model. The single real live run is a committed artifact this sweep did not repeat, because a live sweep makes billed calls. That reason is recorded here, which is the IMPLEMENTED-UNVERIFIED bar. I removed the verification block, which the report format reserves for VERIFIED rows. The substance still moved since the last sweep. The gap the last sweep named \u2014 no live run through degraded images \u2014 is closed by a real, dated, committed artifact. The open calibration question stays in needsRuling. My downgrade does not rest on it. citation-checked || INT-002: ruled 2026-08-12 \u2014 a dated live-run artifact counts when it measures the shipping pipeline. eval-report.json was measured 2026-08-12T13:26:45Z, mode live, after the warning comparator reached the route. It qualifies."
+  },
+  {
+   "id": "TH-R11",
+   "verdict": "VERIFIED",
+   "priorVerdict": "PARTIAL",
+   "changed": true,
+   "tickets": [
+    "TRO-458",
+    "TRO-461",
+    "TRO-469",
+    "TRO-470",
+    "TRO-515"
+   ],
+   "evidence": [
+    {
+     "file": "golden-set/manifest.json",
+     "line": 5,
+     "supports": "`\"caseId\": \"case-01-clean-match-spirits\",` opens the reference case object. Its brandName \"Old Tom Distillery\" is at line 11, and its five label fields run to line 29. Confirmed."
+    },
+    {
+     "file": "scripts/eval/results/eval-report.json",
+     "line": 4,
+     "supports": "`\"mode\": \"live\",` \u2014 scripts/eval/check.ts line 171 is the only place that writes this value, and it sits on the --live path. Confirmed."
+    },
+    {
+     "file": "scripts/eval/results/eval-report.json",
+     "line": 182,
+     "supports": "`\"actualLabelVerdict\": \"PASS\",` for case-01. Confirmed."
+    },
+    {
+     "file": "scripts/eval/results/eval-report.json",
+     "line": 191,
+     "supports": "`\"actualVerdict\": \"MATCH\",` under the brand_name block that opens at line 189. `\"correct\": true` is the next line, 192. Confirmed."
+    },
+    {
+     "file": "scripts/eval/results/eval-report.json",
+     "line": 205,
+     "supports": "`\"actualVerdict\": \"MATCH\",` under alcohol_content (field name at line 203). Confirmed."
+    },
+    {
+     "file": "scripts/eval/results/eval-report.json",
+     "line": 212,
+     "supports": "`\"actualVerdict\": \"MATCH\",` under net_contents (field name at line 210). Confirmed."
+    },
+    {
+     "file": "scripts/eval/results/eval-report.json",
+     "line": 219,
+     "supports": "`\"actualVerdict\": \"MATCH\",` under government_warning (field name at line 217). That completes all five TH-R11 fields. Confirmed."
+    },
+    {
+     "file": "scripts/eval/cascade-runner.ts",
+     "line": 239,
+     "supports": "`response = await handleVerifyRequest(request, deps);` \u2014 the harness drives the production route. The deps built at lines 208-234 use the real preprocessor, the real extractor, the real compareGovernmentWarning, productionComparators, and a real database. Confirmed."
+    },
+    {
+     "file": "src/server/extractor/golden-case.test.ts",
+     "line": 33,
+     "supports": "`it(\"extracts across all five TH-R11 fields plus beverage_type\", () => {` \u2014 a committed test that runs in every pnpm test. Its own header (lines 10-15) says it parses a synthetic Haiku response, so it is not live-model evidence."
+    }
+   ],
+   "verification": {
+    "command": "pnpm test (vitest) with DATABASE_URL pointed at labelhunter_audit_0812 \u2014 re-run by this citation check; it includes src/server/extractor/golden-case.test.ts and src/app/api/verify/route.test.ts",
+    "outputTail": " Test Files  137 passed (137)\n      Tests  1524 passed (1524)\n   Start at  13:13:37\n   Duration  12.12s (transform 887ms, setup 7.88s, import 11.03s, tests 13.61s, environment 3.54s)"
+   },
+   "notes": "Verdict held at VERIFIED, and the upgrade is justified: the prior sweep held this row down because case-01 had never passed a real-model run, and the committed live report now shows it passing on all five fields. Every cited line reads as claimed. I re-ran pnpm test and matched the tracer's counts. Three corrections to the tracer's notes. First, the provenance commit is wrong. The report at HEAD (measuredAt 2026-08-12T13:26:45.488Z) landed in commit 6e41471, not a6140ff. a6140ff holds a different report, measured at 12:59:28.746Z. Second, the diff claim is wrong as stated. Seven files changed between a6140ff and HEAD in the pipeline directories, not three: route.ts, reason-text.ts, reconcile.ts, and four test files. I read all three source diffs. reason-text.ts changed two user-facing strings, reconcile.ts changed one, and route.ts added the resolverInput snapshot write. No verdict logic moved, so the conclusion survives. The tracer also omitted reconcile.ts, which is warning-verdict code and therefore the file a reader would most want named. Third, I re-ran the diff from the correct base: 6e41471 to HEAD lists the identical seven files, so the argument holds either way. I verified the caseId sets myself \u2014 the report's 32 IDs match the manifest exactly, and `failures` is empty. One correction on wording: the tracer wrote \"zero failures across the whole run\". No case crashed, but only 21 of 32 label verdicts matched expectation (line 78). Case-01 itself matched on all five fields, which is what this row needs. I did not re-run pnpm eval:check --live; it makes billed API calls. The unpushed commit 8fa8999 adds images, a provenance doc, and factory/tickets.md only \u2014 I read its stat and it touches no file this row cites. citation-checked",
+   "suggested_scope": ""
+  },
+  {
+   "id": "TH-R12",
+   "verdict": "VERIFIED",
+   "priorVerdict": "PARTIAL",
+   "changed": true,
+   "tickets": [
+    "TRO-458",
+    "TRO-497",
+    "TRO-498",
+    "TRO-499",
+    "TRO-505",
+    "TRO-515",
+    "TRO-469",
+    "TRO-530"
+   ],
+   "evidence": [
+    {
+     "file": "golden-set/README.md",
+     "line": 15,
+     "supports": "\"`rendered+degraded` case. That is 32 of 32 cases. Total size: about 1.20 MB.\" \u2014 every case now has a real committed image."
+    },
+    {
+     "file": "golden-set/manifest.json",
+     "line": 931,
+     "supports": "\"imagePath\": \"golden-set/images/case-17-glare-front-label.jpg\", \u2014 the manifest points each case at a real file under golden-set/images/."
+    },
+    {
+     "file": "scripts/golden/verify.ts",
+     "line": 13,
+     "supports": "\" * 2. Every case's `imagePath` resolves to a real, non-empty file.\" \u2014 the gate checks image presence, not just schema shape."
+    },
+    {
+     "file": "scripts/golden/verify.ts",
+     "line": 14,
+     "supports": "\" * 3. Every file under `golden-set/images/` resolves back to some case's\" \u2014 the gate also catches orphan images, so coverage cannot drift either way."
+    },
+    {
+     "file": ".github/workflows/ci.yml",
+     "line": 102,
+     "supports": "run: pnpm golden:verify \u2014 CI runs the golden-set gate as its own labeled step."
+    },
+    {
+     "file": ".github/workflows/ci.yml",
+     "line": 169,
+     "supports": "pnpm eval:check \u2014 CI also re-checks the committed eval report against the committed baseline."
+    },
+    {
+     "file": "src/server/warning/index.test.ts",
+     "line": 168,
+     "supports": "const originalImage = readFileSync(\"golden-set/images/case-01-clean-match-spirits.jpg\"); \u2014 a test reads a golden-set image at run time. Added by the citation check: it carries the \"referenced by tests\" half of the acceptance line in file:line form."
+    },
+    {
+     "file": "golden-set/README.md",
+     "line": 31,
+     "supports": "\"**Still not done \u2014 `ai-generated` wild labels.** Design doc \u00a75 describes about 5 fully\" \u2014 the repo records its own remaining stretch goal."
+    }
+   ],
+   "verification": {
+    "command": "pnpm golden:verify",
+    "outputTail": "Checked 32 golden-set case(s).\nPASS: golden set is consistent.\n(exit 0, confirmed separately)"
+   },
+   "notes": "All seven of the tracer's citations hold. Each line exists and says what the entry claims. I re-ran `pnpm golden:verify` and got the tracer's exact two lines, then re-ran it again to read the exit code: 0. The outputTail was real, not invented. I dropped \"DATABASE_URL=<audit db>\" from the recorded command, because this script reads no database. I added one evidence entry. src/server/warning/index.test.ts:168 reads golden-set/images/case-01-clean-match-spirits.jpg at run time. The tracer asserted the \"referenced by tests\" half in prose only; now it has a file:line. Four more modules read the image set (scripts/golden/images.test.ts, scripts/golden/renderSmoke.test.ts, scripts/eval/cascade-runner.ts, scripts/latency/measure.ts). I confirmed the Linear disagreement the tracer reported. TRO-498 reads Done and its title still names wild labels. golden-set/README.md line 31 says the wild labels are not done. TRO-530 reads Todo, so the scope is not lost. Linear has no file:line form, so this stays here. The unpushed commit 8fa8999 touches none of this row's cited files. An evaluator who clones origin/main still gets all 32 images. The verdict stays VERIFIED. golden:verify tests the acceptance line itself \u2014 assets present, resolved in both directions \u2014 and it ran green here, so the row does not depend on a model call the sweep cannot make. One dependency stated plainly: if the human rules that the brief demands AI-generated wild labels, this row drops to PARTIAL pending TRO-530. citation-checked"
+  },
+  {
+   "id": "TH-R13",
+   "verdict": "VERIFIED",
+   "priorVerdict": "VERIFIED",
+   "changed": false,
+   "tickets": [
+    "TRO-456"
+   ],
+   "evidence": [
+    {
+     "file": "package.json",
+     "line": 2,
+     "supports": "\"name\": \"labelhunter\" \u2014 the repo root is the whole project; there is no second package or vendored source tree."
+    },
+    {
+     "file": "package.json",
+     "line": 12,
+     "supports": "\"build\": \"next build\" \u2014 the build entry point the gate ran green on this tree."
+    },
+    {
+     "file": ".github/workflows/ci.yml",
+     "line": 74,
+     "supports": "\"run: pnpm install --frozen-lockfile\" \u2014 CI installs from a clean checkout, which is the fresh-clone half of this row's acceptance line. Line 117 then runs `pnpm build`."
+    }
+   ],
+   "verification": {
+    "command": "gh repo view --json isPrivate,url,name,defaultBranchRef  (re-run by the citation checker)",
+    "outputTail": "{\"defaultBranchRef\":{\"name\":\"main\"},\"isPrivate\":false,\"name\":\"LabelHunter\",\"url\":\"https://github.com/troysatchell/LabelHunter\"}"
+   },
+   "notes": "Both original citations hold. I opened package.json:2 and read \"name\": \"labelhunter\". I opened line 12 and read \"build\": \"next build\". I re-ran `gh repo view` and got the same JSON, character for character, so the outputTail is real. I re-ran `pnpm build` too: it exited 0 and printed the same 15 routes. One correction to the tracer's note. `git show --stat 8fa8999` lists 13 files, not the ten the note describes. The real set is seven images, two JSON sidecars, two docs, .gitignore, and factory/tickets.md. The load-bearing claim survives: the commit touches no source file, no config, and no dependency. I added stronger evidence for \"buildable from clone\", which the tracer left resting on a prior dated artifact. `gh run list` shows CI run 31615976363 green on origin/main's tip (22773b8) at 2026-08-12T16:07Z. That job checks out clean, runs `pnpm install --frozen-lockfile` (ci.yml:74), and runs `pnpm build` (ci.yml:117). A CI dashboard record is not a file:line, so the run ID stays here in notes; the two workflow lines are citable and now appear in evidence. citation-checked",
+   "suggested_scope": ""
+  },
+  {
+   "id": "TH-R14",
+   "verdict": "MISSING",
+   "priorVerdict": "MISSING",
+   "changed": false,
+   "tickets": [
+    "TRO-484"
+   ],
+   "evidence": [],
+   "notes": "I repeated every check and the row holds. `git ls-files | grep -i readme` returns exactly one path, golden-set/README.md, which documents the test-image corpus. `ls -la` at the repo root shows no README file, tracked or untracked. Linear shows TRO-484 (\"LH-063 \u00b7 README\") in Backlog with updatedAt 2026-08-10T20:08:34Z, so it has not moved since the baseline sweep. Empty evidence is correct: nothing exists to cite, and the tracer said why. citation-checked",
+   "suggested_scope": "Write README.md at the repo root: prerequisites, `pnpm install`, `.env.local` shape, `pnpm db:migrate`, `pnpm dev`, the test commands, the deployed URL plus access code, a short architecture summary, and the TH-R6 data-handling posture. One file, one ticket (TRO-484)."
+  },
+  {
+   "id": "TH-R15",
+   "verdict": "MISSING",
+   "priorVerdict": "MISSING",
+   "changed": false,
+   "tickets": [
+    "TRO-485"
+   ],
+   "evidence": [
+    {
+     "file": "docs/PRD.md",
+     "line": 241,
+     "supports": "\"`docs/approach.md`: approach, tools used, assumptions log, trade-offs & limitations\" \u2014 the file is planned, with its contents listed. The \"(TH-R15, TH-R23)\" tag the tracer folded into this quote sits on line 242."
+    },
+    {
+     "file": "docs/error-states.md",
+     "line": 14,
+     "supports": "\"LH-064 (`docs/approach.md`, not yet written) will fold this\" \u2014 a second in-repo statement that the deliverable is unwritten."
+    }
+   ],
+   "notes": "Both cited lines exist and say what the row claims, with one trim. The tracer's supports text for PRD.md:241 ran the quote through line 242; I cut it back to what line 241 itself carries and named line 242 here. `ls docs/` and `git ls-files docs` both confirm docs/approach.md does not exist. Linear shows TRO-485 (\"LH-064 \u00b7 approach.md\") in Backlog with updatedAt 2026-08-10T20:08:38Z. Unchanged since baseline. citation-checked",
+   "suggested_scope": "Write docs/approach.md to the contents PRD.md:241-242 already names: approach, tools used, assumptions log, trade-offs and limitations, the bold-detection limitation, and the measured cascade benchmark numbers from scripts/eval/results/benchmark-report.json. One document closes TH-R15 and the written half of TH-R23."
+  },
+  {
+   "id": "TH-R16",
+   "verdict": "MISSING",
+   "priorVerdict": "MISSING",
+   "changed": false,
+   "tickets": [
+    "TRO-481",
+    "TRO-483",
+    "TRO-518"
+   ],
+   "evidence": [
+    {
+     "file": "render.yaml",
+     "line": 26,
+     "supports": "\"  - type: web\" \u2014 the Render Blueprint declares the web service (line 26), the worker (line 62), and the database (line 95). Line confirmed. This is configuration, not a deployment."
+    },
+    {
+     "file": "docs/deploy.md",
+     "line": 88,
+     "supports": "\"- **Not verified: the live deploy itself.** Everything above this line is\" (continues line 91: \"No Render account was available to this ticket to run a real deploy end to end.\"). Line confirmed."
+    },
+    {
+     "file": "docs/deploy.md",
+     "line": 94,
+     "supports": "\"- **Batch image storage does not yet survive the web/worker split.**\" \u2014 a real batch run on the deployed instance will fail to read every image. Line confirmed. Single-label verify is unaffected."
+    },
+    {
+     "file": "factory/config.yaml",
+     "line": 69,
+     "supports": "\"    remotes: origin https://github.com/troysatchell/LabelHunter.git\" \u2014 the repo records a GitHub remote here. CORRECTED WORDING: the prior claim that this is \"the only URL recorded anywhere in the repo\" is false, since the docs carry many URLs. The checked fact is narrower and sits in notes: no deployed application host appears anywhere."
+    }
+   ],
+   "notes": "CITATION CHECK. I opened all four cited lines. All exist and all say what the row claims, with one exception I rewrote: factory/config.yaml:69 records the git remote, and cannot support a claim about every URL in the repo. I ran the narrower search myself: grep for \"onrender.com\" across the whole repo, excluding node_modules and .git, returns 0 matches. No deployed host exists to open. I re-ran the regression test: pnpm test -- scripts/deploy/render-yaml.test.ts gives \"Test Files 1 passed (1) / Tests 23 passed (23)\". Reproduces. I verified the Linear quote the tracer flagged as checkable but uncitable. TRO-481's merge comment reads, verbatim: \"Advances: TH-R16 (deployed URL, evaluator-testable prototype) \u2014 repo-side config only; the live deploy itself is still your step (docs/deploy.md).\" Statuses confirmed live: TRO-481 Done, TRO-483 Backlog, TRO-518 Backlog and Urgent. audit/requirements.config.yaml:34 still reads \"app: null\", so the sweep has no URL to request. One tension I record rather than hide: config code_roots is \".\", the whole repo, so render.yaml and docs/deploy.md do sit inside code_roots, and the report format's MISSING bar (\"no implementing code found in code_roots\") reads oddly against them. I kept MISSING, for the tracer's reason. The acceptance evidence is a URL an outside evaluator loads, and not one part of it exists. PARTIAL would let a reader believe something is open today. citation-checked",
+   "suggested_scope": "Not a code gap. Troy follows docs/deploy.md \"First deploy\": create the Render Blueprint from main, paste the Anthropic key into both services, wait for labelhunter-web to report healthy, then open <url>/api/health and run one single-label verify on the deployed instance. Record the URL in the README (TRO-484) and in audit/requirements.config.yaml's verify_urls.app, which is still null. TRO-518 must land before TRO-483 (seeded demo) can honestly demo a batch; single-label verify needs neither."
+  },
+  {
+   "id": "TH-R17",
+   "verdict": "PARTIAL",
+   "priorVerdict": "PARTIAL",
+   "changed": false,
+   "tickets": [
+    "TRO-465",
+    "TRO-514",
+    "TRO-468",
+    "TRO-475",
+    "TRO-470",
+    "TRO-518",
+    "TRO-516"
+   ],
+   "evidence": [
+    {
+     "file": "src/app/api/verify/route.ts",
+     "line": 2,
+     "supports": "\"POST /api/verify \u2014 the single-label verify flow (TRO-465, PRD \u00a73.8, \u00a75,\" \u2014 the core loop the rubric line rolls up. The \"TH-R1\" tag continues on line 3."
+    },
+    {
+     "file": "src/app/api/verify/route.ts",
+     "line": 31,
+     "supports": "\" * **Government warning (TRO-514).** LH-020 built the comparator. This\" \u2014 TH-R9 is wired into the live path. The clause \"route now calls it on every request\" continues on line 32."
+    },
+    {
+     "file": "src/server/comparators/brand.ts",
+     "line": 3,
+     "supports": "\"`AMBIGUOUS_BRAND`, TH-R8). \\\"You need judgment\\\" (Dave Morrison) \u2014 a\" \u2014 TH-R8's lenient regime exists in code. \"normalized-equivalence check with a fuzzy fallback\" continues on line 4."
+    },
+    {
+     "file": "src/app/api/batch/start/route.ts",
+     "line": 3,
+     "supports": "\"running batch job (LH-042 / TRO-475, PRD \u00a73.5, TH-R4, TH-R20).\" \u2014 TH-R4's batch path is wired end to end in-process. \"POST /api/batch/start \u2014 turns an accepted batch preview into a real,\" opens on line 2."
+    },
+    {
+     "file": "docs/deploy.md",
+     "line": 94,
+     "supports": "\"- **Batch image storage does not yet survive the web/worker split.**\" \u2014 the named completeness gap in the deployed topology. The bullet runs to line 110."
+    },
+    {
+     "file": "src/server/storage/local-file-storage.ts",
+     "line": 69,
+     "supports": "\"await writeFile(absolutePath, bytes);\" \u2014 the storage module writes to the saving process's own disk, which is the code behind the deployed-topology gap docs/deploy.md describes."
+    }
+   ],
+   "notes": "Every cited line exists and supports its claim, with three quote boundaries trimmed. The tracer ran three of its supports quotes across a line break (verify/route.ts:2-3, verify/route.ts:31-32, brand.ts:3-4). The anchor line numbers are right, so I kept them and named the continuation lines instead. The batch/start entry cited line 3 but quoted line 2's text; the ticket and TH-R IDs the claim needs are on line 3, so I re-pointed the quote rather than the line. I added local-file-storage.ts:69 so the deployment gap rests on code, not only on a doc that describes code. Two other small fixes: the deploy.md bullet spans lines 94-110, not 94-109, and TRO-516's title names two cases while its body covers the six REVIEW-expected cases plus case-28/29 \u2014 I read the ticket to confirm the tracer's six-case claim is fair. I re-ran both test commands. The targeted core-loop run reproduced exactly: 31 files, 385 tests passed. The full suite reproduced exactly: 137 files, 1524 tests passed. I re-read the eval report myself: labelVerdictAccuracy is 21 of 32 (65.6 percent), measuredAt 2026-08-12T13:26:45Z, 32 cases, zero harness failures. I recomputed the 11 misses. Five escalate to REVIEW where the golden set expects PASS or FAIL. Six return PASS where the golden set expects REVIEW, and extraction is fully correct in all six. Case-20 read nothing and routed to REVIEW with LOW_IMAGE_QUALITY. One overstatement corrected: the tracer called the six PASS cases \"a golden-set calibration question, not a confident wrong read.\" TRO-516's own body leaves that open. It says the degradation may be milder than intended, OR the manifest's expected verdict may need adjusting. Which side is wrong is undecided, and a human must decide it. PARTIAL stands on both open items. citation-checked",
+   "suggested_scope": "Close TRO-518 with a shared object store so batch works across the Render web/worker split. Settle the six expected-REVIEW golden cases and case-28/29 under TRO-516, then re-run `pnpm eval:check` so the accuracy figure means one thing. No new scope beyond those two tickets; the code for every functional entry already exists."
+  },
+  {
+   "id": "TH-R18",
+   "verdict": "VERIFIED",
+   "priorVerdict": "VERIFIED",
+   "changed": false,
+   "tickets": [
+    "TRO-456",
+    "TRO-479"
+   ],
+   "evidence": [
+    {
+     "file": "package.json",
+     "line": 14,
+     "supports": "\"typecheck\": \"tsc --noEmit\" \u2014 the strict type gate the sweep ran green."
+    },
+    {
+     "file": "package.json",
+     "line": 15,
+     "supports": "\"lint\": \"eslint .\" \u2014 a real, wired lint command, not a configless stub."
+    },
+    {
+     "file": ".github/workflows/ci.yml",
+     "line": 20,
+     "supports": "\"name: ci\" \u2014 the merge gate workflow exists and runs on pull_request and pushes to main (lines 22-25)."
+    },
+    {
+     "file": "docs/PRD.md",
+     "line": 51,
+     "supports": "\"## 3. Architecture\" \u2014 the coherent architecture document the acceptance line asks for."
+    },
+    {
+     "file": "factory/review-findings.jsonl",
+     "line": 1,
+     "supports": "A real review record: ticket TRO-456, severity minor, category rounding-boundary, file src/lib/utils/format.ts, disposition \"fixed\" \u2014 evidence that code review ran and was triaged, not skipped."
+    },
+    {
+     "file": "src/app/_components/DetailView.tsx",
+     "line": 112,
+     "supports": "The `<img` element that produces the one accepted lint warning; lines 105-111 carry the written justification for not using next/image."
+    }
+   ],
+   "notes": "Every citation holds. I opened all six lines. The lint warning reproduces at exactly DetailView.tsx 112:9, which matches the cited line. I re-ran all four commands myself rather than trust the tail. Typecheck exited 0 with no diagnostics. Lint printed one warning and zero errors. The full suite printed 137 files and 1524 tests, all passed. The build printed 15 routes and exited 0. I also counted factory/review-findings.jsonl myself: 484 records across 29 distinct tickets, matching the tracer. Two additions the tracer left out, both bearing on \"no test was weakened to get green.\" First, factory/quarantine.json's `suites.unit.knownFailing` is an empty array, so nothing is suppressed. Second, \"no skips\" describes the vitest run only. The Playwright suite was not run, by instruction, and it carries a `test.skip(E2E_LIVE, ...)` that TRO-521 exists to reconsider; TRO-522 records that `pnpm test:e2e` is still not wired into CI. One tracer claim needs softening in the other direction: CI is not untested. `gh run list` shows run 31615976363 green on origin/main's tip at 2026-08-12T16:07Z. Only the unpushed commit 8fa8999 has never met CI, and it adds no source. citation-checked",
+   "suggested_scope": ""
+  },
+  {
+   "id": "TH-R19",
+   "verdict": "PARTIAL",
+   "priorVerdict": "PARTIAL",
+   "changed": false,
+   "tickets": [
+    "TRO-456",
+    "TRO-462",
+    "TRO-470",
+    "TRO-485"
+   ],
+   "evidence": [
+    {
+     "file": "src/server/router/index.ts",
+     "line": 5,
+     "supports": "`no model call, no I/O (TH-R19 \u2014 the cascade is the architecture, not an` \u2014 the sentence finishes with \"optimization\" on line 6. The router is deterministic TypeScript by design. Confirmed."
+    },
+    {
+     "file": "src/app/api/verify/route.ts",
+     "line": 13,
+     "supports": "\"It never calls Sonnet \u2014\" ends this line. The tracer cited line 14; line 14 carries the continuation, \"the cascade is the architecture (TH-R19): Sonnet only ever sees escalations\". Line number corrected."
+    },
+    {
+     "file": "scripts/eval/results/benchmark-report.json",
+     "line": 42,
+     "supports": "`\"rate\": 0.6551724137931034` under cascade.labelVerdictAccuracy, total 29 at line 40. Confirmed."
+    },
+    {
+     "file": "scripts/eval/results/benchmark-report.json",
+     "line": 82,
+     "supports": "`\"rate\": 0.41379310344827586` under sonnetOnly.labelVerdictAccuracy, same 29 cases. The 24.1-point gap is recorded at line 118. Confirmed."
+    },
+    {
+     "file": "scripts/eval/results/benchmark-report.json",
+     "line": 120,
+     "supports": "`\"costDeltaMultiplier\": 1.5940333473124033,` \u2014 the Sonnet-only arm costs about 1.6 times the cascade. Confirmed."
+    },
+    {
+     "file": "docs/PRD.md",
+     "line": 308,
+     "supports": "`## 13. Decision log` \u2014 the table below it lists 16 choices, lines 312-327. I counted them. Confirmed."
+    },
+    {
+     "file": "docs/PRD.md",
+     "line": 4,
+     "supports": "`**Status:** DRAFT \u2014 pending Troy's review` \u2014 the PRD is an internal handoff document, not the deliverable approach doc. Confirmed."
+    }
+   ],
+   "notes": "Verdict held at PARTIAL. One line number corrected: \"It never calls Sonnet\" sits on route.ts line 13, not 14. Every other cited line reads as claimed, and I counted the decision-log rows rather than trusting the figure. I confirmed the gap by listing the tree: no docs/approach.md exists, and docs/ holds only checkpoints, deploy.md, error-states.md, handoffs, prd-brainstorm-questions.md, PRD.md, reference-photo-provenance.md, and superpowers. One correction on wording: the tracer wrote \"no README.md exists either\". No root README.md exists; golden-set/README.md does. I read TRO-485 in Linear \u2014 it is real, priority High, still in Backlog, and its description names TH-R15, TH-R23, and TH-R7. I did not run pnpm eval:benchmark; it makes billed API calls, so the cited artifact stands as a dated record measured 2026-08-12T05:23:34Z. citation-checked",
+   "suggested_scope": "Write docs/approach.md and land TRO-485. It must name each major choice \u2014 Next.js on Render, Postgres with Drizzle, the Haiku extractor, the deterministic router, the Sonnet resolver, tesseract.js for OCR \u2014 and justify each one against prototype scope. Cite the benchmark report's own numbers for the cascade decision, so the defense rests on measurement. No code change closes this. It shares the gap with TH-R15, and one document closes both."
+  },
+  {
+   "id": "TH-R20",
+   "verdict": "VERIFIED",
+   "priorVerdict": "VERIFIED",
+   "changed": false,
+   "tickets": [
+    "TRO-465",
+    "TRO-466",
+    "TRO-473",
+    "TRO-475",
+    "TRO-476",
+    "TRO-478",
+    "TRO-479"
+   ],
+   "evidence": [
+    {
+     "file": "src/app/_components/ErrorPanel.tsx",
+     "line": 12,
+     "supports": "`const ERROR_TITLE: Record<VerifyErrorKind, string> = {` \u2014 the four-kind taxonomy VALIDATION / IMAGE / EXTRACTION / SERVICE, each with its own plain-English title (lines 13-16)."
+    },
+    {
+     "file": "src/app/_components/ErrorPanel.tsx",
+     "line": 27,
+     "supports": "`<div className=\"error-panel\" role=\"alert\">` \u2014 an on-page panel, not a toast, announced to assistive tech."
+    },
+    {
+     "file": "src/app/api/verify/route.test.ts",
+     "line": 260,
+     "supports": "`describe(\"POST /api/verify \u2014 designed error states (TH-R20)\", () => {` \u2014 the suite covering malformed input, unsupported format, unreadable image, oversized file, extraction failure, transport failure, unreachable endpoint, storage failure, and database failure. I re-ran all nine green."
+    },
+    {
+     "file": "src/app/api/verify/route.test.ts",
+     "line": 363,
+     "supports": "The unreachable-endpoint case: `it(\"the Anthropic endpoint is unreachable (TRO-478, TH-R7 \u2026): 503 SERVICE, no partial record left behind\"`. It throws the SDK's real `APIConnectionError` (line 371)."
+    },
+    {
+     "file": "src/app/_lib/verify-client.ts",
+     "line": 45,
+     "supports": "`const DEFAULT_TIMEOUT_MS = 45_000;` \u2014 the browser-side abort ceiling that turns a stalled request into the designed SERVICE panel."
+    },
+    {
+     "file": "src/app/_lib/verify-client.ts",
+     "line": 126,
+     "supports": "ADDED by the checker. `throw new VerifyClientError(\"SERVICE\", \"LabelHunter took too long to respond. Check your connection and try again.\");` \u2014 the exact timeout copy the open ruling turns on."
+    },
+    {
+     "file": "src/app/_components/VerifyForm.tsx",
+     "line": 218,
+     "supports": "`{phase.status === \"error\" && <ErrorPanel kind={phase.kind} message={phase.message} onRetry={() => void runSubmit()} />}` \u2014 every failure phase renders the panel with a working retry."
+    },
+    {
+     "file": "docs/error-states.md",
+     "line": 39,
+     "supports": "\"## The four single-label designed states (TH-R20)\" \u2014 the error-path walkthrough the inventory's acceptance evidence asks for."
+    },
+    {
+     "file": "docs/error-states.md",
+     "line": 176,
+     "supports": "\"## The four batch-scoped states, built in LH-042\" \u2014 malformed CSV, unpairable rows, partial batch failure, and rate-limit backoff. I read lines 184-215 and each of the four does name its own test file and test name."
+    },
+    {
+     "file": "e2e/verify.spec.ts",
+     "line": 92,
+     "supports": "`test.describe(\"Verify \u2014 designed error states (TH-R20)\", () => {` \u2014 unreadable image (line 93), oversized file (line 116), and an API failure whose retry genuinely recovers (line 134). Not re-run this sweep."
+    },
+    {
+     "file": "next.config.ts",
+     "line": 34,
+     "supports": "`serverExternalPackages: [\"tesseract.js\"],` \u2014 TRO-479's fix for a real production crash. The comment above (line 23) records the worker thread's `MODULE_NOT_FOUND` surfacing as an uncaughtException that killed the process."
+    },
+    {
+     "file": "src/server/warning/index.ts",
+     "line": 153,
+     "supports": "`const [extracted, ocrChannel] = await Promise.all([extractedPromise, ocrChannelPromise]);` \u2014 no deadline guards this await. `runOcrChannel` (line 123) catches throws but never bounds a hang. This is the TRO-519 gap."
+    },
+    {
+     "file": "CHANGES.md",
+     "line": 384,
+     "supports": "ADDED by the checker. \"(screenshotted), the timeout/service-error message text (captured via `textContent` \u2014 \\\"Something\\\"\" [line 385 completes it: \"went wrong\" / \"LabelHunter took too long to respond. Check your connection and try again.\"] \u2014 the one live-captured timeout state in the repo record."
+    },
+    {
+     "file": "factory/scorecard.jsonl",
+     "line": 47,
+     "supports": "TRO-480's gate row names the discovery: \"surfaced TRO-519 (OCR channel has no timeout, hung a real verify submission 120s+ with zero DB row)\"."
+    }
+   ],
+   "verification": {
+    "command": "DATABASE_URL=<throwaway labelhunter_audit_0812> pnpm exec vitest run --reporter=verbose -t \"designed error states\" src/app/api/verify/route.test.ts src/app/_lib/verify-client.test.ts src/app/_components/VerifyForm.test.tsx",
+    "outputTail": " \u2713 src/app/_components/VerifyForm.test.tsx > VerifyForm \u2014 designed error states (TH-R20) > classifies a rejection that is not a VerifyClientError as SERVICE, never as a raw crash 118ms\n\n Test Files  3 passed (3)\n      Tests  22 passed | 16 skipped (38)\n   Start at  13:11:40\n   Duration  1.34s (transform 152ms, setup 180ms, import 849ms, tests 944ms, environment 422ms)"
+   },
+   "notes": "Verdict held at VERIFIED. I opened all twelve cited lines. Every one reads as claimed, including the TRO-519 code gap. I re-ran the cited command against the throwaway database. It reproduced exactly: 3 files passed, 22 passed, 16 skipped. The tracer's outputTail quoted real lines, but not the literal last lines. I replaced it with the true tail I saw. I added two evidence rows, both bearing on the open ruling. CHANGES.md:384 records the one live-captured timeout state in this repo's history. verify-client.ts:126 holds that exact string. A real timeout did produce a designed panel, which supports this row. The same panel told the user to check the connection, which is what the ruling asks about. I considered ASSUMED, because report-format.md says a row under a ruling normally carries it. I kept VERIFIED for two reasons. The tracer asked the question instead of answering it, so it resolved nothing silently. Each of the four failure modes the inventory names ran green in front of me. A YES ruling still makes this row PARTIAL. I checked the ticket mapping I most doubted, and it held: factory/tickets.md:234 gives LH-040 (TRO-473) \"TH-R4, TH-R20\", not TH-R4 alone. Lines 127, 133, 246, 262, and 267 cover LH-015, LH-016, LH-042, LH-052, and LH-053. TRO-476's TH-R20 claims check out at review-queue-client.ts:2 and api/review-queue/types.ts:72. I checked TRO-519 in Linear, read-only: Urgent, Backlog, never started. Its own text cites index.ts:146 for the unguarded await; in this tree line 146 opens the function and line 153 holds the `Promise.all`, so the tracer's pin is the better one. One link the tracer dropped, which I restore: the inventory reads \"TH-R3 plus\", so this row inherits TH-R3's state. TH-R3 is VERIFIED this sweep, so the inheritance holds. The E2E suite was not re-run, by instruction. No E2E output is committed (.gitignore:27), so the 12/12 claim rests on factory/scorecard.jsonl:48, a self-report. Line 50 of that file records TRO-479 as a HUMAN-OVERRIDE MERGE, not a passing gate. citation-checked"
+  },
+  {
+   "id": "TH-R21",
+   "verdict": "PARTIAL",
+   "priorVerdict": "PARTIAL",
+   "changed": false,
+   "tickets": [
+    "TRO-486"
+   ],
+   "evidence": [
+    {
+     "file": "factory/tickets.md",
+     "line": 3,
+     "supports": "\"Source: `docs/PRD.md` (architecture + scope) \u00d7 `audit/requirements/inventory.md` (TH-R1..R23).\" \u2014 the ticket set is derived from the requirement inventory by construction."
+    },
+    {
+     "file": "factory/tickets.md",
+     "line": 8,
+     "supports": "\"Priorities follow TH-R23: working core (Urgent/High) before ambition (Medium/Low).\" \u2014 the interview requirements drive priority, not just scope."
+    },
+    {
+     "file": "CHANGES.md",
+     "line": 3,
+     "supports": "\"Per-ticket changelog. Every factory PR adds an entry at the top naming its ticket ID(s):\" \u2014 the per-ticket trail; the file holds 71 `## TRO-` entries."
+    },
+    {
+     "file": "docs/PRD.md",
+     "line": 46,
+     "supports": "\"- **No COLA integration** (TH-R5). **No sensitive data** (TH-R6). No auth/user accounts \u2014\" \u2014 the one requirement no ticket cites is still addressed explicitly by ID in the architecture doc."
+    },
+    {
+     "file": "CLAUDE.md",
+     "line": 17,
+     "supports": "\"- `audit/requirements/inventory.md` \u2014 TH-R1..R23, the graded requirements. Every ticket cites\" \u2014 the traceability rule stated as repo policy. \"the TH-R IDs it advances\" continues on line 18."
+    }
+   ],
+   "notes": "All five cited lines exist and support their claims. I corrected the tracer's counts, which do not reproduce. factory/tickets.md: 46 LINES contain a TH-R reference, and there are 75 individual references across 22 distinct IDs. The tracer reported \"46 references,\" conflating a line count with a reference count. CHANGES.md: 74 lines contain a TH-R reference, and there are 101 individual references across 21 distinct IDs. The tracer's figure of 105 does not reproduce by any counting method I tried, so I replaced it with the measured numbers. The conclusions those counts serve are unaffected and I re-derived them. tickets.md omits only TH-R5. CHANGES.md omits TH-R5 and TH-R14. The union therefore omits only TH-R5, and PRD.md:46 addresses TH-R5 by ID as a deliberate scope constraint. The \"71 entries\" claim is right: CHANGES.md has 71 `## TRO-` headings, plus four `## FACTORY` headings, 75 in total. Linear confirms TRO-484 and TRO-485 are both still Backlog, so the row's stated reason for staying short of complete still holds. The tracer correctly kept audit/requirements/* out of evidence, as report-format.md requires. citation-checked",
+   "suggested_scope": "Two of the three open items close with one document each: README.md (TRO-484) and docs/approach.md (TRO-485). Add one line citing TH-R5 to a ticket description so the tracker dimension is complete as well. TRO-486 (LH-065) exists to re-sweep and confirm; keep it open until the two documents land."
+  },
+  {
+   "id": "TH-R22",
+   "verdict": "VERIFIED",
+   "priorVerdict": "IMPLEMENTED-UNVERIFIED",
+   "changed": true,
+   "tickets": [
+    "TRO-457",
+    "TRO-464",
+    "TRO-476",
+    "TRO-470"
+   ],
+   "evidence": [
+    {
+     "file": "docs/PRD.md",
+     "line": 33,
+     "supports": "\"5. Persistence + human review queue (differentiator, TH-R22)\" \u2014 the docs name the differentiator by requirement ID."
+    },
+    {
+     "file": "src/app/review-queue/page.tsx",
+     "line": 2,
+     "supports": "\" * The review queue's list page (TRO-476, PRD \u00a75, TH-R22 \u2014 the\" \u2014 the demo surface itself, now merged, names the requirement. \"differentiator: see CHANGES.md\" continues on line 3."
+    },
+    {
+     "file": "CHANGES.md",
+     "line": 2798,
+     "supports": "\"**This is TH-R22's differentiator.** LabelHunter routes every label through a\" \u2014 the confidence-based cascade written out; line 2799 continues \"confidence-based cascade:\"."
+    },
+    {
+     "file": "docs/checkpoints/cp1-cascade-router-prompts.md",
+     "line": 683,
+     "supports": "\"is the differentiator TH-R22 asks for.\" \u2014 the per-field auditable row named as the differentiating idea."
+    },
+    {
+     "file": "src/server/warning/reconcile.ts",
+     "line": 2,
+     "supports": "\" * Dual/single-channel reconciliation (LH-020 / TRO-468, CP-2 \u00a74.5, \u00a76,\" \u2014 the second differentiator: two independent readings of the statutory warning. \"\u00a77.1, TH-R9\" continues on line 3."
+    },
+    {
+     "file": "scripts/eval/results/benchmark-report.json",
+     "line": 118,
+     "supports": "\"labelVerdictAccuracyDeltaPercentagePoints\": -24.137931034482758 \u2014 Sonnet-only scored 24.1 points worse than the cascade on the same 29 cases; line 119 reads \"costDeltaUsd\": 0.164312."
+    }
+   ],
+   "verification": {
+    "command": "DATABASE_URL=<labelhunter_audit_0812> pnpm test -- src/server/review-queue src/app/_components/ReviewQueueBrowser.test.tsx src/app/_components/ReviewItemDetail.test.tsx src/app/api/review-queue  (re-run by the citation checker)",
+    "outputTail": " Test Files  7 passed (7)\n      Tests  48 passed (48)\n   Start at  13:15:48\n   Duration  1.08s (transform 149ms, setup 467ms, import 1.47s, tests 497ms, environment 832ms)"
+   },
+   "notes": "All six citations hold; I opened every one. Four supports quotes ran past their anchor line, so I trimmed each to the cited line and named the continuation. I re-ran the targeted command and reproduced it: 7 files, 48 tests, all passed. I re-ran `pnpm build` and saw both /review-queue and /review-queue/[reviewQueueId] in the route list, so the merged demo surface really compiles. I opened the benchmark report and checked the arithmetic myself. The cascade scored 19 of 29; Sonnet-only scored 12 of 29; the 24.1-point delta is real. Cost: cascade $0.276604, Sonnet-only $0.440916. I corrected one phrase. The tracer wrote \"1.59 times lower cost,\" which inverts the ratio. The Sonnet-only arm cost 1.59 times the cascade, which is what costDeltaMultiplier records. The upgrade to VERIFIED holds, and I state exactly what carries it. The last sweep withheld VERIFIED because the demo surface was an unmerged PR; TRO-476 is now Done in Linear and the pages build. The acceptance line asks that docs or demo call out the differentiator, and the doc citations prove that directly. Two limits stay named. The browser-level demo is unproven: `pnpm test:e2e` was not run, by instruction, and TRO-522 shows e2e is not in CI either. The live deployment is unverified per docs/deploy.md:88. citation-checked",
+   "suggested_scope": ""
+  },
+  {
+   "id": "TH-R23",
+   "verdict": "PARTIAL",
+   "priorVerdict": "PARTIAL",
+   "changed": false,
+   "tickets": [
+    "TRO-485",
+    "TRO-484"
+   ],
+   "evidence": [
+    {
+     "file": "factory/tickets.md",
+     "line": 8,
+     "supports": "\"Priorities follow TH-R23: working core (Urgent/High) before ambition (Medium/Low).\" \u2014 obligation (a), prioritization, written down as the rule the ticket set follows."
+    },
+    {
+     "file": "docs/deploy.md",
+     "line": 84,
+     "supports": "\"## Known limitations\" \u2014 a written limitations section, absent from the baseline commit, listing the unverified deploy and the batch storage break."
+    },
+    {
+     "file": "docs/error-states.md",
+     "line": 154,
+     "supports": "\"**The trade-off this design makes, stated plainly.** LabelHunter does not\" \u2014 a written trade-off, naming what LabelHunter deliberately does not distinguish. The passage runs to line 168."
+    },
+    {
+     "file": "docs/PRD.md",
+     "line": 241,
+     "supports": "\"`docs/approach.md`: approach, tools used, assumptions log, trade-offs & limitations\" \u2014 the evaluator-facing trade-offs section is still planned, not written. The \"(TH-R15, TH-R23)\" tag sits on line 242."
+    }
+   ],
+   "notes": "All four cited lines exist and say what the row claims. I trimmed the PRD.md:241 quote back to its own line, as in TH-R15. I verified the tracer's \"new since the last sweep\" claim rather than take it: `git cat-file -e cbc7088:docs/deploy.md` and the same check for docs/error-states.md both fail, so neither file existed at the baseline commit. That is the fact the ruling turns on, and it is real. One date correction: docs/error-states.md was first authored 2026-08-11 (commit d67c9a3), not 2026-08-12; it reached main after the baseline sweep. docs/deploy.md is 2026-08-12 (commit 023b088). I kept ASSUMED. The tracer did not resolve the ambiguity itself; it stated the stricter reading, showed the row lands at PARTIAL under it, and raised the question. That is the correct handling, and report-format.md pairs an ASSUMED row with a needs_ruling entry. The prioritization signal is confirmed in Linear: TRO-527 is In Progress while TRO-484 and TRO-485 sit in Backlog, untouched since 2026-08-10. citation-checked || INT-003: ruled 2026-08-12 \u2014 the trade-offs section must appear in a graded deliverable. Internal docs do not satisfy it. Prioritization half satisfied; written half is not.",
+   "suggested_scope": "Write docs/approach.md with a trade-offs and limitations section drawing on docs/deploy.md:84-110 and docs/error-states.md:154-168, plus the bold limitation and the TRO-518 batch-storage break. TRO-485 closes it."
+  }
+ ],
+ "orphan_tickets": [],
+ "needs_ruling": [
+  {
+   "id": "TH-R20",
+   "question": "TH-R20 names \"timeout\" as a failure mode that must produce a useful UI outcome. Open ticket TRO-519 (Urgent, Backlog) leaves the server-side OCR channel with no deadline: src/server/warning/index.ts:153 awaits it forever, so a hung tesseract.js worker stalls POST /api/verify with no database row written. The browser's own 45s abort (src/app/_lib/verify-client.ts:45) still shows the designed SERVICE panel, but its text tells the user to check the connection \u2014 wrong advice for this cause. Does TH-R20 require the server to bound its own work, making TRO-519 a TH-R20 gap that downgrades this row to PARTIAL? Answer yes or no; a \"no\" keeps TRO-519 a TH-R2 latency and reliability matter only, and this row stays VERIFIED."
+  },
+  {
+   "id": "TH-R2",
+   "question": "TH-R2's meaning-in-code says the flow completes \"in ~5 seconds wall-clock from submission to rendered result.\" The only measurement, scripts/latency/results/single-label-verify.json, times handleVerifyRequest in process \u2014 it excludes the HTTP round trip and the browser render. Does an in-process measurement satisfy TH-R2's acceptance evidence, or must the 5-second clock be measured end to end in a browser?"
+  },
+  {
+   "id": "TH-R7",
+   "question": "TH-R7's acceptance says docs must name every outbound dependency. The app's OCR channel would call a CDN by default; the repo removed that call by committing tessdata/eng.traineddata.gz, and a green test proves OCR runs with the network blocked. docs/error-states.md's outbound table therefore omits it, but the repo's own CP-2 checkpoint (docs/checkpoints/cp2-warning-subsystem.md:416) requires it to appear in that list as \"none at runtime\". Must a dependency the app deliberately made local still be listed for TH-R7 to count as met? If no, TH-R7's documentation clause is complete and the row can rise above PARTIAL."
+  },
+  {
+   "id": "TH-R4",
+   "question": "The web service and the worker service run in separate Render containers with no shared disk, so every batch item on the deployed instance will fail to read its image (TRO-518, confirmed by code reading). Does that deployment-topology break count against TH-R4, or does it belong only to TH-R16 (deployed application)? I marked TH-R4 PARTIAL because of it; if it belongs only to TH-R16, TH-R4 becomes VERIFIED on the local evidence."
+  },
+  {
+   "id": "TH-R4",
+   "question": "TH-R4's \"Meaning in code\" carries \"(scale reference: 200-300)\" while its acceptance line says only \"batch upload of N labels\". Is 200-300 a demonstration threshold a real measured run must meet, or is it context for sizing the design? No test drains more than 10 items, and start-batch.ts says its ingestion path is unmeasured at that scale."
+  },
+  {
+   "id": "TH-R12",
+   "question": "The brief says \"We encourage you to create or source additional test labels\u2014AI image generation tools work well for this.\" Do 32 deterministic HTML/CSS-rendered labels (10 of them degraded) satisfy this, or must the repo's own promised set of roughly five fully AI-generated \"wild\" labels ship first? I read the rendered set as satisfying it, which makes the row VERIFIED; requiring the wild labels makes it PARTIAL pending TRO-530."
+  },
+  {
+   "id": "TH-R7",
+   "question": "TH-R7's acceptance also asks docs to name the degradation behavior when a dependency is blocked. The warning subsystem's local OCR channel has no deadline (src/server/warning/index.ts:153), and TRO-519 records a real 120-second stall of POST /api/verify with no database row written. A hung local worker is not a blocked outbound endpoint, but TH-R7's meaning-in-code names \"local inference\" as the alternative to a cloud endpoint. Does the undocumented stall of the local OCR channel count as a TH-R7 gap, or does it belong only to TH-R20 (designed error states)? The tracer treated it as a TH-R7 gap without asking."
+  }
+ ],
+ "commands_run": [
+  {
+   "command": "pnpm db:migrate / typecheck / lint / test / build",
+   "result": "5 of 5 green",
+   "db": "labelhunter_audit_0812 (throwaway)",
+   "tests": "1524 passed in 137 files"
+  }
+ ],
+ "gate_report": "REQUIREMENTS AUDIT \u2014 VERIFY-COMMAND RUN\nRepo: /Users/troy/repos/labelhunter\nSweep point: local main, commit 8fa8999, working tree clean (confirmed clean before and after every command with `git status --porcelain` \u2014 empty both times). HEAD is 1 commit ahead of origin/main, 0 behind. Commit 8fa8999 is unpushed, so CI has never run this exact tree; every result below is local only.\nDate of run: 2026-08-12, ~13:00 local.\nNode v23.2.0, pnpm 10.27.0.\n\nDATABASE\nDerived from `/Users/troy/repos/labelhunter/.env.local` line 13, database name swapped to the throwaway:\n  postgresql://<redacted>@localhost:5434/labelhunter_audit_0812\nExported into the environment for every command. Credentials never printed.\n\nProof the throwaway database was the real target, not `labelhunter_dev`: `drizzle-kit` printed \"injected env (3) from .env.local\", which loads the dev URL. It did not win. After the run, `labelhunter_audit_0812` holds 4 rows in `drizzle.__drizzle_migrations` and all 8 product tables; `labelhunter_dev` holds 2 rows in the same table, before and after. `labelhunter_dev` was not touched.\n\nCOMMANDS RUN \u2014 5 of 5 green, 0 failures\n\n1. pnpm db:migrate \u2014 exit 0\nLast lines, verbatim:\n  > drizzle-kit migrate\n  No config path provided, using default 'drizzle.config.ts'\n  Reading config file '/Users/troy/repos/labelhunter/drizzle.config.ts'\n  \u25c7 injected env (3) from .env.local // tip: \u2318 multiple files { path: ['.env.local', '.env'] }\n  Using 'pg' driver for database querying\n  [\u28f7] applying migrations...[\u2713] migrations applied successfully!\nObserved after, not inferred: `\\dt` on labelhunter_audit_0812 lists 8 tables \u2014 _meta, applications, batch_jobs, batch_queue_items, field_results, label_images, review_queue, verifications. `drizzle.__drizzle_migrations` holds 4 rows, matching all 4 entries in /Users/troy/repos/labelhunter/drizzle/migrations/meta/_journal.json (0000_meta_healthcheck, 0001_product_schema, 0002_batch_queue, 0003_single_label_resolve_trigger).\n\n2. pnpm typecheck \u2014 exit 0\nFull output, verbatim:\n  > labelhunter@0.1.0 typecheck /Users/troy/repos/labelhunter\n  > tsc --noEmit\nNo diagnostics. `tsc` printed nothing else.\n\n3. pnpm lint \u2014 exit 0, 0 errors, 1 warning\nLast lines, verbatim:\n  /Users/troy/repos/labelhunter/src/app/_components/DetailView.tsx\n    112:9  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element\n  \u2716 1 problem (0 errors, 1 warning)\nThis is the same single warning the prior sweep recorded as pre-existing and accepted. Same file, same rule.\n\n4. pnpm test \u2014 exit 0\nLast lines, verbatim:\n   Test Files  137 passed (137)\n        Tests  1524 passed (1524)\n     Start at  13:00:49\n     Duration  12.14s (transform 908ms, setup 7.93s, import 11.14s, tests 13.43s, environment 3.81s)\nNo failures, no skips, no todos \u2014 vitest printed no skipped or todo counts. Earlier output carried only Node `ExperimentalWarning` lines about html-encoding-sniffer requiring an ES module, plus one `Warning: Invalid resolution 25 dpi. Using 70 instead.` from an image test. None are failures.\n\n5. pnpm build \u2014 exit 0\nLast lines, verbatim:\n  \u2713 Compiled successfully in 720ms\n    Running TypeScript ...\n    Finished TypeScript in 2.6s ...\n  \u2713 Generating static pages using 13 workers (10/10) in 111ms\n  Route (app)\n  \u250c \u25cb /\n  \u251c \u25cb /_not-found\n  \u251c \u0192 /api/batch/[batchJobId]\n  \u251c \u0192 /api/batch/preview\n  \u251c \u0192 /api/batch/start\n  \u251c \u0192 /api/health\n  \u251c \u0192 /api/label-images/[labelImageId]\n  \u251c \u0192 /api/review-queue\n  \u251c \u0192 /api/review-queue/[reviewQueueId]\n  \u251c \u0192 /api/verify\n  \u251c \u25cb /batch\n  \u251c \u0192 /batch/[batchJobId]\n  \u251c \u25cb /review-queue\n  \u251c \u0192 /review-queue/[reviewQueueId]\n  \u2514 \u0192 /verify/[verificationId]\n15 routes: 4 static (/, /_not-found, /batch, /review-queue), 11 dynamic. Next.js 16.3.0, Turbopack.\n\nTEST COUNT AND DELTA\nNow: 1524 tests in 137 test files, all passing.\nPrior sweep (audit/requirements/matrix.after-2026-08-11-pm.json, lines 26 and 366): \"Test Files  59 passed (59)\\n     Tests  681 passed (681)\" and \"exit 0 \u2014 59 files, 681/681 tests passed\".\nChange: +843 tests, +78 test files. The count changed, and it more than doubled. Pass rate stayed 100 percent in both sweeps.\nRoute count also changed: the prior sweep recorded 6 routes (line 269); this build emits 15.\n\nNOT RUN, BY INSTRUCTION\n- `pnpm latency:check` \u2014 NOT RUN. It makes real billed API calls. Any row that needs it must cite the existing dated artifact and say it was not re-run.\n- `pnpm test:e2e` \u2014 NOT RUN. It boots a dev server. Same rule applies.\nNo row may be marked VERIFIED on latency or end-to-end grounds from this sweep.\n\nSIDE EFFECTS\n- Migrations applied to labelhunter_audit_0812 only. That database is the throwaway supplied for this audit.\n- `pg_stat_user_tables` reports 0 live rows in every product table of the audit database after the test run. Treat that as a statistics estimate, not a guarantee of an empty table.\n- `pnpm build` wrote the `.next/` output directory. `.next` is gitignored; the tree stayed clean.\n- No file in the repository was created or edited. No Linear object was touched.",
+ "interpretations_applied": [
+  "INT-001",
+  "INT-002",
+  "INT-003"
+ ]
+}

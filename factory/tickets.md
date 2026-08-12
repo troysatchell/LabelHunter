@@ -32,6 +32,15 @@ Wave 2b added 2026-08-12 — the bold rule and the real-label corpus:
 | LH-023 | TRO-528 | | LH-026 | TRO-533 | | | |
 | LH-024 | TRO-529 | | LH-027 | TRO-530 | | | |
 
+Wave 2c added 2026-08-12 — fixes from the eval diagnosis:
+
+| LH | TRO | | LH | TRO | | LH | TRO |
+|---|---|---|---|---|---|---|---|
+| LH-029 | TRO-534 | | LH-033 | TRO-538 | | LH-036 | TRO-541 |
+| LH-030b | TRO-535 | | LH-034 | TRO-539 | | LH-037 | TRO-542 |
+| LH-031b | TRO-536 | | LH-035 | TRO-540 | | LH-038 | TRO-543 |
+| LH-032 | TRO-537 | | | | | | |
+
 ---
 
 ## Wave 0 — bootstrap
@@ -210,6 +219,62 @@ photograph: agents review "label artwork" (L9), the sample label is a field list
 the one mention of a bottle is hedged as "maybe out of scope for a prototype" (L34).
 `degrade.ts` already covers TH-R10 on flat artwork. Land the detector, prompt, composite, and
 bottle-reference fixes so the code is parked correct, then stop. No further Gemini spend.
+
+
+## Wave 2c — fixes from the 2026-08-12 eval diagnosis (added 2026-08-12)
+
+A live eval run scored label-verdict accuracy at 21/32. A per-case diagnosis classified all eleven
+misses: six are the pipeline's fault, five the corpus's. Full evidence in
+`docs/diagnostics/2026-08-12-verdict-miss-triage.md` and `docs/diagnostics/2026-08-12-fix-tickets.md`.
+True accuracy sits between 71.9% and 81.3%. A stricter count that also grades the ReviewReason
+reads 18/32 = 56.25%.
+
+### LH-029 · Guard the beverage_type cross-check  [Urgent]
+TH-R9, TH-R17, TH-R19. The router compares a free-form extractor field against a closed enum by
+string equality. case-11's label prints `Mead` against a declared `wine`; TTB classes mead as a
+wine, so neither record is wrong. The blocker suppresses a real warning MISMATCH one line before
+the rollup would return FAIL. Note: the fix does NOT move accuracy — case-11 turns correct and
+case-22 turns incorrect.
+
+### LH-030b · Sweep OCR_CONFIDENCE_FLOOR  [Urgent]
+TH-R9, TH-R17, rubric V4. Tesseract returns 58 and 56 on the two tiny-print cases; the floor is 60,
+so the OCR candidate is discarded and a statutory field passes on one channel. The floor is marked
+"proposed" and CP-2 §12 assigned the sweep to LH-030 — the very run being diagnosed. Blocks
+TRO-516's C4.
+
+### LH-031b · Drop the apostrophe at normalizer step 6  [High]
+TH-R8, TH-R17, rubric V5. `STONES THROW` vs `Stone's Throw` scores 0.923 against a 0.95 threshold.
+Measured across all 32 cases, the fix moves exactly two scores and crosses the threshold once.
+
+### LH-032 · Prove the warning FAIL path on a real image  [High]
+TH-R9. Ruling INT-001. Both FAIL acceptance cases run on simulated channels today; only the PASS
+case uses a real image. One test against the already-committed case-08 image closes it.
+
+### LH-033 · Score the cascade end state; record per-field confidence  [Urgent]
+TH-R17, TH-R19. The harness scores the router's interim verdict while the Sonnet-only arm is scored
+post-resolution — the benchmark compares two different pipeline stages. The report also records no
+confidence, no image_quality, and no beverage_type. **Blocks TRO-516.**
+
+### LH-034 · Re-measure TH-R2 latency  [High]
+TH-R2, TH-R15. The committed artifact predates the warning comparator by 73 minutes and says so in
+its own `pipelineScope` field. Blocked by TRO-519 for the re-run; the `pipelineScope` string fix is
+not blocked.
+
+### LH-035 · Deskew a baked-in tilt before extraction  [Medium]
+TH-R10 (stretch). EXIF-only rotation is a no-op on a pixel-baked tilt. Measured: deskew helps the
+extraction half only — a perfect OCR read against an invented VLM read still returns REVIEW.
+
+### LH-036 · Correct scripts/eval/args.ts's coverage claim  [Medium]
+The comment claims the default sample exercises every ReviewReason family. Measured: it produced one.
+
+### LH-037 · Record which LOW_IMAGE_QUALITY trigger fires  [Medium]
+TH-R10 (stretch), TH-R19. Across 32 live cases both confidence-driven branches fired zero times.
+CP-1 promises confidence "never decides anything alone"; two of the four triggers pair a self-report
+with another self-report.
+
+### LH-038 · Measure verdict variance  [High]
+TH-R10, TH-R17, TH-R19. case-17 returns 3 REVIEW and 2 PASS across five committed runs on unchanged
+code and an unchanged image. 28 of 29 shared cases are stable. Step 1 costs nothing.
 
 ## Wave E — evidence harnesses
 

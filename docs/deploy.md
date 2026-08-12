@@ -112,6 +112,24 @@ Marked plainly so nobody mistakes a default for a verified fact.
   no free tier at all; a free Postgres database expires in 30 days). Change
   `plan:` in the file, or in the dashboard, if that default is wrong for
   your budget.
+- **A deploy that adds a migration has a narrow ordering gap.** Render
+  deploys `labelhunter-web` and `labelhunter-worker` independently. Nothing
+  in `render.yaml` guarantees `labelhunter-web`'s `preDeployCommand`
+  (`pnpm db:migrate`) finishes before `labelhunter-worker` starts polling
+  for work on the same deploy. Render's Blueprint spec has no documented
+  field for "wait for this other service's deploy step first" — this is not
+  a setting this ticket left off, it is not one Render currently offers. On
+  a deploy with no schema change, this never matters. On a deploy that adds
+  one, a worker that starts first could query a table or column the
+  migration has not added yet. `run.ts`'s own error handling does not crash
+  the worker on a single failed claim (`onLoopError` logs it and the pool
+  keeps polling), so a real failure here should read as a handful of logged
+  errors during the deploy window, not a stuck worker — derived from
+  reading that handler, not measured against a real migration race. Closing
+  this gap needs either a migration step Render can run once, ahead of
+  both services (Render has no such primitive today), or a worker-side
+  readiness check that holds claims until the schema is current. Neither is
+  built here.
 
 ## Reference
 

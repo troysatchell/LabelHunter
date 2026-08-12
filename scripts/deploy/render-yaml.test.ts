@@ -105,8 +105,13 @@ describe("render.yaml — parses and has the three PRD §3.6 resources", () => {
     expect(() => findService("worker")).not.toThrow();
   });
 
-  it("declares exactly one Postgres database", () => {
+  it("declares exactly one Postgres database, named labelhunter-db", () => {
+    // The name matters on its own, not just the count: both services'
+    // DATABASE_URL wiring references "labelhunter-db" by name (see below).
+    // A rename here without a matching rename there would leave that
+    // reference pointing at nothing, and only this assertion would catch it.
     expect(blueprint.databases ?? []).toHaveLength(1);
+    expect(blueprint.databases?.[0]?.name).toBe("labelhunter-db");
   });
 });
 

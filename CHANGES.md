@@ -68,17 +68,31 @@ Documented in `docs/deploy.md`'s "Known limitations." Not fixed here — out
 of this ticket's scope, and it touches application code this ticket does
 not own.
 
-**Regression test.** `scripts/deploy/render-yaml.test.ts` (21 cases) parses
+**Flagged, not fixed: no deploy-ordering guarantee between the migration
+and the worker.** Render deploys `labelhunter-web` and `labelhunter-worker`
+independently, so nothing guarantees the web service's `preDeployCommand`
+finishes migrating before the worker starts polling. Render's Blueprint
+spec has no documented field for cross-service deploy ordering — this
+ticket did not omit a setting; Render does not currently offer one. Only a
+deploy that adds a migration is exposed, and `run.ts`'s own error handling
+does not crash the worker on one failed claim. Documented in
+`docs/deploy.md`'s "Known limitations." Closing it needs either a
+Render-wide migration step or a worker-side readiness check; neither is
+built here.
+
+**Regression test.** `scripts/deploy/render-yaml.test.ts` (23 cases) parses
 `render.yaml` with `js-yaml` and checks its real structure: exactly one
-`web` service, one `worker` service, and one database; every build, start,
-and migrate command matches a real `package.json` script (a drift between
-the two files fails this test); `DATABASE_URL` references the real database
-resource by name; every secret-shaped env var is `sync: false` with no
-literal `value`; and the file's raw text contains no string shaped like a
-real Anthropic key. Confirmed failing for the right reason: temporarily
-hardcoding a fake `sk-ant-...` value in place of `sync: false` failed 3 of
-the 21 cases — the two structural secret checks and the raw-text scan, all
-naming the injected value — before the fix was reverted.
+`web` service, one `worker` service, and one database named
+`labelhunter-db`; both services redeploy only after CI checks pass
+(`autoDeployTrigger: checksPass`); every build, start, and migrate command
+matches a real `package.json` script (a drift between the two files fails
+this test); `DATABASE_URL` references that same database resource, by name
+and by connection property; every secret-shaped env var is `sync: false`
+with no literal `value`; and the file's raw text contains no string shaped
+like a real Anthropic key. Confirmed failing for the right reason:
+temporarily hardcoding a fake `sk-ant-...` value in place of `sync: false`
+failed 3 cases — the two structural secret checks and the raw-text scan,
+all naming the injected value — before the fix was reverted.
 
 **How to run it.** `pnpm test -- scripts/deploy/render-yaml.test.ts` runs
 the regression suite. It needs no `DATABASE_URL` — it only reads

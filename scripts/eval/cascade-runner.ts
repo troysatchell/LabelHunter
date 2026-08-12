@@ -41,7 +41,12 @@ import {
 } from "../../src/server/preprocessing";
 import { productionComparators } from "../../src/server/comparators";
 import { routeLabel } from "../../src/server/router";
-import type { ApplicationRecord as RouterApplicationRecord, LabelRouterResult, WarningComparatorResult } from "../../src/server/router/types";
+import type {
+  ApplicationRecord as RouterApplicationRecord,
+  LabelRouterResult,
+  WarningComparatorChannel,
+  WarningComparatorResult,
+} from "../../src/server/router/types";
 import { resolveEscalatedLabel, SONNET_RESOLVER_MODEL } from "../../src/server/resolver";
 import { compareGovernmentWarningFromImage as defaultCompareGovernmentWarning } from "../../src/server/warning";
 import { saveLabelImage as defaultSaveLabelImage } from "../../src/server/storage/local-file-storage";
@@ -166,6 +171,22 @@ async function cleanupApplicationRow(
 function toActualFieldOutcome(f: FullVerifyFieldResult): ActualFieldOutcome {
   if (f.verdict !== "NEEDS_REVIEW") return { field: f.field, verdict: f.verdict };
   return { field: f.field, verdict: "NEEDS_REVIEW", reviewReason: f.reviewReason };
+}
+
+/**
+ * Reads `channel` off a possibly-`null` `WarningComparatorResult` (TRO-535 /
+ * LH-030b). A plain function, not an inline `capturedWarningResult?.channel
+ * ?? null` at the call site — TypeScript's control-flow analysis
+ * over-narrows a `let` variable that a nested closure
+ * (`deps.compareGovernmentWarning` below) reassigns: read directly, its
+ * type collapses to `never` at any later property access, even though the
+ * real runtime value is exactly what the closure assigned (a known
+ * TypeScript limitation, not a bug in the captured value itself). Passing
+ * the variable as an argument gives it a fresh type binding from this
+ * function's own parameter annotation, which resets that over-narrowing.
+ */
+function extractWarningChannel(result: WarningComparatorResult | null): WarningComparatorChannel | null {
+  return result?.channel ?? null;
 }
 
 export interface CaseRunOutcome {
@@ -300,6 +321,13 @@ export async function runOneCase(
       labelVerdict: body.labelVerdict,
       headlineReason: body.headlineReason,
       fields: body.fields.map(toActualFieldOutcome),
+      // TRO-535 / LH-030b: `capturedWarningResult` (captured above, at the
+      // `deps.compareGovernmentWarning` DI hook) is the ONLY place this
+      // harness can still see which reconciliation table decided the
+      // government_warning verdict — by the time `body.fields` (the HTTP
+      // response) is built, `routeLabel` has already turned it into a
+      // `FieldResultRow` that carries no channel of its own.
+      warningChannel: extractWarningChannel(capturedWarningResult),
     };
     const verdictScore = scoreVerdict(caseSpec, actualVerdict);
     const haikuCost = buildMeasuredCost(HAIKU_EXTRACTOR_MODEL, haikuUsage, HAIKU_4_5_PRICING);

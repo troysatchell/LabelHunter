@@ -21,7 +21,7 @@
  * further, to PASS or FAIL.
  */
 import type { GoldenExpectedResult, GoldenSetCase } from "../../src/lib/golden-set/types";
-import type { LabelVerdict, ReviewReason, RouterFieldKey } from "../../src/server/router/types";
+import type { LabelVerdict, ReviewReason, RouterFieldKey, WarningComparatorChannel } from "../../src/server/router/types";
 import type { VerdictCaseScore, VerdictFieldScore } from "./types";
 
 /**
@@ -60,6 +60,16 @@ export interface ActualVerdict {
   labelVerdict: LabelVerdict;
   headlineReason: ReviewReason | null;
   fields: readonly ActualFieldOutcome[];
+  /** TRO-535 / LH-030b: which reconciliation table
+   * (`reconcileWarningChannels`'s dual or single, `src/server/warning/reconcile.ts`)
+   * decided the `government_warning` field's comparator verdict, when the
+   * real warning subsystem ran at all. Optional — `resolver-rollup.ts`'s
+   * Sonnet-only benchmark arm has no comparator-channel concept of its
+   * own (it never runs `reconcileWarningChannels` through a real image
+   * pipeline). `scoreVerdict` below normalizes an absent value to `null`,
+   * so `VerdictCaseScore.warningChannel` is always present (never
+   * `undefined`) in the committed report. */
+  warningChannel?: WarningComparatorChannel | null;
 }
 
 /** Maps the golden set's `expected.fields` keys (`GoldenExpectedResult`,
@@ -130,6 +140,7 @@ export function scoreVerdict(caseSpec: GoldenSetCase, actual: ActualVerdict): Ve
     expectedReviewReason,
     actualReviewReason: actual.headlineReason,
     reviewReasonCorrect,
+    warningChannel: actual.warningChannel ?? null,
     fields,
   };
 }

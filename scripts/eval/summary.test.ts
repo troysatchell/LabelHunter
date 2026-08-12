@@ -66,7 +66,17 @@ function aDifferentVerdict(expected: "PASS" | "FAIL" | "REVIEW"): "PASS" | "FAIL
 
 function verdictCase(
   caseId: string,
-  opts: { labelCorrect: boolean; reviewReasonCorrect: boolean; expectedLabelVerdict: "PASS" | "FAIL" | "REVIEW"; fieldCorrect: boolean },
+  opts: {
+    labelCorrect: boolean;
+    reviewReasonCorrect: boolean;
+    expectedLabelVerdict: "PASS" | "FAIL" | "REVIEW";
+    fieldCorrect: boolean;
+    /** TRO-535 / LH-030b. Defaults to `null` — most fixtures do not
+     * exercise the warning subsystem's own channel; the dedicated test
+     * below and `warning-segmentation.test.ts` cover `singleChannelPass`
+     * directly. */
+    warningChannel?: VerdictCaseScore["warningChannel"];
+  },
 ): VerdictCaseScore {
   return {
     caseId,
@@ -77,6 +87,7 @@ function verdictCase(
     expectedReviewReason: opts.expectedLabelVerdict === "REVIEW" ? "LOW_IMAGE_QUALITY" : null,
     actualReviewReason: opts.expectedLabelVerdict === "REVIEW" && opts.reviewReasonCorrect ? "LOW_IMAGE_QUALITY" : null,
     reviewReasonCorrect: opts.reviewReasonCorrect,
+    warningChannel: opts.warningChannel ?? null,
     fields: [
       {
         field: "brand_name",
@@ -130,7 +141,18 @@ describe("summarizeVerdict", () => {
       trueMismatch: { count: 0, rate: 0 },
       resolutionSuspect: { count: 0, rate: 0 },
       notFound: { count: 0, rate: 0 },
+      singleChannelPass: { count: 0, rate: 0 },
     });
+  });
+
+  it("carries singleChannelPass through end to end when a case's clean pass ran on a single channel (TRO-535 / LH-030b, CP-2 §8.4's residual false-PASS exposure)", () => {
+    const cases = [
+      verdictCase("a", { labelCorrect: true, reviewReasonCorrect: true, expectedLabelVerdict: "PASS", fieldCorrect: true, warningChannel: "single" }),
+      verdictCase("b", { labelCorrect: true, reviewReasonCorrect: true, expectedLabelVerdict: "PASS", fieldCorrect: true, warningChannel: "dual" }),
+    ];
+    const segmentation = summarizeVerdict(cases).warningSegmentation;
+    expect(segmentation.clean).toEqual({ count: 2, rate: 1 });
+    expect(segmentation.singleChannelPass).toEqual({ count: 1, rate: 0.5 });
   });
 });
 
@@ -154,6 +176,7 @@ describe("buildEvalReportSummary", () => {
       trueMismatch: { count: 0, rate: 0 },
       resolutionSuspect: { count: 0, rate: 0 },
       notFound: { count: 0, rate: 0 },
+      singleChannelPass: { count: 0, rate: 0 },
     });
   });
 });

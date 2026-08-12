@@ -1,6 +1,6 @@
 {
   "ticket": "TRO-470 / LH-030",
-  "measuredAt": "2026-08-12T13:26:45.488Z",
+  "measuredAt": "2026-08-12T21:28:19.119Z",
   "mode": "live",
   "haikuModel": "claude-haiku-4-5",
   "sonnetModel": "claude-sonnet-5",
@@ -43,14 +43,14 @@
   "summary": {
     "extractionAccuracy": {
       "total": 160,
-      "correct": 154,
-      "rate": 0.9625
+      "correct": 153,
+      "rate": 0.95625
     },
     "extractionAccuracyByField": {
       "brandName": {
         "total": 32,
-        "correct": 31,
-        "rate": 0.96875
+        "correct": 30,
+        "rate": 0.9375
       },
       "classType": {
         "total": 32,
@@ -75,14 +75,14 @@
     },
     "labelVerdictAccuracy": {
       "total": 32,
-      "correct": 21,
-      "rate": 0.65625
+      "correct": 24,
+      "rate": 0.75
     },
     "fieldVerdictAccuracyByField": {
       "brand_name": {
         "total": 32,
-        "correct": 27,
-        "rate": 0.84375
+        "correct": 28,
+        "rate": 0.875
       },
       "class_type": {
         "total": 32,
@@ -101,8 +101,8 @@
       },
       "government_warning": {
         "total": 32,
-        "correct": 28,
-        "rate": 0.875
+        "correct": 30,
+        "rate": 0.9375
       }
     },
     "reviewReasonAccuracy": {
@@ -113,20 +113,24 @@
     "warningSegmentation": {
       "total": 32,
       "clean": {
-        "count": 21,
-        "rate": 0.65625
+        "count": 19,
+        "rate": 0.59375
       },
       "trueMismatch": {
         "count": 5,
         "rate": 0.15625
       },
       "resolutionSuspect": {
-        "count": 4,
-        "rate": 0.125
+        "count": 6,
+        "rate": 0.1875
       },
       "notFound": {
         "count": 2,
         "rate": 0.0625
+      },
+      "singleChannelPass": {
+        "count": 1,
+        "rate": 0.03125
       }
     }
   },
@@ -184,6 +188,7 @@
         "expectedReviewReason": null,
         "actualReviewReason": null,
         "reviewReasonCorrect": true,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -288,6 +293,7 @@
         "expectedReviewReason": null,
         "actualReviewReason": null,
         "reviewReasonCorrect": true,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -392,6 +398,7 @@
         "expectedReviewReason": null,
         "actualReviewReason": null,
         "reviewReasonCorrect": true,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -496,6 +503,7 @@
         "expectedReviewReason": null,
         "actualReviewReason": null,
         "reviewReasonCorrect": true,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -600,6 +608,7 @@
         "expectedReviewReason": null,
         "actualReviewReason": null,
         "reviewReasonCorrect": true,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -704,6 +713,7 @@
         "expectedReviewReason": null,
         "actualReviewReason": null,
         "reviewReasonCorrect": true,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -808,6 +818,7 @@
         "expectedReviewReason": "CONFLICTING_EXTRACTION",
         "actualReviewReason": "AMBIGUOUS_ABV",
         "reviewReasonCorrect": false,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -857,14 +868,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3558,
-        "outputTokens": 737,
+        "outputTokens": 912,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.014486
+        "usd": 0.016236
       },
-      "resolverOutcome": "needs-human",
+      "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 9268
+      "resolverDurationMs": 11342
     },
     {
       "caseId": "case-08-title-case-warning-prefix-only",
@@ -919,6 +930,7 @@
         "expectedReviewReason": null,
         "actualReviewReason": null,
         "reviewReasonCorrect": true,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -1023,6 +1035,7 @@
         "expectedReviewReason": null,
         "actualReviewReason": null,
         "reviewReasonCorrect": true,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -1127,6 +1140,7 @@
         "expectedReviewReason": null,
         "actualReviewReason": null,
         "reviewReasonCorrect": true,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -1231,6 +1245,7 @@
         "expectedReviewReason": null,
         "actualReviewReason": "CONFLICTING_EXTRACTION",
         "reviewReasonCorrect": true,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -1280,14 +1295,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3955,
-        "outputTokens": 541,
+        "outputTokens": 554,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.013320000000000002
+        "usd": 0.01345
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 5919
+      "resolverDurationMs": 6897
     },
     {
       "caseId": "case-12-missing-warning-spirits",
@@ -1342,6 +1357,7 @@
         "expectedReviewReason": "MISSING_REQUIRED_FIELD",
         "actualReviewReason": "MISSING_REQUIRED_FIELD",
         "reviewReasonCorrect": true,
+        "warningChannel": null,
         "fields": [
           {
             "field": "brand_name",
@@ -1391,14 +1407,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3342,
-        "outputTokens": 157,
+        "outputTokens": 109,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.008254000000000001
+        "usd": 0.007774
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 4254
+      "resolverDurationMs": 4602
     },
     {
       "caseId": "case-13-missing-warning-wine",
@@ -1453,6 +1469,7 @@
         "expectedReviewReason": "MISSING_REQUIRED_FIELD",
         "actualReviewReason": "MISSING_REQUIRED_FIELD",
         "reviewReasonCorrect": true,
+        "warningChannel": null,
         "fields": [
           {
             "field": "brand_name",
@@ -1502,14 +1519,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3302,
-        "outputTokens": 131,
+        "outputTokens": 113,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.007914
+        "usd": 0.0077339999999999996
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 3797
+      "resolverDurationMs": 4848
     },
     {
       "caseId": "case-14-case-variant-brand-stones-throw",
@@ -1564,6 +1581,7 @@
         "expectedReviewReason": null,
         "actualReviewReason": null,
         "reviewReasonCorrect": true,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -1605,10 +1623,10 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2700,
-        "outputTokens": 375,
+        "outputTokens": 414,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.004575
+        "usd": 0.00477
       },
       "resolverCost": null,
       "resolverOutcome": null,
@@ -1668,6 +1686,7 @@
         "expectedReviewReason": null,
         "actualReviewReason": "AMBIGUOUS_BRAND",
         "reviewReasonCorrect": true,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -1717,14 +1736,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3595,
-        "outputTokens": 297,
+        "outputTokens": 308,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.010159999999999999
+        "usd": 0.01027
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 5645
+      "resolverDurationMs": 5366
     },
     {
       "caseId": "case-16-case-variant-brand-extra-words",
@@ -1779,6 +1798,7 @@
         "expectedReviewReason": "AMBIGUOUS_BRAND",
         "actualReviewReason": "AMBIGUOUS_BRAND",
         "reviewReasonCorrect": true,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -1828,14 +1848,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3552,
-        "outputTokens": 584,
+        "outputTokens": 176,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.012944
+        "usd": 0.008864
       },
-      "resolverOutcome": "needs-human",
+      "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 9695
+      "resolverDurationMs": 3888
     },
     {
       "caseId": "case-17-glare-front-label",
@@ -1846,10 +1866,10 @@
         "fields": [
           {
             "field": "brandName",
-            "correct": true,
+            "correct": false,
             "expected": "Sable Ridge Distillery",
-            "actual": "Sable Ridge Distillery",
-            "detail": "Haiku read the brand name correctly."
+            "actual": "Sable Ridge",
+            "detail": "Haiku read \"Sable Ridge\"; the label prints \"Sable Ridge Distillery\"."
           },
           {
             "field": "classType",
@@ -1885,18 +1905,19 @@
         "caseId": "case-17-glare-front-label",
         "category": "glare",
         "expectedLabelVerdict": "REVIEW",
-        "actualLabelVerdict": "PASS",
-        "labelVerdictCorrect": false,
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
         "expectedReviewReason": "LOW_IMAGE_QUALITY",
-        "actualReviewReason": null,
+        "actualReviewReason": "AMBIGUOUS_BRAND",
         "reviewReasonCorrect": false,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
             "expectedVerdict": "NEEDS_REVIEW",
-            "actualVerdict": "MATCH",
-            "correct": false,
-            "actualReviewReason": null
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true,
+            "actualReviewReason": "AMBIGUOUS_BRAND"
           },
           {
             "field": "class_type",
@@ -1931,15 +1952,22 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2700,
-        "outputTokens": 419,
+        "outputTokens": 416,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.004795
+        "usd": 0.0047799999999999995
       },
-      "resolverCost": null,
-      "resolverOutcome": null,
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3540,
+        "outputTokens": 157,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.00865
+      },
+      "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": null
+      "resolverDurationMs": 3583
     },
     {
       "caseId": "case-18-glare-warning-block",
@@ -1994,6 +2022,7 @@
         "expectedReviewReason": "LOW_IMAGE_QUALITY",
         "actualReviewReason": "WARNING_MISMATCH",
         "reviewReasonCorrect": false,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -2043,14 +2072,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3485,
-        "outputTokens": 316,
+        "outputTokens": 305,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.01013
+        "usd": 0.01002
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 7838
+      "resolverDurationMs": 4898
     },
     {
       "caseId": "case-19-rotation-mild-correctable",
@@ -2105,6 +2134,7 @@
         "expectedReviewReason": null,
         "actualReviewReason": "WARNING_MISMATCH",
         "reviewReasonCorrect": true,
+        "warningChannel": "single",
         "fields": [
           {
             "field": "brand_name",
@@ -2154,14 +2184,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 4042,
-        "outputTokens": 372,
+        "outputTokens": 352,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.011803999999999999
+        "usd": 0.011604
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 4679
+      "resolverDurationMs": 5467
     },
     {
       "caseId": "case-20-rotation-severe-upside-down",
@@ -2216,6 +2246,7 @@
         "expectedReviewReason": "LOW_IMAGE_QUALITY",
         "actualReviewReason": "LOW_IMAGE_QUALITY",
         "reviewReasonCorrect": true,
+        "warningChannel": null,
         "fields": [
           {
             "field": "brand_name",
@@ -2264,15 +2295,15 @@
       },
       "resolverCost": {
         "model": "claude-sonnet-5",
-        "inputTokens": 3748,
-        "outputTokens": 416,
+        "inputTokens": 3753,
+        "outputTokens": 435,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.011656
+        "usd": 0.011856
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 7298
+      "resolverDurationMs": 6603
     },
     {
       "caseId": "case-21-low-light-front-label",
@@ -2327,6 +2358,7 @@
         "expectedReviewReason": "LOW_IMAGE_QUALITY",
         "actualReviewReason": null,
         "reviewReasonCorrect": false,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -2431,6 +2463,7 @@
         "expectedReviewReason": "LOW_IMAGE_QUALITY",
         "actualReviewReason": "CONFLICTING_EXTRACTION",
         "reviewReasonCorrect": false,
+        "warningChannel": "single",
         "fields": [
           {
             "field": "brand_name",
@@ -2480,14 +2513,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3951,
-        "outputTokens": 647,
+        "outputTokens": 643,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.014372
+        "usd": 0.014332000000000001
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 7116
+      "resolverDurationMs": 6981
     },
     {
       "caseId": "case-23-tiny-warning-text-standard-bottle",
@@ -2537,11 +2570,12 @@
         "caseId": "case-23-tiny-warning-text-standard-bottle",
         "category": "tiny-warning-text",
         "expectedLabelVerdict": "REVIEW",
-        "actualLabelVerdict": "PASS",
-        "labelVerdictCorrect": false,
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
         "expectedReviewReason": "LOW_IMAGE_QUALITY",
-        "actualReviewReason": null,
+        "actualReviewReason": "WARNING_MISMATCH",
         "reviewReasonCorrect": false,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -2574,9 +2608,9 @@
           {
             "field": "government_warning",
             "expectedVerdict": "NEEDS_REVIEW",
-            "actualVerdict": "MATCH",
-            "correct": false,
-            "actualReviewReason": null
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true,
+            "actualReviewReason": "WARNING_MISMATCH"
           }
         ]
       },
@@ -2588,10 +2622,17 @@
         "cacheReadInputTokens": 0,
         "usd": 0.0046949999999999995
       },
-      "resolverCost": null,
-      "resolverOutcome": null,
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3479,
+        "outputTokens": 296,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.009918
+      },
+      "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": null
+      "resolverDurationMs": 4711
     },
     {
       "caseId": "case-24-tiny-warning-text-miniature-bottle",
@@ -2641,11 +2682,12 @@
         "caseId": "case-24-tiny-warning-text-miniature-bottle",
         "category": "tiny-warning-text",
         "expectedLabelVerdict": "REVIEW",
-        "actualLabelVerdict": "PASS",
-        "labelVerdictCorrect": false,
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
         "expectedReviewReason": "LOW_IMAGE_QUALITY",
-        "actualReviewReason": null,
+        "actualReviewReason": "WARNING_MISMATCH",
         "reviewReasonCorrect": false,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -2678,9 +2720,9 @@
           {
             "field": "government_warning",
             "expectedVerdict": "NEEDS_REVIEW",
-            "actualVerdict": "MATCH",
-            "correct": false,
-            "actualReviewReason": null
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true,
+            "actualReviewReason": "WARNING_MISMATCH"
           }
         ]
       },
@@ -2692,10 +2734,17 @@
         "cacheReadInputTokens": 0,
         "usd": 0.004739999999999999
       },
-      "resolverCost": null,
-      "resolverOutcome": null,
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3513,
+        "outputTokens": 304,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.010065999999999999
+      },
+      "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": null
+      "resolverDurationMs": 4823
     },
     {
       "caseId": "case-25-odd-typography-script-brand",
@@ -2750,6 +2799,7 @@
         "expectedReviewReason": "LOW_MODEL_CONFIDENCE",
         "actualReviewReason": null,
         "reviewReasonCorrect": false,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -2854,6 +2904,7 @@
         "expectedReviewReason": "LOW_MODEL_CONFIDENCE",
         "actualReviewReason": null,
         "reviewReasonCorrect": false,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -2958,6 +3009,7 @@
         "expectedReviewReason": null,
         "actualReviewReason": null,
         "reviewReasonCorrect": true,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -3062,6 +3114,7 @@
         "expectedReviewReason": null,
         "actualReviewReason": "AMBIGUOUS_BRAND",
         "reviewReasonCorrect": true,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -3111,14 +3164,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3531,
-        "outputTokens": 187,
+        "outputTokens": 192,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.008931999999999999
+        "usd": 0.008982
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 4717
+      "resolverDurationMs": 5056
     },
     {
       "caseId": "case-29-conflicting-brand-name",
@@ -3173,6 +3226,7 @@
         "expectedReviewReason": null,
         "actualReviewReason": "AMBIGUOUS_BRAND",
         "reviewReasonCorrect": true,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -3222,14 +3276,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3550,
-        "outputTokens": 159,
+        "outputTokens": 162,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.00869
+        "usd": 0.00872
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 7105
+      "resolverDurationMs": 4659
     },
     {
       "caseId": "case-30-clean-match-net-contents-alt-format",
@@ -3284,6 +3338,7 @@
         "expectedReviewReason": null,
         "actualReviewReason": null,
         "reviewReasonCorrect": true,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -3388,6 +3443,7 @@
         "expectedReviewReason": null,
         "actualReviewReason": null,
         "reviewReasonCorrect": true,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -3492,6 +3548,7 @@
         "expectedReviewReason": "WARNING_MISMATCH",
         "actualReviewReason": "WARNING_MISMATCH",
         "reviewReasonCorrect": true,
+        "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
@@ -3540,17 +3597,17 @@
       },
       "resolverCost": {
         "model": "claude-sonnet-5",
-        "inputTokens": 3507,
-        "outputTokens": 292,
+        "inputTokens": 3533,
+        "outputTokens": 293,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.009934
+        "usd": 0.009996
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 5747
+      "resolverDurationMs": 5750
     }
   ],
-  "totalCostUsd": 0.29197600000000007,
+  "totalCostUsd": 0.3180320000000001,
   "failures": []
 }

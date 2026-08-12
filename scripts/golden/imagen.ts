@@ -17,6 +17,7 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { GoogleGenAI } from "@google/genai";
+import sharp from "sharp";
 import { loadBottleReference, type BottleScene } from "../../src/lib/golden-set/bottleReference";
 import type { CameraCondition } from "../../src/lib/golden-set/types";
 import { BLANK_LABEL_COLOR_RGB, PROMPT_VERSION, buildBackdropPrompt } from "./imagenPrompt";
@@ -122,7 +123,63 @@ export function targetCaseId(target: GenerationTarget): string {
   return `case-ai-backdrop-${target.bottleId}-${target.scene.sceneId}-${target.cameraCondition}`;
 }
 
-/** Injected so `generateOne`'s orchestration is testable without a real network call. */
+/** The reference-photo and generated-response image formats Gemini's `inlineData` accepts/returns that this pipeline knows how to handle. */
+const SHARP_FORMAT_TO_MIME_TYPE: Readonly<Record<string, string>> = {
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+};
+
+/**
+ * Derives an image's real MIME type from its actual content (sharp reads
+ * the file's own signature, not its extension) instead of assuming one.
+ * `referencePhoto` in a bottle reference JSON is only required to be a
+ * non-empty string path — nothing guarantees the file at that path is
+ * actually a JPEG, and Gemini rejects a request whose declared `mimeType`
+ * does not match the bytes sent.
+ */
+export async function detectImageMimeType(bytes: Buffer, what: string): Promise<string> {
+  // sharp itself throws for bytes it cannot identify as any image format at
+  // all (e.g. plain text), rather than returning a metadata object with an
+  // empty `format` — caught here so every "not a format we handle" path
+  // (unrecognizable bytes, or a recognized-but-unsupported format like GIF
+  // or TIFF) raises the same, clearly-worded error instead of leaking
+  // sharp's own low-level message on only one of the two paths.
+  let format: string | undefined;
+  try {
+    format = (await sharp(bytes).metadata()).format;
+  } catch {
+    format = undefined;
+  }
+  const mimeType = format ? SHARP_FORMAT_TO_MIME_TYPE[format] : undefined;
+  if (!mimeType) {
+    throw new Error(
+      `imagen: ${what} has an unsupported or undetectable image format (${JSON.stringify(format)}) — expected jpeg, png, or webp`,
+    );
+  }
+  return mimeType;
+}
+
+/**
+ * `generateOne` always writes the backdrop as `<caseId>.png` (see below).
+ * Gemini's documented output MIME types include `image/jpeg` as well as
+ * `image/png` (design doc §9's citation), so bytes returned with a
+ * non-PNG `mimeType` are transcoded here — the one place that knows both
+ * the claimed and the actual format — rather than trusting the assumption
+ * baked into every other file's `.png` extension.
+ */
+export async function ensurePngBytes(bytes: Buffer, mimeType: string | undefined): Promise<Buffer> {
+  if (mimeType === "image/png") {
+    return bytes;
+  }
+  return sharp(bytes).png().toBuffer();
+}
+
+/**
+ * Injected so `generateOne`'s orchestration is testable without a real
+ * network call. Must resolve to PNG-encoded image bytes — `generateOne`
+ * writes the result directly as `<caseId>.png`.
+ */
 export type ImageGenerator = (prompt: string, referencePhotoPath: string) => Promise<Buffer>;
 
 /**
@@ -137,11 +194,15 @@ export async function generateWithGemini(apiKey: string): Promise<ImageGenerator
   const client = new GoogleGenAI({ apiKey });
   return async (prompt: string, referencePhotoPath: string): Promise<Buffer> => {
     const referenceBytes = readFileSync(referencePhotoPath);
+    const referenceMimeType = await detectImageMimeType(
+      referenceBytes,
+      `reference photo "${referencePhotoPath}"`,
+    );
     const response = await client.models.generateContent({
       model: MODEL,
       contents: [
         { text: prompt },
-        { inlineData: { mimeType: "image/jpeg", data: referenceBytes.toString("base64") } },
+        { inlineData: { mimeType: referenceMimeType, data: referenceBytes.toString("base64") } },
       ],
       config: { responseModalities: ["IMAGE"] },
     });
@@ -151,7 +212,8 @@ export async function generateWithGemini(apiKey: string): Promise<ImageGenerator
     if (!imagePart?.inlineData?.data) {
       throw new Error(`imagen: no image returned for prompt: ${prompt.slice(0, 80)}...`);
     }
-    return Buffer.from(imagePart.inlineData.data, "base64");
+    const responseBytes = Buffer.from(imagePart.inlineData.data, "base64");
+    return ensurePngBytes(responseBytes, imagePart.inlineData.mimeType);
   };
 }
 

@@ -3,7 +3,21 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { enumerateTargets, generateOne, targetCaseId, type ImageGenerator } from "./imagen";
+import {
+  detectImageMimeType,
+  ensurePngBytes,
+  enumerateTargets,
+  generateOne,
+  targetCaseId,
+  type ImageGenerator,
+} from "./imagen";
+
+async function makeSolidImage(format: "jpeg" | "png" | "webp"): Promise<Buffer> {
+  const image = sharp({ create: { width: 12, height: 12, channels: 3, background: { r: 12, g: 34, b: 56 } } });
+  if (format === "jpeg") return image.jpeg().toBuffer();
+  if (format === "webp") return image.webp().toBuffer();
+  return image.png().toBuffer();
+}
 
 function makeTempReferencesDir(): string {
   const dir = mkdtempSync(path.join(tmpdir(), "imagen-test-refs-"));
@@ -221,5 +235,51 @@ describe("path and slug safety", () => {
     } finally {
       rmSync(outDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("detectImageMimeType", () => {
+  it("derives image/jpeg from actual JPEG content", async () => {
+    const bytes = await makeSolidImage("jpeg");
+    await expect(detectImageMimeType(bytes, "test reference")).resolves.toBe("image/jpeg");
+  });
+
+  it("derives image/png from actual PNG content — a non-JPEG reference photo", async () => {
+    const bytes = await makeSolidImage("png");
+    await expect(detectImageMimeType(bytes, "test reference")).resolves.toBe("image/png");
+  });
+
+  it("derives image/webp from actual WEBP content", async () => {
+    const bytes = await makeSolidImage("webp");
+    await expect(detectImageMimeType(bytes, "test reference")).resolves.toBe("image/webp");
+  });
+
+  it("rejects bytes with no detectable image format", async () => {
+    await expect(detectImageMimeType(Buffer.from("not an image"), "test reference")).rejects.toThrow(
+      /unsupported or undetectable/,
+    );
+  });
+});
+
+describe("ensurePngBytes", () => {
+  it("passes PNG bytes through unchanged when the response mimeType is already image/png", async () => {
+    const pngBytes = await makeSolidImage("png");
+    const result = await ensurePngBytes(pngBytes, "image/png");
+    expect(result).toBe(pngBytes); // same buffer instance -- no re-encode
+  });
+
+  it("transcodes a non-PNG response (e.g. image/jpeg) to real PNG bytes", async () => {
+    const jpegBytes = await makeSolidImage("jpeg");
+    const result = await ensurePngBytes(jpegBytes, "image/jpeg");
+    expect(result).not.toBe(jpegBytes);
+    const meta = await sharp(result).metadata();
+    expect(meta.format).toBe("png");
+  });
+
+  it("transcodes to PNG when the response mimeType is missing entirely", async () => {
+    const jpegBytes = await makeSolidImage("jpeg");
+    const result = await ensurePngBytes(jpegBytes, undefined);
+    const meta = await sharp(result).metadata();
+    expect(meta.format).toBe("png");
   });
 });

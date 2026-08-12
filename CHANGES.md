@@ -4,6 +4,100 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-515 — Golden set: rubric vector V7 (net-contents format match) has zero coverage (2026-08-12)
+
+**What changed.** `golden-set/manifest.json` gains one new case:
+`case-30-clean-match-net-contents-alt-format`. Its label prints net contents as `750ml` — no
+space, lowercase unit. Its application states the same quantity as `750 mL`, the structured,
+canonical form the eval harness always synthesizes from `netContentsValue` + `netContentsUnit`.
+Every other field matches `case-01-clean-match-spirits` exactly, so the format difference is
+the case's one isolated variable — the same pattern `case-04-clean-match-spirits-alt-format`
+already uses for V6's ABV format difference. Expected verdict: MATCH, per `audit/rubric.md`
+Appendix A's V7 definition. Checked against the real comparator, not just asserted:
+`src/server/comparators/net-contents.ts`'s `parseNetContents` reads `750ml` and `750 mL` as the
+identical `{ value: 750, unit: "ml" }` — the normalizer lowercases and trims whitespace before
+matching a unit, so spacing and case never affect the result.
+
+`scripts/golden/verify.ts`'s `KNOWN_VECTOR_GAPS` no longer lists V7 — it is now an empty set.
+The check is symmetric (LH-006/TRO-499): a manifest that covers a tracked vector without the
+tracking entry being removed fails `vector-coverage-drift`. Adding the case without removing
+the entry would fail the same way, checked directly (see Evidence below) before the entry was
+removed. Both changes land in this one PR.
+
+**The known-gap test mechanism needed a seam, not just two updated assertions.** Closing the
+gap breaks the two tests that check the real committed manifest
+(`scripts/golden/verify.test.ts`'s "the real committed golden set" block,
+`src/lib/golden-set/loader.test.ts`'s vector-coverage test) — both now expect zero remaining
+gaps instead of `["V7"]`. It also breaks three synthetic-fixture tests in `verify.test.ts` that
+used V7 as a stand-in example of "a tracked gap": `KNOWN_VECTOR_GAPS` is a private, hardcoded
+constant with no injection seam, so once it went empty, those tests had nothing left to
+exercise. Rather than delete tests that prove the drift check works, `VerifyOptions` gained an
+optional `knownVectorGaps` override. `main()` (the CLI entry point) never passes it, so a real
+`pnpm golden:verify` run always checks the manifest against the actual, current
+`KNOWN_VECTOR_GAPS`. The three mechanism tests now inject their own fixture vector (`new
+Set(["V7"])`, chosen for a minimal diff — it is just a label now, not a live gap) instead of
+depending on whichever vector, if any, is a genuine gap in the committed manifest. Two more
+`validManifestCases()`-based tests (an ai-generated "passes" case, a rendered+ai-backdrop
+"passes" case) needed the same override for an unrelated, pre-existing reason: their shared
+fixture always leaves V7 uncovered by construction, and both assert `report.problems` comes
+back completely empty.
+
+`golden-set/README.md`'s known-gap note is rewritten: V7 is closed; V10 remains the one
+property that stays manifest-wide, not per-case. Image count and total size move from 29 /
+about 1.08 MB to 30 / about 1.14 MB (measured: `du -sh golden-set/images/` after a fresh `pnpm
+golden:build`), and the clean-match category count moves from 4 to 5.
+
+**New regression coverage.** `src/lib/golden-set/loader.test.ts` gains one new test —
+"includes the net-contents format-variant case required by rubric vector V7 (TRO-515)" — that
+finds the new case by ID, checks its label and application values differ only in format, and
+checks its expected `netContents` verdict is MATCH. Confirmed red for the right reason first:
+loaded the pre-ticket manifest directly (`git show HEAD:golden-set/manifest.json`) through the
+real loader and re-ran the same assertion — 29 cases, no `case-30-...` entry, V7 not in the
+covered-vectors set. `scripts/golden/verify.test.ts` gains one new test covering the DEFAULT
+(no-override) path with a fixture that has no genuine gap, proving the empty-`KNOWN_VECTOR_GAPS`
+case reports cleanly.
+
+**Files.**
+- `golden-set/manifest.json` — new case-30, appended after case-29.
+- `golden-set/images/case-30-clean-match-net-contents-alt-format.jpg` — rendered through
+  `pnpm golden:build` (Playwright/Chromium, the existing render pipeline), not hand-crafted.
+  Every one of the other 29 committed images came out byte-identical from the same build run
+  (`git diff --stat golden-set/images/` showed zero changes to any tracked file) — the
+  pipeline's determinism claim, checked here, not assumed.
+- `scripts/golden/verify.ts` — `KNOWN_VECTOR_GAPS` now empty; `VerifyOptions` gained
+  `knownVectorGaps` as a test-only override.
+- `scripts/golden/verify.test.ts` — 3 existing tests updated to pass `knownVectorGaps`
+  explicitly; 2 more `validManifestCases()`-based "passes" tests get the same override for the
+  unrelated fixture reason above; the real-committed-golden-set test now expects zero known
+  gaps; 1 new test for the default (no-override) path.
+- `src/lib/golden-set/loader.test.ts` — the "8 of 10 vectors" test becomes "9 of 10" (V10
+  only); 1 new test for the case-30 shape.
+- `golden-set/README.md` — known-gap section rewritten; image count/size and clean-match
+  category count updated to the measured current values.
+
+**Evidence.**
+- `pnpm golden:verify`, case-30 added and rendered but `KNOWN_VECTOR_GAPS` not yet touched:
+  `FAIL: 1 problem(s) found. [vector-coverage-drift] V7 is now covered by at least one case,
+  but scripts/golden/verify.ts still lists it in KNOWN_VECTOR_GAPS — remove it there (and
+  update golden-set/README.md's gap note) in this change.` The symmetric check, firing exactly
+  as LH-006/TRO-499 designed it to.
+- `pnpm golden:verify` after removing V7 from `KNOWN_VECTOR_GAPS`: `PASS: golden set is
+  consistent.` Zero problems, zero known gaps reported.
+- `pnpm test -- scripts/golden/ src/lib/golden-set/ scripts/eval/`: 278 tests, all green.
+- `pnpm typecheck`: clean.
+
+**How to run it.** `source .factory-env` first. `pnpm golden:verify` for the gate check itself;
+`pnpm test -- scripts/golden/ src/lib/golden-set/` for the full test suite covering this
+change; `pnpm golden:build` regenerates `golden-set/images/` from the manifest (deterministic,
+no network call) if an image is ever lost or needs rebuilding.
+
+**Rollback.** `git revert` this change's commit(s). `golden-set/manifest.json` drops case-30 —
+also delete `golden-set/images/case-30-clean-match-net-contents-alt-format.jpg` by hand if the
+revert leaves it behind (it is a new file, not a modified one, so reverting the commit that
+added it removes it in the normal case). Restore the `["V7"]` entry in `scripts/golden/
+verify.ts`'s `KNOWN_VECTOR_GAPS` in the same revert: a manifest without the case, combined with
+an empty `KNOWN_VECTOR_GAPS`, fails `vector-coverage` instead of passing clean.
+
 ## TRO-517 — Wire the warning comparator into the batch extract-worker (2026-08-12)
 
 **What changed.** `src/server/batch-queue/extract-worker.ts` now calls LH-020's real warning

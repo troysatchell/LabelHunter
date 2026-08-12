@@ -144,6 +144,17 @@ a {
   gap: 1.75rem;
 }
 
+/* TRO-482: the access-code entry form (`AccessCodeForm.tsx`) — a much
+   shorter form than `.verify-form` above, but the same column-with-gap
+   layout, so it gets its own class rather than reusing a name that
+   describes a different screen. */
+.access-code-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-width: 24rem;
+}
+
 .field {
   display: flex;
   flex-direction: column;

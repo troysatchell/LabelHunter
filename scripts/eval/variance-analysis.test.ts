@@ -7,6 +7,8 @@ import {
   computeCaseStability,
   computeCorpusStability,
   findCompleteCaseIds,
+  findMissingCaseIds,
+  isNarrowerReport,
   type RepeatedVerdict,
   type VarianceCaseFailure,
   type VarianceCaseRun,
@@ -399,5 +401,62 @@ describe("buildVarianceReport", () => {
     expect(c17.labelVerdictAccuracy).toEqual({ total: 1, correct: 1, rate: 1 });
     const reason: ReviewReason | null = runs[0].verdict.actualReviewReason;
     expect(reason).toBe("AMBIGUOUS_BRAND");
+  });
+
+  it("sorts caseIds with the same plain comparator computeCorpusStability's perCase uses -- both orderings agree", () => {
+    const runs: VarianceCaseRun[] = [caseRun("case-z", 1, "PASS"), caseRun("case-a", 1, "PASS"), caseRun("case-m", 1, "PASS")];
+    const report = buildVarianceReport({ ...baseInput, caseIds: ["case-z", "case-a", "case-m"], repeats: 1, runs, failures: [] });
+    expect(report.caseIds).toEqual(["case-a", "case-m", "case-z"]);
+    expect(report.summary.perCase.map((c) => c.caseId)).toEqual(["case-a", "case-m", "case-z"]);
+  });
+});
+
+// PR review finding (TRO-543): resolveCaseIds's default-sample path
+// (DEFAULT_SAMPLE_CASE_IDS, args.ts) is a hard-coded list never filtered
+// against the manifest -- a stale entry would otherwise crash deep inside
+// variance.ts's own loop, possibly after real API money for earlier cases
+// in the same sweep is already spent.
+describe("findMissingCaseIds", () => {
+  it("returns case IDs absent from knownCaseIds", () => {
+    expect(findMissingCaseIds(["case-01", "case-99"], new Set(["case-01", "case-02"]))).toEqual(["case-99"]);
+  });
+
+  it("returns an empty array when every case ID is known", () => {
+    expect(findMissingCaseIds(["case-01", "case-02"], new Set(["case-01", "case-02", "case-03"]))).toEqual([]);
+  });
+
+  it("returns an empty array for an empty caseIds list", () => {
+    expect(findMissingCaseIds([], new Set(["case-01"]))).toEqual([]);
+  });
+
+  it("preserves input order and duplicates, if any -- it filters, it does not dedupe or sort", () => {
+    expect(findMissingCaseIds(["case-99", "case-01", "case-99"], new Set(["case-01"]))).toEqual(["case-99", "case-99"]);
+  });
+});
+
+// PR review finding (TRO-543): variance.ts warns before a real run's
+// report would silently replace a wider committed report with a narrower
+// one -- this is the pure predicate behind that warning.
+describe("isNarrowerReport", () => {
+  it("is true when the candidate has fewer cases", () => {
+    expect(isNarrowerReport({ caseIds: ["a"], repeats: 5 }, { caseIds: ["a", "b"], repeats: 5 })).toBe(true);
+  });
+
+  it("is true when the candidate has fewer repeats, even with the same or more cases", () => {
+    expect(isNarrowerReport({ caseIds: ["a", "b"], repeats: 1 }, { caseIds: ["a"], repeats: 5 })).toBe(true);
+  });
+
+  it("is false when the candidate matches the previous report exactly", () => {
+    expect(isNarrowerReport({ caseIds: ["a", "b"], repeats: 5 }, { caseIds: ["a", "b"], repeats: 5 })).toBe(false);
+  });
+
+  it("is false when the candidate is wider on both axes", () => {
+    expect(isNarrowerReport({ caseIds: ["a", "b", "c"], repeats: 5 }, { caseIds: ["a"], repeats: 1 })).toBe(false);
+  });
+
+  it("is true for the real scenario this finding names: a 1-case x 1-repeat proof run after a real 32-case x 3-repeat sweep", () => {
+    const proofRun = { caseIds: ["case-01-clean-match-spirits"], repeats: 1 };
+    const realSweep = { caseIds: Array.from({ length: 32 }, (_, i) => `case-${i}`), repeats: 3 };
+    expect(isNarrowerReport(proofRun, realSweep)).toBe(true);
   });
 });

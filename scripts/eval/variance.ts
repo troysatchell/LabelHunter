@@ -63,7 +63,14 @@ import { cleanupScratchDirAndPool } from "../latency/cleanup";
 import { parseVarianceArgs, resolveCaseIds, validateVarianceArgs, type VarianceCliArgs } from "./args";
 import { REPO_ROOT, runOneCase, type CaseRunOutcome } from "./cascade-runner";
 import { validateVarianceReport } from "./report-validation";
-import { buildVarianceReport, type VarianceCaseFailure, type VarianceCaseRun, type VarianceReport } from "./variance-analysis";
+import {
+  buildVarianceReport,
+  findMissingCaseIds,
+  isNarrowerReport,
+  type VarianceCaseFailure,
+  type VarianceCaseRun,
+  type VarianceReport,
+} from "./variance-analysis";
 
 const REPORT_PATH = path.resolve(REPO_ROOT, "scripts/eval/results/variance-report.json");
 
@@ -93,6 +100,39 @@ function printRunLine(caseId: string, repeatIndex: number, repeats: number, outc
     `  ${caseId} [${repeatIndex}/${repeats}]: ${r.verdict.actualLabelVerdict}/${r.verdict.actualReviewReason ?? "null"}, ${verdictNote}, ` +
       `haiku $${r.haikuCost.usd.toFixed(4)}`,
   );
+}
+
+/**
+ * Warns, loudly, before a real `--live` run's report would silently
+ * replace a wider committed report with a narrower one (a PR review
+ * finding, TRO-543) — e.g. a one-case, one-repeat mechanical-proof
+ * invocation run again, by hand, after a real N x K sweep's own valuable
+ * report is already committed. `writeFileSync` still runs unconditionally
+ * either way (this is a warning, not a refusal — a deliberate, narrower
+ * `--case=<id>` debug run is a legitimate thing to want); the warning
+ * exists so that choice is never made by accident. Never throws: a
+ * missing or malformed previous report is not a reason to lose the
+ * current, valid, already-computed one — it just means there is nothing
+ * to compare against.
+ */
+function warnIfNarrowingCommittedReport(report: VarianceReport): void {
+  if (!existsSync(REPORT_PATH)) return;
+  let previous: VarianceReport;
+  try {
+    previous = validateVarianceReport(JSON.parse(readFileSync(REPORT_PATH, "utf8")), REPORT_PATH);
+  } catch (cause) {
+    console.warn(
+      `variance.ts: could not read the previously committed report to compare scope — proceeding: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+    return;
+  }
+  if (isNarrowerReport(report, previous)) {
+    console.warn(
+      `variance.ts: WARNING — this run (${report.caseIds.length} case(s) x ${report.repeats} repeat(s)) is NARROWER than the ` +
+        `already-committed report (${previous.caseIds.length} case(s) x ${previous.repeats} repeat(s), measured ${previous.measuredAt}). ` +
+        `Writing this report will replace the wider one. Run "git restore ${path.relative(REPO_ROOT, REPORT_PATH)}" to keep the wider one instead.`,
+    );
+  }
 }
 
 function printReportSummary(report: VarianceReport): void {
@@ -134,6 +174,24 @@ async function runLive(args: VarianceCliArgs): Promise<void> {
   const allCaseIds = manifest.cases.map((c) => c.caseId);
   const caseIds = resolveCaseIds(args, allCaseIds);
   const casesById = new Map(manifest.cases.map((c) => [c.caseId, c]));
+
+  // resolveCaseIds validates --case=<id> against the manifest, and --full
+  // reads case IDs straight from it — both paths are already safe.
+  // DEFAULT_SAMPLE_CASE_IDS (args.ts) is a hard-coded list `resolveCaseIds`
+  // does NOT filter against the manifest (that function's own doc comment
+  // says so) — if the manifest ever drops a case that list still names,
+  // `casesById.get(...)` below would return `undefined`, and the loop's
+  // own `!` assertion would turn that into a confusing crash deep inside
+  // `runOneCase`, possibly after real API money for earlier cases in the
+  // same sweep is already spent (a PR review finding, TRO-543). Fail
+  // loudly here instead, before the DB pool or scratch dir even exist.
+  const missingFromManifest = findMissingCaseIds(caseIds, new Set(allCaseIds));
+  if (missingFromManifest.length > 0) {
+    throw new Error(
+      `variance.ts: case ID(s) not found in the loaded golden-set manifest: ${missingFromManifest.join(", ")}. ` +
+        "DEFAULT_SAMPLE_CASE_IDS (args.ts) is not filtered against the manifest — update one of the two.",
+    );
+  }
 
   console.log(
     `variance.ts: running ${caseIds.length} case(s) x ${args.repeats} repeat(s) = ${caseIds.length * args.repeats} real cascade run(s) against the real API.`,
@@ -217,6 +275,7 @@ async function runLive(args: VarianceCliArgs): Promise<void> {
   });
 
   mkdirSync(path.dirname(REPORT_PATH), { recursive: true });
+  warnIfNarrowingCommittedReport(report);
   writeFileSync(REPORT_PATH, JSON.stringify(report, null, 2) + "\n");
   printReportSummary(report);
   console.log(`variance.ts: wrote ${REPORT_PATH}`);

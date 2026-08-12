@@ -55,6 +55,21 @@ export interface RepeatedVerdict {
  * case's OWN repeats happened to produce first, not a stated rule). */
 const VERDICT_TIE_BREAK_ORDER: readonly LabelVerdict[] = ["PASS", "FAIL", "REVIEW"];
 
+/**
+ * Plain UTF-16 code-unit string comparison — the exact ordering
+ * `Array.prototype.sort()`'s own no-argument default uses for strings.
+ * Every case-ID sort in this file shares this one comparator, so the
+ * committed report's top-level `caseIds` list and its `summary.perCase`
+ * list always agree on order, byte for byte (a PR review finding,
+ * TRO-543: `localeCompare`'s exact ordering can vary by ICU version across
+ * environments; a committed evidence artifact should not depend on which
+ * machine produced it, and two DIFFERENT comparators for "sort case IDs"
+ * in one file is a real drift risk even before that).
+ */
+function compareCaseIds(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 export interface CaseStability {
   readonly caseId: string;
   /** How many repeats this case actually completed — equal to the sweep's
@@ -173,7 +188,7 @@ export function computeCorpusStability(
 ): VarianceCorpusSummary {
   const perCase = [...byCase.entries()]
     .map(([caseId, repeats]) => computeCaseStability(caseId, repeats))
-    .sort((a, b) => a.caseId.localeCompare(b.caseId));
+    .sort((a, b) => compareCaseIds(a.caseId, b.caseId));
   const complete = perCase.filter((c) => completeCaseIds.has(c.caseId));
   return {
     perCase,
@@ -385,7 +400,7 @@ export function buildVarianceReport(input: BuildVarianceReportInput): VarianceRe
     manifestContentHash: input.manifestContentHash,
     commitSha: input.commitSha,
     requestedFull: input.requestedFull,
-    caseIds: [...input.caseIds].sort(),
+    caseIds: [...input.caseIds].sort(compareCaseIds),
     repeats: input.repeats,
     summary: {
       caseCount: byCase.size,
@@ -399,4 +414,40 @@ export function buildVarianceReport(input: BuildVarianceReportInput): VarianceRe
     runs: input.runs,
     failures: input.failures,
   };
+}
+
+/**
+ * Which of `caseIds` are absent from `knownCaseIds` — used by `variance.ts`
+ * to fail loudly, before spending anything, when `resolveCaseIds`'s
+ * default-sample path (`DEFAULT_SAMPLE_CASE_IDS`, `args.ts`) names a case
+ * the manifest no longer has. `resolveCaseIds`'s own `--case=<id>` and
+ * `--full` paths are already safe (validated against the manifest, or read
+ * straight from it) — only the hard-coded default list needs this check,
+ * but it costs nothing to run unconditionally. Pure.
+ */
+export function findMissingCaseIds(caseIds: readonly string[], knownCaseIds: ReadonlySet<string>): readonly string[] {
+  return caseIds.filter((id) => !knownCaseIds.has(id));
+}
+
+/** The minimal shape `isNarrowerReport` compares — either a real
+ * `VarianceReport` or a lighter-weight stand-in satisfies this. */
+export interface ReportScope {
+  readonly caseIds: readonly string[];
+  readonly repeats: number;
+}
+
+/**
+ * `true` when `candidate` covers LESS than `previous` on either axis
+ * (fewer cases OR fewer repeats) — `variance.ts` uses this to warn before
+ * a real run's report would silently replace a wider committed report
+ * with a narrower one (a PR review finding, TRO-543: a one-case
+ * mechanical-proof re-run, done by hand after a real N x K sweep's report
+ * is already committed, could otherwise clobber it with no warning at
+ * all). Either axis shrinking is enough to warn — repeats (K) is the
+ * dimension that reveals instability at all, so fewer repeats is weaker
+ * evidence regardless of case coverage, and the reverse holds for cases.
+ * Pure.
+ */
+export function isNarrowerReport(candidate: ReportScope, previous: ReportScope): boolean {
+  return candidate.caseIds.length < previous.caseIds.length || candidate.repeats < previous.repeats;
 }

@@ -4,6 +4,42 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-473 — local CodeRabbit review round 2: 2 findings, 2 fixed (2026-08-11)
+
+**What changed.** A second independent CodeRabbit pass, against round 1's own fix commits,
+captured 2 findings. Both were real. Both are fixed.
+
+- `csv.ts` (moderate): a bare carriage return (`\r` not followed by `\n`) was silently
+  dropped in an unquoted field and silently kept as literal content in a quoted field —
+  neither an error. The unquoted case is the serious one: dropping the `\r` merges what
+  looks like two lines into one cell with no separator, invisible data corruption. Both
+  branches now return a syntax error for a bare `\r`; a genuine CRLF pair is unaffected in
+  either branch. Four new regression tests, confirmed red first.
+- `route.ts` (major, and correctly flagged as bypassing round 1's own fix rather than a new
+  problem): `checkRequestSize` only rejects a request whose `Content-Length` header is
+  present and already reveals it is too large. A request with no such header — this route's
+  own normal shape in production, confirmed empirically — sailed past that check into an
+  uncapped `request.formData()`, the exact risk round 1 meant to close. Added
+  `readLimitedBody()`: reads the request's real bytes via its own stream reader, aborting
+  the instant the cap is exceeded, measured rather than declared. `checkRequestSize` stays
+  as a cheap fast path; `readLimitedBody` is now the authoritative check. Verified
+  empirically first that reconstructing a `Response` from the buffered bytes plus the
+  original `Content-Type` header re-parses as `FormData` identically to the original
+  request, and that an early `reader.cancel()` exits cleanly. The existing "no
+  Content-Length header" test's framing was updated (a small such request still succeeds,
+  unchanged); two new tests prove a large one is now rejected and a small one still isn't.
+
+Recorded in `factory/review-findings.jsonl` — categories `correctness` (1),
+`boundary-validation` (1).
+
+**Tests.** `pnpm test -- src/server/batch/ src/app/api/batch/` — same 7 files, now 89 test
+cases (was 83), all green. `pnpm typecheck` and `pnpm lint` both clean.
+
+**How to run it.** `source .factory-env` first. `pnpm test -- src/server/batch/
+src/app/api/batch/`, or `pnpm test` for the full suite.
+
+**Rollback.** `git revert` this round's commits. No schema change, no migration.
+
 ## TRO-473 — LH-040: Batch input — CSV manifest + images + pairing preview (2026-08-11)
 
 **What changed.** TH-R4 asks for batch upload. This ticket builds the first stage: a CSV

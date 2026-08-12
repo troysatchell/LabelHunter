@@ -68,7 +68,10 @@ record here for Troy, not a decision this ticket claims authority to make quietl
 
 **Evidence.**
 
-- `pnpm test`: 1529/1529 passed, 138 test files. No test deleted, skipped, or quarantined.
+- `pnpm test`: 1530/1530 passed, 138 test files. No test deleted, skipped, or quarantined.
+  Includes a direct assertion that `normalizeForFuzzyMatch("STONES THROW")` equals
+  `normalizeForFuzzyMatch("Stone's Throw")` (`normalize.test.ts`), alongside the
+  comparator-level case-15 test in `brand.test.ts`.
 - `pnpm typecheck`: clean.
 - `pnpm lint`: 0 errors (1 pre-existing warning in `DetailView.tsx`, unrelated to this change).
 - `pnpm golden:verify`: PASS, 32 cases — no manifest edit, so vector coverage is unchanged.

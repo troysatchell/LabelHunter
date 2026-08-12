@@ -55,6 +55,15 @@ describe("normalizeForFuzzyMatch — CP-1 §5.3's 6-step pipeline, in order", ()
     expect(normalizeForFuzzyMatch("Old Tom, Distillery Inc.")).toBe("old tom distillery inc");
   });
 
+  it("step 6: TRO-536, case-15 — a label with no apostrophe normalizes the same as an application that has one", () => {
+    // case-15-case-variant-brand-punctuation: label "STONES THROW", application
+    // "Stone's Throw". Before TRO-536 these normalized to "stones throw" and
+    // "stone's throw" — one character apart, 0.923077 similarity, just under
+    // the 0.95 MATCH threshold. Step 6 now drops the apostrophe too.
+    expect(normalizeForFuzzyMatch("STONES THROW")).toBe(normalizeForFuzzyMatch("Stone's Throw"));
+    expect(normalizeForFuzzyMatch("STONES THROW")).toBe("stones throw");
+  });
+
   it("step 6: keeps an internal hyphen — a compound class/type stays one word pair", () => {
     expect(normalizeForFuzzyMatch("Kentucky-Straight Bourbon")).toBe("kentucky-straight bourbon");
   });

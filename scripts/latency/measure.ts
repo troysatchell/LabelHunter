@@ -27,24 +27,24 @@
  * guarantee the database ends up byte-for-byte as it started (sequence
  * counters still advance either way).
  *
- * **What is NOT in this measurement, and why.** The warning subsystem
- * (LH-020) has not merged. The Sonnet resolver (LH-014, `src/server/
- * resolver/`) has merged to `main`, but `route.ts` never calls it —
- * confirmed with `git diff`, not assumed: `route.ts` is byte-identical
- * before and after that merge. `handleVerifyRequest` never calls Sonnet
- * inline, on any run, escalated or not (TH-R19 — the cascade is the
- * architecture). Sonnet resolution, when it happens at all, runs
+ * **What is NOT in this measurement, and why.** The Sonnet resolver
+ * (LH-014, `src/server/resolver/`) has merged to `main`, but `route.ts`
+ * never calls it — confirmed with `git diff`, not assumed: `route.ts` is
+ * byte-identical before and after that merge. `handleVerifyRequest` never
+ * calls Sonnet inline, on any run, escalated or not (TH-R19 — the cascade
+ * is the architecture). Sonnet resolution, when it happens at all, runs
  * asynchronously off the `review_queue` table, on its own schedule,
  * outside this request and outside this script's timer. Every run below
  * is therefore a "fast path" measurement by construction, not a mix of
- * fast path and Sonnet-resolved escalation. Because `route.ts` passes
- * `warningResult: null` (honestly — LH-020 is not built), the government
- * warning field routes to `NEEDS_REVIEW` on every run that has one, which
- * usually rolls the label verdict up to `REVIEW`. This is expected, not a
- * bug: a `REVIEW` verdict here is still a same-request, synchronous answer
- * (PRD §3.8's "verdict or an explicit flag" clock). It costs no extra
- * wall-clock time — nothing asynchronous, and nothing Sonnet-side, runs
- * before this script's timer stops.
+ * fast path and Sonnet-resolved escalation.
+ *
+ * **What IS in this measurement, since TRO-514.** The warning subsystem
+ * (LH-020) is wired into `route.ts`: `compareGovernmentWarningFromImage`
+ * runs region detection, OCR, and the exact statutory comparison on every
+ * run whose label has a warning, concurrently with the Haiku call, not
+ * after it (CP-2 §4.4). A number this script reports after TRO-514
+ * includes that work; a number recorded before TRO-514 landed does not —
+ * the two are not directly comparable.
  *
  * **Failure handling.** A run that throws, or that the route answers with a
  * non-200 status, is recorded in the raw log with its own duration and
@@ -70,6 +70,7 @@ import { extractLabel, HAIKU_EXTRACTOR_MODEL } from "../../src/server/extractor"
 import { preprocessImage } from "../../src/server/preprocessing";
 import { productionComparators } from "../../src/server/comparators";
 import { saveLabelImage } from "../../src/server/storage/local-file-storage";
+import { compareGovernmentWarningFromImage } from "../../src/server/warning";
 import { parseArgs } from "./args";
 import { cleanupScratchDirAndPool } from "./cleanup";
 import { computeExitCode } from "./exit-status";
@@ -327,6 +328,7 @@ async function main(): Promise<void> {
     db,
     preprocessImage,
     extractLabel,
+    compareGovernmentWarning: compareGovernmentWarningFromImage,
     saveLabelImage: (bytes, originalFilename) => saveLabelImage(bytes, originalFilename, { baseDir: scratchDir }),
     comparators: productionComparators,
   };

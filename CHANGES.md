@@ -14,8 +14,9 @@ Before this fix, the check compared a free-form extractor string against the app
 closed enum by plain equality. An off-menu subtype — a real TTB category the application form
 has no slot for — read as a conflict.
 
-**Why.** Measured: `scripts/eval/results/eval-report.json`, run `2026-08-12T13:26:45.488Z`,
-mode `live`, model `claude-haiku-4-5`. case-11 declares beverage type `wine`. Its label prints
+**Why.** The measurement comes from `scripts/eval/results/eval-report.json`, run
+`2026-08-12T13:26:45.488Z`, mode `live`, model `claude-haiku-4-5`. case-11 declares beverage
+type `wine`. Its label prints
 class type `Mead`. TTB classes mead as a wine. Neither record is wrong. The old check still
 fired `CONFLICTING_EXTRACTION`. That set a label-level blocker. `rollup.ts:15` returned REVIEW
 before it ever read the government warning's own `MISMATCH`. TH-R9's acceptance evidence reads
@@ -49,9 +50,9 @@ gain or a net loss that cancels the other out.
 beside the existing beverage_type block. `pnpm eval:check -- --live --case=<id>` reads one
 case live. It never touches the committed report or baseline (`check.ts`'s own contract).
 
-**Rollback.** `git revert` this ticket's commit(s) on `fix/lh-029-beverage-type-crosscheck`.
-The change is additive and local to one function in `src/server/router/index.ts`. A revert
-restores the old, unguarded string-equality check.
+**Rollback.** Run `git revert <ticket-commit>` for each ticket commit on
+`fix/lh-029-beverage-type-crosscheck`. The change is additive and local to one function in
+`src/server/router/index.ts`. A revert restores the old, unguarded string-equality check.
 
 **Related, not duplicated here.** TRO-502 owns override rule 1
 (`src/server/router/overrides.ts:134`) — a separate defect in the same field. This ticket

@@ -15,6 +15,9 @@ import { db } from "../../../../lib/db";
 import { batchJobs, batchQueueItems, applications } from "../../../../lib/db/schema";
 import { startBatchFromPairings } from "../../../../server/batch-start/start-batch";
 import { saveLabelImage } from "../../../../server/storage/local-file-storage";
+import { BUDGET_EXHAUSTED_MESSAGE } from "../../../../server/budget/daily-budget";
+import { createFixedWindowLimiter } from "../../../../server/rate-limit/fixed-window";
+import { checkRateLimitPair } from "../../../../server/rate-limit/instances";
 import { handleBatchStartRequest } from "./route";
 import type { BatchStartErrorResponse, BatchStartSuccessResponse } from "./types";
 
@@ -227,5 +230,92 @@ describe("handleBatchStartRequest", () => {
     const body = (await response.json()) as BatchStartErrorResponse;
     expect(body.error.kind).toBe("VALIDATION");
     expect(body.error.message).toMatch(/too large/i);
+  });
+});
+
+// TRO-482 / LH-061, PRD §8 — key protection. checkRateLimit/checkBudget are
+// OPTIONAL on HandleBatchStartOptions with an always-allow fallback inside
+// handleBatchStartRequest itself — every test ABOVE this point predates this
+// ticket and needed zero changes (confirmed: this file's pre-existing 10
+// cases pass unmodified). This route never calls the model inline (batch
+// extraction happens later, in the background worker), so unlike
+// /api/verify there is no spend to record here — only the pre-call gate.
+describe("POST /api/batch/start — rate limit gate (TRO-482)", () => {
+  async function simpleUpload(): Promise<FormData> {
+    const fd = new FormData();
+    fd.set("manifest", csvFile([HEADER, "spirits,Highland Peak Distillery,Straight Bourbon Whiskey,45,750,mL,bottle-01.jpg"].join("\n")));
+    fd.append("images", await imageFile("bottle-01.jpg"));
+    return fd;
+  }
+
+  it("rejects with a friendly message and never starts a batch when checkRateLimit says no", async () => {
+    let startBatchCalled = false;
+    const response = await handleBatchStartRequest(requestWith(await simpleUpload()), {
+      ...testDeps(),
+      checkRateLimit: () => ({
+        allowed: false,
+        message: "LabelHunter is getting more requests than it can handle right now. Wait 45 seconds and try again.",
+      }),
+      startBatch: async (pairings) => {
+        startBatchCalled = true;
+        return testDeps().startBatch(pairings);
+      },
+    });
+
+    expect(response.status).toBe(429);
+    const body = (await response.json()) as BatchStartErrorResponse;
+    expect(body.error.kind).toBe("RATE_LIMITED");
+    expect(body.error.message.toLowerCase()).toMatch(/wait|moment|again/);
+    expect(body.error.message).not.toMatch(/\b429\b/);
+    expect(startBatchCalled).toBe(false);
+  });
+
+  it("proves the Nth+1 batch submission within a real window is rejected — the real production limiter, not just a stub", async () => {
+    const ipLimiter = createFixedWindowLimiter({ limit: 1, windowMs: 60_000 });
+    const globalLimiter = createFixedWindowLimiter({ limit: 1000, windowMs: 60_000 });
+    const checkRateLimit = (request: Request) => checkRateLimitPair(request, ipLimiter, globalLimiter);
+
+    const first = await handleBatchStartRequest(requestWith(await simpleUpload()), { ...testDeps(), checkRateLimit });
+    expect(first.status).toBe(200);
+    const firstBody = (await first.json()) as BatchStartSuccessResponse;
+    await trackAndCleanup(firstBody.batchJobId);
+
+    let secondCalled = false;
+    const second = await handleBatchStartRequest(requestWith(await simpleUpload()), {
+      ...testDeps(),
+      checkRateLimit,
+      startBatch: async (pairings) => {
+        secondCalled = true;
+        return testDeps().startBatch(pairings);
+      },
+    });
+    expect(second.status).toBe(429);
+    const secondBody = (await second.json()) as BatchStartErrorResponse;
+    expect(secondBody.error.kind).toBe("RATE_LIMITED");
+    expect(secondCalled).toBe(false);
+  });
+});
+
+describe("POST /api/batch/start — daily budget gate (TRO-482)", () => {
+  it("rejects with a friendly message and never starts a batch when the budget is exhausted", async () => {
+    let startBatchCalled = false;
+    const fd = new FormData();
+    fd.set("manifest", csvFile([HEADER, "spirits,Highland Peak Distillery,Straight Bourbon Whiskey,45,750,mL,bottle-01.jpg"].join("\n")));
+    fd.append("images", await imageFile("bottle-01.jpg"));
+
+    const response = await handleBatchStartRequest(requestWith(fd), {
+      ...testDeps(),
+      checkBudget: async () => ({ exhausted: true, spentUsd: 5, budgetUsd: 5 }),
+      startBatch: async (pairings) => {
+        startBatchCalled = true;
+        return testDeps().startBatch(pairings);
+      },
+    });
+
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as BatchStartErrorResponse;
+    expect(body.error.kind).toBe("BUDGET_EXHAUSTED");
+    expect(body.error.message).toBe(BUDGET_EXHAUSTED_MESSAGE);
+    expect(startBatchCalled).toBe(false);
   });
 });

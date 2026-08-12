@@ -38,6 +38,9 @@ import type { BatchImageRef } from "../../../../server/batch/types";
 import { extractZipImageBytes, startBatchFromPairings, type StartBatchPairingInput, type StartBatchResult } from "../../../../server/batch-start";
 import { checkRequestSize, readLimitedBody } from "../preview/route";
 import { parseBatchPreviewFormData } from "../preview/parse-request";
+import { checkBatchStartRateLimit, type RateLimitCheckResult } from "../../../../server/rate-limit/instances";
+import { checkDailyBudget, BUDGET_EXHAUSTED_MESSAGE, type BudgetStatus } from "../../../../server/budget/daily-budget";
+import { db as defaultDb } from "../../../../lib/db";
 import type { BatchStartErrorKind, BatchStartErrorResponse, BatchStartSuccessResponse } from "./types";
 
 function errorResponse(status: number, kind: BatchStartErrorKind, message: string): NextResponse<BatchStartErrorResponse> {
@@ -50,13 +53,53 @@ export interface HandleBatchStartOptions {
    * override this to point `saveLabelImage` at a scratch directory, the
    * same DI shape `src/app/api/verify/route.ts`'s `VerifyRouteDeps` uses. */
   startBatch?: (pairings: StartBatchPairingInput[]) => Promise<StartBatchResult>;
+  /**
+   * TRO-482 / LH-061, PRD §8. Checked FIRST, before any expensive work —
+   * the same shape and reasoning as `VerifyRouteDeps.checkRateLimit`
+   * (`src/app/api/verify/route.ts`). Optional with an always-allow
+   * fallback, so this file's own pre-existing test suite needed no
+   * changes. Production (`POST` below) wires the real, shared limiter
+   * singletons.
+   */
+  checkRateLimit?: (request: Request) => RateLimitCheckResult;
+  /**
+   * TRO-482 / LH-061, PRD §8. Checked second, still before this route
+   * commits to starting a batch. Same optional/always-allow-by-default
+   * shape as `checkRateLimit`, for the same reason. A batch has no single
+   * inline model call the way `/api/verify` does (extraction happens
+   * later, in the background worker — CP-3), so this route only ever
+   * GATES on the budget; it never records spend itself.
+   */
+  checkBudget?: () => Promise<BudgetStatus>;
 }
 
 const defaultStartBatch = (pairings: StartBatchPairingInput[]): Promise<StartBatchResult> => startBatchFromPairings(pairings);
 
+/** Used only when a caller's `options` does not set `checkRateLimit` — see
+ * that field's own doc comment. */
+const ALLOW_ALL_RATE_LIMIT: RateLimitCheckResult = { allowed: true, message: "" };
+
+/** Used only when a caller's `options` does not set `checkBudget` — see
+ * that field's own doc comment. */
+const ALLOW_ALL_BUDGET: BudgetStatus = { exhausted: false, spentUsd: 0, budgetUsd: 0 };
+
 const NO_READY_ROWS_MESSAGE = "No rows are ready to start. Fix the unmatched rows or images and try again.";
 
 export async function handleBatchStartRequest(request: Request, options: HandleBatchStartOptions = {}): Promise<Response> {
+  // TRO-482 / LH-061, PRD §8 — key protection. Both checks run BEFORE any
+  // expensive work: no size check, no body read, no CSV/zip parsing, and
+  // — the whole point — no batch is ever created. "Batch submission" is
+  // PRD §8's own name for this route as one of the two gated routes.
+  const rateLimitResult = (options.checkRateLimit ?? (() => ALLOW_ALL_RATE_LIMIT))(request);
+  if (!rateLimitResult.allowed) {
+    return errorResponse(429, "RATE_LIMITED", rateLimitResult.message);
+  }
+
+  const budgetStatus = await (options.checkBudget ?? (async () => ALLOW_ALL_BUDGET))();
+  if (budgetStatus.exhausted) {
+    return errorResponse(503, "BUDGET_EXHAUSTED", BUDGET_EXHAUSTED_MESSAGE);
+  }
+
   const maxTotalRequestBytes = options.maxTotalRequestBytes ?? MAX_TOTAL_REQUEST_BYTES;
   const startBatch = options.startBatch ?? defaultStartBatch;
 
@@ -187,5 +230,8 @@ export async function handleBatchStartRequest(request: Request, options: HandleB
 }
 
 export async function POST(request: Request): Promise<Response> {
-  return handleBatchStartRequest(request);
+  return handleBatchStartRequest(request, {
+    checkRateLimit: checkBatchStartRateLimit,
+    checkBudget: () => checkDailyBudget(defaultDb),
+  });
 }

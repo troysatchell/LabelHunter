@@ -51,8 +51,21 @@ export interface BatchStartSuccessResponse {
  * not a failure, at preview time), but starting a batch with nothing to
  * queue is a dead end this route rejects outright, so the flow never
  * silently creates a batch with nothing in it.
+ *
+ * `RATE_LIMITED` and `BUDGET_EXHAUSTED` (TRO-482 / LH-061, PRD §8) are the
+ * key-protection guard's own two rejection states — checked before this
+ * route commits to starting a batch at all (`route.ts`'s own header
+ * comment).
  */
-export const BATCH_START_ERROR_KINDS = ["VALIDATION", "MALFORMED_CSV", "MALFORMED_ZIP", "NO_READY_ROWS", "SERVICE"] as const;
+export const BATCH_START_ERROR_KINDS = [
+  "VALIDATION",
+  "MALFORMED_CSV",
+  "MALFORMED_ZIP",
+  "NO_READY_ROWS",
+  "SERVICE",
+  "RATE_LIMITED",
+  "BUDGET_EXHAUSTED",
+] as const;
 export type BatchStartErrorKind = (typeof BATCH_START_ERROR_KINDS)[number];
 
 export interface BatchStartErrorResponse {

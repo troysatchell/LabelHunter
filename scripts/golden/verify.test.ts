@@ -77,9 +77,13 @@ function baseCase(overrides: Partial<GoldenSetCase> = {}): GoldenSetCase {
 
 /**
  * Eight of the ten rubric vectors, one per case index below — everything
- * except V7 (no case isolates net-contents format match yet, a real,
- * documented gap: golden-set/README.md) and V10 (a manifest-wide batch
- * property, not a per-case tag — see the V10-specific tests below).
+ * except V7 and V10. V10 is a manifest-wide batch property, not a per-case
+ * tag (see the V10-specific tests below). V7 is left uncovered on purpose:
+ * the known-gap / drift tests further down inject `knownVectorGaps: new
+ * Set(["V7"])` to exercise `verify.ts`'s tracked-gap mechanism against this
+ * fixture. That injected set is independent of whichever vector, if any, is
+ * genuinely untracked in the real, committed golden set right now — see
+ * `verify.ts`'s own `KNOWN_VECTOR_GAPS`, empty as of TRO-515.
  */
 const COVERABLE_VECTORS: readonly RubricVector[] = [
   "V1", "V2", "V3", "V4", "V5", "V6", "V8", "V9",
@@ -122,16 +126,35 @@ function writeFixture(
 }
 
 describe("verifyGoldenSet — happy path", () => {
-  it("passes against a fully valid fixture and reports V7 as the only known gap", () => {
+  it("passes against a fully valid fixture and reports an injected known gap", () => {
     const dir = makeTempDir();
     writeFixture(dir, validManifestCases());
 
-    const report = verifyGoldenSet({ repoRoot: dir });
+    const report = verifyGoldenSet({ repoRoot: dir, knownVectorGaps: new Set(["V7"]) });
 
     expect(report.problems).toEqual([]);
     expect(report.ok).toBe(true);
     expect(report.knownGaps).toEqual(["V7"]);
     expect(report.caseCount).toBe(20);
+  });
+
+  it("passes against a fully covered fixture with no override, and reports zero known gaps", () => {
+    // The default path: no knownVectorGaps override, so this reads the real
+    // KNOWN_VECTOR_GAPS in verify.ts — empty since TRO-515 closed V7. Tags
+    // V7 onto one fixture case (on top of validManifestCases()'s existing
+    // V1-V6/V8/V9 spread) so nothing is uncovered; against an empty tracked
+    // set, a fixture with no genuine gap should report none.
+    const dir = makeTempDir();
+    const cases = validManifestCases().map((c) =>
+      c.caseId === "case-01-fixture" ? { ...c, vectors: [...c.vectors, "V7" as RubricVector] } : c,
+    );
+    writeFixture(dir, cases);
+
+    const report = verifyGoldenSet({ repoRoot: dir });
+
+    expect(report.problems).toEqual([]);
+    expect(report.ok).toBe(true);
+    expect(report.knownGaps).toEqual([]);
   });
 });
 
@@ -221,23 +244,23 @@ describe("verifyGoldenSet — rubric vector coverage", () => {
     ).toBe(true);
   });
 
-  it("reports V7 as a known gap (not a failure) when nothing covers it", () => {
+  it("reports an injected known-gap vector as a known gap (not a failure) when nothing covers it", () => {
     const dir = makeTempDir();
     writeFixture(dir, validManifestCases());
 
-    const report = verifyGoldenSet({ repoRoot: dir });
+    const report = verifyGoldenSet({ repoRoot: dir, knownVectorGaps: new Set(["V7"]) });
 
     expect(report.problems.some((p) => p.message.includes("V7"))).toBe(false);
     expect(report.knownGaps).toContain("V7");
   });
 
-  it("fails when V7 becomes covered without updating the known-gap declaration (drift)", () => {
+  it("fails when an injected known-gap vector becomes covered without updating the declaration (drift)", () => {
     const dir = makeTempDir();
     const cases = validManifestCases();
     cases[0] = { ...cases[0], vectors: [...cases[0].vectors, "V7"] };
     writeFixture(dir, cases);
 
-    const report = verifyGoldenSet({ repoRoot: dir });
+    const report = verifyGoldenSet({ repoRoot: dir, knownVectorGaps: new Set(["V7"]) });
 
     expect(report.ok).toBe(false);
     expect(
@@ -309,7 +332,11 @@ describe("verifyGoldenSet — ai-generated cases (verified or excluded from eval
     writeFixture(dir, [...cases, aiCase]);
     writeFileSync(join(dir, aiCase.imagePath), Buffer.from("fake-png-bytes"));
 
-    const report = verifyGoldenSet({ repoRoot: dir });
+    // knownVectorGaps: this test's concern is the ai-generated verified/
+    // image-exists check, not vector coverage — validManifestCases() always
+    // leaves V7 uncovered (see its own doc comment), so an override is
+    // needed for report.problems to come back genuinely empty.
+    const report = verifyGoldenSet({ repoRoot: dir, knownVectorGaps: new Set(["V7"]) });
 
     expect(report.problems).toEqual([]);
     expect(report.ok).toBe(true);
@@ -451,7 +478,10 @@ describe("verifyGoldenSet — rendered+ai-backdrop cases", () => {
     writeBackdropFile(dir);
     writeValidReference(dir);
 
-    const report = verifyGoldenSet({ repoRoot: dir });
+    // knownVectorGaps: this test's concern is the backdrop/reference checks,
+    // not vector coverage — same reasoning as the ai-generated "passes" test
+    // above.
+    const report = verifyGoldenSet({ repoRoot: dir, knownVectorGaps: new Set(["V7"]) });
 
     expect(report.problems).toEqual([]);
     expect(report.ok).toBe(true);
@@ -459,17 +489,20 @@ describe("verifyGoldenSet — rendered+ai-backdrop cases", () => {
 });
 
 describe("verifyGoldenSet — the real committed golden set", () => {
-  it("passes with zero problems and reports V7 as the only known gap", () => {
+  it("passes with zero problems and reports zero known gaps (V7 closed by TRO-515)", () => {
     // No repoRoot override: checks the actual golden-set/manifest.json and
-    // golden-set/images/ committed to this repo. If this starts failing
-    // because V7 got covered, DELETE it from KNOWN_VECTOR_GAPS in verify.ts
-    // (and update golden-set/README.md's gap note) -- don't widen anything
-    // to force this test green again.
+    // golden-set/images/ committed to this repo. KNOWN_VECTOR_GAPS in
+    // verify.ts is empty: V7 (net-contents format match) was its last
+    // entry, closed by case-30-clean-match-net-contents-alt-format. If a
+    // FUTURE vector loses its only covering case, this test starts
+    // failing -- add a real covering case first; only fall back to tracking
+    // it in KNOWN_VECTOR_GAPS, in the same change, if closing it right away
+    // is not possible.
     const report = verifyGoldenSet();
 
     expect(report.problems).toEqual([]);
     expect(report.ok).toBe(true);
-    expect(report.knownGaps).toEqual(["V7"]);
+    expect(report.knownGaps).toEqual([]);
     expect(report.caseCount).toBeGreaterThanOrEqual(20);
   });
 });

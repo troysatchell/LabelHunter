@@ -37,6 +37,15 @@ import type { ExtractionCaseScore, ExtractionFieldKey, ExtractionFieldScore } fr
  * answers the identical question ("45" vs "45.0"). */
 const ABV_EPSILON = 0.05;
 
+/** Every `ExtractionFieldScore` builder below returns this — everything
+ * except `confidence`. `scoreExtraction` (the one place all five fields
+ * come together) appends `confidence` uniformly from the SAME
+ * `HaikuExtractionResult`, so each individual scorer stays exactly as
+ * focused on its own field's comparison logic as it already was (TRO-538 /
+ * LH-033: adding a field to every return statement in every early-return
+ * branch below would multiply the diff for no reason — one seam is enough). */
+type ExtractionFieldScoreWithoutConfidence = Omit<ExtractionFieldScore, "confidence">;
+
 /**
  * Scores a fuzzy-matched text field (`brandName`/`classType`) the same way
  * `scoreBrandName` and `scoreClassType` used to, each with their own
@@ -50,7 +59,7 @@ function scoreFuzzyTextField(
   nounPhrase: string,
   expected: string,
   actualRaw: string | null,
-): ExtractionFieldScore {
+): ExtractionFieldScoreWithoutConfidence {
   const correct = actualRaw !== null && normalizeForFuzzyMatch(actualRaw) === normalizeForFuzzyMatch(expected);
   return {
     field,
@@ -63,11 +72,11 @@ function scoreFuzzyTextField(
   };
 }
 
-function scoreBrandName(caseSpec: GoldenSetCase, extraction: HaikuExtractionResult): ExtractionFieldScore {
+function scoreBrandName(caseSpec: GoldenSetCase, extraction: HaikuExtractionResult): ExtractionFieldScoreWithoutConfidence {
   return scoreFuzzyTextField("brandName", "brand name", caseSpec.label.brandName, extraction.brand_name.value);
 }
 
-function scoreClassType(caseSpec: GoldenSetCase, extraction: HaikuExtractionResult): ExtractionFieldScore {
+function scoreClassType(caseSpec: GoldenSetCase, extraction: HaikuExtractionResult): ExtractionFieldScoreWithoutConfidence {
   return scoreFuzzyTextField("classType", "class/type", caseSpec.label.classType, extraction.class_type.value);
 }
 
@@ -79,7 +88,7 @@ function scoreClassType(caseSpec: GoldenSetCase, extraction: HaikuExtractionResu
  * right number," not "did Haiku copy the exact same words" — a stricter,
  * more useful question for TH-R17's "read the fields right."
  */
-function scoreAbv(caseSpec: GoldenSetCase, extraction: HaikuExtractionResult): ExtractionFieldScore {
+function scoreAbv(caseSpec: GoldenSetCase, extraction: HaikuExtractionResult): ExtractionFieldScoreWithoutConfidence {
   const label = caseSpec.label;
   const actualRaw = extraction.alcohol_content.value;
 
@@ -139,7 +148,7 @@ function scoreAbv(caseSpec: GoldenSetCase, extraction: HaikuExtractionResult): E
  * "read the right number" standard as `scoreAbv`, using the router's own
  * `parseNetContents`/`convertNetContentsToMl`/`normalizeNetContentsUnit`.
  */
-function scoreNetContents(caseSpec: GoldenSetCase, extraction: HaikuExtractionResult): ExtractionFieldScore {
+function scoreNetContents(caseSpec: GoldenSetCase, extraction: HaikuExtractionResult): ExtractionFieldScoreWithoutConfidence {
   const label = caseSpec.label;
   const actualRaw = extraction.net_contents.value;
   const expectedText = `${label.netContentsValue} ${label.netContentsUnit}`;
@@ -207,7 +216,7 @@ function scoreNetContents(caseSpec: GoldenSetCase, extraction: HaikuExtractionRe
  * — so a correct-but-degraded read can legitimately score `correct: true`
  * here even though the router's verdict for the same field is NEEDS_REVIEW.
  */
-function scoreGovernmentWarning(caseSpec: GoldenSetCase, extraction: HaikuExtractionResult): ExtractionFieldScore {
+function scoreGovernmentWarning(caseSpec: GoldenSetCase, extraction: HaikuExtractionResult): ExtractionFieldScoreWithoutConfidence {
   const label = caseSpec.label;
   const actual = extraction.government_warning;
 
@@ -248,19 +257,33 @@ function scoreGovernmentWarning(caseSpec: GoldenSetCase, extraction: HaikuExtrac
   };
 }
 
+/** `ExtractionFieldKey` -> the matching confidence on `HaikuExtractionResult`
+ * (TRO-538 / LH-033) — `government_warning` carries its own `confidence` on
+ * `ExtractedGovernmentWarning` (`src/server/extractor/types.ts:84`), not on
+ * an `ExtractedField`, so this is a small per-field lookup, not a uniform
+ * `extraction[key].confidence`. */
+const EXTRACTION_FIELD_CONFIDENCE: Record<ExtractionFieldKey, (extraction: HaikuExtractionResult) => number> = {
+  brandName: (e) => e.brand_name.confidence,
+  classType: (e) => e.class_type.confidence,
+  abv: (e) => e.alcohol_content.confidence,
+  netContents: (e) => e.net_contents.confidence,
+  governmentWarning: (e) => e.government_warning.confidence,
+};
+
 /** Scores every extraction field for one golden-set case. Pure — no I/O,
  * no model call; `extraction` is the real Haiku result the caller already
  * has in hand. */
 export function scoreExtraction(caseSpec: GoldenSetCase, extraction: HaikuExtractionResult): ExtractionCaseScore {
+  const scores: ExtractionFieldScoreWithoutConfidence[] = [
+    scoreBrandName(caseSpec, extraction),
+    scoreClassType(caseSpec, extraction),
+    scoreAbv(caseSpec, extraction),
+    scoreNetContents(caseSpec, extraction),
+    scoreGovernmentWarning(caseSpec, extraction),
+  ];
   return {
     caseId: caseSpec.caseId,
     category: caseSpec.category,
-    fields: [
-      scoreBrandName(caseSpec, extraction),
-      scoreClassType(caseSpec, extraction),
-      scoreAbv(caseSpec, extraction),
-      scoreNetContents(caseSpec, extraction),
-      scoreGovernmentWarning(caseSpec, extraction),
-    ],
+    fields: scores.map((score) => ({ ...score, confidence: EXTRACTION_FIELD_CONFIDENCE[score.field](extraction) })),
   };
 }

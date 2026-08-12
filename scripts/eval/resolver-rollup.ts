@@ -154,7 +154,19 @@ function rollUpCorrectionField(
   };
 }
 
-function rollUpOneField(
+/**
+ * Rolls up ONE resolved field's disposition into a verdict + reviewReason —
+ * exported (TRO-538 / LH-033) so `cascade-runner.ts`'s own merge step
+ * (`mergeResolutionIntoActualVerdict`) can reuse the identical per-field
+ * mapping this file already uses for the Sonnet-only arm, field by field,
+ * WITHOUT going through `rollUpResolverResolution`'s all-five-fields
+ * contract — the cascade arm's resolution can cover a strict subset of the
+ * five router fields (a field-specific escalation only flags the one field
+ * concerned), and `rollUpResolverResolution` throws on exactly that shape
+ * (see its own doc comment). One mapping, two callers — never a second,
+ * hand-copied switch statement that could drift from this one.
+ */
+export function rollUpOneField(
   field: ResolvedFieldResult,
   application: ApplicationRecord,
   comparators: FieldComparators,

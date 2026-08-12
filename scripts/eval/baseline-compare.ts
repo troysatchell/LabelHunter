@@ -11,14 +11,21 @@
  * Pure — no I/O, no live call. `check.ts` loads the report and baseline
  * JSON files from disk and hands their already-parsed contents here.
  *
- * Gates on the three headline `EvalReportSummary` rates (extraction,
- * label-verdict, review-reason) — never the per-field breakdowns. The
- * breakdowns are real, reported diagnostic detail (which field is driving
- * a change), but gating on all of them too would make the check brittle:
- * a single field's small-sample noise (the default sample runs eight
- * cases) could fail the whole gate while the headline numbers the ticket
- * asks for are unchanged or improved. A human reads the breakdown in the
- * committed report to see WHY; the gate only asks WHETHER.
+ * Gates on the four headline `EvalReportSummary` rates (extraction,
+ * router-verdict, cascade-verdict, review-reason — TRO-538 / LH-033 added
+ * cascade-verdict) — never the per-field breakdowns. The breakdowns are
+ * real, reported diagnostic detail (which field is driving a change), but
+ * gating on all of them too would make the check brittle: a single field's
+ * small-sample noise (the default sample runs eight cases) could fail the
+ * whole gate while the headline numbers the ticket asks for are unchanged
+ * or improved. A human reads the breakdown in the committed report to see
+ * WHY; the gate only asks WHETHER.
+ *
+ * Also rejects a comparison whose current run's `manifestContentHash`
+ * disagrees with the baseline's (TRO-538 / LH-033) — a check
+ * `manifestVersion` alone cannot make, since seven straight commits that
+ * edited `golden-set/manifest.json` all left `version` at `"1.0.0"`
+ * (`docs/diagnostics/2026-08-12-verdict-miss-triage.md` §5 S5).
  *
  * `warningSegmentation` (TRO-469 / LH-021, PRD §3.7) is the same kind of
  * reported-not-gated detail, for a sharper reason than sample noise: it
@@ -33,6 +40,9 @@ import type { EvalBaseline, EvalReportSummary } from "./types";
 
 export interface RegressionCheckInput {
   manifestVersion: string;
+  /** SHA-256 of `golden-set/manifest.json`'s raw content (TRO-538 / LH-033,
+   * `manifest-hash.ts`) — see this file's own module comment. */
+  manifestContentHash: string;
   caseIds: readonly string[];
   summary: EvalReportSummary;
 }
@@ -68,6 +78,14 @@ export function compareToBaseline(current: RegressionCheckInput, baseline: EvalB
     );
   }
 
+  if (current.manifestContentHash !== baseline.manifestContentHash) {
+    reasons.push(
+      `manifest content changed: current run's manifest hash "${current.manifestContentHash}" does not match the baseline's ` +
+        `"${baseline.manifestContentHash}" — golden-set/manifest.json's content moved since the baseline was established, even if ` +
+        "manifestVersion did not; re-run --live --update-baseline to refresh it.",
+    );
+  }
+
   const currentCaseIds = new Set(current.caseIds);
   const missingCases = baseline.caseIds.filter((id) => !currentCaseIds.has(id));
   if (missingCases.length > 0) {
@@ -79,7 +97,8 @@ export function compareToBaseline(current: RegressionCheckInput, baseline: EvalB
 
   const rateChecks: readonly [label: string, current: number, baseline: number][] = [
     ["extraction accuracy", current.summary.extractionAccuracy.rate, baseline.summary.extractionAccuracy.rate],
-    ["label-verdict accuracy", current.summary.labelVerdictAccuracy.rate, baseline.summary.labelVerdictAccuracy.rate],
+    ["router-verdict accuracy", current.summary.routerVerdictAccuracy.rate, baseline.summary.routerVerdictAccuracy.rate],
+    ["cascade-verdict accuracy", current.summary.cascadeVerdictAccuracy.rate, baseline.summary.cascadeVerdictAccuracy.rate],
     ["review-reason accuracy", current.summary.reviewReasonAccuracy.rate, baseline.summary.reviewReasonAccuracy.rate],
   ];
   for (const [label, currentRate, baselineRate] of rateChecks) {

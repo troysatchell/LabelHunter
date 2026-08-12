@@ -31,6 +31,14 @@ describe("compareBrandOrClass — TH-R8's named case", () => {
     expect(result.verdict).toBe("MATCH");
     expect(result.note).toBeUndefined();
   });
+
+  it("MATCHes 'STONES THROW' (label, no apostrophe) against 'Stone's Throw' (application) — case-15, TRO-536", () => {
+    // case-15-case-variant-brand-punctuation: the label prints no apostrophe
+    // at all. Step 6 of the normalizer now drops the apostrophe along with
+    // every other punctuation mark, so both sides fold to "stones throw".
+    const result = compareBrandOrClass(field("STONES THROW"), "Stone's Throw", CONTEXT);
+    expect(result.verdict).toBe("MATCH");
+  });
 });
 
 describe("compareBrandOrClass — CP-1 §5.3's threshold table", () => {

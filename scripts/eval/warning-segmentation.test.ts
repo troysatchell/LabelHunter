@@ -4,20 +4,23 @@ import { segmentWarningCheckOutcomes } from "./warning-segmentation";
 
 /** A minimal `VerdictCaseScore` carrying only what `segmentWarningCheckOutcomes`
  * reads: the `government_warning` field's actual verdict and, when it is
- * `NEEDS_REVIEW`, its actual reviewReason. The other four router fields are
- * filled with an unrelated, always-correct MATCH row so a case looks like a
- * real `VerdictCaseScore` (`scoreVerdict`'s own contract: one entry per
- * `RouterFieldKey`) without this file having to restate every field's shape
- * for every test. */
+ * `NEEDS_REVIEW`, its actual reviewReason — plus, since TRO-535 / LH-030b,
+ * the case-level `warningChannel` `singleChannelPass` also reads. The other
+ * four router fields are filled with an unrelated, always-correct MATCH row
+ * so a case looks like a real `VerdictCaseScore` (`scoreVerdict`'s own
+ * contract: one entry per `RouterFieldKey`) without this file having to
+ * restate every field's shape for every test. */
 function caseWithWarningOutcome(
   caseId: string,
   warningField: Pick<VerdictFieldScore, "actualVerdict" | "actualReviewReason">,
+  warningChannel: VerdictCaseScore["warningChannel"] = null,
 ): VerdictCaseScore {
   const otherField: VerdictFieldScore = {
     field: "brand_name",
     expectedVerdict: "MATCH",
     actualVerdict: "MATCH",
     correct: true,
+    confidence: 0.9,
     actualReviewReason: null,
   };
   return {
@@ -29,6 +32,7 @@ function caseWithWarningOutcome(
     expectedReviewReason: null,
     actualReviewReason: null,
     reviewReasonCorrect: true,
+    warningChannel,
     fields: [
       otherField,
       {
@@ -36,22 +40,27 @@ function caseWithWarningOutcome(
         expectedVerdict: "MATCH",
         actualVerdict: warningField.actualVerdict,
         correct: true,
+        confidence: 0.9,
         actualReviewReason: warningField.actualReviewReason,
       },
     ],
   };
 }
 
-function clean(caseId: string): VerdictCaseScore {
-  return caseWithWarningOutcome(caseId, { actualVerdict: "MATCH", actualReviewReason: null });
+function clean(caseId: string, warningChannel: VerdictCaseScore["warningChannel"] = null): VerdictCaseScore {
+  return caseWithWarningOutcome(caseId, { actualVerdict: "MATCH", actualReviewReason: null }, warningChannel);
 }
 
 function trueMismatch(caseId: string): VerdictCaseScore {
   return caseWithWarningOutcome(caseId, { actualVerdict: "MISMATCH", actualReviewReason: null });
 }
 
-function resolutionSuspect(caseId: string, reviewReason: VerdictFieldScore["actualReviewReason"]): VerdictCaseScore {
-  return caseWithWarningOutcome(caseId, { actualVerdict: "NEEDS_REVIEW", actualReviewReason: reviewReason });
+function resolutionSuspect(
+  caseId: string,
+  reviewReason: VerdictFieldScore["actualReviewReason"],
+  warningChannel: VerdictCaseScore["warningChannel"] = null,
+): VerdictCaseScore {
+  return caseWithWarningOutcome(caseId, { actualVerdict: "NEEDS_REVIEW", actualReviewReason: reviewReason }, warningChannel);
 }
 
 function notFound(caseId: string): VerdictCaseScore {
@@ -155,10 +164,50 @@ describe("segmentWarningCheckOutcomes", () => {
     expect(result.trueMismatch).toEqual({ count: 0, rate: 0 });
     expect(result.resolutionSuspect).toEqual({ count: 0, rate: 0 });
     expect(result.notFound).toEqual({ count: 0, rate: 0 });
+    expect(result.singleChannelPass).toEqual({ count: 0, rate: 0 });
   });
 
   it("throws a clear error naming the case when a case has no government_warning field score at all", () => {
     const malformed: VerdictCaseScore = { ...clean("a"), fields: [] };
     expect(() => segmentWarningCheckOutcomes([malformed])).toThrow(/"a".*government_warning/);
+  });
+});
+
+describe("segmentWarningCheckOutcomes — singleChannelPass (TRO-535 / LH-030b, CP-2 §8.4's residual false-PASS exposure)", () => {
+  it("counts a clean pass whose warningChannel is 'single' — the exact shape CP-2 §10 Q7 names: one confident VLM reading, no OCR to disagree with it", () => {
+    const result = segmentWarningCheckOutcomes([clean("a", "single")]);
+    expect(result.clean).toEqual({ count: 1, rate: 1 });
+    expect(result.singleChannelPass).toEqual({ count: 1, rate: 1 });
+  });
+
+  it("does not count a dual-channel clean pass — two channels agreeing is not the residual-exposure shape", () => {
+    const result = segmentWarningCheckOutcomes([clean("a", "dual")]);
+    expect(result.clean).toEqual({ count: 1, rate: 1 });
+    expect(result.singleChannelPass).toEqual({ count: 0, rate: 0 });
+  });
+
+  it("does not count a single-channel outcome that is not a clean pass — only a CLEAN verdict on a single channel counts, per CP-2 §8.4: 'counted as clean passes and also reported as their own rate'", () => {
+    const result = segmentWarningCheckOutcomes([resolutionSuspect("a", "WARNING_MISMATCH", "single")]);
+    expect(result.resolutionSuspect).toEqual({ count: 1, rate: 1 });
+    expect(result.singleChannelPass).toEqual({ count: 0, rate: 0 });
+  });
+
+  it("shares the SAME denominator (total) as the four partition classes, stated explicitly because CP-2 §8.4 states one for the suspect rate only", () => {
+    const result = segmentWarningCheckOutcomes([
+      clean("a", "single"),
+      clean("b", "dual"),
+      trueMismatch("c"),
+      notFound("d"),
+    ]);
+    expect(result.total).toBe(4);
+    expect(result.singleChannelPass).toEqual({ count: 1, rate: 0.25 });
+  });
+
+  it("is NOT part of the four-class mutually-exclusive sum — it overlaps 'clean' by construction, not a fifth partition member", () => {
+    const cases = [clean("a", "single"), clean("b", "single"), trueMismatch("c")];
+    const result = segmentWarningCheckOutcomes(cases);
+    const fourClassSum = result.clean.count + result.trueMismatch.count + result.resolutionSuspect.count + result.notFound.count;
+    expect(fourClassSum).toBe(result.total); // the real partition still sums to total...
+    expect(result.singleChannelPass.count).toBe(2); // ...while singleChannelPass counts inside `clean`, not beside it
   });
 });

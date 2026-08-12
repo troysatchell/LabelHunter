@@ -99,6 +99,19 @@ export type FieldComparator = (
 export type FieldComparators = Record<ComparatorFieldKey, FieldComparator>;
 
 /**
+ * Which reconciliation table decided a `WarningComparatorResult` (TRO-535 /
+ * LH-030b, CP-2 §4.5's amendment). `"dual"`: the OCR channel cleared
+ * `OCR_CONFIDENCE_FLOOR` (`../warning/reconcile.ts`), so both the VLM and
+ * OCR readings were compared against each other. `"single"`: OCR was
+ * unavailable (no crop found, or the OCR call itself produced nothing) OR
+ * its confidence sat below the floor, so the VLM reading alone decided —
+ * CP-2 §10 Q7's residual false-PASS path, and the reason a single-channel
+ * PASS on this field is worth counting on its own (see
+ * `scripts/eval/warning-segmentation.ts`'s `singleChannelPass`).
+ */
+export type WarningComparatorChannel = "dual" | "single";
+
+/**
  * The government-warning comparator's contract (CP-1 §5.3 "WARNING_MISMATCH").
  * The real comparator — VLM transcription + OCR, exact statutory comparison —
  * is LH-020's job, gated by CP-2, not yet cleared. This ticket accepts an
@@ -112,11 +125,20 @@ export type FieldComparators = Record<ComparatorFieldKey, FieldComparator>;
  * `NEEDS_REVIEW` branch, and absent everywhere else, makes a REVIEW result
  * with no stated reason a compile error for LH-020 to hit, not a silent
  * default this router would otherwise have to guess.
+ *
+ * `channel` is OPTIONAL, not required on every branch, for one honest
+ * reason: `compareGovernmentWarningFromImage`'s own defensive branch
+ * (`../warning/index.ts`, "a real caller filters this case out before
+ * reaching here") returns a bare `MISSING_REQUIRED_FIELD` result without
+ * ever running `reconcileWarningChannels` — there is no reconciliation
+ * table behind that result to name. Every result `reconcileWarningChannels`
+ * itself returns always sets `channel` (TRO-535 / LH-030b).
  */
 export type WarningComparatorResult =
-  | { verdict: "MATCH" | "MISMATCH"; note?: string }
+  | { verdict: "MATCH" | "MISMATCH"; channel?: WarningComparatorChannel; note?: string }
   | {
       verdict: "NEEDS_REVIEW";
+      channel?: WarningComparatorChannel;
       reviewReason: Extract<ReviewReason, "WARNING_MISMATCH" | "LOW_IMAGE_QUALITY" | "MISSING_REQUIRED_FIELD">;
       note?: string;
     };

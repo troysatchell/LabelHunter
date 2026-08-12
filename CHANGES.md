@@ -17,7 +17,7 @@ TH-R10 names case-17 as the imperfect-image stretch case. Its own instability is
 
 **Observed** (git archaeology only — zero API cost). Five committed runs carry case-17's verdict.
 
-| measuredAt | Source | case-17 verdict | Correct |
+| measuredAt | Source | case-17 verdict | Label verdict correct |
 |---|---|---|---|
 | 2026-08-12T04:39:34.853Z | `eval-report.json` @ `1ccf44b` | REVIEW / AMBIGUOUS_BRAND | yes |
 | 2026-08-12T05:16:55.005Z | `eval-report.json` @ `62cdf1b` | PASS / null | no |

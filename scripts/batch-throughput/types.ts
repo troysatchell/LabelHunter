@@ -42,6 +42,12 @@ export interface BatchThroughputWorkerConcurrency {
 /** Every input to the derived cost total, so a reader can recompute it by
  * hand from the numbers alone, without re-running anything. */
 export interface BatchThroughputCost {
+  /** A sum of `batch_queue_items.attempts` over this batch's own EXTRACT
+   * items (`measure.ts`'s own computation) — an UPPER BOUND on real Haiku
+   * calls, not a guaranteed-exact count. `attempts` increments at claim
+   * time, before the real API call happens, so a claim that fails
+   * reading or resizing the stored image never reaches Haiku at all but
+   * still counts as one attempt here. */
   readonly haikuCallCount: number;
   readonly haikuMeanCostUsd: number;
   readonly sonnetCallCount: number;

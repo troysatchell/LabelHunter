@@ -48,18 +48,23 @@ export interface DeriveBatchCostParams {
  * way `escalation-cap.ts`'s own doc comment requires: "first attempts and
  * retries alike").
  *
- * Throws `RangeError` on a negative call count or a non-finite mean cost
- * (review finding, local review round 2) — the same defensive-boundary
- * discipline `meanCost` above already applies to its own input.
+ * Throws `RangeError` on a call count that is not a non-negative safe
+ * integer, or a mean cost that is not finite (review finding, local
+ * review round 3) — `Number.isSafeInteger`, not a bare `< 0` check: a
+ * `< 0` comparison against `NaN` is always `false`, so `NaN` silently
+ * passed the round-2 version of this check and would have produced a
+ * `NaN` total instead of a thrown error.
  */
 export function deriveBatchCostUsd(params: DeriveBatchCostParams): number {
   const { haikuCallCount, haikuMeanCostUsd, sonnetCallCount, sonnetMeanCostUsd } = params;
-  if (haikuCallCount < 0 || sonnetCallCount < 0) {
-    throw new RangeError(`deriveBatchCostUsd: call counts must be non-negative — got haikuCallCount=${haikuCallCount}, sonnetCallCount=${sonnetCallCount}`);
-  }
-  if (!Number.isFinite(haikuMeanCostUsd) || !Number.isFinite(sonnetMeanCostUsd)) {
+  if (!Number.isSafeInteger(haikuCallCount) || haikuCallCount < 0 || !Number.isSafeInteger(sonnetCallCount) || sonnetCallCount < 0) {
     throw new RangeError(
-      `deriveBatchCostUsd: mean costs must be finite — got haikuMeanCostUsd=${haikuMeanCostUsd}, sonnetMeanCostUsd=${sonnetMeanCostUsd}`,
+      `deriveBatchCostUsd: call counts must be non-negative safe integers — got haikuCallCount=${haikuCallCount}, sonnetCallCount=${sonnetCallCount}`,
+    );
+  }
+  if (!Number.isFinite(haikuMeanCostUsd) || haikuMeanCostUsd < 0 || !Number.isFinite(sonnetMeanCostUsd) || sonnetMeanCostUsd < 0) {
+    throw new RangeError(
+      `deriveBatchCostUsd: mean costs must be finite and non-negative — got haikuMeanCostUsd=${haikuMeanCostUsd}, sonnetMeanCostUsd=${sonnetMeanCostUsd}`,
     );
   }
   return haikuCallCount * haikuMeanCostUsd + sonnetCallCount * sonnetMeanCostUsd;

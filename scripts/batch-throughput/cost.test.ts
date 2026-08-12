@@ -66,4 +66,25 @@ describe("deriveBatchCostUsd", () => {
       RangeError,
     );
   });
+
+  it("throws on a NaN call count rather than silently producing a NaN total (review finding, local review round 3)", () => {
+    // Regression: a bare `< 0` check never catches NaN (NaN < 0 is false),
+    // so the round-2 version of this check let a NaN call count through
+    // and produced a NaN result instead of a thrown error.
+    expect(() =>
+      deriveBatchCostUsd({ haikuCallCount: Number.NaN, haikuMeanCostUsd: 0.004668, sonnetCallCount: 0, sonnetMeanCostUsd: 0.010969 }),
+    ).toThrow(RangeError);
+  });
+
+  it("throws on a non-integer call count", () => {
+    expect(() => deriveBatchCostUsd({ haikuCallCount: 1.5, haikuMeanCostUsd: 0.004668, sonnetCallCount: 0, sonnetMeanCostUsd: 0.010969 })).toThrow(
+      RangeError,
+    );
+  });
+
+  it("throws on a negative mean cost", () => {
+    expect(() => deriveBatchCostUsd({ haikuCallCount: 10, haikuMeanCostUsd: -0.001, sonnetCallCount: 0, sonnetMeanCostUsd: 0.010969 })).toThrow(
+      RangeError,
+    );
+  });
 });

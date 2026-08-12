@@ -58,11 +58,13 @@ Sonnet. It would show a different `resolvedBySonnetCount`/`needsHumanCount` spli
 
 **Cost is derived, not measured.** The batch worker records no per-call token usage. That
 seam exists only in the eval harness. The $0.2371 total multiplies this run's real call
-counts by the eval harness's own measured mean per-call cost. This run made 32 real Haiku
-calls and 8 real Sonnet calls. Each is a sum of `batch_queue_items.attempts`, not a bare
-label count — a retried call would count twice. Haiku averages $0.004668 per call. The
-resolver
-averages $0.010969 (`scripts/eval/results/eval-report.json`, measured
+counts by the eval harness's own measured mean per-call cost. This run made 32 Haiku calls
+and 8 Sonnet calls. The two counts come from different sources. The Sonnet count is
+`batch_jobs.sonnet_call_count`, a real reserved-before-the-call counter. The Haiku count is a
+sum of `batch_queue_items.attempts` for this batch's own EXTRACT items. That sum is an upper
+bound, not a certainty — `attempts` increments at claim time, before the real API call
+happens. A retried call still counts as more than one either way. Haiku averages $0.004668 per call. The
+resolver averages $0.010969 (`scripts/eval/results/eval-report.json`, measured
 2026-08-12T13:26:45.488Z). `pnpm batch:throughput` reads that file fresh on every run. This
 figure moves if a newer eval run changes the means.
 
@@ -100,8 +102,9 @@ headless Chromium session against the running app. Every new tile rendered with 
 value. "AUTO-VERIFIED SHARE 56.3%" appeared. So did "ITEMS PER MINUTE 50.48" with its "1.19s
 per label" sub-note. Both sat in the same stat-tile grid as the five existing tiles.
 
-**Local CodeRabbit review triage, two rounds, 11 findings total.** Ten fixed; one skipped with
-a documented reason (below).
+**Local CodeRabbit review triage, three rounds, 19 findings total.** Eighteen fixed; one
+skipped with a documented reason (below). Stopped after round 3 — each round found
+progressively smaller issues, and the gate passed clean twice in a row by then.
 
 Round 1, four findings, all fixed or skipped:
 - `computeAutoVerifiedShare` checked `processedCount <= 0` before validating
@@ -135,6 +138,21 @@ Round 2, seven findings, all fixed:
 - This entry's own lead-in to the results table was a sentence fragment, with no verb. Fixed:
   it now reads as two complete sentences.
 - Two more sentences elsewhere in this entry ran over the 25-word cap. Fixed: both split.
+
+Round 3, four findings, all fixed:
+- `deriveBatchCostUsd`'s round-2 validation used a bare `< 0` check on the call counts. `NaN`
+  is never `< 0`, so a `NaN` call count still slipped through and produced a `NaN` total.
+  Fixed: both counts now go through `Number.isSafeInteger` first.
+- `measure.ts` validated `DATABASE_URL` and the eval-report artifact only after a real batch
+  had already run and spent real money. Fixed: both checks now run first, before `pnpm dev`
+  even gets a health-check request.
+- The harness described `haikuCallCount` (an attempts sum) as the real call count. It can
+  overcount. `attempts` increments the moment an item is claimed — before the real Haiku
+  call happens. A claim that fails reading or resizing the image still counts as one attempt,
+  even with zero real calls made. Fixed: every doc comment, the artifact's own `notes` field,
+  and this entry now call it an upper bound, not a certainty.
+- This entry's own cost paragraph did not say WHERE the Haiku and Sonnet call counts each
+  came from. Fixed: it now names both sources and the upper-bound caveat above.
 
 **Do NOT.** No column was added to `batch_jobs` — every input already existed. No claim was
 extrapolated past this run's real 32 items to TH-R4's 200-300 label reference.

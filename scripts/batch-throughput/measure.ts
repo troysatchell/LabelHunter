@@ -45,9 +45,9 @@
  * counts by the eval harness's own measured MEAN per-call cost, re-read
  * from `scripts/eval/results/eval-report.json` on every run so this
  * number always reflects whatever that file currently says, never a value
- * copied in by hand and left to go stale. The Haiku call count is the sum
- * of `attempts` over this batch's own EXTRACT queue items, not a bare
- * label count — a retried extraction makes more than one real call. The
+ * copied in by hand and left to go stale. The Haiku call count is an
+ * UPPER BOUND, not a certainty: the sum of `attempts` over this batch's
+ * own EXTRACT queue items, not a bare label count — a retried extraction makes more than one real call. The
  * Sonnet call count is `batch_jobs.sonnet_call_count`, read directly from
  * the database after the batch completes.
  */
@@ -226,6 +226,27 @@ async function main(): Promise<void> {
   console.log(`measure.ts: base URL ${args.baseUrl}`);
   console.log(`measure.ts: DATABASE_URL host/db = ${(process.env.DATABASE_URL ?? "unset").replace(/:\/\/[^@]*@/, "://***@")}`);
 
+  // Everything below this point is validated BEFORE the first real,
+  // spend-inducing request (review finding, local review round 3) — a
+  // missing DATABASE_URL or eval-report.json used to surface only after a
+  // real batch had already run and spent real API money, at the very end
+  // of this function. Both now fail fast, before checkHealth even runs.
+
+  // Same validate-and-throw shape scripts/eval/check.ts's own runLive and
+  // scripts/latency/measure.ts's own main already use — a clear,
+  // actionable error instead of pg's own confusing failure when
+  // DATABASE_URL is unset (it does not throw immediately; it tries to
+  // connect with default, almost certainly wrong, connection parameters).
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error("measure.ts: DATABASE_URL is not set. source .factory-env in a factory worktree, or set it in .env.local before running pnpm batch:throughput.");
+  }
+  // readCostMeans() itself throws a clear error for a missing or malformed
+  // eval-report.json, or one with no resolver calls to average — running
+  // it now, not after the batch completes, is the whole point of this
+  // move.
+  const costMeans = readCostMeans();
+
   await checkHealth(args.baseUrl);
 
   const { manifestBytes, zipBytes, manifestPath, zipPath } = readFixture(args.fixtureDir);
@@ -255,17 +276,6 @@ async function main(): Promise<void> {
   }
   if (finalProgress.autoVerifiedShare === null) {
     throw new Error(`measure.ts: batch ${started.batchJobId} reached COMPLETED but autoVerifiedShare was null — this is a bug, not a real result.`);
-  }
-
-  // Same validate-and-throw shape scripts/eval/check.ts's own runLive and
-  // scripts/latency/measure.ts's own main already use (review finding,
-  // local review round 2) — a clear, actionable error instead of pg's own
-  // confusing failure when DATABASE_URL is unset (it does not throw
-  // immediately; it tries to connect with default, almost certainly wrong,
-  // connection parameters).
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error("measure.ts: DATABASE_URL is not set. source .factory-env in a factory worktree, or set it in .env.local before running pnpm batch:throughput.");
   }
 
   // One direct database read for the figures the progress API does not
@@ -303,10 +313,19 @@ async function main(): Promise<void> {
     // Haiku call before it succeeds or is permanently marked FAILED
     // (`extract-worker.ts`'s own `releaseForRetry` path; `claim.ts`
     // increments `attempts` on every claim, retries included). Summing
-    // `attempts` over this batch's own EXTRACT queue items is the true
-    // count (review finding, local review round 2) — the same "first
-    // attempts and retries alike" accounting `sonnetCallCount` already
-    // uses for the resolver side (`escalation-cap.ts`'s own doc comment).
+    // `attempts` over this batch's own EXTRACT queue items is a closer
+    // estimate than `totalCount` (review finding, local review rounds 2
+    // and 3) — NOT a guaranteed-exact count, still: `attempts` increments
+    // the moment an item is CLAIMED, before `processExtractClaim`
+    // (`extract-worker.ts`) does any work, so a claim that fails reading
+    // or resizing the stored image — before ever reaching the real Haiku
+    // call — still counts as one "attempt" with zero real API calls made.
+    // This is the same one-sided bias `sonnetCallCount` avoids on the
+    // resolver side by reserving BEFORE the call, not counting attempts
+    // after the fact (`escalation-cap.ts`'s own `reserveSonnetCall`) — no
+    // equivalent reservation exists on the extractor side today. Treat
+    // this figure as an upper bound on real Haiku calls, not a certainty;
+    // `cost.derivedTotalUsd` inherits that same uncertainty.
     const [{ totalExtractAttempts }] = await db
       .select({ totalExtractAttempts: sql<string>`COALESCE(SUM(${schema.batchQueueItems.attempts}), 0)` })
       .from(schema.batchQueueItems)
@@ -323,7 +342,8 @@ async function main(): Promise<void> {
     await pool.end();
   }
 
-  const costMeans = readCostMeans();
+  // costMeans was already read and validated at the top of main(), before
+  // the batch ever ran.
   const capThreshold = computeSonnetCallCapThreshold(finalProgress.totalCount);
   const derivedTotalUsd = deriveBatchCostUsd({
     haikuCallCount,
@@ -376,8 +396,9 @@ async function main(): Promise<void> {
       "sonnetCallCount is OBSERVED: read directly from the batch_jobs row after the batch reached COMPLETED, and cross-checked " +
         "against the polled API response's totalCount/processedCount.",
       "cost.haikuCallCount is OBSERVED, not assumed equal to totalCount: it sums batch_queue_items.attempts over this batch's " +
-        "own EXTRACT items, so a retried extraction (a transient failure that succeeded on a later attempt) counts as more " +
-        "than one real Haiku call.",
+        "own EXTRACT items, so a retried extraction counts as more than one call. This is an UPPER BOUND on real Haiku calls, " +
+        "not a certainty — attempts increments at claim time, before the real API call happens, so a claim that fails " +
+        "reading or resizing the image before ever reaching Haiku still counts as one attempt.",
       "cost.derivedTotalUsd is DERIVED: real call counts from this run, multiplied by the eval harness's measured MEAN " +
         "per-call cost from scripts/eval/results/eval-report.json (see cost.meanCostSource for that file's own measuredAt). " +
         "This run's own per-call token usage was not captured — the batch worker has no usage-capturing seam today.",

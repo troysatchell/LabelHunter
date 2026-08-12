@@ -218,6 +218,18 @@ describe("mergeResolutionIntoActualVerdict", () => {
     expect(() => mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS, null)).toThrow(/no row for field "government_warning"/);
   });
 
+  it("throws when the resolver's own resolution names one field twice, rather than silently keeping whichever the Map constructor kept last (CodeRabbit finding, TRO-538 triage)", () => {
+    const routerResult = router([needsReviewRow("brand_name", "AMBIGUOUS_BRAND"), ...cleanRows().slice(1)]);
+    const resolution: ResolverResolution = {
+      outcome: "resolved",
+      fields: [judged("brand_name", "RESOLVED_MATCH"), judged("brand_name", "RESOLVED_MISMATCH")],
+    };
+
+    expect(() => mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS, null)).toThrow(
+      /resolution.fields has 2 entries but only 1 distinct fields/,
+    );
+  });
+
   it("rolls up to REVIEW, not PASS, when a resolved field returns MATCH but a different, unflagged field is still NEEDS_REVIEW", () => {
     const routerResult = router([
       needsReviewRow("brand_name", "AMBIGUOUS_BRAND"),

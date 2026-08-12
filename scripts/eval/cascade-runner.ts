@@ -256,6 +256,11 @@ export function mergeResolutionIntoActualVerdict(
 ): ActualVerdict {
   const routerByField = new Map(routerResult.fields.map((row) => [row.field, row]));
   const resolvedByField = new Map(resolution.fields.map((field) => [field.field, field]));
+  if (resolvedByField.size !== resolution.fields.length) {
+    throw new Error(
+      `mergeResolutionIntoActualVerdict: resolution.fields has ${resolution.fields.length} entries but only ${resolvedByField.size} distinct fields — a duplicate field disposition from the resolver (Sonnet's own response) is a harness-visible bug, not silently resolved by "whichever entry the Map kept last." Same guard verdict-scoring.ts's scoreVerdict already applies to actual.fields.`,
+    );
+  }
 
   const reasons = new Set<ReviewReason>();
   const fields: ActualVerdict["fields"] = ROUTER_FIELD_KEYS.map((field) => {

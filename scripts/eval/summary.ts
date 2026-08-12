@@ -92,8 +92,13 @@ export function buildExtractionReliabilityDiagram(fields: readonly ExtractionFie
     // value of exactly 1.0 must land in the last bucket, not overflow one
     // past it, and a boundary-violating value from a malformed response
     // still lands somewhere rather than throwing this diagnostic-only
-    // diagram off a live run.
-    const decile = Math.min(RELIABILITY_DECILE_COUNT - 1, Math.max(0, Math.floor(field.confidence * RELIABILITY_DECILE_COUNT)));
+    // diagram off a live run. Non-finite (NaN, +/-Infinity) is normalized
+    // to 0 first (CodeRabbit finding, TRO-538 triage): every arithmetic
+    // comparison against NaN is false, so Math.max/Math.min would both
+    // pass NaN straight through unclamped, and `buckets[NaN]` is
+    // `undefined` — a real crash, not a wrong-bucket miscount.
+    const rawConfidence = Number.isFinite(field.confidence) ? field.confidence : 0;
+    const decile = Math.min(RELIABILITY_DECILE_COUNT - 1, Math.max(0, Math.floor(rawConfidence * RELIABILITY_DECILE_COUNT)));
     buckets[decile].n += 1;
     if (field.correct) buckets[decile].correct += 1;
   }

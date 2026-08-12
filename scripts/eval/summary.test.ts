@@ -195,6 +195,17 @@ describe("buildExtractionReliabilityDiagram", () => {
     expect(diagram).toHaveLength(10);
     expect(diagram.every((bucket) => bucket.n === 0 && bucket.rate === 0)).toBe(true);
   });
+
+  it("normalizes a non-finite confidence (NaN) to bucket 0 instead of crashing on buckets[NaN] (CodeRabbit finding, TRO-538 triage)", () => {
+    const diagram = buildExtractionReliabilityDiagram([extractionFieldScore("brandName", NaN, true)]);
+    expect(diagram[0]).toEqual({ decile: 0, n: 1, correct: 1, rate: 1 });
+    expect(diagram.slice(1).every((bucket) => bucket.n === 0)).toBe(true);
+  });
+
+  it("clamps a finite but out-of-range confidence (below 0) into the first bucket — the pre-existing Math.max(0, ...) clamp, confirmed still correct", () => {
+    const diagram = buildExtractionReliabilityDiagram([extractionFieldScore("brandName", -0.5, true)]);
+    expect(diagram[0]).toEqual({ decile: 0, n: 1, correct: 1, rate: 1 });
+  });
 });
 
 describe("buildEvalReportSummary", () => {

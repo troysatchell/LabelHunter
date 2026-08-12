@@ -40,3 +40,22 @@ describe("hashManifestFile", () => {
     expect(hashManifestFile(DEFAULT_MANIFEST_PATH)).toBe(hashManifestContent(text));
   });
 });
+
+describe("hashManifestContent — raw bytes, not a decode/re-encode round trip (CodeRabbit finding, TRO-538 triage)", () => {
+  it("hashes a Buffer's exact bytes, distinct from decoding it to a string first when a byte sequence is not valid UTF-8", () => {
+    // An invalid UTF-8 byte (0xFF, never a valid lead or continuation byte)
+    // decodes to the U+FFFD replacement character, then re-encodes to
+    // different bytes than the original -- exactly the round-trip gap the
+    // fix closes.
+    const invalidUtf8Bytes = Buffer.from([0x7b, 0x22, 0x61, 0x22, 0x3a, 0xff, 0x31, 0x7d]); // {"a":<0xFF>1}
+    const decodedThenReencoded = Buffer.from(invalidUtf8Bytes.toString("utf8"), "utf8");
+    expect(invalidUtf8Bytes.equals(decodedThenReencoded)).toBe(false); // proves the two inputs really do differ
+
+    expect(hashManifestContent(invalidUtf8Bytes)).not.toBe(hashManifestContent(decodedThenReencoded));
+  });
+
+  it("hashing the same Buffer twice is stable", () => {
+    const bytes = Buffer.from('{"a":1}', "utf8");
+    expect(hashManifestContent(bytes)).toBe(hashManifestContent(Buffer.from(bytes)));
+  });
+});

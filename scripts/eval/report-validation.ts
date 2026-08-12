@@ -114,7 +114,7 @@ export function validateEvalBaseline(parsed: unknown, filePath: string): EvalBas
   if (!isStringArray(candidate.caseIds)) problems.push('"caseIds" must be an array of strings');
   if (typeof candidate.establishedAt !== "string") problems.push('"establishedAt" must be a string');
   if (!isEvalReportSummary(candidate.summary)) {
-    problems.push('"summary" must carry valid extractionAccuracy/labelVerdictAccuracy/reviewReasonAccuracy AccuracySummary objects and a valid warningSegmentation');
+    problems.push('"summary" must carry valid extractionAccuracy/routerVerdictAccuracy/cascadeVerdictAccuracy/reviewReasonAccuracy AccuracySummary objects, a valid warningSegmentation, and a valid extractionReliabilityDiagram');
   }
   if (problems.length > 0) {
     throw new Error(`report-validation: ${filePath} is not a valid EvalBaseline — ${problems.join("; ")}.`);
@@ -136,7 +136,7 @@ export function validateEvalReport(parsed: unknown, filePath: string): EvalRepor
   if (!isStringArray(candidate.caseIds)) problems.push('"caseIds" must be an array of strings');
   if (typeof candidate.measuredAt !== "string") problems.push('"measuredAt" must be a string');
   if (!isEvalReportSummary(candidate.summary)) {
-    problems.push('"summary" must carry valid extractionAccuracy/labelVerdictAccuracy/reviewReasonAccuracy AccuracySummary objects and a valid warningSegmentation');
+    problems.push('"summary" must carry valid extractionAccuracy/routerVerdictAccuracy/cascadeVerdictAccuracy/reviewReasonAccuracy AccuracySummary objects, a valid warningSegmentation, and a valid extractionReliabilityDiagram');
   }
   if (!Array.isArray(candidate.failures)) problems.push('"failures" must be an array');
   if (problems.length > 0) {

@@ -123,10 +123,19 @@ export async function claimNextReviewQueueResolveItem(
   // `= ANY(${array})` would) produces an invalid doubly-parenthesized
   // `ANY((...))`, verified empirically against this worktree's own
   // Postgres (caught by this file's own concurrency tests, not assumed).
+  //
+  // `undefined` (production's only real value) means unrestricted — no
+  // clause at all. An explicitly EMPTY array (a test asking to scope to
+  // "none of these") must match NO rows, not silently fall through to
+  // unrestricted — `IN ()` is itself invalid SQL, so that case needs its
+  // own branch rather than the same `.length > 0` short-circuit a merely
+  // absent option would take (found in local review).
   const verificationScope =
-    options.scopeToVerificationIds !== undefined && options.scopeToVerificationIds.length > 0
-      ? sql`AND rq.verification_id IN ${options.scopeToVerificationIds}`
-      : sql``;
+    options.scopeToVerificationIds === undefined
+      ? sql``
+      : options.scopeToVerificationIds.length > 0
+        ? sql`AND rq.verification_id IN ${options.scopeToVerificationIds}`
+        : sql`AND false`;
 
   const result = await db.execute<RawReviewQueueRow>(sql`
     UPDATE review_queue

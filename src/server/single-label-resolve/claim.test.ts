@@ -201,6 +201,33 @@ describe("claimNextReviewQueueResolveItem — concurrency (the question this cla
   });
 });
 
+describe("claimNextReviewQueueResolveItem — scopeToVerificationIds: empty vs. absent (found in local review)", () => {
+  it("an explicitly EMPTY scope matches nothing, even though a real pending row exists", async () => {
+    await makePendingFixture();
+    const claimed = await claimNextReviewQueueResolveItem(db, "worker-1", 60, 5, { scopeToVerificationIds: [] });
+    expect(claimed).toBeNull();
+  });
+
+  it("an ABSENT scope (the option left out entirely) is unrestricted — the two are not the same", async () => {
+    const { itemId, verificationId } = await makePendingFixture();
+    // No scopeToVerificationIds at all — production's own real call shape.
+    const claimed = await claimNextReviewQueueResolveItem(db, "worker-1", 60, 5, {});
+    // This assertion is only meaningful because the row above is the ONLY
+    // one this worker could plausibly find scoped to itself; an unrelated
+    // concurrently-running test file's own row could also satisfy an
+    // unrestricted claim, so this checks the row we know about was
+    // eligible, not that it uniquely won.
+    if (claimed?.verificationId === verificationId) {
+      expect(claimed.id).toBe(itemId);
+    } else {
+      // Another file's row won the race under real parallel test
+      // execution — still proves "absent" did not silently match nothing
+      // the way an empty array now correctly does.
+      expect(claimed).not.toBeNull();
+    }
+  });
+});
+
 describe("claimNextReviewQueueResolveItem — input validation (standing rule 13)", () => {
   it("rejects a non-positive or non-finite leaseSeconds before ever touching the database", async () => {
     await expect(claimNextReviewQueueResolveItem(db, "worker-1", 0, 5)).rejects.toThrow(RangeError);

@@ -10,6 +10,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
+import { inArray } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { db } from "../../lib/db";
 import { reviewQueue } from "../../lib/db/schema";
@@ -58,18 +59,30 @@ async function seedPendingRow(filename: string): Promise<number> {
 }
 
 describe("startSingleLabelResolveWorker — config validation (standing rule 13)", () => {
+  const base = {
+    db,
+    workerIdPrefix: "test",
+    leaseSeconds: 60,
+    pollIntervalMs: 20,
+    readLabelImage: (p: string) => readLabelImage(p, { baseDir: scratchDir }),
+    backoffConfig: DEFAULT_BACKOFF_CONFIG,
+  };
+
   it("rejects a non-positive or non-integer concurrency before starting any loop", () => {
-    const base = {
-      db,
-      workerIdPrefix: "test",
-      leaseSeconds: 60,
-      pollIntervalMs: 20,
-      readLabelImage: (p: string) => readLabelImage(p, { baseDir: scratchDir }),
-      backoffConfig: DEFAULT_BACKOFF_CONFIG,
-    };
     expect(() => startSingleLabelResolveWorker({ ...base, concurrency: 0 })).toThrow(RangeError);
     expect(() => startSingleLabelResolveWorker({ ...base, concurrency: -1 })).toThrow(RangeError);
     expect(() => startSingleLabelResolveWorker({ ...base, concurrency: 1.5 })).toThrow(RangeError);
+  });
+
+  it("rejects a non-positive or non-finite leaseSeconds", () => {
+    expect(() => startSingleLabelResolveWorker({ ...base, concurrency: 1, leaseSeconds: 0 })).toThrow(RangeError);
+    expect(() => startSingleLabelResolveWorker({ ...base, concurrency: 1, leaseSeconds: -5 })).toThrow(RangeError);
+    expect(() => startSingleLabelResolveWorker({ ...base, concurrency: 1, leaseSeconds: Number.NaN })).toThrow(RangeError);
+  });
+
+  it("rejects a non-positive or non-finite pollIntervalMs", () => {
+    expect(() => startSingleLabelResolveWorker({ ...base, concurrency: 1, pollIntervalMs: 0 })).toThrow(RangeError);
+    expect(() => startSingleLabelResolveWorker({ ...base, concurrency: 1, pollIntervalMs: Number.POSITIVE_INFINITY })).toThrow(RangeError);
   });
 });
 
@@ -97,10 +110,13 @@ describe("startSingleLabelResolveWorker — real concurrency drains the queue ex
 
     // Poll an observable condition (lessons.md #8) — every seeded row has a
     // non-null resolverOutput — rather than a fixed sleep guessing how long
-    // draining six rows across three loops takes.
+    // draining six rows across three loops takes. Filters in the query
+    // itself (inArray), not in JS over the whole table, so this scales the
+    // same way regardless of how many unrelated rows other concurrently
+    // running test files happen to have in flight.
     async function countResolved(): Promise<number> {
-      const rows = await db.select().from(reviewQueue);
-      return rows.filter((r) => verificationIds.includes(r.verificationId) && r.resolverOutput !== null).length;
+      const rows = await db.select().from(reviewQueue).where(inArray(reviewQueue.verificationId, verificationIds));
+      return rows.filter((r) => r.resolverOutput !== null).length;
     }
 
     const deadline = Date.now() + 5000;
@@ -114,5 +130,13 @@ describe("startSingleLabelResolveWorker — real concurrency drains the queue ex
     await worker.done;
 
     expect(doneCount).toBe(6);
+
+    // Each row claimed exactly once, not reclaimed-and-retried — attempts
+    // is incremented on every CLAIM (claim.ts), so a value of 1 per row is
+    // the direct proof "drained exactly once" actually means, not just an
+    // inference from the final count matching.
+    const finalRows = await db.select().from(reviewQueue).where(inArray(reviewQueue.verificationId, verificationIds));
+    expect(finalRows).toHaveLength(6);
+    expect(finalRows.every((r) => r.attempts === 1)).toBe(true);
   });
 });

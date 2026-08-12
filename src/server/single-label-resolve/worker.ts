@@ -117,17 +117,39 @@ async function releaseForRetry(db: typeof defaultDb, id: number, claimToken: str
   return rows.length > 0;
 }
 
-/** Permanently parks a claimed row: clears claim fields and records
- * `lastError`. Unlike `../batch-queue/complete.ts`'s `markFailed`, there is
- * no separate `FAILED` status to set — `claimNextReviewQueueResolveItem`'s
- * own `attempts < maxAttempts` claim predicate is what stops a parked row
- * from being reclaimed forever; the row stays visible (and human-actionable
- * through the existing review-queue UI) with `resolverOutput` still null,
- * exactly the pre-TRO-511 status quo for that one label, not a regression. */
-async function markPermanentlyFailed(db: typeof defaultDb, id: number, claimToken: string, lastError: string): Promise<boolean> {
+/**
+ * Permanently parks a claimed row: clears claim fields, records
+ * `lastError`, and pins `attempts` at (at least) `maxAttempts`. Unlike
+ * `../batch-queue/complete.ts`'s `markFailed`, there is no separate
+ * `FAILED` status to set — `claimNextReviewQueueResolveItem`'s own
+ * `attempts < maxAttempts` claim predicate is what stops a parked row from
+ * being reclaimed forever.
+ *
+ * **The `attempts` write is required, not tidiness.** A NON-retryable
+ * failure (a malformed snapshot, a deterministic 400 from the model) can
+ * reach this function on attempt 1 — `handleFailure` never checks
+ * `attempts` for that branch, only for the retryable one. Without pinning
+ * `attempts` here, a row that failed non-retryably on attempt 1 would stay
+ * claimable (`1 < maxAttempts`), and the next claim would repeat the exact
+ * same deterministic failure — for `resolveEscalatedLabel` specifically,
+ * that means paying for another real Sonnet call that is already known to
+ * fail the same way, up to `maxAttempts` times, defeating the whole point
+ * of classifying an error non-retryable in the first place (found in local
+ * review; regression-tested below). `GREATEST`, not a plain assignment, so
+ * a row already at or past `maxAttempts` (the exhausted-retryable path)
+ * never has its `attempts` count LOWERED by this call.
+ */
+async function markPermanentlyFailed(db: typeof defaultDb, id: number, claimToken: string, lastError: string, maxAttempts: number): Promise<boolean> {
   const rows = await db
     .update(reviewQueue)
-    .set({ lastError: truncateLastError(lastError), claimedBy: null, claimToken: null, claimedAt: null, leaseExpiresAt: null })
+    .set({
+      lastError: truncateLastError(lastError),
+      claimedBy: null,
+      claimToken: null,
+      claimedAt: null,
+      leaseExpiresAt: null,
+      attempts: sql`GREATEST(${reviewQueue.attempts}, ${maxAttempts})`,
+    })
     .where(claimedGuard(id, claimToken))
     .returning({ id: reviewQueue.id });
   return rows.length > 0;
@@ -162,7 +184,7 @@ async function handleFailure(
   }
 
   const lastError = classification.retryable ? `${message} (exhausted after ${item.attempts} attempt(s))` : message;
-  const guarded = await markPermanentlyFailed(db, item.id, claimToken, lastError);
+  const guarded = await markPermanentlyFailed(db, item.id, claimToken, lastError, backoffConfig.maxAttempts);
   return guarded ? { kind: "failed", reason: lastError } : { kind: "stale" };
 }
 

@@ -119,7 +119,9 @@ describe("processSingleLabelResolveClaim — end to end, off the real verify rou
 
     // Confirmed BEFORE this worker ever runs: the route's own bare row,
     // visible to a human immediately, resolverOutput still null.
-    const [before] = await db.select().from(reviewQueue).where(eq(reviewQueue.verificationId, body.verificationId));
+    const beforeRows = await db.select().from(reviewQueue).where(eq(reviewQueue.verificationId, body.verificationId));
+    expect(beforeRows).toHaveLength(1); // exactly one row — review_queue_verification_id_unique's own guarantee
+    const [before] = beforeRows;
     expect(before.resolverOutput).toBeNull();
     expect(before.resolverInput).not.toBeNull();
 
@@ -155,7 +157,9 @@ describe("processSingleLabelResolveClaim — end to end, off the real verify rou
     const outcome = await processSingleLabelResolveClaim(claimed!, deps);
     expect(outcome.kind).toBe("done");
 
-    const [after] = await db.select().from(reviewQueue).where(eq(reviewQueue.verificationId, body.verificationId));
+    const afterRows = await db.select().from(reviewQueue).where(eq(reviewQueue.verificationId, body.verificationId));
+    expect(afterRows).toHaveLength(1); // still exactly one row — filled in, never a second one inserted
+    const [after] = afterRows;
     expect(after.id).toBe(before.id); // the SAME row — filled in, not a second one
     expect(after.resolverOutput).not.toBeNull();
     expect(after.resolverSkipReason).toBeNull();
@@ -231,6 +235,15 @@ describe("processSingleLabelResolveClaim — malformed resolver_input", () => {
     expect(row.lastError).toMatch(/schemaVersion/);
     expect(row.resolverOutput).toBeNull();
     expect(row.claimedBy).toBeNull(); // cleared even on permanent failure
+    // Found in local review: a non-retryable failure can land here on
+    // attempt 1, well under maxAttempts — markPermanentlyFailed must pin
+    // attempts at maxAttempts itself, or the row stays claimable and the
+    // SAME deterministic failure (a real Sonnet call, for a resolver-side
+    // non-retryable error) repeats needlessly.
+    expect(row.attempts).toBe(5); // pinned to backoffConfig.maxAttempts (5), not left at 1
+
+    const reclaimed = await claimNextReviewQueueResolveItem(db, "worker-2", 120, 5, { scopeToVerificationIds: [verificationId] });
+    expect(reclaimed).toBeNull(); // permanently parked — never claimable again
   });
 });
 
@@ -278,6 +291,10 @@ describe("processSingleLabelResolveClaim — retryable failure (backoff)", () =>
     const [row] = await db.select().from(reviewQueue).where(eq(reviewQueue.verificationId, verificationId));
     expect(row.lastError).toMatch(/connection reset/);
     expect(row.resolverOutput).toBeNull();
+    expect(row.attempts).toBe(1); // GREATEST(1, 1) — already at the cap, not lowered
+
+    const reclaimed = await claimNextReviewQueueResolveItem(db, "worker-2", 120, 1, { scopeToVerificationIds: [verificationId] });
+    expect(reclaimed).toBeNull();
   });
 });
 

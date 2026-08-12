@@ -47,6 +47,27 @@ export interface GenerationTarget {
 }
 
 /**
+ * Filename-safe slug: letters, digits, hyphen, underscore only. `bottleId`
+ * and `scene.sceneId` come from a bottle reference JSON
+ * (`src/lib/golden-set/bottleReference.ts`'s `validateBottleReference` only
+ * requires a non-empty string, not a filename-safe one) and flow directly
+ * into `targetCaseId`, which becomes a filename in `generateOne`. A value
+ * like `"x/../../../outside"` would satisfy that schema and reach
+ * `path.join` unvalidated. Rejecting anything but this safe set closes that
+ * off before the value is ever used in a path, regardless of severity —
+ * this repo fronts a real API key on a public URL.
+ */
+const SAFE_SLUG = /^[A-Za-z0-9_-]+$/;
+
+function assertSafeSlug(value: string, what: string): void {
+  if (!SAFE_SLUG.test(value)) {
+    throw new RangeError(
+      `imagen: ${what} "${value}" is not a safe filename slug — only letters, digits, "-", and "_" are allowed`,
+    );
+  }
+}
+
+/**
  * Every `(scene, cameraCondition)` combination across every bottle reference
  * JSON in `referencesDir`. Throws before generating anything (and before any
  * Gemini API call — `main` calls this to build the full target list first)
@@ -68,7 +89,9 @@ export function enumerateTargets(referencesDir: string = REFERENCES_DIR): Genera
   const seenCaseIds = new Map<string, string>(); // caseId -> source file, for a readable error
   for (const file of files) {
     const bottle = loadBottleReference(path.join(referencesDir, file));
+    assertSafeSlug(bottle.bottleId, `bottleId in ${file}`);
     for (const scene of bottle.scenes) {
+      assertSafeSlug(scene.sceneId, `scene.sceneId in ${file}`);
       for (const cameraCondition of bottle.cameraConditions) {
         const target: GenerationTarget = {
           bottleId: bottle.bottleId,
@@ -140,6 +163,24 @@ export interface GenerationResult {
 }
 
 /**
+ * Joins `filename` onto `dir` and confirms the result still resolves inside
+ * `dir`. `caseId` (built from `assertSafeSlug`-checked components — see
+ * above) should already rule out a `filename` that escapes `dir`; this is a
+ * second, independent layer of the same defense-in-depth pattern
+ * `scripts/golden/build.ts`'s `resolveImagePath` already uses for
+ * `imagePath`, applied here regardless of how `filename` was produced.
+ */
+function resolveWithinDir(dir: string, filename: string, what: string): string {
+  const resolvedDir = path.resolve(dir);
+  const resolved = path.resolve(resolvedDir, filename);
+  const rel = path.relative(resolvedDir, resolved);
+  if (rel.startsWith("..") || path.isAbsolute(rel) || rel === "") {
+    throw new RangeError(`imagen: ${what} "${filename}" resolves outside ${resolvedDir} — refusing to write`);
+  }
+  return resolved;
+}
+
+/**
  * Generates and detects one target's backdrop, writing the raw PNG and a
  * `.meta.json` sidecar to `outDir`. Never writes to
  * `golden-set/manifest.json` — see this file's module comment.
@@ -155,8 +196,8 @@ export async function generateOne(
 
   const caseId = targetCaseId(target);
   mkdirSync(outDir, { recursive: true });
-  const backdropPath = path.join(outDir, `${caseId}.png`);
-  const metaPath = path.join(outDir, `${caseId}.meta.json`);
+  const backdropPath = resolveWithinDir(outDir, `${caseId}.png`, "backdrop path");
+  const metaPath = resolveWithinDir(outDir, `${caseId}.meta.json`, "meta path");
   writeFileSync(backdropPath, image);
   writeFileSync(
     metaPath,

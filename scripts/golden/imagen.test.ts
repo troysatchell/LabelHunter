@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -150,6 +150,74 @@ describe("generateOne", () => {
       expect(result.detectedQuad).toBeNull();
       const meta = JSON.parse(readFileSync(result.metaPath, "utf8"));
       expect(meta.labelPlacement).toBeNull();
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("path and slug safety", () => {
+  it("enumerateTargets rejects a bottleId that is not a safe filename slug", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "imagen-test-unsafe-bottle-"));
+    try {
+      writeFileSync(
+        path.join(dir, "evil.json"),
+        JSON.stringify({
+          bottleId: "../../etc/passwd",
+          referencePhoto: "assets/golden/references/amber-whiskey-01.jpg",
+          beverageType: "spirits",
+          bottleDescription: "tall amber glass whiskey bottle",
+          scenes: [{ sceneId: "bar-counter", setting: "a bar counter", lighting: "warm light" }],
+          cameraConditions: ["steady"],
+        }),
+      );
+      expect(() => enumerateTargets(dir)).toThrow(/safe filename slug/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("enumerateTargets rejects a sceneId that is not a safe filename slug", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "imagen-test-unsafe-scene-"));
+    try {
+      writeFileSync(
+        path.join(dir, "amber-whiskey-01.json"),
+        JSON.stringify({
+          bottleId: "amber-whiskey-01",
+          referencePhoto: "assets/golden/references/amber-whiskey-01.jpg",
+          beverageType: "spirits",
+          bottleDescription: "tall amber glass whiskey bottle",
+          scenes: [{ sceneId: "../../outside", setting: "a bar counter", lighting: "warm light" }],
+          cameraConditions: ["steady"],
+        }),
+      );
+      expect(() => enumerateTargets(dir)).toThrow(/safe filename slug/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("generateOne refuses to write outside outDir even given an unvalidated target directly", async () => {
+    // enumerateTargets is the normal caller and already rejects an unsafe
+    // bottleId/sceneId before this point (tests above), but generateOne is
+    // exported on its own and takes a GenerationTarget, not raw reference
+    // JSON — nothing stops a future caller from constructing one by hand.
+    // This proves the second, independent layer (resolveWithinDir) holds
+    // even when the first layer is bypassed entirely.
+    const outDir = mkdtempSync(path.join(tmpdir(), "imagen-test-contain-"));
+    try {
+      const maliciousTarget = {
+        bottleId: "x/../../../../../../../../tmp/pwned",
+        referencePhotoPath: "/fake.jpg",
+        scene: { sceneId: "bar-counter", setting: "a bar counter", lighting: "warm light" },
+        cameraCondition: "steady" as const,
+      };
+      await expect(
+        generateOne(maliciousTarget, fakeGeneratorWithBlankRegion, outDir),
+      ).rejects.toThrow(/resolves outside/);
+      // Nothing was written to outDir either -- the check fires before the
+      // first writeFileSync call.
+      expect(readdirSync(outDir)).toEqual([]);
     } finally {
       rmSync(outDir, { recursive: true, force: true });
     }

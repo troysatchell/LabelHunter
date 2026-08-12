@@ -37,11 +37,11 @@ runs (K=5). **Case-17 is the one exception: 3 REVIEW, 2 PASS** — the split the
 
 This is real call-to-call model variance. It is not a harness bug — the code path held steady
 and the image held steady. `CHANGES.md:699-702` named the phenomenon on this one case first.
-`CHANGES.md:1518-1521` measured it as an aggregate spread: 62.1% (18/29, `62cdf1b`'s run) vs.
-65.5% (19/29, the benchmark cascade arm's run) on the identical 29 cases — a 3.4-point swing,
-both figures re-confirmed directly from their own committed artifacts above. This entry adds the
-number those two did not yet have: the retrospective, whole-corpus stability rate. **28/29
-stable (96.6%), N=29, K=5.**
+`CHANGES.md:1518-1521` measured the same effect as an aggregate spread. Two same-corpus runs
+produced 62.1% (18/29, `62cdf1b`'s run) and 65.5% (19/29, the benchmark cascade arm's run) — a
+3.4-point swing. Both figures are re-confirmed directly from their own committed artifacts above.
+This entry adds the number those two did not yet have: the retrospective, whole-corpus stability
+rate. **28/29 stable (96.6%), N=29, K=5.**
 
 **New tooling: `scripts/eval/variance.ts`, run with `pnpm eval:variance`.** It reuses
 `runOneCase` (`cascade-runner.ts`) — no second cascade path (TH-R19). It reuses `parseEvalArgs`
@@ -67,12 +67,12 @@ TODO, not a blocker.
 
 **Proven mechanically, at the smallest real scale — not the real sweep.** This command ran once:
 
-```
+```bash
 pnpm eval:variance -- --live --case=case-01-clean-match-spirits --repeats=1
 ```
 
-This made one real Haiku call. Case-01 is a clean PASS case; nothing escalates. The measured
-result: corpus stability 100.0% (1/1), accuracy spread 100.0%-100.0%, cost **$0.0048, measured**.
+This made one real Haiku call. Case-01 is a clean PASS case. Nothing escalates. The measured
+result: corpus stability 100.0% (1/1), accuracy spread 100.0%-100.0%, cost **$0.0046, measured**.
 The report writer worked end to end. The trivial report is not committed to the repo. A 1-case
 report reading "100% stable" sits badly next to the real 28/29 figure above. It would invite
 exactly the misreading this entry exists to prevent.

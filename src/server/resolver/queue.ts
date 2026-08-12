@@ -16,6 +16,7 @@
  * auditable trail TH-R22 asks for: a reviewer can see exactly what the
  * resolver read and why, without re-running the model.
  */
+import { and, eq, isNull } from "drizzle-orm";
 import { reviewQueue } from "../../lib/db/schema";
 import { db as defaultDb } from "../../lib/db";
 import type { ReviewReason } from "../router/types";
@@ -109,10 +110,30 @@ export async function insertSkippedReviewQueueEntry(
   return row;
 }
 
-export interface ExistingReviewQueueEntry {
-  id: number;
-  resolverOutput: ResolverResolution;
-}
+/**
+ * What `findExistingReviewQueueEntry` can find for one `verificationId` — a
+ * discriminated union (CLAUDE.md standing rule 19), not a nullable single
+ * shape, because a caller (`resolveEscalatedLabel`) must treat three real
+ * states differently:
+ *
+ * - `"none"` — no row at all. The batch path's ordinary case: nothing
+ *   writes a `review_queue` row for an escalation until `resolveEscalatedLabel`
+ *   or the escalation cap's skip path does.
+ * - `"pending"` — a row exists, but neither `resolverOutput` nor
+ *   `resolverSkipReason` is set yet. TRO-511's own case: the single-label
+ *   verify route (`app/api/verify/route.ts`) pre-files this row immediately
+ *   on a REVIEW verdict, with `reason` and `resolverInput` only, so a human
+ *   sees "needs review" right away (PRD §5) — before Sonnet has run. Not a
+ *   resolution to reuse; the caller should proceed and call Sonnet, then
+ *   UPDATE this row rather than INSERT a new one.
+ * - `"resolved"` — a row exists with a real, validated `resolverOutput`.
+ *   The caller should reuse it and skip the model call entirely (the
+ *   duplicate-call defence this function has always provided).
+ */
+export type ExistingReviewQueueEntry =
+  | { kind: "none" }
+  | { kind: "pending"; id: number }
+  | { kind: "resolved"; id: number; resolverOutput: ResolverResolution };
 
 const JUDGED_FIELD_VALUES = new Set(["brand_name", "class_type"]);
 const CORRECTION_FIELD_VALUES = new Set(["alcohol_content", "net_contents", "government_warning"]);
@@ -211,19 +232,27 @@ function isResolverResolution(value: unknown): value is ResolverResolution {
  * own retry/backoff exists, CP-1 §9 open question 6) — checking first turns
  * a wasted real-money call into a free, correct no-op.
  *
- * Throws when a row exists but its `resolverOutput` does not match this
- * module's `ResolverResolution` shape, rather than silently trusting or
- * silently ignoring data it cannot interpret (this repo's "reject, never
- * clamp/guess" boundary rule — CLAUDE.md lesson 13).
+ * Returns `{ kind: "pending" }` (TRO-511) rather than throwing when a row
+ * exists but BOTH `resolverOutput` and `resolverSkipReason` are still null
+ * — that is not corrupt or unrecognized data, it is the single-label verify
+ * route's own bare, not-yet-resolved row (see `ExistingReviewQueueEntry`'s
+ * doc comment). Throws when a row exists with a NON-null `resolverOutput`
+ * that does not match this module's `ResolverResolution` shape, exactly as
+ * before — that case is still unrecognized data, not a pending state
+ * (this repo's "reject, never clamp/guess" boundary rule — CLAUDE.md
+ * lesson 13).
  */
 export async function findExistingReviewQueueEntry(
   verificationId: number,
   db: ResolverDb = defaultDb,
-): Promise<ExistingReviewQueueEntry | null> {
+): Promise<ExistingReviewQueueEntry> {
   const existing = await db.query.reviewQueue.findFirst({
     where: (rq, { eq }) => eq(rq.verificationId, verificationId),
   });
-  if (!existing) return null;
+  if (!existing) return { kind: "none" };
+  if (existing.resolverOutput === null && existing.resolverSkipReason === null) {
+    return { kind: "pending", id: existing.id };
+  }
   if (!isResolverResolution(existing.resolverOutput)) {
     throw new Error(
       `findExistingReviewQueueEntry: verification ${verificationId} already has a review_queue row ` +
@@ -231,5 +260,47 @@ export async function findExistingReviewQueueEntry(
         "— refusing to reuse it or to silently re-run the model behind the unique constraint's back.",
     );
   }
-  return { id: existing.id, resolverOutput: existing.resolverOutput };
+  return { kind: "resolved", id: existing.id, resolverOutput: existing.resolverOutput };
+}
+
+export interface UpdateReviewQueueEntryResolutionParams {
+  /** `review_queue.id` — `findExistingReviewQueueEntry`'s own `"pending"`
+   * case already gives the caller this id; no second lookup by
+   * `verificationId` is needed. */
+  id: number;
+  resolverOutput: ResolverResolution;
+}
+
+/**
+ * Fills in a PRE-EXISTING, still-pending `review_queue` row's
+ * `resolverOutput` (TRO-511) — `resolveEscalatedLabel`'s UPDATE counterpart
+ * to `insertReviewQueueEntry`'s INSERT, chosen by which case
+ * `findExistingReviewQueueEntry` returned. Only the single-label verify
+ * route's own pre-filed rows are ever `"pending"` (see
+ * `ExistingReviewQueueEntry`'s doc comment) — the batch path never reaches
+ * this function.
+ *
+ * The `WHERE ... resolverOutput IS NULL AND resolverSkipReason IS NULL`
+ * guard is this function's OWN fencing mechanism, not `claim_token`-based:
+ * whichever caller's UPDATE lands first wins the row; a second caller's
+ * UPDATE then matches zero rows and this function returns `null` instead of
+ * throwing. This mirrors CP-3 §3.3's own accepted risk for the analogous
+ * batch-path race (`insertReviewQueueEntry`'s unique-constraint throw,
+ * recovered by `resolve-worker.ts`'s `readReviewQueueOutcome`) — money is
+ * wasted on a second Sonnet call in the rare lease-expiry window, but the
+ * data itself is never corrupted, because only one UPDATE can ever match.
+ * A caller that gets `null` back should re-read the row a winning caller
+ * already wrote (the same recovery shape `resolve-worker.ts` already uses),
+ * not treat it as an error.
+ */
+export async function updateReviewQueueEntryResolution(
+  params: UpdateReviewQueueEntryResolutionParams,
+  db: ResolverDb = defaultDb,
+): Promise<{ id: number } | null> {
+  const [row] = await db
+    .update(reviewQueue)
+    .set({ resolverOutput: params.resolverOutput })
+    .where(and(eq(reviewQueue.id, params.id), isNull(reviewQueue.resolverOutput), isNull(reviewQueue.resolverSkipReason)))
+    .returning({ id: reviewQueue.id });
+  return row ?? null;
 }

@@ -11,19 +11,33 @@ function fakeClient(create: (params: Anthropic.MessageCreateParamsNonStreaming) 
   return { messages: { create: vi.fn(create) } } as unknown as Anthropic;
 }
 
-/** Fakes just the Drizzle surface `insertReviewQueueEntry` and
- * `findExistingReviewQueueEntry` use. `existingRow` defaults to `undefined`
- * — "no review_queue row exists yet for this verification" — so every
- * existing test in this file exercises the pre-flight lookup's "not found"
- * path without having to know about it. */
-function fakeDb(nextId = 42, existingRow?: { id: number; resolverOutput: unknown }) {
+/** Fakes just the Drizzle surface `insertReviewQueueEntry`,
+ * `findExistingReviewQueueEntry`, and (TRO-511) `updateReviewQueueEntryResolution`
+ * use. `existingRow` defaults to `undefined` — "no review_queue row exists
+ * yet for this verification" — so every existing test in this file
+ * exercises the pre-flight lookup's "not found" path without having to know
+ * about it. `updateResult` controls what the fake UPDATE's `.returning()`
+ * resolves to — `undefined` means "matched a row" (the common case for a
+ * `"pending"` `existingRow`); pass `null` to simulate the TRO-506-shaped
+ * race where a competing caller already won. */
+function fakeDb(
+  nextId = 42,
+  existingRow?: { id: number; resolverOutput: unknown; resolverSkipReason?: unknown },
+  updateResult: "matched" | "lost-race" = "matched",
+) {
   const values = vi.fn().mockReturnValue({
     returning: vi.fn().mockResolvedValue([{ id: nextId }]),
   });
   const insert = vi.fn().mockReturnValue({ values });
   const findFirst = vi.fn().mockResolvedValue(existingRow);
-  const db = { insert, query: { reviewQueue: { findFirst } } } as unknown as ResolverDb;
-  return { db, insert, values, findFirst };
+  const updateSet = vi.fn().mockReturnValue({
+    where: vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue(updateResult === "matched" ? [{ id: existingRow?.id ?? nextId }] : []),
+    }),
+  });
+  const update = vi.fn().mockReturnValue({ set: updateSet });
+  const db = { insert, update, query: { reviewQueue: { findFirst } } } as unknown as ResolverDb;
+  return { db, insert, values, findFirst, update, updateSet };
 }
 
 describe("resolveEscalatedLabel — never on the happy path (TH-R19)", () => {
@@ -156,6 +170,54 @@ describe("resolveEscalatedLabel — duplicate verificationId never pays for a se
 
     await expect(resolveEscalatedLabel(input, { client, db })).rejects.toThrow(/unrecognized shape|does not match/);
     expect(client.messages.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveEscalatedLabel — fills in a pre-existing bare row (TRO-511)", () => {
+  it("updates the pending row's resolverOutput instead of inserting a second row", async () => {
+    const client = fakeClient(async () => makeMockMessage(JSON.stringify(WELL_FORMED_RESOLVER_BODY)));
+    const { db, insert, update, updateSet, findFirst } = fakeDb(999, { id: 5, resolverOutput: null, resolverSkipReason: null });
+    const input = makeResolverInput();
+
+    const result = await resolveEscalatedLabel(input, { client, db });
+
+    expect(findFirst).toHaveBeenCalledTimes(1);
+    expect(client.messages.create).toHaveBeenCalledTimes(1);
+    expect(insert).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledTimes(1);
+    const setArg = updateSet.mock.calls[0][0];
+    expect(setArg.resolverOutput.outcome).toBe("resolved");
+    expect(result.reviewQueueId).toBe(5); // the PRE-EXISTING row's id, not a freshly-inserted one
+    expect(result.outcome).toBe("resolved");
+  });
+
+  it("recovers by re-reading the winning row when the update loses a TRO-506-shaped race, instead of throwing", async () => {
+    const client = fakeClient(async () => makeMockMessage(JSON.stringify(WELL_FORMED_RESOLVER_BODY)));
+    const { db, findFirst } = fakeDb(999, { id: 5, resolverOutput: null, resolverSkipReason: null }, "lost-race");
+    // The re-read after losing the race finds the OTHER caller's resolution.
+    const winningResolution = {
+      outcome: "resolved" as const,
+      fields: [
+        {
+          kind: "judged" as const,
+          field: "brand_name" as const,
+          disposition: "RESOLVED_MATCH" as const,
+          correctedValue: "Stone's Throw",
+          evidence: "STONE'S THROW",
+          reason: "The other worker's call won the race.",
+          confidence: 0.88,
+        },
+      ],
+    };
+    findFirst.mockResolvedValueOnce({ id: 5, resolverOutput: null, resolverSkipReason: null }); // pre-flight check
+    findFirst.mockResolvedValueOnce({ id: 5, resolverOutput: winningResolution, resolverSkipReason: null }); // post-race re-read
+    const input = makeResolverInput();
+
+    const result = await resolveEscalatedLabel(input, { client, db });
+
+    expect(client.messages.create).toHaveBeenCalledTimes(1); // this call still happened — the money is spent
+    expect(result.reviewQueueId).toBe(5);
+    expect(result.fields).toEqual(winningResolution.fields);
   });
 });
 

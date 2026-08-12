@@ -16,7 +16,12 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "../../lib/db";
 import { applications, labelImages, reviewQueue, verifications } from "../../lib/db/schema";
-import { findExistingReviewQueueEntry, insertReviewQueueEntry, insertSkippedReviewQueueEntry } from "./queue";
+import {
+  findExistingReviewQueueEntry,
+  insertReviewQueueEntry,
+  insertSkippedReviewQueueEntry,
+  updateReviewQueueEntryResolution,
+} from "./queue";
 import type { ResolverResolution } from "./types";
 
 async function makeVerificationFixture() {
@@ -142,10 +147,10 @@ describe("insertReviewQueueEntry — real database", () => {
 });
 
 describe("findExistingReviewQueueEntry — real database", () => {
-  it("returns null when no row exists yet for this verification", async () => {
+  it("returns { kind: 'none' } when no row exists yet for this verification", async () => {
     const { applicationId, verificationId } = await makeVerificationFixture();
     try {
-      expect(await findExistingReviewQueueEntry(verificationId)).toBeNull();
+      expect(await findExistingReviewQueueEntry(verificationId)).toEqual({ kind: "none" });
     } finally {
       await cleanup(applicationId);
     }
@@ -161,9 +166,29 @@ describe("findExistingReviewQueueEntry — real database", () => {
       });
 
       const found = await findExistingReviewQueueEntry(verificationId);
-      expect(found).not.toBeNull();
-      expect(found?.id).toBe(id);
-      expect(found?.resolverOutput).toEqual(SAMPLE_RESOLUTION);
+      expect(found.kind).toBe("resolved");
+      if (found.kind !== "resolved") throw new Error("unreachable — asserted above");
+      expect(found.id).toBe(id);
+      expect(found.resolverOutput).toEqual(SAMPLE_RESOLUTION);
+    } finally {
+      await cleanup(applicationId);
+    }
+  });
+
+  it("returns { kind: 'pending', id } for a bare row — TRO-511's own verify-time pre-insert, reason and resolverInput set, resolverOutput/resolverSkipReason still null", async () => {
+    const { applicationId, verificationId } = await makeVerificationFixture();
+    try {
+      const [row] = await db
+        .insert(reviewQueue)
+        .values({
+          verificationId,
+          reason: "AMBIGUOUS_BRAND",
+          resolverInput: { schemaVersion: "1", extraction: {}, router: {}, flaggedFields: [] },
+        })
+        .returning();
+
+      const found = await findExistingReviewQueueEntry(verificationId);
+      expect(found).toEqual({ kind: "pending", id: row.id });
     } finally {
       await cleanup(applicationId);
     }
@@ -473,6 +498,84 @@ describe("insertSkippedReviewQueueEntry — real database (LH-041 / TRO-474, CP-
       expect(caught).toBeInstanceOf(Error);
       const cause = (caught as Error).cause;
       expect(String(cause instanceof Error ? cause.message : cause)).toMatch(/review_queue_resolver_output_skip_reason_exclusive/);
+    } finally {
+      await cleanup(applicationId);
+    }
+  });
+});
+
+describe("updateReviewQueueEntryResolution — real database (TRO-511)", () => {
+  it("fills in a pending row's resolverOutput and returns its id", async () => {
+    const { applicationId, verificationId } = await makeVerificationFixture();
+    try {
+      const [row] = await db
+        .insert(reviewQueue)
+        .values({
+          verificationId,
+          reason: "AMBIGUOUS_BRAND",
+          resolverInput: { schemaVersion: "1", extraction: {}, router: {}, flaggedFields: [] },
+        })
+        .returning();
+
+      const result = await updateReviewQueueEntryResolution({ id: row.id, resolverOutput: SAMPLE_RESOLUTION });
+      expect(result).toEqual({ id: row.id });
+
+      const [after] = await db.select().from(reviewQueue).where(eq(reviewQueue.id, row.id));
+      expect(after.resolverOutput).toEqual(SAMPLE_RESOLUTION);
+      expect(after.disposition).toBeNull();
+    } finally {
+      await cleanup(applicationId);
+    }
+  });
+
+  it("returns null and writes nothing when the row already has a resolverOutput — the TRO-506-shaped race guard", async () => {
+    const { applicationId, verificationId } = await makeVerificationFixture();
+    try {
+      const alreadyResolved: ResolverResolution = {
+        outcome: "resolved",
+        fields: [
+          {
+            kind: "correction",
+            field: "net_contents",
+            needsHuman: false,
+            correctedValue: "750 mL",
+            evidence: "750ML",
+            reason: "Matches the application once normalized.",
+            confidence: 0.92,
+          },
+        ],
+      };
+      const [row] = await db
+        .insert(reviewQueue)
+        .values({ verificationId, reason: "AMBIGUOUS_NET_CONTENTS", resolverOutput: alreadyResolved })
+        .returning();
+
+      const result = await updateReviewQueueEntryResolution({ id: row.id, resolverOutput: SAMPLE_RESOLUTION });
+      expect(result).toBeNull();
+
+      const [after] = await db.select().from(reviewQueue).where(eq(reviewQueue.id, row.id));
+      // Untouched — the WINNING caller's resolution, not this call's.
+      expect(after.resolverOutput).toEqual(alreadyResolved);
+    } finally {
+      await cleanup(applicationId);
+    }
+  });
+
+  it("returns null and writes nothing when the row was cap-skipped instead", async () => {
+    const { applicationId, verificationId } = await makeVerificationFixture();
+    try {
+      const { id } = await insertSkippedReviewQueueEntry({
+        verificationId,
+        reason: "AMBIGUOUS_ABV",
+        resolverSkipReason: "ESCALATION_CAP_EXCEEDED",
+      });
+
+      const result = await updateReviewQueueEntryResolution({ id, resolverOutput: SAMPLE_RESOLUTION });
+      expect(result).toBeNull();
+
+      const [after] = await db.select().from(reviewQueue).where(eq(reviewQueue.id, id));
+      expect(after.resolverOutput).toBeNull();
+      expect(after.resolverSkipReason).toBe("ESCALATION_CAP_EXCEEDED");
     } finally {
       await cleanup(applicationId);
     }

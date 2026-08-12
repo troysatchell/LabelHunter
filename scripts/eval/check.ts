@@ -49,20 +49,19 @@
  * path calls it yet) — but its output is reported, never scored against a
  * fabricated ground truth the manifest does not have.
  */
-import { mkdtemp, rm } from "node:fs/promises";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../../src/lib/db/schema";
-import { loadGoldenSetManifest } from "../../src/lib/golden-set/loader";
+import { DEFAULT_MANIFEST_PATH, loadGoldenSetManifest } from "../../src/lib/golden-set/loader";
 import { HAIKU_EXTRACTOR_MODEL } from "../../src/server/extractor";
 import { SONNET_RESOLVER_MODEL } from "../../src/server/resolver";
 import { cleanupScratchDirAndPool } from "../latency/cleanup";
 import { parseEvalArgs, resolveCaseIds, validateCheckArgs } from "./args";
 import { compareToBaseline } from "./baseline-compare";
 import { REPO_ROOT, runOneCase, type CaseRunOutcome } from "./cascade-runner";
+import { hashManifestFile } from "./manifest-hash";
 import { validateEvalBaseline, validateEvalReport } from "./report-validation";
 import { buildEvalReportSummary } from "./summary";
 import type { CascadeCaseResult, EvalBaseline, EvalCaseFailure, EvalReport } from "./types";
@@ -77,16 +76,24 @@ function printCaseLine(outcome: CaseRunOutcome, index: number, total: number): v
   }
   const r = outcome.result!;
   const extractionCorrect = r.extraction.fields.filter((f) => f.correct).length;
-  const verdictNote = r.verdict.labelVerdictCorrect
-    ? "verdict OK"
-    : `verdict WRONG (expected ${r.verdict.expectedLabelVerdict}, got ${r.verdict.actualLabelVerdict})`;
+  const routerNote = r.routerVerdict.labelVerdictCorrect
+    ? "router OK"
+    : `router WRONG (expected ${r.routerVerdict.expectedLabelVerdict}, got ${r.routerVerdict.actualLabelVerdict})`;
+  // Printed only when the cascade end state actually differs from the
+  // router's own interim verdict (TRO-538 / LH-033) — the common case is
+  // "nothing escalated, so they are identical," and repeating that on every
+  // line would bury the cases where the merge actually did something.
+  const cascadeDiverges = r.cascadeVerdict.actualLabelVerdict !== r.routerVerdict.actualLabelVerdict;
+  const cascadeNote = cascadeDiverges
+    ? `, cascade end state: ${r.cascadeVerdict.actualLabelVerdict} (${r.cascadeVerdict.labelVerdictCorrect ? "correct" : "WRONG"})`
+    : "";
   const resolverNote = r.resolverOutcome
     ? `, resolver: ${r.resolverOutcome} ($${r.resolverCost!.usd.toFixed(4)})`
     : r.resolverError
       ? `, resolver: FAILED (${r.resolverError})`
       : "";
   console.log(
-    `  [${index}/${total}] ${r.caseId}: extraction ${extractionCorrect}/5, ${verdictNote}, haiku $${r.haikuCost.usd.toFixed(4)}${resolverNote}`,
+    `  [${index}/${total}] ${r.caseId}: extraction ${extractionCorrect}/5, ${routerNote}${cascadeNote}, haiku $${r.haikuCost.usd.toFixed(4)}${resolverNote}`,
   );
 }
 
@@ -129,22 +136,26 @@ async function runLive(args: ReturnType<typeof parseEvalArgs>): Promise<void> {
     console.error("check.ts: unexpected error on idle Postgres client", err);
   });
   const db = drizzle(pool, { schema });
-  const scratchDir = await mkdtemp(path.join(tmpdir(), "labelhunter-tro470-eval-"));
 
   const outcomes: CaseRunOutcome[] = [];
   try {
     for (let i = 0; i < caseIds.length; i++) {
       const caseSpec = casesById.get(caseIds[i])!;
-      const outcome = await runOneCase(caseSpec, db, scratchDir);
+      const outcome = await runOneCase(caseSpec, db);
       outcomes.push(outcome);
       printCaseLine(outcome, i + 1, caseIds.length);
     }
   } finally {
+    // TRO-518: `runOneCase` writes label images through `db`, not a scratch
+    // directory, so there is nothing left for the first cleanup step to
+    // remove — kept as a no-op rather than dropping `cleanupScratchDirAndPool`
+    // so this still matches every other caller's two-step shape
+    // (`scripts/latency/cleanup.ts`).
     const { scratchDirCleanupError, closePoolError } = await cleanupScratchDirAndPool(
-      () => rm(scratchDir, { recursive: true, force: true }),
+      async () => {},
       () => pool.end(),
     );
-    if (scratchDirCleanupError) console.warn(`check.ts: failed to remove scratch directory ${scratchDir}: ${scratchDirCleanupError}`);
+    if (scratchDirCleanupError) console.warn(`check.ts: unexpected error during cleanup: ${scratchDirCleanupError}`);
     if (closePoolError) console.warn(`check.ts: failed to close the database pool: ${closePoolError}`);
   }
 
@@ -161,7 +172,8 @@ async function runLive(args: ReturnType<typeof parseEvalArgs>): Promise<void> {
 
   const summary = buildEvalReportSummary(
     results.map((r) => r.extraction),
-    results.map((r) => r.verdict),
+    results.map((r) => r.routerVerdict),
+    results.map((r) => r.cascadeVerdict),
   );
   const totalCostUsd = results.reduce((sum, r) => sum + r.haikuCost.usd + (r.resolverCost?.usd ?? 0), 0);
 
@@ -172,6 +184,7 @@ async function runLive(args: ReturnType<typeof parseEvalArgs>): Promise<void> {
     haikuModel: HAIKU_EXTRACTOR_MODEL,
     sonnetModel: SONNET_RESOLVER_MODEL,
     manifestVersion: manifest.version,
+    manifestContentHash: hashManifestFile(DEFAULT_MANIFEST_PATH),
     caseIds: [...caseIds].sort(),
     requestedFull: args.full,
     summary,
@@ -188,7 +201,10 @@ async function runLive(args: ReturnType<typeof parseEvalArgs>): Promise<void> {
     `check.ts: extraction accuracy ${(summary.extractionAccuracy.rate * 100).toFixed(1)}% (${summary.extractionAccuracy.correct}/${summary.extractionAccuracy.total})`,
   );
   console.log(
-    `check.ts: label-verdict accuracy ${(summary.labelVerdictAccuracy.rate * 100).toFixed(1)}% (${summary.labelVerdictAccuracy.correct}/${summary.labelVerdictAccuracy.total})`,
+    `check.ts: router-verdict accuracy ${(summary.routerVerdictAccuracy.rate * 100).toFixed(1)}% (${summary.routerVerdictAccuracy.correct}/${summary.routerVerdictAccuracy.total}) — scored BEFORE any resolver call`,
+  );
+  console.log(
+    `check.ts: cascade-verdict accuracy ${(summary.cascadeVerdictAccuracy.rate * 100).toFixed(1)}% (${summary.cascadeVerdictAccuracy.correct}/${summary.cascadeVerdictAccuracy.total}) — the cascade's END STATE, resolver merge included`,
   );
   console.log(
     `check.ts: review-reason accuracy ${(summary.reviewReasonAccuracy.rate * 100).toFixed(1)}% (${summary.reviewReasonAccuracy.correct}/${summary.reviewReasonAccuracy.total})`,
@@ -204,6 +220,14 @@ async function runLive(args: ReturnType<typeof parseEvalArgs>): Promise<void> {
       `resolution-suspect ${(seg.resolutionSuspect.rate * 100).toFixed(1)}% (${seg.resolutionSuspect.count}) <- drives the ladder, ` +
       `not-found ${(seg.notFound.rate * 100).toFixed(1)}% (${seg.notFound.count})`,
   );
+  // CP-1 §4.5 step 2's reliability diagram (TRO-538 / LH-033) — thin
+  // deciles are real, not hidden: empty ones are skipped here (the
+  // committed JSON keeps all 10), and every printed rate carries its own n.
+  console.log("check.ts: extraction reliability by confidence decile (CP-1 §4.5 step 2; some deciles are thin):");
+  for (const bucket of summary.extractionReliabilityDiagram) {
+    if (bucket.n === 0) continue;
+    console.log(`    [${(bucket.decile / 10).toFixed(1)}-${((bucket.decile + 1) / 10).toFixed(1)}) n=${bucket.n} correct=${bucket.correct} rate=${(bucket.rate * 100).toFixed(1)}%`);
+  }
   console.log(`check.ts: total measured cost $${totalCostUsd.toFixed(4)}`);
   console.log(`check.ts: wrote ${REPORT_PATH}`);
 
@@ -218,6 +242,7 @@ async function runLive(args: ReturnType<typeof parseEvalArgs>): Promise<void> {
       ticket: report.ticket,
       establishedAt: report.measuredAt,
       manifestVersion: report.manifestVersion,
+      manifestContentHash: report.manifestContentHash,
       caseIds: report.caseIds,
       summary: report.summary,
     };

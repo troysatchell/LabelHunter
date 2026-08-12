@@ -33,15 +33,13 @@
  * measured — it does not editorialize the recommendation away from that
  * settled position.
  */
-import { mkdtemp, rm } from "node:fs/promises";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../../src/lib/db/schema";
-import { loadGoldenSetManifest } from "../../src/lib/golden-set/loader";
+import { DEFAULT_MANIFEST_PATH, loadGoldenSetManifest } from "../../src/lib/golden-set/loader";
 import type { GoldenSetCase, GoldenSetCategory } from "../../src/lib/golden-set/types";
 import { HAIKU_EXTRACTOR_MODEL } from "../../src/server/extractor";
 import { productionComparators } from "../../src/server/comparators";
@@ -51,11 +49,12 @@ import { cleanupScratchDirAndPool } from "../latency/cleanup";
 import { parseEvalArgs, resolveCaseIds } from "./args";
 import { buildApplicationRecord, REPO_ROOT, runOneCase, type CaseRunOutcome } from "./cascade-runner";
 import { buildAllFieldsFlagged } from "./flagged-fields";
+import { hashManifestFile } from "./manifest-hash";
 import { rollUpResolverResolution } from "./resolver-rollup";
 import { summarizeVerdict, type VerdictSummary } from "./summary";
 import { buildMeasuredCost, createUsageCapturingClient, selectSonnetPricing } from "./usage";
 import { scoreVerdict, type ActualVerdict } from "./verdict-scoring";
-import type { EvalCaseFailure, MeasuredCost, VerdictCaseScore } from "./types";
+import type { AccuracySummary, EvalCaseFailure, MeasuredCost, VerdictCaseScore } from "./types";
 
 const REPORT_PATH = path.resolve(REPO_ROOT, "scripts/eval/results/benchmark-report.json");
 
@@ -119,28 +118,67 @@ interface ArmResult {
   cost: MeasuredCost;
 }
 
+/**
+ * The cascade arm's own per-case result (TRO-538 / LH-033) — TWO verdict
+ * scores, under different names, never one replacing the other:
+ * `routerVerdict` (the Validation Router's own output, scored BEFORE any
+ * resolver call) and `cascadeVerdict` (the cascade's END STATE — identical
+ * to `routerVerdict` when nothing escalated, the router+resolver merge when
+ * it did — `cascade-runner.ts`'s `mergeResolutionIntoActualVerdict`).
+ * `cascadeVerdict` is the number this benchmark compares against the
+ * Sonnet-only arm's `ArmResult.verdict`, which is inherently post-resolution
+ * already (that arm has no router pass at all).
+ */
+interface CascadeArmCaseResult {
+  routerVerdict: VerdictCaseScore;
+  cascadeVerdict: VerdictCaseScore;
+  cost: MeasuredCost;
+}
+
 interface BenchmarkCaseResult {
   caseId: string;
   category: GoldenSetCategory;
   cascadeEscalated: boolean;
-  cascade: ArmResult;
+  cascade: CascadeArmCaseResult;
   sonnetOnly: ArmResult;
 }
 
 interface ArmSummary extends VerdictSummary {
   totalCostUsd: number;
+  /** Names this arm's pipeline stage in plain English (TRO-538 / LH-033) —
+   * a reader should not have to infer from the field name alone whether a
+   * number is pre- or post-resolution. */
+  stage: string;
 }
 
 interface BenchmarkReport {
   ticket: string;
   measuredAt: string;
   manifestVersion: string;
+  /** SHA-256 of `golden-set/manifest.json`'s raw content (TRO-538 / LH-033,
+   * `manifest-hash.ts`) — see `EvalReport.manifestContentHash`'s own doc
+   * comment for why this moves with content, unlike `manifestVersion`. */
+  manifestContentHash: string;
   caseIds: string[];
   haikuModel: string;
   sonnetModel: string;
+  /** The cascade arm, compared post-resolution (`cascade.stage` says so
+   * explicitly) — `cascade.labelVerdictAccuracy` here is built from every
+   * case's `cascadeVerdict`, never `routerVerdict`. See
+   * `cascadeRouterStageVerdictAccuracy` below for the number this is NOT. */
   cascade: ArmSummary;
   sonnetOnly: ArmSummary;
-  /** `sonnetOnly.labelVerdictAccuracy.rate - cascade.labelVerdictAccuracy.rate`, in percentage points. */
+  /** INFORMATIONAL ONLY, not one of the two arms this report's `notes`
+   * describe comparing (TRO-538 / LH-033) — the cascade arm's INTERIM
+   * router-only verdict accuracy, scored before any resolver call. Kept for
+   * continuity with every earlier committed benchmark report, which had no
+   * other number to report. Do not compare this against `sonnetOnly` — that
+   * comparison is the exact router-vs-cascade stage mismatch TRO-538 fixed;
+   * see `docs/diagnostics/2026-08-12-verdict-miss-triage.md` §5 S5 and §8. */
+  cascadeRouterStageVerdictAccuracy: AccuracySummary;
+  /** `sonnetOnly.labelVerdictAccuracy.rate - cascade.labelVerdictAccuracy.rate`,
+   * in percentage points — both sides post-resolution as of TRO-538 / LH-033
+   * (previously `cascade` here was the router-only number; see `cascade.stage`). */
   labelVerdictAccuracyDeltaPercentagePoints: number;
   costDeltaUsd: number;
   /** `sonnetOnly.totalCostUsd / cascade.totalCostUsd`, or `null` when the cascade arm spent nothing (avoids dividing by zero). */
@@ -181,7 +219,7 @@ async function runSonnetOnlyArm(caseSpec: GoldenSetCase, cascadeOutcome: CaseRun
   }
   const actualVerdict: ActualVerdict = rollUpResolverResolution(resolution, application, productionComparators);
   return {
-    verdict: scoreVerdict(caseSpec, actualVerdict),
+    verdict: scoreVerdict(caseSpec, actualVerdict, rawExtraction),
     cost: buildMeasuredCost(SONNET_RESOLVER_MODEL, usage, selectSonnetPricing(new Date())),
   };
 }
@@ -215,7 +253,6 @@ async function main(): Promise<void> {
   const pool = new Pool({ connectionString, connectionTimeoutMillis: 10_000 });
   pool.on("error", (err) => console.error("benchmark.ts: unexpected error on idle Postgres client", err));
   const db = drizzle(pool, { schema });
-  const scratchDir = await mkdtemp(path.join(tmpdir(), "labelhunter-tro470-benchmark-"));
 
   const results: BenchmarkCaseResult[] = [];
   const failures: EvalCaseFailure[] = [];
@@ -223,7 +260,7 @@ async function main(): Promise<void> {
     for (let i = 0; i < caseIds.length; i++) {
       const caseSpec = casesById.get(caseIds[i])!;
       console.log(`  [${i + 1}/${caseIds.length}] ${caseSpec.caseId}: cascade arm...`);
-      const cascadeOutcome = await runOneCase(caseSpec, db, scratchDir);
+      const cascadeOutcome = await runOneCase(caseSpec, db);
       if (cascadeOutcome.failure || !cascadeOutcome.result) {
         failures.push(cascadeOutcome.failure ?? { caseId: caseSpec.caseId, error: "cascade arm produced no result" });
         console.log(`    cascade arm FAILED — ${cascadeOutcome.failure?.error}; skipping the sonnet-only arm for this case too.`);
@@ -244,7 +281,8 @@ async function main(): Promise<void> {
         category: caseSpec.category,
         cascadeEscalated: cascadeResult.resolverCost !== null,
         cascade: {
-          verdict: cascadeResult.verdict,
+          routerVerdict: cascadeResult.routerVerdict,
+          cascadeVerdict: cascadeResult.cascadeVerdict,
           cost: {
             model: "cascade-total",
             inputTokens: cascadeResult.haikuCost.inputTokens + (cascadeResult.resolverCost?.inputTokens ?? 0),
@@ -257,15 +295,17 @@ async function main(): Promise<void> {
         sonnetOnly,
       });
       console.log(
-        `    cascade: ${cascadeResult.verdict.labelVerdictCorrect ? "correct" : "WRONG"} (escalated: ${cascadeResult.resolverCost !== null}), sonnet-only: ${sonnetOnly.verdict.labelVerdictCorrect ? "correct" : "WRONG"}`,
+        `    cascade end state: ${cascadeResult.cascadeVerdict.labelVerdictCorrect ? "correct" : "WRONG"} (escalated: ${cascadeResult.resolverCost !== null}), sonnet-only: ${sonnetOnly.verdict.labelVerdictCorrect ? "correct" : "WRONG"}`,
       );
     }
   } finally {
+    // TRO-518: `runOneCase` writes label images through `db`, not a scratch
+    // directory — see check.ts's identical comment on its own matching call.
     const { scratchDirCleanupError, closePoolError } = await cleanupScratchDirAndPool(
-      () => rm(scratchDir, { recursive: true, force: true }),
+      async () => {},
       () => pool.end(),
     );
-    if (scratchDirCleanupError) console.warn(`benchmark.ts: failed to remove scratch directory ${scratchDir}: ${scratchDirCleanupError}`);
+    if (scratchDirCleanupError) console.warn(`benchmark.ts: unexpected error during cleanup: ${scratchDirCleanupError}`);
     if (closePoolError) console.warn(`benchmark.ts: failed to close the database pool: ${closePoolError}`);
   }
 
@@ -275,7 +315,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  const cascadeVerdictSummary = summarizeVerdict(results.map((r) => r.cascade.verdict));
+  // TRO-538 / LH-033: cascadeVerdictSummary is now built from `cascadeVerdict`
+  // (post-resolution end state), NOT `routerVerdict` (the pre-resolution
+  // interim number every earlier committed benchmark report actually used —
+  // see docs/diagnostics/2026-08-12-verdict-miss-triage.md §5 S5 and §8).
+  // cascadeRouterStageSummary is kept, separately, as an informational
+  // number only — never the one compared against the Sonnet-only arm.
+  const cascadeVerdictSummary = summarizeVerdict(results.map((r) => r.cascade.cascadeVerdict));
+  const cascadeRouterStageSummary = summarizeVerdict(results.map((r) => r.cascade.routerVerdict));
   const sonnetOnlyVerdictSummary = summarizeVerdict(results.map((r) => r.sonnetOnly.verdict));
   const cascadeTotalCostUsd = results.reduce((sum, r) => sum + r.cascade.cost.usd, 0);
   const sonnetOnlyTotalCostUsd = results.reduce((sum, r) => sum + r.sonnetOnly.cost.usd, 0);
@@ -284,11 +331,26 @@ async function main(): Promise<void> {
     ticket: "TRO-470 / LH-030",
     measuredAt: new Date().toISOString(),
     manifestVersion: manifest.version,
+    manifestContentHash: hashManifestFile(DEFAULT_MANIFEST_PATH),
     caseIds: [...caseIds].sort(),
     haikuModel: HAIKU_EXTRACTOR_MODEL,
     sonnetModel: SONNET_RESOLVER_MODEL,
-    cascade: { ...cascadeVerdictSummary, totalCostUsd: cascadeTotalCostUsd },
-    sonnetOnly: { ...sonnetOnlyVerdictSummary, totalCostUsd: sonnetOnlyTotalCostUsd },
+    cascade: {
+      ...cascadeVerdictSummary,
+      totalCostUsd: cascadeTotalCostUsd,
+      stage:
+        "post-resolution (cascade end state): the router's own verdict, merged with the resolver's per-field " +
+        "disposition for every case the router escalated — cascade-runner.ts's mergeResolutionIntoActualVerdict " +
+        "(TRO-538 / LH-033).",
+    },
+    sonnetOnly: {
+      ...sonnetOnlyVerdictSummary,
+      totalCostUsd: sonnetOnlyTotalCostUsd,
+      stage:
+        "post-resolution: every field resolved by Sonnet on every case, regardless of what a router would have " +
+        "decided — this arm has no router pass at all (resolver-rollup.ts's own module comment).",
+    },
+    cascadeRouterStageVerdictAccuracy: cascadeRouterStageSummary.labelVerdictAccuracy,
     labelVerdictAccuracyDeltaPercentagePoints:
       (sonnetOnlyVerdictSummary.labelVerdictAccuracy.rate - cascadeVerdictSummary.labelVerdictAccuracy.rate) * 100,
     costDeltaUsd: sonnetOnlyTotalCostUsd - cascadeTotalCostUsd,
@@ -304,6 +366,16 @@ async function main(): Promise<void> {
         "between arms is whether every field or only escalated fields go to Sonnet.",
       "The sonnet-only arm's government_warning field can only ever reach MATCH or NEEDS_REVIEW, never MISMATCH — " +
         "it has no second (OCR) channel to corroborate a deviation against. See resolver-rollup.ts's rollUpGovernmentWarning.",
+      "TRO-538 / LH-033: cascade.labelVerdictAccuracy is now scored POST-RESOLUTION (cascadeVerdict), matching the " +
+        "sonnet-only arm's own stage. Earlier committed benchmark reports scored the cascade arm's ROUTER-ONLY " +
+        "verdict (routerVerdict) against this same sonnet-only number — a stage mismatch. See " +
+        "cascadeRouterStageVerdictAccuracy for the router-only number, kept for continuity; do not compare it " +
+        "against sonnetOnly.",
+      "The cascade arm's government_warning field, when it gets swept into a resolver call for an unrelated " +
+        "label-level reason (e.g. CONFLICTING_EXTRACTION on a different field), is re-scored through the SAME " +
+        "single-channel-only rollup the sonnet-only arm uses — so a router-level warning MISMATCH cannot survive " +
+        "a resolver round-trip as a MISMATCH; it downgrades to NEEDS_REVIEW / WARNING_MISMATCH. See " +
+        "cascade-runner.ts's mergeResolutionIntoActualVerdict doc comment.",
     ],
     cases: results,
     failures,
@@ -315,12 +387,17 @@ async function main(): Promise<void> {
   console.log("");
   console.log(`benchmark.ts: ${results.length}/${caseIds.length} case(s) scored on both arms, ${failures.length} failed.`);
   console.log(
-    `benchmark.ts: cascade label-verdict accuracy ${(cascadeVerdictSummary.labelVerdictAccuracy.rate * 100).toFixed(1)}% (${cascadeVerdictSummary.labelVerdictAccuracy.correct}/${cascadeVerdictSummary.labelVerdictAccuracy.total}), cost $${cascadeTotalCostUsd.toFixed(4)}`,
+    `benchmark.ts: cascade end-state (post-resolution) label-verdict accuracy ${(cascadeVerdictSummary.labelVerdictAccuracy.rate * 100).toFixed(1)}% (${cascadeVerdictSummary.labelVerdictAccuracy.correct}/${cascadeVerdictSummary.labelVerdictAccuracy.total}), cost $${cascadeTotalCostUsd.toFixed(4)}`,
   );
   console.log(
-    `benchmark.ts: sonnet-only label-verdict accuracy ${(sonnetOnlyVerdictSummary.labelVerdictAccuracy.rate * 100).toFixed(1)}% (${sonnetOnlyVerdictSummary.labelVerdictAccuracy.correct}/${sonnetOnlyVerdictSummary.labelVerdictAccuracy.total}), cost $${sonnetOnlyTotalCostUsd.toFixed(4)}`,
+    `benchmark.ts: cascade ROUTER-STAGE (pre-resolution, informational only) label-verdict accuracy ${(cascadeRouterStageSummary.labelVerdictAccuracy.rate * 100).toFixed(1)}% (${cascadeRouterStageSummary.labelVerdictAccuracy.correct}/${cascadeRouterStageSummary.labelVerdictAccuracy.total})`,
   );
-  console.log(`benchmark.ts: accuracy delta ${report.labelVerdictAccuracyDeltaPercentagePoints.toFixed(1)} percentage points (sonnet-only minus cascade)`);
+  console.log(
+    `benchmark.ts: sonnet-only (post-resolution) label-verdict accuracy ${(sonnetOnlyVerdictSummary.labelVerdictAccuracy.rate * 100).toFixed(1)}% (${sonnetOnlyVerdictSummary.labelVerdictAccuracy.correct}/${sonnetOnlyVerdictSummary.labelVerdictAccuracy.total}), cost $${sonnetOnlyTotalCostUsd.toFixed(4)}`,
+  );
+  console.log(
+    `benchmark.ts: accuracy delta ${report.labelVerdictAccuracyDeltaPercentagePoints.toFixed(1)} percentage points (sonnet-only minus cascade end state, both post-resolution)`,
+  );
   console.log(
     `benchmark.ts: cost delta $${report.costDeltaUsd.toFixed(4)} (${report.costDeltaMultiplier !== null ? `${report.costDeltaMultiplier.toFixed(1)}x` : "n/a"})`,
   );

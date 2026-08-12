@@ -6,10 +6,15 @@
  * JPEG the ZIP wants. This script joins the two. It creates no new assets.
  *
  * Why this exists: nothing has ever driven a real batch through the deployed
- * instance. `docs/deploy.md` records the risk it tests (TRO-518) — the web
- * service and the worker run on separate Render services, so they hold
- * separate disks, and `local-file-storage.ts` writes to whichever process
- * saved the image. A small batch answers that question for a few cents.
+ * instance. `docs/deploy.md` records the risk this fixture tests (TRO-518)
+ * — the web service and the worker run on separate Render services, so they
+ * held separate disks, and the storage adapter of the day wrote each image
+ * to whichever process saved it. TRO-518 fixed that (batch images now go
+ * through the database both services already share, `db-image-storage.ts`),
+ * but the fix is unverified against a real second Render service until
+ * someone runs an actual batch against the deployed instance — this
+ * fixture is still how to do that cheaply, and this script's own job (join
+ * the golden set into an uploadable batch) has not changed.
  *
  * The fixture is self-checking. Every case already records the verdict the
  * router should return, so a reader compares the batch results against

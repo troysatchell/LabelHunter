@@ -6,15 +6,12 @@
  * properties `../batch-queue/pool.test.ts` proves for the batch pools, at a
  * smaller scale appropriate to this queue's own expected volume.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
 import { inArray } from "drizzle-orm";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { db } from "../../lib/db";
 import { reviewQueue } from "../../lib/db/schema";
-import { readLabelImage } from "../storage/local-file-storage";
+import { readLabelImage } from "../storage/db-image-storage";
 import { buildResolverInputSnapshot } from "../batch-queue/resolver-snapshot";
 import { DEFAULT_BACKOFF_CONFIG } from "../batch-queue/backoff";
 import { makeFlaggedFields, makeMockMessage, makeRouterResult, WELL_FORMED_RESOLVER_BODY } from "../resolver/test-support";
@@ -27,15 +24,9 @@ import {
   enqueuePendingReviewQueueItemFixture,
 } from "./test-support";
 
-let scratchDir: string;
 const createdApplicationIds: number[] = [];
 
-beforeEach(async () => {
-  scratchDir = await mkdtemp(path.join(tmpdir(), "labelhunter-tro511-loop-"));
-});
-
 afterEach(async () => {
-  await rm(scratchDir, { recursive: true, force: true });
   for (const id of createdApplicationIds.splice(0)) {
     await cleanupApplicationFixture(db, id);
   }
@@ -50,7 +41,7 @@ function fakeAnthropicClient(create: () => Promise<Anthropic.Message>): Anthropi
 }
 
 async function seedPendingRow(filename: string): Promise<number> {
-  const { applicationId, labelImageId } = await createApplicationAndSavedImageFixture(db, filename, scratchDir);
+  const { applicationId, labelImageId } = await createApplicationAndSavedImageFixture(db, filename);
   createdApplicationIds.push(applicationId);
   const verificationId = await createVerificationFixture(db, applicationId, labelImageId);
   const snapshot = buildResolverInputSnapshot(makeExtraction(), makeRouterResult(), makeFlaggedFields());
@@ -64,7 +55,7 @@ describe("startSingleLabelResolveWorker — config validation (standing rule 13)
     workerIdPrefix: "test",
     leaseSeconds: 60,
     pollIntervalMs: 20,
-    readLabelImage: (p: string) => readLabelImage(p, { baseDir: scratchDir }),
+    readLabelImage,
     backoffConfig: DEFAULT_BACKOFF_CONFIG,
   };
 
@@ -117,7 +108,7 @@ describe("startSingleLabelResolveWorker — real concurrency drains the queue ex
         concurrency: 3,
         leaseSeconds: 60,
         pollIntervalMs: 15,
-        readLabelImage: (p) => readLabelImage(p, { baseDir: scratchDir }),
+        readLabelImage,
         backoffConfig: DEFAULT_BACKOFF_CONFIG,
         scopeToVerificationIds: verificationIds,
         anthropicClient: fakeAnthropicClient(async () => makeMockMessage(JSON.stringify(WELL_FORMED_RESOLVER_BODY))),

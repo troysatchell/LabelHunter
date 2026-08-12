@@ -24,7 +24,12 @@ import type {
   RubricVector,
 } from "./types";
 
-const DEFAULT_MANIFEST_PATH = path.resolve(
+/** Exported so a caller that needs the manifest's own file path — not just
+ * its parsed content — can read the identical file this loader reads
+ * (TRO-538 / LH-033: `scripts/eval/manifest-hash.ts` hashes this same path,
+ * so "the manifest we loaded" and "the manifest we hashed" can never
+ * drift apart into two different files). */
+export const DEFAULT_MANIFEST_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../../golden-set/manifest.json",
 );

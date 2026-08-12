@@ -100,8 +100,8 @@ right" is not.
 ### 2.4 One thing worth noticing about `STONE'S THROW`
 
 The named case is a **normalization** problem, not a judgment problem. Apply Unicode NFKC,
-casefold, and apostrophe folding, and both strings become `stone's throw`. They are then
-equal. No fuzziness is needed, and no model is needed.
+casefold, apostrophe folding, and punctuation removal, and both strings become `stones throw`.
+They are then equal. No fuzziness is needed, and no model is needed.
 
 Fuzzy matching covers only the residual: typos, dropped words, and abbreviations. That
 residual is where the model earns its place. Say this in the interview — it shows the team
@@ -629,10 +629,17 @@ Normalization pipeline, in this fixed order:
 3. fold apostrophe variants (`'`, `` ` ``, `´`) to `'`
 4. strip diacritics
 5. collapse internal whitespace, trim ends
-6. drop punctuation except internal apostrophes and hyphens
+6. drop punctuation, including apostrophes, except an internal hyphen
 
-`STONE'S THROW` and `Stone's Throw` both become `stone's throw`. Similarity is 1.0. This is a
+`STONE'S THROW` and `Stone's Throw` both become `stones throw`. Similarity is 1.0. This is a
 named test case in LH-013, written before the comparator.
+
+*(Amended by TRO-536, 2026-08-12. Step 6 originally kept an internal apostrophe. This worked
+example originally printed the literal `stone's throw`. TRO-536 found a second carrier of this
+rule. case-15's label prints `STONES THROW`, with no apostrophe at all. Against the filed
+`Stone's Throw`, it scored 0.923077 — just under the 0.95 MATCH threshold. Step 6 now drops the
+apostrophe too. The outcome here is unchanged: the named pair still folds to one string and
+still scores 1.0. Only the folded spelling changed.)*
 
 PRD §3.3 says "distance beyond threshold → REVIEW, never silent FAIL", and this table follows
 that literally. A completely different brand therefore also goes to REVIEW rather than FAIL.

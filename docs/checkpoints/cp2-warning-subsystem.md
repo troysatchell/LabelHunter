@@ -485,6 +485,22 @@ The decision table:
 | disagree | neither equals | **REVIEW** `WARNING_MISMATCH` | We do not know what the label says |
 | OCR unavailable or below the confidence floor | — | single-channel rules below | |
 
+> **Amendment, 2026-08-12 (TRO-535 / LH-030b).** This row merges two different states. A
+> statutory field passed on one channel while the golden set's tiny-print cases (case-23,
+> case-24; TH-R9, rubric V4) proved the discarded OCR candidate read 47 and 42 edits of
+> garbage — real evidence, not the "OCR never ran" state the row's wording implies. The row
+> above is split into two. The single-channel rules below still apply to both — this
+> amendment changes which inputs reach them, not what happens once they do.
+>
+> | Split state | Meaning |
+> |---|---|
+> | OCR unavailable | Region detection found no crop, or `runWarningOcr` itself returned no result. No reading exists to discard. |
+> | OCR produced a candidate below the confidence floor | A reading exists. Its own Tesseract confidence says not to trust it alone. |
+>
+> This document does not change the original row's text above — CP-2 is an approved
+> checkpoint, and the split is recorded here, dated, rather than silently rewritten into it.
+> The floor itself also moved; see the amendment after the single-channel table below.
+
 **Single-channel rules** (the OCR candidate is discarded when `data.confidence < 60`, **proposed**,
 on Tesseract's 0–100 scale):
 
@@ -497,6 +513,38 @@ on Tesseract's 0–100 scale):
 That last row is the asymmetry worth defending. A single-channel PASS is allowed at high
 confidence; a single-channel FAIL never is. The reason is TH-R10 and the cost of the two errors:
 a wrong PASS delays a catch, a wrong FAIL accuses a compliant producer of a federal violation.
+
+> **Amendment, 2026-08-12 (TRO-535 / LH-030b).** The `60` above was never measured — its own
+> "proposed" label said so, and this section named the ticket that would replace it (§12; §11
+> open question 7). That ticket ran. `scripts/eval/ocr-floor-sweep.ts` replayed the OCR channel
+> (`detectWarningRegion` -> `cropForOcr` -> `runWarningOcr` -> `evaluateCandidate`) read-only
+> against all 32 golden-set cases — no API call, no repo write except the committed artifact
+> (`scripts/eval/results/ocr-floor-sweep.json`).
+>
+> Every warning-bearing case's OCR confidence landed in one of two clusters, with a wide, empty
+> gap between them:
+>
+> | Cluster | Cases | Confidence | What OCR actually read |
+> |---|---|---|---|
+> | Low | case-24, case-23 | 56, 58 | Tiny print, real characters, badly degraded: distance 42 and 47 from canonical |
+> | High | every other warning-bearing case (25 of 27 measured) | 91, 95, or 96 | Clean reads, including one glare-affected case (case-18, confidence 91) that stayed confident despite reading garbage — Tesseract's own confidence is not a read-quality oracle, which is exactly why the dual-channel AGREEMENT check, not this floor, is the real safety net |
+>
+> The corpus draws no boundary inside the 59-90 gap — nothing there would move if the floor sat
+> at 60 or 90. But nothing in that gap fixes the bug either: 60 already sits inside it, above
+> both tiny-print readings, which is exactly why the OCR evidence on case-23 and case-24 was
+> always discarded, however badly the print degraded. The floor had to move below the low
+> cluster, not within the gap above it.
+>
+> `OCR_CONFIDENCE_FLOOR` is now **50** — the midpoint of Tesseract's 0-100 confidence scale, not
+> the minimum number that flips the two cases (55 or 56 would already do that). 50 sits a
+> genuine 6-8 points under both measured tiny-print readings. The corpus has no case between
+> blank-crop noise (confidence 0, `ocr.test.ts`'s own measured value) and 56, so nothing here
+> proves 50 over 40 or 45 — that gap is a named limit, not a hidden one; §11 open question 7's
+> cost-of-choosing-wrong reasoning (too low inflates the suspect rate with garbage disagreement)
+> is why this document does not pick the lowest defensible number either. See
+> `src/server/warning/reconcile.ts:62-68` for the same reasoning carried in code, and
+> `docs/diagnostics/2026-08-12-verdict-miss-triage.md` §3B / `docs/diagnostics/2026-08-12-fix-tickets.md`
+> S2 for the diagnosis this measurement answers.
 
 ---
 
@@ -1488,6 +1536,13 @@ set, exactly as CP-1 §4.5 sweeps the model confidence thresholds. *Cost of choo
 high and we lose the second channel on ordinary labels, which pushes everything down the
 single-channel path; set too low and garbage OCR manufactures disagreements and inflates the
 suspect rate.
+
+> **Resolved, 2026-08-12 (TRO-535 / LH-030b).** Swept against all 32 golden-set cases,
+> read-only, no API call (`scripts/eval/results/ocr-floor-sweep.json`). `60` was the wrong
+> starting value in the direction this question itself warned about — "too high... pushes
+> everything down the single-channel path" — measured on case-23 and case-24's real tiny-print
+> OCR readings (58 and 56). `OCR_CONFIDENCE_FLOOR` is now **50**. Full reasoning and the sweep
+> table are in the amendment after §4.5's single-channel table, above.
 
 **8. Store the canonical text as two statements or one string?**
 §2.4 found the CFR renders two paragraphs. *Recommendation:* store a two-element constant and derive

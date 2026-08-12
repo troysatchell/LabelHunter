@@ -106,7 +106,7 @@ import {
   compareGovernmentWarningFromImage as defaultCompareGovernmentWarning,
   type CompareGovernmentWarningFromImageInput,
 } from "../../../server/warning";
-import { saveLabelImage as defaultSaveLabelImage, type SavedLabelImage } from "../../../server/storage/local-file-storage";
+import { saveLabelImage as defaultSaveLabelImage, type SavedLabelImage } from "../../../server/storage/db-image-storage";
 import { parseVerifyFormData } from "./parse-request";
 import { FIELD_LABELS, type VerifyErrorKind, type VerifyErrorResponse, type VerifyFieldResult, type VerifySuccessResponse } from "./types";
 

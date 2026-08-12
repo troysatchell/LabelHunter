@@ -7,7 +7,7 @@
  *   3. fold apostrophe variants (`'`, `` ` ``, `´`) to `'`
  *   4. strip diacritics
  *   5. collapse internal whitespace, trim ends
- *   6. drop punctuation except internal apostrophes and hyphens
+ *   6. drop punctuation, including apostrophes, except an internal hyphen
  *
  * This is the JUDGMENT regime (TH-R8): brand_name and class_type only. It
  * never runs on the government warning — the exact regime is LH-020's own
@@ -39,15 +39,18 @@ function caseFold(text: string): string {
  * exactly as quoted — not expanded to cover every Unicode apostrophe-like
  * character.
  *
- * Known, measured gap: U+2019 RIGHT SINGLE QUOTATION MARK ("Stone’s Throw",
- * a stylized apostrophe a real vision-model extraction may emit) is NOT one
- * of the three named variants, so it is not folded here — step 6 drops it
- * as ordinary punctuation instead. Measured effect: `"Stone’s Throw"`
- * against `"Stone's Throw"` scores ~0.923 similarity (`brand.ts`'s
- * `similarity.ts`), just under the 0.95 MATCH threshold — this pair routes
- * to NEEDS_REVIEW rather than a clean MATCH. See `normalize.test.ts`'s
- * pinning test for this file's own record of the gap, and this ticket's
- * final report for the open recommendation to CP-1's owner.
+ * Historical gap, closed by TRO-536. U+2019 RIGHT SINGLE QUOTATION MARK
+ * ("Stone’s Throw", a stylized apostrophe a real vision-model extraction may
+ * emit) is still not one of the three named variants, so step 3 still does
+ * not fold it — that part has not changed. Before TRO-536, step 6 kept the
+ * straight apostrophe but dropped every other punctuation mark, including
+ * U+2019. So `"Stone’s Throw"` and `"Stone's Throw"` normalized to two
+ * different strings and scored ~0.923 similarity (`brand.ts`'s
+ * `similarity.ts`), just under the 0.95 MATCH threshold. TRO-536 (case-15,
+ * a label that prints "STONES THROW" with no apostrophe at all) closed the
+ * gap from the other side: step 6 now drops the straight apostrophe too, so
+ * both strings converge on the same punctuation-free form and score 1.0.
+ * See `normalize.test.ts`'s pinning test for the measured record.
  */
 function foldApostropheVariants(text: string): string {
   return text.replace(/[`´]/g, "'");
@@ -75,17 +78,20 @@ function collapseWhitespace(text: string): string {
 }
 
 /**
- * Step 6: drops punctuation other than an apostrophe or a hyphen — and,
- * since the rule says "internal", also drops a leading or trailing
- * apostrophe/hyphen (the ones that are not internal to anything). Removing a
- * character outright (never replacing it with a space) is what keeps
- * `"Old Tom, Distillery"` from becoming two words fused wrong; a run of
- * whitespace this can leave behind (e.g. where a comma sat between two
- * words) is cleaned up by the final `collapseWhitespace` pass below.
+ * Step 6: drops every punctuation mark except a hyphen — including the
+ * apostrophe (TRO-536, case-15: a label that prints "STONES THROW" with no
+ * apostrophe must still match an application filed as "Stone's Throw"). And,
+ * since the rule says "internal" for the hyphen that survives, also drops a
+ * leading or trailing hyphen (the one that is not internal to anything).
+ * Removing a character outright (never replacing it with a space) is what
+ * keeps `"Old Tom, Distillery"` from becoming two words fused wrong; a run
+ * of whitespace this can leave behind (e.g. where a comma or an apostrophe
+ * sat between two words) is cleaned up by the final `collapseWhitespace`
+ * pass below.
  */
-function dropPunctuationExceptApostropheAndHyphen(text: string): string {
-  const kept = text.replace(/\p{P}/gu, (mark) => (mark === "'" || mark === "-" ? mark : ""));
-  return kept.replace(/^['-]+|['-]+$/g, "");
+function dropPunctuationExceptHyphen(text: string): string {
+  const kept = text.replace(/\p{P}/gu, (mark) => (mark === "-" ? mark : ""));
+  return kept.replace(/^-+|-+$/g, "");
 }
 
 /**
@@ -113,6 +119,6 @@ export function normalizeForFuzzyMatch(text: string): string {
   out = caseFold(out); // 2
   out = stripDiacritics(out); // 4
   out = collapseWhitespace(out); // 5
-  out = dropPunctuationExceptApostropheAndHyphen(out); // 6
+  out = dropPunctuationExceptHyphen(out); // 6
   return collapseWhitespace(out); // tidy: step 6 can leave a doubled space
 }

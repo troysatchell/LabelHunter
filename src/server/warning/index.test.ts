@@ -12,12 +12,16 @@
  */
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
+import { loadGoldenSetManifest } from "../../lib/golden-set/loader";
 import type { ExtractedGovernmentWarning } from "../extractor/types";
 import type { PixelRegion } from "../preprocessing/region";
 import {
   compareGovernmentWarningFromImage,
+  OCR_TIMEOUT_MS,
+  runWarningOcr,
   toVlmWarningCandidate,
   type CompareGovernmentWarningFromImageDeps,
+  type RunWarningOcrDeps,
 } from "./index";
 import { CANONICAL_WARNING_TEXT } from "./canonical";
 
@@ -162,6 +166,16 @@ describe("compareGovernmentWarningFromImage — real concurrency (CP-2 §4.4)", 
 });
 
 describe("compareGovernmentWarningFromImage — real image, real OCR, real region detection", () => {
+  const goldenSetManifest = loadGoldenSetManifest();
+
+  /** Looks up a case by ID so the image path and warning text come from the
+   * manifest, not a pasted literal (INT-001, interpretations.md:9-24). */
+  function findGoldenCase(caseId: string) {
+    const found = goldenSetManifest.cases.find((c) => c.caseId === caseId);
+    if (!found) throw new Error(`golden-set manifest is missing ${caseId}`);
+    return found;
+  }
+
   it(
     "case-01: PASS end to end, using the real pipeline against a real golden-set image",
     async () => {
@@ -174,4 +188,105 @@ describe("compareGovernmentWarningFromImage — real image, real OCR, real regio
     },
     15_000,
   );
+
+  // INT-001 (audit/requirements/interpretations.md:9-24): at least one FAIL
+  // case must run the real pipeline, not simulated channels. This test
+  // proves TH-R9's title-case FAIL case with real region detection and
+  // real OCR — comparator-level proof alone is not enough.
+  //
+  // Pass TITLE_CASE, not extractedWarning()'s ALL_CAPS default. This
+  // image's prefix is genuinely title case (manifest:
+  // governmentWarningPrefixAllCaps: false). The ALL_CAPS default makes
+  // applyPrefixCasingCrossCheck (reconcile.ts) downgrade this MISMATCH to
+  // NEEDS_REVIEW.
+  it(
+    "case-08: FAIL — real image, real OCR, real region detection, title-case prefix",
+    async () => {
+      const goldenCase = findGoldenCase("case-08-title-case-warning-prefix-only");
+      const originalImage = readFileSync(goldenCase.imagePath);
+      const transcription = goldenCase.label.governmentWarningText;
+
+      const result = await compareGovernmentWarningFromImage({
+        extracted: extractedWarning({ transcription, evidence: transcription, prefix_casing: "TITLE_CASE" }),
+        originalImage,
+      });
+
+      expect(result.verdict).toBe("MISMATCH");
+      expect(result.note).toBe("Government Warning must print in capital letters.");
+    },
+    15_000,
+  );
+
+  // INT-001's third acceptance shape (TH-R9): a reworded warning must also
+  // fail on the real pipeline. reconcile.test.ts:80-87 already proves the
+  // comparator alone. This test proves the pipeline that feeds it, on a
+  // real image, with real OCR.
+  //
+  // INT-001 names only one required case. This one is optional. It is
+  // nearly free, and it closes TH-R9's last acceptance case on a real
+  // image.
+  it(
+    "case-10: FAIL — real image, real OCR, real region detection, reworded warning",
+    async () => {
+      const goldenCase = findGoldenCase("case-10-reworded-warning-clause-one");
+      const originalImage = readFileSync(goldenCase.imagePath);
+      const transcription = goldenCase.label.governmentWarningText;
+
+      const result = await compareGovernmentWarningFromImage({
+        extracted: extractedWarning({ transcription, evidence: transcription, prefix_casing: "ALL_CAPS" }),
+        originalImage,
+      });
+
+      expect(result.verdict).toBe("MISMATCH");
+      expect(result.note).toBe("Government Warning wording differs from the required text.");
+    },
+    15_000,
+  );
+});
+
+/**
+ * TRO-519, at this module's own public entry point. `ocr.test.ts` proves
+ * `runWarningOcr` itself degrades to `null` on a timeout; this proves the
+ * REAL production wiring built from it — `compareGovernmentWarningFromImage`
+ * -> `runOcrChannel` -> `runWarningOcr` — degrades all the way through to a
+ * `WarningComparatorResult` within a bounded time, not just that the
+ * innermost function does. Only `createWorker` is faked (never resolving —
+ * the hung-worker shape, not a real sleep, lessons.md rule 8); region
+ * detection, cropping, and `runWarningOcr` itself are all the real
+ * production code.
+ */
+describe("compareGovernmentWarningFromImage — OCR channel timeout (TRO-519)", () => {
+  const FAKE_REGION: PixelRegion = { x: 0, y: 0, width: 10, height: 10 };
+
+  it("degrades to single-channel MATCH, not an indefinite hang, when the real runWarningOcr's own createWorker never resolves", async () => {
+    vi.useFakeTimers();
+    try {
+      const neverResolvingCreateWorker: RunWarningOcrDeps["createWorker"] = vi.fn(
+        () => new Promise(() => {}),
+      ) as unknown as RunWarningOcrDeps["createWorker"];
+
+      const fakeDeps: CompareGovernmentWarningFromImageDeps = {
+        detectRegion: vi.fn().mockResolvedValue({ region: FAKE_REGION, method: "classical" }),
+        crop: vi.fn().mockResolvedValue(Buffer.from([])),
+        ocr: (crop) => runWarningOcr(crop, { createWorker: neverResolvingCreateWorker }),
+      };
+
+      // A clean, confident VLM read: once OCR degrades to unavailable, CP-2
+      // §4.5's single-channel table makes the expected verdict unambiguous
+      // (exact match, confidence >= 0.90 -> MATCH), so this test proves
+      // more than "it eventually returns something" without depending on
+      // reconcile.ts's own internals (out of this ticket's scope).
+      const resultPromise = compareGovernmentWarningFromImage(
+        { extracted: extractedWarning({ confidence: 0.95 }), originalImage: Buffer.from([]) },
+        fakeDeps,
+      );
+
+      await vi.advanceTimersByTimeAsync(OCR_TIMEOUT_MS);
+      const result = await resultPromise;
+
+      expect(result.verdict).toBe("MATCH");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

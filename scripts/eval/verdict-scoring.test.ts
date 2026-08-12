@@ -187,6 +187,17 @@ describe("scoreVerdict", () => {
     expect(result.fields.find((f) => f.field === "government_warning")?.actualReviewReason).toBeNull();
   });
 
+  it("carries warningChannel through onto the case score when the caller supplies one (TRO-535 / LH-030b)", () => {
+    const actual: ActualVerdict = { labelVerdict: "PASS", headlineReason: null, fields: ALL_MATCH_FIELDS, warningChannel: "single" };
+    const result = scoreVerdict(testGoldenCase(), actual);
+    expect(result.warningChannel).toBe("single");
+  });
+
+  it("normalizes an absent warningChannel to null, never undefined — the Sonnet-only benchmark arm never sets it", () => {
+    const result = scoreVerdict(testGoldenCase(), { labelVerdict: "PASS", headlineReason: null, fields: ALL_MATCH_FIELDS });
+    expect(result.warningChannel).toBeNull();
+  });
+
   it("threads government_warning's own actualReviewReason through independently of the label headlineReason — TRO-469's warning-segmentation input", () => {
     // The real, observed shape from case-11's live run (CHANGES.md TRO-470):
     // the label escalates on a DIFFERENT field's blocker while

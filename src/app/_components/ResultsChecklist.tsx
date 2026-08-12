@@ -9,13 +9,18 @@ import Link from "next/link";
 import type { FieldVerdict, LabelVerdict } from "../../server/router";
 import type { VerifySuccessResponse } from "../api/verify/types";
 
-const VERDICT_ICON: Record<FieldVerdict, string> = {
+// Exported (LH-042 / TRO-475) so the batch results table
+// (`BatchResultsTable.tsx`) shows the identical icon and status word for
+// the identical per-field verdict — the same product fact, in two views,
+// must read the same way (the same reasoning `LABEL_BANNER_CLASS` and
+// `labelVerdictText` below already state for the label-level verdict).
+export const VERDICT_ICON: Record<FieldVerdict, string> = {
   MATCH: "✓",
   MISMATCH: "✗",
   NEEDS_REVIEW: "⚠",
 };
 
-const VERDICT_STATUS_TEXT: Record<FieldVerdict, string> = {
+export const VERDICT_STATUS_TEXT: Record<FieldVerdict, string> = {
   MATCH: "Match.",
   MISMATCH: "Does not match.",
   NEEDS_REVIEW: "Needs review.",

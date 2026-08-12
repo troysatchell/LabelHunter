@@ -308,6 +308,7 @@ export type {
   PreprocessingSignal,
   ReviewReason,
   RouterFieldKey,
+  WarningComparatorChannel,
   WarningComparatorResult,
 } from "./types";
 export { getTrustedThreshold, classifyConfidenceBand, shouldEscalateField } from "./confidence";

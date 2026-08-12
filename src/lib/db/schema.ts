@@ -1,6 +1,7 @@
 import { relations, sql } from "drizzle-orm";
 import {
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -561,6 +562,56 @@ export const batchQueueItems = pgTable(
     uniqueIndex("batch_queue_items_resolve_verification_unique")
       .on(table.verificationId)
       .where(sql`${table.kind} = 'RESOLVE'`),
+  ],
+);
+
+/**
+ * One row per UTC calendar day: the running total, in real USD, this
+ * deployment has spent on Anthropic API calls that day (TRO-482 / LH-061,
+ * PRD §8, TH-R6). Backs the daily spend budget guard — `src/server/budget/
+ * daily-budget.ts` reads and writes this table; `src/app/api/verify/route.ts`
+ * and `src/app/api/batch/start/route.ts` check it before the model call, not
+ * after.
+ *
+ * PERSISTED, not in-memory (unlike the rate limiter, `src/server/rate-limit/`):
+ * a process restart (a deploy, a crash, Render recycling the instance) must
+ * not silently reset spend to zero and defeat the guard exactly when a
+ * traffic spike is causing restarts. One row per day, upserted in place —
+ * `spendDate` is the primary key, so "add today's real, measured cost" is
+ * one atomic `INSERT ... ON CONFLICT (spend_date) DO UPDATE SET total_usd =
+ * total_usd + $1`, safe under concurrent requests.
+ *
+ * No PII (TH-R6): a dollar figure keyed by calendar date, nothing else.
+ */
+export const dailySpend = pgTable(
+  "daily_spend",
+  {
+    // UTC calendar day this row totals, as a plain SQL DATE (no time
+    // component) — "today" is a single equality check against this column,
+    // never a range query. `src/server/budget/daily-budget.ts`'s
+    // `todayUtcDateString()` is the one place that decides what "today"
+    // means, so every reader and writer agrees.
+    spendDate: date("spend_date").primaryKey(),
+    // scale 6, not the money-ish 2 or 4: a single Haiku call costs
+    // fractions of a cent (real observed figures like $0.008932 elsewhere
+    // in this repo's diagnosis docs) — 4 decimal places would silently
+    // round that to $0.0089 on every write, compounding real precision
+    // loss across hundreds of calls a day. precision 12 leaves headroom to
+    // six figures of total daily spend, far past anything this budget
+    // guard's own $5-$25 range ever approaches.
+    totalUsd: numeric("total_usd", { precision: 12, scale: 6, mode: "number" })
+      .notNull()
+      .default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    check("daily_spend_total_usd_non_negative", sql`${table.totalUsd} >= 0`),
   ],
 );
 

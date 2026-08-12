@@ -73,8 +73,9 @@ A future ticket adds the first one, once real bottle photos exist. Follow these 
 6. Run `pnpm golden:build`. This command composites the label onto the committed backdrop.
    The command is deterministic and makes no network call.
 
-`scripts/golden/verify.ts` (LH-006, not yet built) will eventually check this track's
-consistency too. Until then, the loader already enforces the schema shape:
+`scripts/golden/verify.ts` (LH-006) checks this track's consistency: every
+`rendered+ai-backdrop` case's backdrop file must exist at
+`golden-set/backdrops/<caseId>.png`. The loader enforces the schema shape:
 `src/lib/golden-set/loader.ts`.
 
 Every case's `verified` field stays `false`, even though its image is now real. `verified`
@@ -89,6 +90,14 @@ as its distinguishing feature) and **V10** (batch of ≥20 — a property of the
 whole, not any single case; the manifest's 29 cases already satisfy the ≥20 count, but no case
 individually claims V10). `loader.test.ts` asserts these two gaps explicitly so they can't
 silently drift — closing V7 means adding a case, not editing the test's exclusion list.
+
+`scripts/golden/verify.ts` (`pnpm golden:verify`, LH-006) enforces the same rule as its own
+CI gate: V10 counts as covered once the manifest holds ≥20 cases; V7 is a tracked, named
+exception (`KNOWN_VECTOR_GAPS`) that `verify.ts` reports as a known gap, not a failure. Any
+*other* vector losing its only covering case fails the gate. If V7 gains a case without the
+exception being removed from `verify.ts` in the same change, the gate fails the other way —
+the same "can't silently drift" property `loader.test.ts` already has, now also enforced at
+the CI/CLI layer.
 
 ## Manifest format
 

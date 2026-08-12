@@ -83,6 +83,140 @@ this changelog, the only existing files touched are `package.json` and `pnpm-loc
 (the new `fflate` dependency, used only by `zip.ts`) — every other file this ticket adds is
 new.
 
+## TRO-499 — LH-006: Golden set verify gate + CI smoke (2026-08-11)
+
+**What changed.** `scripts/golden/verify.ts` is the golden set's health check. It checks one
+thing: whether `golden-set/manifest.json`, the ticket's own "consumer interface for
+eval/latency harnesses," is trustworthy right now. Run it with `pnpm golden:verify`. It calls
+no model and makes no network call (TH-R7). Every check reads only the manifest and local
+files.
+
+It checks five things:
+1. The manifest loads and passes schema validation. This check calls
+   `src/lib/golden-set/loader.ts` directly, instead of checking the shape a second, separate
+   way. The verified-before-eval rule for `ai-generated` and `rendered+ai-backdrop` cases
+   already lives there.
+2. Every case's `imagePath` resolves to a real, non-empty file.
+3. Every file under `golden-set/images/` resolves back to some case's `imagePath`. This
+   catches an orphan in either direction, not just a manifest entry with a missing file.
+4. Every `rendered+ai-backdrop` case's backdrop file must exist, at
+   `golden-set/backdrops/<caseId>.png`. Its `referenceBottle` must resolve to a real, valid
+   bottle reference JSON (`src/lib/golden-set/bottleReference.ts` checks that schema too).
+   That JSON's own `referencePhoto` must exist as well. The realistic-corpus design doc asks
+   for this exact check
+   (`docs/superpowers/specs/2026-08-11-realistic-corpus-gemini-design.md` §6).
+5. Every `audit/rubric.md` Appendix A vector V1–V10 has at least one covering case.
+
+**The vector-coverage design decision.** Two vectors have zero coverage today. This is
+documented, existing repo state. This ticket did not introduce it.
+`golden-set/README.md` and `src/lib/golden-set/loader.test.ts` (TRO-497/LH-004) already name
+both gaps:
+- V7 is a net-contents format match, for example `"750 mL"` vs `"750ml"`. No case isolates
+  that difference yet.
+- V10 is a batch of 20 or more cases. That is a property of the whole manifest, not a tag on
+  one case.
+
+`verify.ts` mirrors that same tracked-not-silent pattern instead of inventing a second one.
+V10 counts as covered once the manifest holds 20 or more cases — it holds 29 today. V7 is a
+named exception: `KNOWN_VECTOR_GAPS` in `verify.ts`. The CLI reports it as a known gap, never
+as a failure. Any other vector still fails the gate if it loses its only covering case. If V7
+gains a case but `verify.ts` still lists the exception, the gate fails the other way. This
+catches drift in both directions — the same guarantee `loader.test.ts` already makes for
+itself.
+
+Closing V7 for real means adding a golden-set case whose distinguishing feature is a
+net-contents format difference. That is new manifest content. It falls outside this ticket's
+scope: a verify gate and a CI smoke test, not new test cases. This entry flags it as a real
+follow-up. It does not paper over the gap.
+
+**Files.**
+- `scripts/golden/verify.ts` — `verifyGoldenSet()`, the five checks above, plus a CLI `main`
+  guarded by the `import.meta.url` check (`scripts/golden/imagen.ts`'s existing pattern).
+  Importing this file for its exports never runs the CLI as a side effect.
+- `scripts/golden/verify.test.ts` — 20 tests. 19 of them each build a small, isolated
+  manifest and image tree, one failure mode per test. The last test calls `verifyGoldenSet()`
+  with no overrides. It checks the real, committed golden set and confirms that set still
+  passes today.
+- `scripts/golden/renderSmoke.ts`, `renderSmoke.test.ts` — the "one headless render smoke"
+  CI needs (design doc §7: "render one label headlessly, then run verify.ts"). It renders the
+  first renderable case through the real `render.ts` pipeline, then checks the result decodes
+  at the fixed canvas size. This check is narrower and faster than `render.test.ts`'s full
+  determinism-and-font suite, which still runs inside `pnpm test`.
+- `package.json` — added `golden:verify` and `golden:render-smoke` scripts, matching the
+  existing `golden:build` and `golden:imagen` naming.
+- `.github/workflows/ci.yml` — two new steps, "Golden set verify" and "Golden set render
+  smoke," placed after Lint and before Build. Neither needs Postgres or a full `pnpm build`,
+  so both fail fast, before the slower steps run.
+- `golden-set/README.md` — updated the two sentences that said `verify.ts` "will eventually"
+  check the realistic-corpus track and vector coverage. It does now. This documents how.
+
+**How to run it.** `pnpm golden:verify` (fast, no browser). `pnpm golden:render-smoke`
+(launches Chromium once, ~1-2s). Both now run in CI, before `pnpm build`.
+
+**Rollback.** `git revert` this ticket's commits. That removes `scripts/golden/verify.ts` and
+`renderSmoke.ts`, their tests, the two `package.json` scripts, and the two CI steps.
+`golden-set/manifest.json` itself is untouched. Nothing else depends on this ticket yet.
+
+## TRO-509 — Compositor silently truncated the label on trapezoid quads (2026-08-11)
+
+**What changed.** `compositeLabelOntoBackdrop` (`scripts/golden/compositeBackdrop.ts`) built
+its destination bounding box from all 4 detected quad corners, including `bottomRight`. The
+warp itself, `solveLinearMap`, is a 3-point affine map. It uses only `topLeft`, `topRight`, and
+`bottomLeft`. `bottomRight` never feeds the warp. That gap is a known, accepted approximation —
+the file's own docstring names it, and so does the design doc (§11).
+
+A real bottle-label photo detects as a genuine trapezoid, not a parallelogram. On a trapezoid,
+the detected `bottomRight` and the affine map's own implied 4th corner
+(`topRight + bottomLeft − topLeft`) are different points. The detected point can still fall
+inside the parallelogram the map draws. It is simply not that parallelogram's own far vertex.
+The old bounding box was built from the four detected corners. It could then stop short of the
+implied corner. That made it smaller than the parallelogram the warp actually draws. The pixel
+loop only visits pixels inside the bounding box. Pixels between the detected box's edge and the
+implied corner never got visited. They stayed raw backdrop. They never received label content.
+
+The renderer's `LABEL_REGIONS.warning` region sits in the label's bottom band. A trapezoid quad
+with this shape can truncate the statutory government-warning text. The pipeline would still
+report `governmentWarning: MATCH` — the comparator never sees the pixels that went missing.
+
+**The fix.** `compositeLabelOntoBackdrop` (`scripts/golden/compositeBackdrop.ts:85-90`) now
+builds `xs`/`ys` from `topLeft`, `topRight`, `bottomLeft`, and the computed implied 4th corner —
+not the detected `bottomRight`. This bounding box always covers the whole parallelogram the
+warp draws. Clamping to the backdrop image's bounds is unchanged. Only the corner set feeding
+it was wrong.
+
+**Tests.** `scripts/golden/compositeBackdrop.test.ts` gained a new block:
+`compositeLabelOntoBackdrop — genuine trapezoid quad (TRO-509)`. It reuses the exact corner
+values from this ticket's own measured reproduction: `topLeft(100,100)`, `topRight(400,120)`,
+`bottomLeft(130,500)`, `bottomRight(370,470)`.
+
+- The first test checks one destination pixel, `(420, 510)`. That pixel sits inside the
+  affine-drawn parallelogram and inside the corrected bounding box. It sits outside the old,
+  bug-produced one. Confirmed red first: before the fix, the pixel read as raw backdrop color
+  (green channel 10, the backdrop's own value). After the fix, it reads as the solid test
+  label's own color (green channel 180).
+- The second test scans every interior point of the affine-drawn parallelogram: 110,041 points.
+  The scan stays a small margin back from the exact geometric edge, so the check does not
+  depend on nearest-neighbor rounding at a sub-pixel boundary — that rounding is expected
+  behavior, not this defect. Confirmed red first: before the fix, 4,167 of those 110,041 points
+  (3.79%) read as raw backdrop. After the fix, zero do.
+- Both counts are measured, from this branch's own commits. The margin-inset interior scan
+  above found 4,167 of 110,041 missing (3.79%). A wider check — the full parallelogram,
+  including its edge, at the ticket's own reproduction label size — found 7,744 of 119,400
+  missing (6.49% missing, 93.51% drawn). That figure matches the ticket brief's own cited
+  numbers exactly.
+
+**How to run it.** Source `.factory-env` first. `pnpm test -- scripts/golden/compositeBackdrop.test.ts`
+runs this file alone: 5 tests, all pass. `pnpm test -- scripts/golden` runs the full golden
+pipeline suite: 83 tests, all pass. `pnpm typecheck` is clean.
+
+**Not fixed here.** No `rendered+ai-backdrop` manifest case exists yet. No real bottle
+reference photo has been supplied. This fix has no golden-set image to re-render. It closes the
+defect before the first real pilot batch can reach it, per the ticket brief.
+
+**Rollback.** `git revert` this ticket's commit(s). Reverting restores the detected-corner
+bounding box and removes both new tests. No image, migration, or other file depends on this
+change.
+
 ## TRO-514 — Wire the warning comparator into the live verify route (2026-08-11)
 
 **What changed.** `src/app/api/verify/route.ts` now calls LH-020's real warning comparator

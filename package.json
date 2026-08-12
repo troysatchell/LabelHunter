@@ -20,6 +20,8 @@
     "db:seed": "tsx src/lib/db/seed.ts",
     "golden:build": "tsx scripts/golden/build.ts",
     "golden:imagen": "tsx scripts/golden/imagen.ts",
+    "golden:verify": "tsx scripts/golden/verify.ts",
+    "golden:render-smoke": "tsx scripts/golden/renderSmoke.ts",
     "latency:check": "tsx scripts/latency/measure.ts",
     "worker": "tsx scripts/batch-worker/run.ts"
   },

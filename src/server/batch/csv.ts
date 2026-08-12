@@ -11,7 +11,18 @@
  * literal quote inside a quoted field; both CRLF and bare LF line
  * endings; a leading UTF-8 BOM (common in a spreadsheet program's CSV
  * export); and blank lines, which are skipped rather than turned into a
- * spurious one-cell row (also common at end of file).
+ * spurious one-cell row (also common at end of file). A quoted empty
+ * field (`""`) is a real one-cell record, not a blank line, even though
+ * both can otherwise look identical once parsed (review finding).
+ *
+ * Quote placement is strict, matching RFC 4180: a quote may only open a
+ * field as that field's very first character, and once a quoted field's
+ * closing quote appears, only a delimiter, a record end, or EOF may
+ * follow it. `a"b"` and `"a"b` are both syntax errors, not silently
+ * absorbed as `ab` — a quote appearing somewhere a real CSV tool would
+ * never put one is the same "columns may have shifted" risk this module
+ * already treats as fatal elsewhere, not a value worth guessing at
+ * (review finding).
  *
  * Every cell is normalized to Unicode NFC (standing rule 20) — two CSV
  * files that look identical on screen must compare equal downstream,
@@ -30,11 +41,14 @@ export type ParseCsvResult = { ok: true; rows: string[][] } | { ok: false; error
 
 const BOM = "﻿";
 
-/** True for a row that is really a blank line (no comma appeared on it,
- * and its one cell is empty) — as opposed to a genuine row of empty
- * cells, which a line of bare commas (",,") produces on purpose. */
-function isBlankLine(row: string[]): boolean {
-  return row.length === 1 && row[0] === "";
+/** True for a row that is really a blank line — no character at all was
+ * read for it, not even an empty pair of quotes — as opposed to a
+ * genuine record holding only empty values, which a line of bare commas
+ * (",,") or a quoted empty field (`""`) both produce on purpose. `hadAny`
+ * is `false` only when the record's raw text between two newlines was
+ * itself the empty string. */
+function isBlankLine(row: string[], hadAny: boolean): boolean {
+  return row.length === 1 && row[0] === "" && !hadAny;
 }
 
 export function parseCsv(text: string): ParseCsvResult {
@@ -44,6 +58,16 @@ export function parseCsv(text: string): ParseCsvResult {
   let row: string[] = [];
   let field = "";
   let inQuotes = false;
+  // True once no character has been consumed for the CURRENT field yet —
+  // the "may a quote open here" test. Reset at every field boundary.
+  let fieldStart = true;
+  // True immediately after a quoted field's closing quote, until the
+  // delimiter/record-end that must follow it is actually consumed.
+  let afterClosedQuote = false;
+  // True once ANY real CSV syntax (a quote, at least) has been read for
+  // the CURRENT record — distinguishes a quoted empty field from a
+  // genuinely blank line. Reset at every record boundary.
+  let recordHadContent = false;
   let line = 1;
   // The line the CURRENTLY OPEN quote started on — distinct from `line`,
   // which keeps advancing for every newline consumed while inside it. An
@@ -65,6 +89,7 @@ export function parseCsv(text: string): ParseCsvResult {
           continue;
         }
         inQuotes = false;
+        afterClosedQuote = true;
         i += 1;
         continue;
       }
@@ -74,8 +99,30 @@ export function parseCsv(text: string): ParseCsvResult {
       continue;
     }
 
+    if (afterClosedQuote && ch !== "," && ch !== "\r" && ch !== "\n") {
+      return {
+        ok: false,
+        error: {
+          line,
+          message: `Line ${line} has text right after a closing quote. Wrap the whole field in quotes, or remove the extra text.`,
+        },
+      };
+    }
+    afterClosedQuote = false;
+
     if (ch === '"') {
+      if (!fieldStart) {
+        return {
+          ok: false,
+          error: {
+            line,
+            message: `Line ${line} has a quote in the middle of a field that did not start with one. Wrap the whole field in quotes if it needs one.`,
+          },
+        };
+      }
       inQuotes = true;
+      recordHadContent = true;
+      fieldStart = false;
       quoteStartLine = line;
       i += 1;
       continue;
@@ -83,6 +130,7 @@ export function parseCsv(text: string): ParseCsvResult {
     if (ch === ",") {
       row.push(field);
       field = "";
+      fieldStart = true;
       i += 1;
       continue;
     }
@@ -97,14 +145,17 @@ export function parseCsv(text: string): ParseCsvResult {
     if (ch === "\n") {
       row.push(field);
       field = "";
-      if (!isBlankLine(row)) rows.push(row);
+      if (!isBlankLine(row, recordHadContent)) rows.push(row);
       row = [];
+      fieldStart = true;
+      recordHadContent = false;
       line += 1;
       i += 1;
       continue;
     }
 
     field += ch;
+    fieldStart = false;
     i += 1;
   }
 
@@ -120,7 +171,7 @@ export function parseCsv(text: string): ParseCsvResult {
   // ended cleanly on its last "\n" leaves field==="" and row===[] here).
   if (field !== "" || row.length > 0) {
     row.push(field);
-    if (!isBlankLine(row)) rows.push(row);
+    if (!isBlankLine(row, recordHadContent)) rows.push(row);
   }
 
   return { ok: true, rows };

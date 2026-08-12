@@ -132,4 +132,39 @@ describe("parseCsv", () => {
       ],
     });
   });
+
+  it('keeps a quoted empty field (""), a real one-cell record, distinct from a blank line (review finding)', () => {
+    const result = parseCsv('""\n');
+    expect(result).toEqual({ ok: true, rows: [[""]] });
+  });
+
+  it('keeps a quoted empty field mixed with real cells on the same row', () => {
+    const result = parseCsv('a,"",c\n');
+    expect(result).toEqual({ ok: true, rows: [["a", "", "c"]] });
+  });
+
+  it("rejects a quote appearing in the middle of a field that did not start with one (review finding)", () => {
+    const result = parseCsv('brand\na"b"\n');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toMatch(/quote/i);
+  });
+
+  it("rejects text immediately after a quoted field's closing quote (review finding)", () => {
+    const result = parseCsv('brand\n"a"b\n');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toMatch(/quote/i);
+  });
+
+  it("still accepts a quoted field followed directly by a comma, CRLF, or EOF — only non-delimiter text after the closing quote is an error", () => {
+    const commaCase = parseCsv('"a",b\n');
+    expect(commaCase).toEqual({ ok: true, rows: [["a", "b"]] });
+
+    const crlfCase = parseCsv('"a"\r\n"b"\r\n');
+    expect(crlfCase).toEqual({ ok: true, rows: [["a"], ["b"]] });
+
+    const eofCase = parseCsv('"a"');
+    expect(eofCase).toEqual({ ok: true, rows: [["a"]] });
+  });
 });

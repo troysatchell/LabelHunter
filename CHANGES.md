@@ -16,8 +16,7 @@ has no slot for — read as a conflict.
 
 **Why.** The measurement comes from `scripts/eval/results/eval-report.json`, run
 `2026-08-12T13:26:45.488Z`, mode `live`, model `claude-haiku-4-5`. case-11 declares beverage
-type `wine`. Its label prints
-class type `Mead`. TTB classes mead as a wine. Neither record is wrong. The old check still
+type `wine`. Its label prints class type `Mead`. TTB classes mead as a wine. Neither record is wrong. The old check still
 fired `CONFLICTING_EXTRACTION`. That set a label-level blocker. `rollup.ts:15` returned REVIEW
 before it ever read the government warning's own `MISMATCH`. TH-R9's acceptance evidence reads
 "reworded warning → fail" (`audit/requirements/inventory.md:87`). case-11 carries a genuinely
@@ -30,13 +29,14 @@ was `beverage_type: { value: "mead", evidence: "Mead", confidence: 0.99, alterna
 (0.85). An off-menu value at trusted confidence does not meet the ticket's stop condition
 (step 3). The fix proceeds on this measured basis, not a guess.
 
-**Net effect on label-verdict accuracy: unchanged, still 21/32. This is not a scoreboard win.**
-Two live single-case runs after the fix, both pasted in full in the PR:
+**Net effect on label-verdict accuracy.** Accuracy stays unchanged at 21/32. This is not a
+scoreboard win. Two live single-case runs followed the fix. The PR pastes both outputs in
+full below:
 
 - `pnpm eval:check -- --live --case=case-11-reworded-warning-clause-two`: `labelVerdict`
-  `FAIL` (was REVIEW), `reviewReason` `null`. Now correct.
+  `FAIL` (was REVIEW), `reviewReason` `null`. This result is now correct.
 - `pnpm eval:check -- --live --case=case-22-low-light-warning-block`: `labelVerdict` `PASS`
-  (was REVIEW), `reviewReason` `null`. Now incorrect.
+  (was REVIEW), `reviewReason` `null`. This result is now incorrect.
 
 case-22 also declares `wine`/`Mead`. Its `government_warning` field genuinely needs review.
 The golden set expects `NEEDS_REVIEW`. The router now returns `MATCH`. The old blocker masked

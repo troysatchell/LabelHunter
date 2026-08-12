@@ -50,15 +50,25 @@ export const MAX_ZIP_UNCOMPRESSED_BYTES = 500 * 1024 * 1024;
  * without being a materially looser ceiling. */
 export const MAX_ZIP_ARCHIVE_BYTES = 600 * 1024 * 1024;
 
-/** The whole multipart request, checked from its `Content-Length` header
- * before `request.formData()` ever runs (`route.ts`) — a cheap,
- * pre-parse guard distinct from every byte-size check above, which all
- * run only after a `FormData` already exists. Sized well above a full
- * zip upload (`MAX_ZIP_ARCHIVE_BYTES`) so it is never the first thing to
- * reject a real batch; it exists to catch a request whose sheer size
- * alone is not worth buffering into memory at all. `request.formData()`
- * still runs uncapped when a request carries no `Content-Length` (for
- * example, chunked transfer-encoding) — this check is a defense where the
- * header is present and honest, not a hard guarantee for every request
- * shape a client could send. */
-export const MAX_TOTAL_REQUEST_BYTES = 2 * 1024 * 1024 * 1024;
+/** The whole multipart request. Two layers enforce this, in `route.ts`:
+ * `checkRequestSize` is a cheap fast path that rejects from the
+ * `Content-Length` header alone, before anything reads a byte, when that
+ * header is present and already reveals the request is too large;
+ * `readLimitedBody` is the AUTHORITATIVE check underneath it, measuring
+ * the request's real bytes as they stream in and aborting the moment the
+ * cap is exceeded, regardless of whether `Content-Length` was present,
+ * absent, or understated (review finding — an earlier draft trusted the
+ * header alone and left this ceiling meaningless for a request built
+ * without one, which is this route's own normal shape for a `FormData`
+ * body, confirmed empirically).
+ *
+ * Sized well above a full zip upload (`MAX_ZIP_ARCHIVE_BYTES`, 600 MB) so
+ * it is never the first thing to reject a real batch, but deliberately
+ * NOT the far looser 2 GB an earlier draft used: `readLimitedBody`
+ * briefly holds the request's real bytes in memory while buffering them,
+ * so this ceiling is also a bound on that peak memory use, on a service
+ * instance this design cannot assume is generously provisioned. 1 GB
+ * keeps roughly 400 MB of headroom above the zip-archive ceiling for a
+ * manifest and any multi-file-drop entries, without inviting a
+ * near-cap upload to threaten the process it is meant to protect. */
+export const MAX_TOTAL_REQUEST_BYTES = 1 * 1024 * 1024 * 1024;

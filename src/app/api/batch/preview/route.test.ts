@@ -1,5 +1,5 @@
 import { zipSync } from "fflate";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { MAX_IMAGE_COUNT } from "../../../../server/batch/constants";
 import { handleBatchPreviewRequest } from "./route";
 import type { BatchPreviewErrorResponse, BatchPreviewSuccessResponse } from "./types";
@@ -223,5 +223,38 @@ describe("handleBatchPreviewRequest", () => {
     // A cap comfortably above this small request's own real byte size.
     const response = await handleBatchPreviewRequest(request, { maxTotalRequestBytes: 100_000 });
     expect(response.status).toBe(200);
+  });
+
+  describe("body-buffering failure handling (review finding)", () => {
+    const originalBlob = globalThis.Blob;
+
+    afterEach(() => {
+      globalThis.Blob = originalBlob;
+    });
+
+    it("returns the designed SERVICE-shaped VALIDATION error instead of throwing when buffering the body fails", async () => {
+      // Simulates an allocation failure (e.g. a near-cap upload that
+      // exhausts available memory while assembling the body) without
+      // needing a real multi-gigabyte request to provoke one. Before this
+      // finding's fix, the buffering step ran outside any try/catch, so a
+      // throw here would have propagated uncaught rather than reaching a
+      // designed error response.
+      globalThis.Blob = class {
+        constructor() {
+          throw new RangeError("simulated allocation failure");
+        }
+      } as unknown as typeof Blob;
+
+      const csvText = [HEADER, "beer,Hopyard Co,IPA,5,355,mL,can-01.jpg"].join("\n");
+      const fd = new FormData();
+      fd.set("manifest", csvFile(csvText));
+      fd.append("images", imageFile("can-01.jpg"));
+
+      const response = await handleBatchPreviewRequest(requestWith(fd));
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as BatchPreviewErrorResponse;
+      expect(body.error.kind).toBe("VALIDATION");
+      expect(body.error.message).not.toMatch(/RangeError|simulated allocation/i);
+    });
   });
 });

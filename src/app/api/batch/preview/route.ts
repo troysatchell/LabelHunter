@@ -78,13 +78,25 @@ export function checkRequestSize(
  * as `FormData` — see the `Response(...).formData()` call below, which
  * re-parses the SAME bytes rather than a second read of the original
  * (already-consumed) stream.
+ *
+ * Returns a `Blob`, not a manually concatenated `Uint8Array` (review
+ * finding, critical). An earlier draft accumulated every chunk and THEN
+ * allocated a second, full-body-sized `Uint8Array` to merge them into —
+ * a real request near `maxBytes` briefly held roughly twice its own size
+ * in memory, on a route whose entire purpose is bounding memory use.
+ * `new Blob(chunks)` needs no such second full-size copy (confirmed
+ * empirically: `Response(blob, ...).formData()` re-parses correctly from
+ * a `Blob` built directly from the reader's own chunks), and is itself
+ * wrapped in a `try`/`catch` — a construction failure now reaches this
+ * function's own designed error return, not an uncaught throw escaping
+ * to the caller.
  */
 export async function readLimitedBody(
   request: Request,
   maxBytes: number = MAX_TOTAL_REQUEST_BYTES,
-): Promise<{ ok: true; body: Uint8Array } | { ok: false; message: string }> {
+): Promise<{ ok: true; body: Blob } | { ok: false; message: string }> {
   if (!request.body) {
-    return { ok: true, body: new Uint8Array(0) };
+    return { ok: true, body: new Blob([]) };
   }
 
   const reader = request.body.getReader();
@@ -105,13 +117,18 @@ export async function readLimitedBody(
     return { ok: false, message: "LabelHunter could not read this upload. Try again." };
   }
 
-  const body = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
+  try {
+    // The cast is a type-only gap, not a behavioral one (same class this
+    // file already documents for `Response`'s own `BodyInit`): a
+    // `ReadableStreamDefaultReader<Uint8Array>` chunk's inferred
+    // `Uint8Array<ArrayBufferLike>` type does not satisfy this
+    // TypeScript/DOM-lib version's stricter `BlobPart` (`ArrayBuffer`-only)
+    // member, even though `new Blob(...)` accepts it at runtime — proven
+    // by every test in `route.test.ts` that exercises this exact path.
+    return { ok: true, body: new Blob(chunks as unknown as BlobPart[]) };
+  } catch {
+    return { ok: false, message: "LabelHunter could not read this upload. Try again." };
   }
-  return { ok: true, body };
 }
 
 export interface HandleBatchPreviewLimits {
@@ -138,16 +155,11 @@ export async function handleBatchPreviewRequest(
   try {
     // Re-parses the SAME bytes readLimitedBody already collected — the
     // original request's own body stream is already fully consumed by
-    // now, and can only ever be read once.
-    //
-    // The cast below is a type-only gap, not a behavioral one: `Response`
-    // accepts a `Uint8Array` as `BodyInit` at runtime (every test in this
-    // file exercises exactly that), but this TypeScript/DOM-lib version's
-    // `BodyInit` type does not list `Uint8Array` among its members —
-    // `route.test.ts`'s sibling file (`verify/route.test.ts`) documents
-    // the identical gap for `Buffer`/`BlobPart`.
+    // now, and can only ever be read once. `Blob` is a `BodyInit` member
+    // TypeScript recognizes natively — no cast needed here, unlike the
+    // `Uint8Array` an earlier draft passed directly.
     const contentType = request.headers.get("content-type") ?? "";
-    formData = await new Response(bodyResult.body as unknown as BodyInit, { headers: { "content-type": contentType } }).formData();
+    formData = await new Response(bodyResult.body, { headers: { "content-type": contentType } }).formData();
   } catch {
     return errorResponse(400, "VALIDATION", "LabelHunter could not read this upload. Try again.");
   }

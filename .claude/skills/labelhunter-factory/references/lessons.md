@@ -68,10 +68,13 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
 17. **Re-read your own doc's earlier claims before appending a new round.** A count, scope
     limitation, or accepted/rejected decision from round 1 routinely goes stale once round 2
     changes the thing round 1 described. Grep the doc for words you're about to contradict.
-18. **Any string that passed through the label image, the application form, or a model's own
-    prior output is adversarial input, in every prompt it reaches** — not just the first one
-    reviewed. Use the extractor prompt's `serializeUntrusted`/`UNTRUSTED_DATA`-block convention
-    for any new prompt-building function that interpolates such a value.
+18. **Any string that passed through the label image, the application form, a model's own
+    prior output, or a comparator's derived note/reason text is adversarial input, in every
+    prompt it reaches** — not just the first one reviewed, and not only the obviously-raw
+    fields. A comparator's `reason` embeds the label reading it was computed from (recurred on
+    the resolver's flagged-fields block after the extractor block was already covered). Use the
+    extractor prompt's `serializeUntrusted`/`UNTRUSTED_DATA`-block convention for any new
+    prompt-building function that interpolates such a value.
 19. **A field whose validity depends on another field's value needs a discriminated union, not
     independently-optional fields.** (`reviewReason` only meaningful when `verdict` is
     `NEEDS_REVIEW`, etc.) Encode the dependency in the type so the invalid combination fails to
@@ -93,6 +96,36 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     leaves a hanging body parse with no timeout at all. Scope one timer across every `await` in
     the request, clear it only after the last one. (`resource-timeout`, 3 tickets — gate-check
     threshold crossed, not yet built: TRO-508.)
+24. **A multi-step cleanup in a `finally` block must not let one step's failure skip the rest,
+    and a cleanup failure must be visible** — caught into a named field the caller reports (exit
+    code, logged artifact), never a bare `console.warn` with no effect on exit code.
+    (`unhandled-error`, 2 tickets: TRO-456, TRO-471.)
+25. **No auth or access-control exists anywhere in this app yet — that's LH-061/TRO-482's job**,
+    an Urgent ticket with its own security-semantics escalation (escalation.md #7). Don't bolt
+    one-off auth onto a single route in response to a review finding; it would be inconsistent
+    with every other route and would preempt LH-061's real design. Dismiss with that reference.
+    (`access-control`, 2 tickets: TRO-466, TRO-476.)
+26. **UI copy must be specific and non-redundant.** A reason string names the exact field/check
+    that failed ("Government Warning must print in capital letters", not "needs a closer
+    look") — rule 12 already requires a reason; this is about that reason's precision. Alt text
+    doesn't repeat what assistive tech already announces (not "The uploaded label photo" — a
+    screen reader already says "image"). (`ux-copy`, 2 tickets: TRO-462, TRO-466.)
+
+27. **After merging `origin/main` into a ticket branch, run `pnpm install` even when
+    `package.json`/`pnpm-lock.yaml` auto-merge with no conflict markers.** A clean auto-merge
+    still doesn't touch `node_modules` on disk — a dependency the merge pulled in from a
+    sibling PR (e.g. a new package another ticket added) fails typecheck/build with "Cannot
+    find module" until installed. Hit independently on two worktrees resolving the same
+    origin/main merge; the third worktree resolving it got the same failure pre-empted only
+    because this rule existed by then.
+
+28. **Never background `gate.sh` (or anything else) and wait for its own completion
+    notification.** Only the orchestrator's top-level shell receives background-task
+    notifications — a sub-agent backgrounding its own process and then waiting gets no signal
+    and simply stalls, with real committed work sitting unpushed. Run `gate.sh` in the
+    foreground and wait for it to print an actual verdict line before doing anything else. Hit
+    twice in one session (TRO-473, TRO-474) — both times the work itself was fine, safely
+    committed, just never pushed or reported.
 
 ## Mechanized (no longer prompt-dependent)
 

@@ -4,6 +4,138 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-482 — LH-061 · Key protection (2026-08-12)
+
+**SECURITY-SEMANTICS HOLD.** PRD §8 and escalation.md rule 7 require Troy's own read before
+this merges. This entry records what was built. It does not mark the ticket done.
+
+**What this builds.** Three guards protect Troy's Anthropic key on the public URL (PRD §8,
+TH-R6): a shared access code, per-IP and global rate limits, and a daily spend budget.
+
+### 1. Shared access code
+
+`src/proxy.ts` checks every request. A valid credential is either a long-lived httpOnly
+cookie or an `x-access-code` header. The cookie comes from `POST /api/access-code`
+(`src/app/api/access-code/route.ts`), which checks a submitted code against the `ACCESS_CODE`
+env var and sets the cookie on a match. The page at `/access-code`
+(`src/app/access-code/page.tsx`) collects the code from a person. The header serves
+non-browser callers, such as an evaluator's own script — PRD §8's own design mandate.
+
+The check fails closed. An unset or empty `ACCESS_CODE` rejects every candidate. A
+misconfigured deployment blocks everyone. It never becomes an open endpoint.
+
+The comparison is constant-time. Both the real code and the candidate get hashed first
+(SHA-256, via the Web Crypto API), then compared byte by byte with no early exit — so
+response timing cannot leak how many leading characters matched. Neither value is ever
+logged.
+
+Named `src/proxy.ts`, not `middleware.ts`. Next.js 16.3.0 renamed the file convention. The
+old name still works, but `pnpm build` names the exact migration:
+`npx @next/codemod middleware-to-proxy`. Confirmed by running it, not assumed from memory of
+an older version.
+
+**A real Edge Runtime finding.** `src/proxy.ts` runs in Next's Edge Runtime, which does not
+support `node:crypto`. Confirmed with a real `pnpm build`, which threw: "A Node.js module is
+loaded ('node:crypto')... which is not supported in the Edge Runtime." The access-code module
+now uses the Web Crypto API (`crypto.subtle`) instead — a global in both the Edge Runtime and
+Node.js. The cost: the hash and compare functions are async now.
+
+**A real request-size regression, found and fixed.** `src/proxy.ts` is this app's first
+Next.js proxy file. Adding it triggered Next's own default request-body cap for any request
+that passes through a proxy (`experimental.proxyClientMaxBodySize`, 10 MB by default) —
+independent of this app's own size checks. `pnpm test:e2e`'s oversized-upload spec caught
+this directly: a real ~20 MB test upload started failing before it ever reached
+`preprocessImage`'s own, more specific error. Fixed in `next.config.ts`:
+`proxyClientMaxBodySize` now matches `MAX_TOTAL_REQUEST_BYTES` (1 GB — the batch route's own
+ceiling, and the largest legitimate body this app accepts). Re-ran the full e2e suite after
+the fix: all 12 specs pass, including the two that failed before it.
+
+### 2. Rate limits — per-IP and global
+
+An in-memory, fixed-window counter (`src/server/rate-limit/fixed-window.ts`). This is a
+documented, scope-appropriate choice (TH-R19), not an oversight: this app runs as one Render
+`starter`-plan instance, with no horizontal scaling (PRD §8). A single process's own `Map` is
+a complete rate limiter for that topology. It stops being correct the moment a second
+instance joins — flagged in the module's own header comment as the trigger to move this to a
+shared store (Redis, or Postgres, like the budget guard below), not built ahead of that need.
+
+Applied to the two routes PRD §8 names as expensive: `/api/verify` and `/api/batch/start`
+("batch submission"). The numbers, and the reasoning behind each
+(`src/server/rate-limit/instances.ts`):
+
+| Limiter | Limit | Window | Why |
+|---|---|---|---|
+| verify, per-IP | 20 | 60s | Generous for a live demo (about one label every 3s); still bounds a scripted loop to a small, predictable cost. |
+| verify, global | 100 | 60s | Covers several evaluators exploring at once; caps the deployment's worst-case Haiku call rate regardless of how many IPs are involved. |
+| batch-start, per-IP | 5 | 60s | A batch submission can carry hundreds of images (PRD §3.5); no real user starts more than a handful of batches per minute. |
+| batch-start, global | 20 | 60s | Same reasoning as verify's global limit, sized down to match batch-start's own lower legitimate rate. |
+
+A rejected request gets a friendly message naming a wait time in seconds. It never gets a
+bare 429 with no explanation.
+
+### 3. Daily spend budget
+
+Persisted in Postgres, not in-memory — the opposite tradeoff from the rate limiter above, on
+purpose. A process restart (a deploy, a crash, Render recycling the instance) must not
+silently reset spend to zero. That would defeat the guard exactly when a traffic spike is
+causing restarts. New table `daily_spend` (migration `0004_daily_spend.sql`): one row per UTC
+calendar day, holding the real running total in dollars.
+
+Default: **$5.00/day**, overridable through `DAILY_BUDGET_USD` with no redeploy. Reasoning
+(`src/server/budget/daily-budget.ts`'s own header comment has the full derivation): PRD §4's
+cost table gives roughly $0.0075/label blended — Haiku extraction plus an estimated 10-15%
+Sonnet escalation rate. The golden set is 20-30 labels. A full day of evaluator exploration,
+generously, might reach a few hundred label verifications: call it 400, about $3.00. $5.00
+gives real headroom above that, while bounding the worst case of a discovered script
+hammering the endpoint to a small, acceptable daily figure. This is a distinct pool from
+`factory/config.yaml`'s $25 build+eval spend cap. That number tracks factory development
+spend, and Troy explicitly removed its pause (escalation.md item 3). This number is the
+ongoing runtime budget for the deployed public instance — a different pool, a different job.
+
+Checked before the model call, never after. Both `/api/verify` and `/api/batch/start` check
+the budget first. A request after the budget is exhausted returns a friendly message and
+never reaches the model.
+
+Real cost recording reuses the eval harness's own pricing math
+(`scripts/eval/usage.ts`'s `buildMeasuredCost`/`HAIKU_4_5_PRICING`), not a re-derived
+estimate — the same real, published per-token prices, applied to the real, measured token
+usage of each call. `src/server/budget/anthropic-usage.ts` wraps whatever Anthropic client a
+call already uses (transparently: same request, same response, same errors) to read that
+usage back, since neither `extractLabel` nor `resolveEscalatedLabel` returns it to its own
+caller today.
+
+**A known, flagged limitation.** Real spend recording is wired into `/api/verify`'s one
+inline Haiku call only. Batch's own Haiku/Sonnet calls run later, in the background worker
+(`src/server/batch-queue/`, `src/server/single-label-resolve/`) — outside this ticket's
+HTTP-route scope. The daily budget still blocks *new* batch submissions once exhausted
+(`/api/batch/start`'s own gate), but an already-enqueued batch's worker-driven spend is
+neither recorded into the ledger nor re-checked mid-run. This under-counts real total spend.
+It is a real gap for a follow-up ticket, named here, not hidden.
+
+**How to run it.**
+1. Set `ACCESS_CODE` in `.env.local` to a real value (`.env.local.example` documents the
+   placeholder shape only — never a real value there or in this file).
+2. `pnpm db:migrate` applies migration `0004_daily_spend.sql`.
+3. `pnpm dev`, then visit any page. It redirects to `/access-code` until a correct code is
+   entered.
+4. `pnpm test` runs the full suite, including every new test this ticket adds.
+
+**Rollback.** Three independent pieces, each revertible alone:
+- Access code: revert the commits touching `src/proxy.ts`, `src/server/auth/`,
+  `src/app/access-code/`, `src/app/api/access-code/`. Remove `ACCESS_CODE` from the
+  environment — with `src/proxy.ts` itself reverted, it has no effect either way.
+- Rate limits: revert `src/server/rate-limit/` and the `checkRateLimit` wiring in
+  `src/app/api/verify/route.ts` and `src/app/api/batch/start/route.ts` — each an additive,
+  optional dependency field, so removing the wiring is a clean subtraction.
+- Daily budget: revert `src/server/budget/`, the `checkBudget`/`recordSpend` wiring in the
+  same two routes, and drop the `daily_spend` table with a new migration — never a hand-edit
+  to `0004_daily_spend.sql` itself once it has shipped.
+- The `next.config.ts` `proxyClientMaxBodySize` fix should stay even if `src/proxy.ts` is
+  ever reverted for an unrelated reason — it corrects a real Next.js default this app's own
+  size checks did not otherwise account for.
+
+Full evidence and every number's reasoning: the PR body for `feat/lh-061-key-protection`.
+
 ## TRO-479 — LH-053 · E2E suite (2026-08-12)
 
 **What this builds.** Real, executable Playwright specs for the three PRD §6 flows: verify,

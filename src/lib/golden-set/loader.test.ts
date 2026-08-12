@@ -705,16 +705,41 @@ describe("loadGoldenSetManifest", () => {
     expect(stonesThrow?.expected.fields.brandName.verdict).toBe("MATCH");
   });
 
-  it("covers 8 of 10 rubric vectors; V7 and V10 are known gaps (design doc §4)", () => {
-    // V7 (net-contents format match, e.g. "750 mL" vs "750ml") has no
-    // dedicated case yet. V10 (batch of >=20) is a property of the manifest
-    // as a whole, not any single case, and is asserted separately below.
-    // If this test starts failing because V7 got covered, DELETE the
-    // exclusion, don't widen it — that is the gap closing, which is good.
+  it("includes the net-contents format-variant case required by rubric vector V7 (TRO-515)", () => {
+    const result = loadGoldenSetManifest();
+    const altFormat = result.cases.find(
+      (c) => c.caseId === "case-30-clean-match-net-contents-alt-format",
+    );
+
+    expect(altFormat).toBeDefined();
+    // audit/rubric.md Appendix A, V7: net contents "750 mL" vs "750ml" ->
+    // MATCH. The label carries the odd format; the application carries the
+    // canonical one — only `label` has a free-text netContentsText field.
+    expect(altFormat?.label.netContentsText).toBe("750ml");
+    expect(altFormat?.application.netContentsValue).toBe(750);
+    expect(altFormat?.application.netContentsUnit).toBe("mL");
+    expect(altFormat?.label.netContentsText).not.toBe(
+      `${altFormat?.application.netContentsValue} ${altFormat?.application.netContentsUnit}`,
+    );
+    expect(altFormat?.expected.fields.netContents.verdict).toBe("MATCH");
+    expect(altFormat?.vectors).toContain("V7");
+  });
+
+  it("covers 9 of 10 rubric vectors; V10 is the only known gap (design doc §4)", () => {
+    // V10 (batch of >=20) is a property of the manifest as a whole, not any
+    // single case, and is asserted separately below — it can never be
+    // "covered" by this per-case check, so it stays excluded here
+    // regardless of manifest content.
+    // TRO-515 closed the other known gap, V7 (net-contents format match,
+    // e.g. "750 mL" vs "750ml"): case-30-clean-match-net-contents-alt-format
+    // now carries it. If this test starts failing because one of the other
+    // nine vectors lost its only covering case, DELETE that vector from the
+    // exclusion below only once a real replacement case exists — don't
+    // widen the exclusion to paper over a real regression.
     const result = loadGoldenSetManifest();
     const covered = new Set(result.cases.flatMap((c) => c.vectors));
     const allVectors = ["V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10"] as const;
-    const knownGaps = new Set(["V7", "V10"]);
+    const knownGaps = new Set(["V10"]);
     for (const v of allVectors) {
       if (knownGaps.has(v)) {
         expect(covered.has(v), `${v} was expected to still be a known gap`).toBe(false);

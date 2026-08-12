@@ -16,10 +16,13 @@ import { batchJobs, batchQueueItems, fieldResults, reviewQueue, verifications } 
 import { productionComparators } from "../comparators";
 import { HaikuExtractionError } from "../extractor";
 import { makeMockMessage, WELL_FORMED_EXTRACTION_BODY } from "../extractor/test-support";
+import type { WarningComparatorResult } from "../router";
+import type { CompareGovernmentWarningFromImageInput } from "../warning";
 import { readLabelImage } from "../storage/local-file-storage";
 import { claimNextBatchQueueItem } from "./claim";
 import { DEFAULT_BACKOFF_CONFIG } from "./backoff";
 import { processExtractClaim, type ExtractWorkerDeps } from "./extract-worker";
+import { resizeStoredOriginalToHaikuVariant } from "./image";
 import { parseResolverInputSnapshot } from "./resolver-snapshot";
 import {
   cleanupBatchJobFixture,
@@ -27,6 +30,7 @@ import {
   createBatchJobFixture,
   dbPastTimestamp,
   enqueueExtractItemFixture,
+  makeTestJpeg,
 } from "./test-support";
 
 let scratchDir: string;
@@ -72,12 +76,29 @@ function clientThrowing(error: unknown): Anthropic {
   });
 }
 
+/**
+ * `government_warning` is out of scope for most of this file's tests —
+ * they exercise the claim/completion-guard SQL and the cascade's other
+ * four fields (LH-041/TRO-474), not the warning subsystem itself (LH-020,
+ * wired into this worker by TRO-517). This stub keeps every other test's
+ * warning field a stable NEEDS_REVIEW/WARNING_MISMATCH row: never MATCH,
+ * never MISMATCH, so it can never silently flip an unrelated test's
+ * verdict into PASS or FAIL behind that test's back. Mirrors
+ * `src/app/api/verify/route.test.ts`'s own `warningNeedsReviewStub`
+ * exactly (TRO-514's precedent). The "government warning wiring" describe
+ * block below overrides `compareGovernmentWarning` explicitly to exercise
+ * the real MATCH/MISMATCH/failure behavior.
+ */
+async function warningNeedsReviewStub(): Promise<WarningComparatorResult> {
+  return { verdict: "NEEDS_REVIEW", reviewReason: "WARNING_MISMATCH" };
+}
+
 function makeDeps(overrides: Partial<ExtractWorkerDeps> = {}): ExtractWorkerDeps {
   return {
     db,
     comparators: productionComparators,
     readLabelImage: (storagePath) => readLabelImage(storagePath, { baseDir: scratchDir }),
-    warningResult: null,
+    compareGovernmentWarning: warningNeedsReviewStub,
     backoffConfig: DEFAULT_BACKOFF_CONFIG,
     ...overrides,
   };
@@ -100,7 +121,12 @@ describe("processExtractClaim — PASS", () => {
     const claimed = await claimedFixture(batchJobId, "pass.jpg", { brandName: "Old Tom Distillery", classType: "Straight Bourbon Whiskey" });
     const deps = makeDeps({
       anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
-      warningResult: { verdict: "MATCH" }, // injected — see extract-worker.ts's own file comment on why
+      // TRO-517's own "government warning wiring" describe block below
+      // covers the real MATCH/MISMATCH/failure behavior in isolation —
+      // this fake just needs a clean MATCH so this test's PASS verdict
+      // isolates the claim/completion-guard mechanics it actually means to
+      // exercise.
+      compareGovernmentWarning: async () => ({ verdict: "MATCH" }),
     });
 
     const outcome = await processExtractClaim(claimed, deps);
@@ -143,7 +169,7 @@ describe("processExtractClaim — FAIL", () => {
     });
     const deps = makeDeps({
       anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
-      warningResult: { verdict: "MATCH" },
+      compareGovernmentWarning: async () => ({ verdict: "MATCH" }),
     });
 
     const outcome = await processExtractClaim(claimed, deps);
@@ -161,9 +187,12 @@ describe("processExtractClaim — REVIEW / escalation (CP-3 §2.3, §8 step 5)",
   it("escalates: inserts a RESOLVE batch_queue_item with a schemaVersion-1 snapshot, no review_queue row yet, and does NOT bump autoVerifiedCount", async () => {
     const batchJobId = await trackBatch({ totalCount: 1 });
     const claimed = await claimedFixture(batchJobId, "review.jpg");
-    // warningResult defaults to null — a present warning with no comparator
-    // result routes to REVIEW (the current, honest behavior this ticket
-    // inherits from ../../app/api/verify/route.ts, LH-020 not yet wired in).
+    // makeDeps()'s default compareGovernmentWarning (warningNeedsReviewStub)
+    // is a deliberately neutral NEEDS_REVIEW/WARNING_MISMATCH stub — not
+    // evidence the wiring is missing. TRO-517 wired the real comparator in;
+    // see the "government warning wiring" describe block below for its
+    // dedicated MATCH/MISMATCH/failure coverage. This test's own focus
+    // stays the escalation/snapshot mechanics, unchanged.
     const deps = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY) });
 
     const outcome = await processExtractClaim(claimed, deps);
@@ -329,12 +358,12 @@ describe("processExtractClaim — lost-lease race (CP-3 §3.2)", () => {
     // item first.
     await db.update(batchQueueItems).set({ leaseExpiresAt: await dbPastTimestamp(db, 1) }).where(eq(batchQueueItems.id, claimed.id));
     const secondClaim = await claimNextBatchQueueItem(db, "EXTRACT", "worker-2", 60, { scopeToBatchJobId: batchJobId });
-    const secondDeps = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY), warningResult: { verdict: "MATCH" } });
+    const secondDeps = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY), compareGovernmentWarning: async () => ({ verdict: "MATCH" }) });
     const secondOutcome = await processExtractClaim(secondClaim!, secondDeps);
     expect(secondOutcome.kind).toBe("done");
 
     // The FIRST (stale) worker's own, now-late result must be discarded.
-    const staleDeps = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY), warningResult: { verdict: "MATCH" } });
+    const staleDeps = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY), compareGovernmentWarning: async () => ({ verdict: "MATCH" }) });
     const staleOutcome = await processExtractClaim(claimed, staleDeps);
     expect(staleOutcome.kind).toBe("stale");
 
@@ -365,5 +394,190 @@ describe("processExtractClaim — misconfiguration fails loudly, not per-item", 
     // corrected redeploy should still be able to claim and process it.
     const [item] = await db.select().from(batchQueueItems).where(eq(batchQueueItems.id, claimed.id));
     expect(item.status).toBe("CLAIMED");
+  });
+});
+
+describe("processExtractClaim — government warning wiring (TRO-517, TH-R9)", () => {
+  it("starts the warning comparator before the Haiku extraction call resolves (PRD §3.8 / CP-2 §4.4 — concurrent, not serial)", async () => {
+    const batchJobId = await trackBatch({ totalCount: 1 });
+    const claimed = await claimedFixture(batchJobId, "concurrency.jpg");
+
+    const callOrder: string[] = [];
+    let releaseExtraction!: () => void;
+    const extractionGate = new Promise<void>((resolve) => {
+      releaseExtraction = resolve;
+    });
+
+    // The real `extractLabel` (this worker's default), fed by a fake
+    // Anthropic client whose response stays pending until this test
+    // releases it — the same `fakeAnthropicClient` helper every other test
+    // in this file uses, just deliberately held open here.
+    const anthropicClient = fakeAnthropicClient(async () => {
+      callOrder.push("extractLabel:called");
+      await extractionGate;
+      callOrder.push("extractLabel:resolved");
+      return makeMockMessage(JSON.stringify(WELL_FORMED_EXTRACTION_BODY));
+    });
+
+    let markWarningCalled!: () => void;
+    const warningCalled = new Promise<void>((resolve) => {
+      markWarningCalled = resolve;
+    });
+    const compareGovernmentWarning: ExtractWorkerDeps["compareGovernmentWarning"] = async () => {
+      callOrder.push("compareGovernmentWarning:called");
+      // The concurrency requirement itself: this must run BEFORE
+      // extractLabel's own promise has resolved, never after. Written as
+      // an assertion here (not just below) so a serial implementation
+      // fails inside the very call this test is timing, not only via the
+      // `warningCalled` promise never settling.
+      expect(callOrder).not.toContain("extractLabel:resolved");
+      markWarningCalled();
+      return { verdict: "MATCH" };
+    };
+
+    const deps = makeDeps({ anthropicClient, compareGovernmentWarning });
+    const outcomePromise = processExtractClaim(claimed, deps);
+
+    // Observable event, not a sleep (standing rule 8): waits only until the
+    // comparator has actually been invoked. Under serial code (`await
+    // extractLabel(...)` before calling the warning comparator), this
+    // promise never resolves — extractLabel is held open by
+    // `extractionGate`, and nothing has released it yet — so the test
+    // times out instead of passing, which is still a correct "fails for
+    // the right reason" outcome for a concurrency regression.
+    await warningCalled;
+    expect(callOrder).toContain("compareGovernmentWarning:called");
+    expect(callOrder).not.toContain("extractLabel:resolved");
+
+    releaseExtraction();
+    const outcome = await outcomePromise;
+    expect(outcome.kind).toBe("done");
+    expect(callOrder).toContain("extractLabel:resolved");
+  });
+
+  it("a compliant warning (MATCH) contributes to a clean PASS label verdict", async () => {
+    const batchJobId = await trackBatch({ totalCount: 1 });
+    // brandName/classType explicitly matching WELL_FORMED_EXTRACTION_BODY —
+    // needed for a real comparator MATCH on every other field, isolating
+    // the warning comparator's own MATCH as the thing this test proves
+    // rolls up to a clean label PASS.
+    const claimed = await claimedFixture(batchJobId, "warning-match.jpg", { brandName: "Old Tom Distillery", classType: "Straight Bourbon Whiskey" });
+    const deps = makeDeps({
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      compareGovernmentWarning: async () => ({ verdict: "MATCH", note: "Government Warning matches the required text." }),
+    });
+
+    const outcome = await processExtractClaim(claimed, deps);
+    expect(outcome.kind).toBe("done");
+    if (outcome.kind !== "done") throw new Error("unreachable");
+    expect(outcome.verdict).toBe("PASS");
+    expect(outcome.escalated).toBe(false);
+
+    const persistedFields = await db.select().from(fieldResults).where(eq(fieldResults.verificationId, outcome.verificationId));
+    const warningRow = persistedFields.find((row) => row.fieldName === "GOVERNMENT_WARNING");
+    expect(warningRow?.verdict).toBe("MATCH");
+  });
+
+  it("a non-compliant warning (MISMATCH) contributes a FAIL label verdict", async () => {
+    const batchJobId = await trackBatch({ totalCount: 1 });
+    const claimed = await claimedFixture(batchJobId, "warning-mismatch.jpg", { brandName: "Old Tom Distillery", classType: "Straight Bourbon Whiskey" });
+    const deps = makeDeps({
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      compareGovernmentWarning: async () => ({ verdict: "MISMATCH", note: "Government Warning wording differs from the required text." }),
+    });
+
+    const outcome = await processExtractClaim(claimed, deps);
+    expect(outcome.kind).toBe("done");
+    if (outcome.kind !== "done") throw new Error("unreachable");
+    expect(outcome.verdict).toBe("FAIL");
+
+    const persistedFields = await db.select().from(fieldResults).where(eq(fieldResults.verificationId, outcome.verificationId));
+    const warningRow = persistedFields.find((row) => row.fieldName === "GOVERNMENT_WARNING");
+    expect(warningRow?.verdict).toBe("MISMATCH");
+  });
+
+  it("a warning-comparator promise rejection degrades that field to NEEDS_REVIEW instead of failing the item (CP-2 §4.4 rule 3)", async () => {
+    const batchJobId = await trackBatch({ totalCount: 1 });
+    const claimed = await claimedFixture(batchJobId, "warning-reject.jpg");
+    let wasCalled = false;
+    const deps = makeDeps({
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      compareGovernmentWarning: async () => {
+        wasCalled = true;
+        throw new Error("region-detect: sharp exploded");
+      },
+    });
+
+    const outcome = await processExtractClaim(claimed, deps);
+    // Proves the comparator actually ran and its rejection was caught —
+    // not merely that the field happens to default to REVIEW some other
+    // way (e.g. the dependency never being called at all).
+    expect(wasCalled).toBe(true);
+    // "done", never "retry"/"failed" — a warning-check failure degrades
+    // the ONE field, it never fails the whole item.
+    expect(outcome.kind).toBe("done");
+    if (outcome.kind !== "done") throw new Error("unreachable");
+    expect(outcome.verdict).toBe("REVIEW");
+    expect(outcome.escalated).toBe(true);
+
+    const persistedFields = await db.select().from(fieldResults).where(eq(fieldResults.verificationId, outcome.verificationId));
+    const warningRow = persistedFields.find((row) => row.fieldName === "GOVERNMENT_WARNING");
+    expect(warningRow?.verdict).toBe("NEEDS_REVIEW");
+  });
+
+  it("a SYNCHRONOUS throw from the warning comparator also degrades gracefully, not just a rejected promise", async () => {
+    const batchJobId = await trackBatch({ totalCount: 1 });
+    const claimed = await claimedFixture(batchJobId, "warning-throw-sync.jpg");
+    let wasCalled = false;
+    const deps = makeDeps({
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      compareGovernmentWarning: () => {
+        wasCalled = true;
+        throw new Error("boom, synchronously, before returning any promise at all");
+      },
+    });
+
+    const outcome = await processExtractClaim(claimed, deps);
+    expect(wasCalled).toBe(true);
+    expect(outcome.kind).toBe("done");
+    if (outcome.kind !== "done") throw new Error("unreachable");
+    expect(outcome.verdict).toBe("REVIEW");
+
+    const persistedFields = await db.select().from(fieldResults).where(eq(fieldResults.verificationId, outcome.verificationId));
+    const warningRow = persistedFields.find((row) => row.fieldName === "GOVERNMENT_WARNING");
+    expect(warningRow?.verdict).toBe("NEEDS_REVIEW");
+  });
+
+  it("passes the ORIGINAL full-resolution image to the warning comparator, never the resized Haiku variant (CP-2 §8.3)", async () => {
+    const batchJobId = await trackBatch({ totalCount: 1 });
+    const claimed = await claimedFixture(batchJobId, "warning-original-image.jpg");
+    // Matches claimedFixture's/createApplicationAndSavedImageFixture's own
+    // declared labelImages.widthPx/heightPx (1200x1600) — see this file's
+    // fixture, and image.ts's own header comment on why the DB-declared
+    // dimensions (not a re-measurement of the bytes) drive the resize.
+    const originalBytes = await makeTestJpeg();
+
+    let capturedOriginalImage: Buffer | undefined;
+    const deps = makeDeps({
+      readLabelImage: async () => originalBytes,
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      compareGovernmentWarning: async (input: CompareGovernmentWarningFromImageInput) => {
+        capturedOriginalImage = input.originalImage;
+        return { verdict: "MATCH" };
+      },
+    });
+
+    const outcome = await processExtractClaim(claimed, deps);
+    expect(outcome.kind).toBe("done");
+
+    expect(capturedOriginalImage).toBeDefined();
+    expect(capturedOriginalImage!.equals(originalBytes)).toBe(true);
+
+    // Independent proof the two are genuinely different buffers, not the
+    // same object compared to itself — resizeStoredOriginalToHaikuVariant
+    // is the SAME real function extract-worker.ts itself calls, given the
+    // same original bytes and the same declared dimensions.
+    const haikuVariant = await resizeStoredOriginalToHaikuVariant(originalBytes, 1200, 1600);
+    expect(capturedOriginalImage!.equals(haikuVariant.buffer)).toBe(false);
   });
 });

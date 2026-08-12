@@ -7,21 +7,34 @@
  * (§2.4's table) for `verifications`/`field_results`, plus a new `RESOLVE`
  * queue item when the router escalates (§8 step 5).
  *
- * **`warningResult` is injectable, defaulting to `null`.** As of this
- * ticket, `verify/route.ts` passes `warningResult: null` to `routeLabel`
- * unconditionally — LH-020 (the warning subsystem) is not wired in yet.
- * Because `government_warning` is `required` for every beverage type
- * (`../router/required-fields.ts`) and `resolveGovernmentWarningField`
- * returns `NEEDS_REVIEW` whenever the field is present/required and no
- * comparator result is supplied, this means EVERY current submission —
- * single-label or batch — resolves to `REVIEW` at the label level today
- * (confirmed: `route.test.ts`'s own "happy path" test asserts
- * `labelVerdict === "REVIEW"`, not `PASS`). This worker inherits that same
- * honest limitation unchanged. `warningResult` is a constructor-injectable
- * dependency, not a hardcoded `null`, purely so this ticket's own tests can
- * exercise the PASS/FAIL/`autoVerifiedCount` code paths without waiting on
- * LH-020 — production code never sets it, so production behavior is
- * byte-for-byte identical to always passing `null`.
+ * **Government warning (TRO-517).** This worker calls LH-020's real
+ * comparator on every claimed item: `deps.compareGovernmentWarning`
+ * (default `compareGovernmentWarningFromImage`, `../warning`) reaches
+ * `routeLabel` as a real `WarningComparatorResult`, not a hardcoded
+ * `null`. TH-R9's word-for-word check is live for the batch path — the
+ * same wiring TRO-514 built for `verify/route.ts`.
+ *
+ * CP-2 §4.4 sets two rules for the call, both about latency:
+ *
+ * 1. **Concurrent, not serial.** `deps.compareGovernmentWarning` starts
+ *    before the Haiku call resolves. It receives the extraction as a
+ *    still-pending `Promise` (`extractionPromise.then(...)`, never an
+ *    `await`ed value) — so region detection and OCR run alongside Haiku,
+ *    not after it.
+ * 2. **A thrown error degrades one field. It never fails the item.**
+ *    `resolveWarningOrDegrade` (below) catches it — a rejected promise or
+ *    a synchronous throw, either one — and passes `null` for
+ *    `warningResult`: the same "uncertain beats wrong" behavior
+ *    `verify/route.ts` uses. `resolveGovernmentWarningField`
+ *    (`../router/field-resolution.ts`) already routes a `null` result to
+ *    `NEEDS_REVIEW`, never a fabricated match — the item still completes
+ *    and is marked `DONE`, escalated to a `RESOLVE` item like any other
+ *    REVIEW verdict, never `retry`/`failed`.
+ *
+ * The comparator reads `original` — the full-resolution buffer
+ * `readLabelImage` returns — never the resized `haikuVariant`. CP-2 §8.3:
+ * the resized variant falls below the OCR engine's usable resolution at
+ * the statute's legal minimum print size (1 mm).
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { sql } from "drizzle-orm";
@@ -38,6 +51,10 @@ import {
   type WarningComparatorResult,
 } from "../router";
 import { readLabelImage as defaultReadLabelImage } from "../storage/local-file-storage";
+import {
+  compareGovernmentWarningFromImage as defaultCompareGovernmentWarning,
+  type CompareGovernmentWarningFromImageInput,
+} from "../warning";
 import { classifyModelCallError, computeBackoffDelayMs, DEFAULT_BACKOFF_CONFIG, type BackoffConfig } from "./backoff";
 import type { ClaimedBatchQueueItem } from "./claim";
 import { markDone, markFailed, maybeCompleteBatchJob, releaseForRetry } from "./complete";
@@ -58,8 +75,16 @@ export interface ExtractWorkerDeps {
   readLabelImage: (storagePath: string) => Promise<Buffer>;
   extractLabel?: (image: PreprocessedLabelImage, options?: ExtractLabelOptions) => Promise<HaikuExtractionResult>;
   anthropicClient?: Anthropic;
-  /** See the file comment — always `null` in production. */
-  warningResult?: WarningComparatorResult | null;
+  /** LH-020's warning comparator (`compareGovernmentWarningFromImage`,
+   * `../warning`), wired in for real by TRO-517 — see this file's header
+   * comment. Injectable so a test can supply a fake with a controlled
+   * result or controlled timing, the same DI shape `extractLabel` above
+   * already uses. Called with the extraction as a still-pending `Promise`
+   * (see `processExtractClaim`'s own comment); a fake that wants to prove
+   * the concurrency requirement can hold that promise open. Defaults to
+   * the real function in `defaultDeps()` below — production callers do
+   * not need to set this. */
+  compareGovernmentWarning?: (input: CompareGovernmentWarningFromImageInput) => Promise<WarningComparatorResult>;
   backoffConfig: BackoffConfig;
 }
 
@@ -119,9 +144,30 @@ function defaultDeps(): ExtractWorkerDeps {
     comparators: undefined as unknown as FieldComparators, // production callers must supply real comparators explicitly
     readLabelImage: defaultReadLabelImage,
     extractLabel: defaultExtractLabel,
-    warningResult: null,
+    compareGovernmentWarning: defaultCompareGovernmentWarning,
     backoffConfig: DEFAULT_BACKOFF_CONFIG,
   };
+}
+
+/**
+ * Runs the warning comparator and turns a thrown error into `null` — CP-2
+ * §4.4 rule 3: an OCR failure degrades the answer, it never fails the
+ * item. Mirrors `verify/route.ts`'s own `resolveWarningOrDegrade`
+ * (TRO-514) exactly: `try`/`await`/`catch` here catches both a rejected
+ * promise and a synchronous throw from `compare` — an injected
+ * dependency's failure mode is not guaranteed, so this is the boundary
+ * that checks it (standing rule 13), not an assumption that every
+ * implementation is a well-behaved `async function`.
+ */
+async function resolveWarningOrDegrade(
+  compare: (input: CompareGovernmentWarningFromImageInput) => Promise<WarningComparatorResult>,
+  input: CompareGovernmentWarningFromImageInput,
+): Promise<WarningComparatorResult | null> {
+  try {
+    return await compare(input);
+  } catch {
+    return null;
+  }
 }
 
 /** Releases (retryable, under maxAttempts) or permanently fails (CP-3
@@ -199,7 +245,27 @@ export async function processExtractClaim(item: ClaimedBatchQueueItem, deps: Par
     const original = await d.readLabelImage(labelImageRow.storagePath);
     const haikuVariant = await resizeStoredOriginalToHaikuVariant(original, labelImageRow.widthPx, labelImageRow.heightPx);
     const extractorImage: PreprocessedLabelImage = { data: haikuVariant.buffer.toString("base64"), mediaType: "image/jpeg" };
-    extraction = await (d.extractLabel ?? defaultExtractLabel)(extractorImage, { client: d.anthropicClient });
+
+    const extractionPromise = (d.extractLabel ?? defaultExtractLabel)(extractorImage, { client: d.anthropicClient });
+    // `.then`, not `await` — this is what starts the warning check in the
+    // same tick as the Haiku call instead of after it resolves (this
+    // file's header comment, CP-2 §4.4 rule 1). The `.catch(() => {})`
+    // below only marks the derived promise as handled, so a fake
+    // `compareGovernmentWarning` (most tests' `deps`) that never reads
+    // `input.extracted` cannot log a spurious Node "unhandled rejection"
+    // when extraction itself fails — it does not change what either
+    // promise resolves or rejects with.
+    const governmentWarningExtraction = extractionPromise.then((result) => result.government_warning);
+    governmentWarningExtraction.catch(() => {});
+    const warningPromise = resolveWarningOrDegrade(d.compareGovernmentWarning ?? defaultCompareGovernmentWarning, {
+      extracted: governmentWarningExtraction,
+      // The ORIGINAL, full-resolution image — never `haikuVariant`. See
+      // this file's header comment / CP-2 §8.3.
+      originalImage: original,
+    });
+
+    let warningResult: WarningComparatorResult | null;
+    [extraction, warningResult] = await Promise.all([extractionPromise, warningPromise]);
 
     const applicationRecord = toApplicationRecord(application);
     // longEdgePx comes from the variant sharp ACTUALLY produced
@@ -207,7 +273,7 @@ export async function processExtractClaim(item: ClaimedBatchQueueItem, deps: Par
     // `computeResizeDimensions` call against the same width/height — one
     // real source of truth for what was actually sent to the model,
     // instead of two call sites that could silently drift apart.
-    routerResult = routeLabel(extraction, applicationRecord, d.comparators, d.warningResult ?? null, {
+    routerResult = routeLabel(extraction, applicationRecord, d.comparators, warningResult, {
       rejected: false,
       longEdgePx: Math.max(haikuVariant.dims.width, haikuVariant.dims.height),
     });

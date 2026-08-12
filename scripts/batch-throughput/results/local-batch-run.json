@@ -1,0 +1,66 @@
+{
+  "ticket": "TRO-544 / LH-039",
+  "measuredAt": "2026-08-12T22:06:38.754Z",
+  "deployment": "local dev workstation, not deployed",
+  "baseUrl": "http://localhost:3405",
+  "haikuModel": "claude-haiku-4-5",
+  "sonnetModel": "claude-sonnet-5",
+  "machine": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpuModel": "Apple M4 Pro",
+    "cpuCount": 14,
+    "nodeVersion": "v23.2.0"
+  },
+  "workerConcurrency": {
+    "extract": 5,
+    "resolve": 2,
+    "singleLabelResolve": 1,
+    "source": "scripts/batch-worker/run.ts defaults"
+  },
+  "fixture": {
+    "source": "var/batch-fixture",
+    "itemCount": 32
+  },
+  "batchJobId": 124,
+  "totalCount": 32,
+  "processedCount": 32,
+  "startedAt": "2026-08-12T22:06:38.752Z",
+  "completedAt": "2026-08-12T22:07:16.787Z",
+  "throughput": {
+    "itemsPerMinute": 50.48,
+    "avgMsPerItem": 1189
+  },
+  "dispositionMix": {
+    "autoVerifiedCount": 18,
+    "passCount": 11,
+    "failCount": 7,
+    "resolvedBySonnetCount": 5,
+    "needsHumanCount": 9,
+    "failedCount": 0
+  },
+  "autoVerifiedShare": 0.5625,
+  "escalationCap": {
+    "capThreshold": 8,
+    "sonnetCallCount": 8,
+    "capHit": true
+  },
+  "cost": {
+    "haikuCallCount": 32,
+    "haikuMeanCostUsd": 0.0046681249999999995,
+    "sonnetCallCount": 8,
+    "sonnetMeanCostUsd": 0.010968923076923074,
+    "derivedTotalUsd": 0.23713138461538458,
+    "meanCostSource": {
+      "file": "scripts/eval/results/eval-report.json",
+      "measuredAt": "2026-08-12T13:26:45.488Z"
+    }
+  },
+  "notes": [
+    "throughput and autoVerifiedShare are OBSERVED: read verbatim from this run's own GET /api/batch/:id response, computed by the same computeBatchThroughput/computeAutoVerifiedShare the product's batch-results screen uses.",
+    "sonnetCallCount is OBSERVED: read directly from the batch_jobs row after the batch reached COMPLETED, and cross-checked against the polled API response's totalCount/processedCount.",
+    "cost.derivedTotalUsd is DERIVED: real call counts from this run, multiplied by the eval harness's measured MEAN per-call cost from scripts/eval/results/eval-report.json (see cost.meanCostSource for that file's own measuredAt). This run's own per-call token usage was not captured — the batch worker has no usage-capturing seam today.",
+    "workerConcurrency is OBSERVED from this script's own environment variables, assumed identical to the separate worker process's environment because both were started from the same sourced shell for this run.",
+    "This ran on a local dev workstation, not a deployed Render instance. Do not quote these figures as deployed throughput."
+  ]
+}

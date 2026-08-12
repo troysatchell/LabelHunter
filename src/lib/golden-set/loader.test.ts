@@ -548,6 +548,42 @@ describe("validateManifest", () => {
       }
     });
 
+    it("rejects rendered+ai-backdrop missing labelPlacement entirely", () => {
+      const broken = manifest([aiBackdropCase()]);
+      // Distinct from "rejects labelPlacement with a non-numeric corner"
+      // below: this deletes the key entirely rather than malforming its
+      // value, exercising checkCase's `if ("labelPlacement" in raw)` branch
+      // instead of checkLabelPlacement.
+      delete broken.cases[0].labelPlacement;
+      try {
+        validateManifest(broken);
+        expect.unreachable("validateManifest should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(GoldenSetValidationError);
+        expect(
+          (err as GoldenSetValidationError).problems.some((p) => p.includes("labelPlacement")),
+        ).toBe(true);
+      }
+    });
+
+    it("rejects rendered+ai-backdrop missing generationMetadata entirely", () => {
+      const broken = manifest([aiBackdropCase()]);
+      // Distinct from "rejects generationMetadata missing promptVersion"
+      // below: this deletes the whole object, exercising checkCase's
+      // `if ("generationMetadata" in raw)` branch instead of
+      // checkGenerationMetadata's own field checks.
+      delete broken.cases[0].generationMetadata;
+      try {
+        validateManifest(broken);
+        expect.unreachable("validateManifest should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(GoldenSetValidationError);
+        expect(
+          (err as GoldenSetValidationError).problems.some((p) => p.includes("generationMetadata")),
+        ).toBe(true);
+      }
+    });
+
     it("rejects an invalid cameraCondition value", () => {
       expect(() =>
         validateManifest(

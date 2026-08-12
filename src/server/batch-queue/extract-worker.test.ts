@@ -83,7 +83,10 @@ async function claimedFixture(batchJobId: number, filename: string, applicationO
 describe("processExtractClaim — PASS", () => {
   it("persists verifications/field_results, marks the item DONE, and increments processedCount + autoVerifiedCount", async () => {
     const batchJobId = await trackBatch({ totalCount: 1 });
-    const claimed = await claimedFixture(batchJobId, "pass.jpg");
+    // brandName/classType explicitly matching WELL_FORMED_EXTRACTION_BODY —
+    // needed for a real comparator MATCH here specifically (test-support.ts's
+    // own default is deliberately NOT this shared value; see its comment).
+    const claimed = await claimedFixture(batchJobId, "pass.jpg", { brandName: "Old Tom Distillery", classType: "Straight Bourbon Whiskey" });
     const deps = makeDeps({
       anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
       warningResult: { verdict: "MATCH" }, // injected — see extract-worker.ts's own file comment on why
@@ -119,7 +122,14 @@ describe("processExtractClaim — PASS", () => {
 describe("processExtractClaim — FAIL", () => {
   it("a genuine ABV mismatch: verdict FAIL, autoVerifiedCount STILL increments (CP-3 §7.1 — PASS and FAIL bundle together)", async () => {
     const batchJobId = await trackBatch({ totalCount: 1 });
-    const claimed = await claimedFixture(batchJobId, "fail.jpg", { abvPercent: 10 }); // WELL_FORMED says 45%
+    // brandName/classType matching WELL_FORMED_EXTRACTION_BODY so brand/class
+    // MATCH cleanly, isolating the ABV mismatch as the only NEEDS_REVIEW/FAIL
+    // driver this test means to exercise.
+    const claimed = await claimedFixture(batchJobId, "fail.jpg", {
+      abvPercent: 10, // WELL_FORMED says 45%
+      brandName: "Old Tom Distillery",
+      classType: "Straight Bourbon Whiskey",
+    });
     const deps = makeDeps({
       anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
       warningResult: { verdict: "MATCH" },
@@ -264,7 +274,10 @@ describe("processExtractClaim — non-retryable failure", () => {
 describe("processExtractClaim — lost-lease race (CP-3 §3.2)", () => {
   it("discards its own result when another worker already completed the item first — no duplicate verifications row, no double-counted batchJobs counters", async () => {
     const batchJobId = await trackBatch({ totalCount: 1 });
-    const claimed = await claimedFixture(batchJobId, "lost-lease.jpg");
+    // brandName/classType matching WELL_FORMED_EXTRACTION_BODY — this test
+    // expects a clean PASS (autoVerifiedCount, not an escalation) so the
+    // race is isolated to the claim/completion guard, not the router.
+    const claimed = await claimedFixture(batchJobId, "lost-lease.jpg", { brandName: "Old Tom Distillery", classType: "Straight Bourbon Whiskey" });
 
     // Simulate this worker's lease expiring WHILE it was still (slowly)
     // computing, and a second worker reclaiming + fully completing the

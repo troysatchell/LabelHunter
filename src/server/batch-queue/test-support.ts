@@ -102,13 +102,18 @@ export interface ApplicationOverrides {
  * malformed `applications` row (e.g. a null `netContentsValue`) to prove
  * the worker rejects it rather than silently coercing it.
  *
- * `brandName`/`classType`/`abvPercent`/`netContentsValue`/`netContentsUnit`
- * default to EXACT matches for `../extractor/test-support.ts`'s
- * `WELL_FORMED_EXTRACTION_BODY` — a test that wants a genuine router PASS
- * needs every comparator field to agree, not just the one field it is
- * deliberately testing; a mismatched brand name here would route to
- * `NEEDS_REVIEW` (brand/class never assert a silent MISMATCH, CP-1 §5.3)
- * and mask whatever the test actually meant to exercise.
+ * `brandName`/`classType` default to a value unique to this ticket, NOT
+ * `../extractor/test-support.ts`'s `WELL_FORMED_EXTRACTION_BODY` brand
+ * ("Old Tom Distillery") — `src/app/api/verify/route.test.ts` already
+ * documents why, at its own "brand name unique to this test" comment
+ * (line 329): vitest runs test FILES in parallel by default, and more than
+ * one file in this repo persists an `applications` row with that shared
+ * brand name, then queries by it. A test in THIS ticket that genuinely
+ * needs a comparator MATCH against `WELL_FORMED_EXTRACTION_BODY` passes
+ * `{ brandName: "Old Tom Distillery", classType: "Straight Bourbon Whiskey" }`
+ * explicitly as an override, scoping the shared-value exposure to only the
+ * handful of call sites that actually need it, rather than every call in
+ * this whole suite.
  */
 export async function createApplicationAndSavedImageFixture(
   db: Db = defaultDb,
@@ -125,7 +130,7 @@ export async function createApplicationAndSavedImageFixture(
     .values({
       batchJobId,
       beverageType: "spirits",
-      brandName: overrides.brandName ?? "Old Tom Distillery",
+      brandName: overrides.brandName ?? "TRO-474 Test Fixture",
       classType: overrides.classType ?? "Straight Bourbon Whiskey",
       abvPercent: "abvPercent" in overrides ? overrides.abvPercent : 45,
       netContentsValue: "netContentsValue" in overrides ? overrides.netContentsValue : 750,

@@ -707,15 +707,42 @@ describe("loadGoldenSetManifest", () => {
 
   it("includes the net-contents format-variant case required by rubric vector V7 (TRO-515)", () => {
     const result = loadGoldenSetManifest();
+    const baseline = result.cases.find((c) => c.caseId === "case-01-clean-match-spirits");
     const altFormat = result.cases.find(
       (c) => c.caseId === "case-30-clean-match-net-contents-alt-format",
     );
 
+    expect(baseline).toBeDefined();
     expect(altFormat).toBeDefined();
+
+    // case-30 isolates the net-contents format difference as its ONE
+    // distinguishing feature from case-01-clean-match-spirits (golden-set/
+    // README.md's own claim about this case). Check that claim directly,
+    // field by field, instead of trusting the prose: every field besides
+    // net contents (and net contents' own VALUE, which the two cases still
+    // share) must match case-01 exactly.
+    expect(altFormat?.application.brandName).toBe(baseline?.application.brandName);
+    expect(altFormat?.application.classType).toBe(baseline?.application.classType);
+    expect(altFormat?.application.abvPercent).toBe(baseline?.application.abvPercent);
+    expect(altFormat?.label.brandName).toBe(baseline?.label.brandName);
+    expect(altFormat?.label.classType).toBe(baseline?.label.classType);
+    expect(altFormat?.label.abvPresent).toBe(baseline?.label.abvPresent);
+    expect(altFormat?.label.abvText).toBe(baseline?.label.abvText);
+    expect(altFormat?.label.abvPercent).toBe(baseline?.label.abvPercent);
+    expect(altFormat?.label.proof).toBe(baseline?.label.proof);
+    expect(altFormat?.label.netContentsValue).toBe(baseline?.label.netContentsValue);
+    expect(altFormat?.label.governmentWarningPresent).toBe(baseline?.label.governmentWarningPresent);
+    expect(altFormat?.label.governmentWarningText).toBe(baseline?.label.governmentWarningText);
+    expect(altFormat?.label.governmentWarningPrefixAllCaps).toBe(
+      baseline?.label.governmentWarningPrefixAllCaps,
+    );
+
     // audit/rubric.md Appendix A, V7: net contents "750 mL" vs "750ml" ->
     // MATCH. The label carries the odd format; the application carries the
     // canonical one — only `label` has a free-text netContentsText field.
+    // This is the ONE thing that should differ from case-01 above.
     expect(altFormat?.label.netContentsText).toBe("750ml");
+    expect(altFormat?.label.netContentsText).not.toBe(baseline?.label.netContentsText);
     expect(altFormat?.application.netContentsValue).toBe(750);
     expect(altFormat?.application.netContentsUnit).toBe("mL");
     expect(altFormat?.label.netContentsText).not.toBe(

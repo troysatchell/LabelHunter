@@ -4,6 +4,93 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-478 — local CodeRabbit review round 1: 3 findings, 3 fixed (2026-08-11)
+
+**What changed.** The gate's local CodeRabbit pass reviewed this branch once, before the PR
+opened. It found 3 issues. All were real. All are fixed.
+
+- `docs/error-states.md` (minor): a missing relative pronoun. "A UI a first-time user" read
+  wrong. It now reads "a UI that a first-time user."
+- `docs/error-states.md` (major): the outbound-dependency section claimed "exactly one
+  outbound dependency… nothing else calls another host," then carved out Postgres in the very
+  next paragraph. That is an internal inconsistency, not just loose wording. Postgres now has
+  its own row in the dependency table, with its real degradation behavior (503 SERVICE,
+  "could not save this verification") and an explicit note on why it is a different kind of
+  concern than a public vendor endpoint behind a firewall.
+- `src/app/api/verify/route.test.ts` (minor): the "no SDK detail leaks into the response"
+  assertion checked the error class name and errno-style strings, but not the literal SDK
+  message "Connection error." Added to the same check.
+
+Recorded in `factory/review-findings.jsonl` — categories `prose-style`, `doc-consistency`,
+`test-coverage`.
+
+**How to run it.** `pnpm test -- src/app/api/verify/route.test.ts`.
+
+**Rollback.** `git revert` this commit. Every change here is prose or a test assertion; no
+production code moved.
+
+## TRO-478 — LH-052: Designed error states (2026-08-11)
+
+**What changed.** This ticket covers four single-label designed error states (TH-R20):
+an unreadable image, an oversized file, an API failure or timeout with a retry
+affordance, and unreachable-endpoint degradation (TH-R7). Each gets a ticket-named
+regression test. `docs/error-states.md` is new — the error-path walkthrough TH-R20 asks
+for, and the outbound-dependency list TH-R7 asks for.
+
+Three of the four states already worked. LH-010's preprocessing pipeline and LH-015's
+verify screen built them first. No route-level test proved it for the unreadable-image
+and oversized-file cases, and no test used the Anthropic SDK's real connection-error
+class for the unreachable-endpoint case. This ticket adds that proof:
+
+- `src/app/api/verify/route.test.ts` — a corrupt/truncated image (a valid JPEG header,
+  damaged pixel data) returns 422 IMAGE, distinct from an unsupported format. Confirmed
+  the extractor is never reached.
+- `src/app/api/verify/route.test.ts` — a file over the 20 MB upload ceiling returns 422
+  IMAGE. Confirmed the extractor is never reached.
+- `src/app/api/verify/route.test.ts` — a real `Anthropic.APIConnectionError` (not a
+  generic stand-in `Error`) returns 503 SERVICE. Confirmed no SDK-internal detail leaks
+  into the response, and no application row is left behind.
+- The pre-existing route test titled "an unreadable image" was renamed. It tests garbage
+  bytes with no recognizable image format at all — a different state from a damaged file
+  with a real header. The new corrupt-image test above is the genuine unreadable-image
+  case.
+
+**The one real bug, fixed.** `verify-client.ts`'s request timeout did not stay live
+through the whole request. The old code cleared the timer in a `finally` block right
+after `fetch()` resolved — before the response body finished parsing. A response whose
+headers arrived quickly, but whose body then stalled past the 45-second budget, had no
+timeout protection at all once headers were in. `review-queue-client.ts` had this exact
+bug shape, found and fixed for TRO-476 (see that entry, below). This ticket applies the
+same fix here: the timer now clears only after the body read completes, in `finally`
+around `response.json()`, not around `fetch()` alone (standing rule 23).
+
+`src/app/_lib/verify-client.test.ts`'s new case proved the bug first: a manufactured slow
+body read resolved successfully instead of aborting, because the timer had already been
+cleared. It is green after the fix. `src/app/_components/VerifyForm.test.tsx` adds a
+second case: a SERVICE-classified failure shows the designed panel, and "Try again"
+resubmits and succeeds — the retry affordance TH-R20 asks for, proven at the component
+level too.
+
+**Deferred — four batch-scoped states, not attempted here.** LH-052's ticket text also
+names a malformed CSV, unpairable rows, a partial batch failure, and a rate-limit backoff
+notice. None of these exists to test yet. The batch pipeline they belong to — LH-040
+(CSV manifest + pairing) and LH-041 (job queue + worker pool) — is still in progress in
+sibling worktrees, not yet merged to `main`. Building throwaway error-state UI against a
+pipeline shape that has not landed would not reliably match what LH-040/LH-041 actually
+ship, and batch infrastructure is outside this ticket's file scope. `docs/error-states.md`
+names this deferral explicitly. These four states become buildable once LH-040 and LH-041
+merge; LH-042 (batch progress + results UI) is the natural ticket to carry them.
+
+**Tests.** `pnpm test -- src/app/api/verify/route.test.ts src/app/_lib/verify-client.test.ts
+src/app/_components/VerifyForm.test.tsx src/app/_components/ErrorPanel.test.tsx` — 4 files,
+all green.
+
+**How to run it.** Run `source .factory-env` first — `route.test.ts` uses this worktree's
+real database. Then run the command above, or `pnpm test` for the full suite.
+
+**Rollback.** `git revert` this ticket's commits. `verify-client.ts`'s timer fix is the
+only behavior change; reverting it restores the pre-existing (buggy) timeout-clearing
+order. No schema change, no migration.
 ## TRO-472 — PR #18 review: GitHub CodeRabbit, 14 findings, 14 fixed (2026-08-11)
 
 **What changed.** GitHub's CodeRabbit reviewed PR #18's full branch diff — the design document

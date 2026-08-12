@@ -121,19 +121,28 @@ export async function submitVerification(
       signal: controller.signal,
     });
   } catch {
+    clearTimeout(timeoutId);
     if (controller.signal.aborted) {
       throw new VerifyClientError("SERVICE", "LabelHunter took too long to respond. Check your connection and try again.");
     }
     throw new VerifyClientError("SERVICE", "LabelHunter could not reach the server. Check your connection and try again.");
-  } finally {
-    clearTimeout(timeoutId);
   }
 
+  // The timer stays live through the body read, not just the fetch — see
+  // review-queue-client.ts's identical fix (CodeRabbit finding, TRO-476
+  // local review round 2). Clearing it in a `finally` attached only to the
+  // `fetch()` call above left a response whose body never finished
+  // streaming with no timeout protection at all (standing rule 23).
   let payload: unknown;
   try {
     payload = await response.json();
   } catch {
+    if (controller.signal.aborted) {
+      throw new VerifyClientError("SERVICE", "LabelHunter took too long to respond. Check your connection and try again.");
+    }
     throw new VerifyClientError("SERVICE", "LabelHunter received an unexpected response. Try again.");
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   if (!response.ok) {

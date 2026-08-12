@@ -308,24 +308,35 @@ describe("detectImageMimeType", () => {
 });
 
 describe("ensurePngBytes", () => {
-  it("passes PNG bytes through unchanged when the response mimeType is already image/png", async () => {
+  it("passes PNG bytes through unchanged when the actual content is already PNG", async () => {
     const pngBytes = await makeSolidImage("png");
-    const result = await ensurePngBytes(pngBytes, "image/png");
+    const result = await ensurePngBytes(pngBytes);
     expect(result).toBe(pngBytes); // same buffer instance -- no re-encode
   });
 
-  it("transcodes a non-PNG response (e.g. image/jpeg) to real PNG bytes", async () => {
+  it("transcodes non-PNG bytes (detected from content) to real PNG bytes", async () => {
     const jpegBytes = await makeSolidImage("jpeg");
-    const result = await ensurePngBytes(jpegBytes, "image/jpeg");
+    const result = await ensurePngBytes(jpegBytes);
     expect(result).not.toBe(jpegBytes);
     const meta = await sharp(result).metadata();
     expect(meta.format).toBe("png");
   });
 
-  it("transcodes to PNG when the response mimeType is missing entirely", async () => {
-    const jpegBytes = await makeSolidImage("jpeg");
-    const result = await ensurePngBytes(jpegBytes, undefined);
+  it("detects format from the bytes themselves, not a claimed label -- there is no mimeType parameter to spoof", async () => {
+    // The whole point of this fix: a prior version trusted a caller-supplied
+    // mimeType string instead of checking real content. There is no such
+    // parameter to pass a false label through anymore -- WEBP bytes are
+    // still correctly detected and transcoded regardless of what any caller
+    // might have claimed about them.
+    const webpBytes = await makeSolidImage("webp");
+    const result = await ensurePngBytes(webpBytes);
     const meta = await sharp(result).metadata();
     expect(meta.format).toBe("png");
+  });
+
+  it("propagates a clear error when the response bytes have no detectable image format", async () => {
+    await expect(ensurePngBytes(Buffer.from("not an image"))).rejects.toThrow(
+      /unsupported or undetectable/,
+    );
   });
 });

@@ -185,14 +185,19 @@ export async function detectImageMimeType(bytes: Buffer, what: string): Promise<
 
 /**
  * `generateOne` always writes the backdrop as `<caseId>.png` (see below).
- * Gemini's documented output MIME types include `image/jpeg` as well as
- * `image/png` (design doc §9's citation), so bytes returned with a
- * non-PNG `mimeType` are transcoded here — the one place that knows both
- * the claimed and the actual format — rather than trusting the assumption
- * baked into every other file's `.png` extension.
+ * Detects the format from the response's actual bytes (`detectImageMimeType`
+ * — the same content-not-assumption check the reference photo already gets)
+ * rather than trusting whatever `mimeType` label the response claims. A
+ * producer's self-reported type is exactly the kind of claim this repo does
+ * not trust until it is checked against real content — the response's own
+ * `inlineData.mimeType` is no more reliable a priori than the hardcoded
+ * `"image/jpeg"` finding 6 already removed on the request side. Gemini's
+ * documented output MIME types include `image/jpeg` as well as `image/png`
+ * (design doc §9's citation), so non-PNG bytes are transcoded here.
  */
-export async function ensurePngBytes(bytes: Buffer, mimeType: string | undefined): Promise<Buffer> {
-  if (mimeType === "image/png") {
+export async function ensurePngBytes(bytes: Buffer): Promise<Buffer> {
+  const actualMimeType = await detectImageMimeType(bytes, "generated response");
+  if (actualMimeType === "image/png") {
     return bytes;
   }
   return sharp(bytes).png().toBuffer();
@@ -236,7 +241,7 @@ export async function generateWithGemini(apiKey: string): Promise<ImageGenerator
       throw new Error(`imagen: no image returned for prompt: ${prompt.slice(0, 80)}...`);
     }
     const responseBytes = Buffer.from(imagePart.inlineData.data, "base64");
-    return ensurePngBytes(responseBytes, imagePart.inlineData.mimeType);
+    return ensurePngBytes(responseBytes);
   };
 }
 

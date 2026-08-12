@@ -577,6 +577,45 @@ describe("validateManifest", () => {
       expect(() => validateManifest(broken)).toThrow(GoldenSetValidationError);
     });
 
+    it("rejects a generationMetadata.generatedAt that is not a parseable ISO-8601 timestamp", () => {
+      const broken = manifest([
+        aiBackdropCase({
+          generationMetadata: {
+            model: "gemini-3.1-flash-image",
+            resolution: "1K",
+            promptVersion: "v1",
+            generatedAt: "unknown",
+          },
+        }),
+      ]);
+      try {
+        validateManifest(broken);
+        expect.unreachable("validateManifest should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(GoldenSetValidationError);
+        expect(
+          (err as GoldenSetValidationError).problems.some((p) => p.includes("generatedAt")),
+        ).toBe(true);
+      }
+    });
+
+    it("rejects a generationMetadata.generatedAt that parses but is not the canonical toISOString format", () => {
+      // Missing milliseconds -- new Date(...) parses this fine, but
+      // toISOString() would always add ".000Z", so it round-trips to a
+      // DIFFERENT string. isNonEmptyString alone would have accepted this.
+      const broken = manifest([
+        aiBackdropCase({
+          generationMetadata: {
+            model: "gemini-3.1-flash-image",
+            resolution: "1K",
+            promptVersion: "v1",
+            generatedAt: "2026-08-11T00:00:00Z",
+          },
+        }),
+      ]);
+      expect(() => validateManifest(broken)).toThrow(GoldenSetValidationError);
+    });
+
     it("rejects referenceBottle set on a rendered (non-ai-backdrop) case", () => {
       // referenceBottle is type-valid on any GoldenSetCase regardless of
       // provenance (same reasoning as above) — this is a manifest-level

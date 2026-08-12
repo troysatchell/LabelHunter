@@ -124,6 +124,24 @@ function isBoolean(value: unknown): value is boolean {
 }
 
 /**
+ * Checks `value` is a string in the exact canonical format
+ * `Date.prototype.toISOString()` produces (e.g.
+ * `"2026-08-11T20:12:08.000Z"`) — the format `imagen.ts` actually writes
+ * for `generationMetadata.generatedAt` (`new Date().toISOString()`).
+ * Round-tripping through `toISOString()` and comparing to the original
+ * string rejects both unparseable values ("unknown") and parseable-but-
+ * non-canonical ones (a date with no time, or missing milliseconds) that
+ * `isNonEmptyString` alone would let through.
+ */
+function isIsoTimestamp(value: unknown): value is string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return false;
+  }
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
+}
+
+/**
  * Checks one field against a type predicate and pushes a readable problem
  * message when it fails. Returns whether the field is present and correct,
  * so callers can skip dependent checks on a field that already failed.
@@ -265,10 +283,15 @@ function checkLabelPlacement(problems: string[], where: string, raw: unknown): v
 
 /**
  * Validates a `rendered+ai-backdrop` case's `generationMetadata` — a
- * forensic record, not a reproducibility claim (design doc §6/§10). Every
- * field is a required non-empty string; there is no enum to check against
- * here because the model name and resolution are free text describing
- * whatever `imagen.ts` actually used, not a closed set this schema owns.
+ * forensic record, not a reproducibility claim (design doc §6/§10).
+ * `model`, `resolution`, and `promptVersion` are required non-empty
+ * strings; there is no enum to check against here because the model name
+ * and resolution are free text describing whatever `imagen.ts` actually
+ * used, not a closed set this schema owns. `generatedAt` is narrower: it
+ * must be a real ISO-8601 timestamp in `imagen.ts`'s own
+ * `new Date().toISOString()` format, not merely a non-empty string —
+ * forensic metadata that cannot be parsed as a timestamp is worse than
+ * useless in a committed manifest.
  */
 function checkGenerationMetadata(problems: string[], where: string, raw: unknown): void {
   if (!isRecord(raw)) {
@@ -279,7 +302,14 @@ function checkGenerationMetadata(problems: string[], where: string, raw: unknown
   checkField(problems, w, raw, "model", isNonEmptyString, "a non-empty string");
   checkField(problems, w, raw, "resolution", isNonEmptyString, "a non-empty string");
   checkField(problems, w, raw, "promptVersion", isNonEmptyString, "a non-empty string");
-  checkField(problems, w, raw, "generatedAt", isNonEmptyString, "a non-empty string");
+  checkField(
+    problems,
+    w,
+    raw,
+    "generatedAt",
+    isIsoTimestamp,
+    'an ISO-8601 timestamp matching Date.prototype.toISOString() (e.g. "2026-08-11T20:12:08.000Z")',
+  );
 }
 
 /**

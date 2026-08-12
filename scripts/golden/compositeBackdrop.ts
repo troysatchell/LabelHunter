@@ -75,8 +75,20 @@ export async function compositeLabelOntoBackdrop(
   const linear = solveLinearMap(labelWidth, labelHeight, quad);
   const inverse = invert(linear);
 
-  const xs = [quad.topLeft.x, quad.topRight.x, quad.bottomLeft.x, quad.bottomRight.x];
-  const ys = [quad.topLeft.y, quad.topRight.y, quad.bottomLeft.y, quad.bottomRight.y];
+  // The warp above uses only topLeft/topRight/bottomLeft (see
+  // solveLinearMap's docstring). Its own implied 4th corner is
+  // topRight + bottomLeft - topLeft, not the detected quad.bottomRight. On
+  // a true trapezoid quad, those two points differ. A bounding box built
+  // from the four detected corners can then be smaller than the
+  // parallelogram the warp actually draws. Pixels in that gap never get
+  // drawn (TRO-509). Use the implied corner instead. The box then always
+  // covers everything the loop below can draw.
+  const impliedBottomRight = {
+    x: quad.topRight.x + quad.bottomLeft.x - quad.topLeft.x,
+    y: quad.topRight.y + quad.bottomLeft.y - quad.topLeft.y,
+  };
+  const xs = [quad.topLeft.x, quad.topRight.x, quad.bottomLeft.x, impliedBottomRight.x];
+  const ys = [quad.topLeft.y, quad.topRight.y, quad.bottomLeft.y, impliedBottomRight.y];
   const minX = Math.max(0, Math.floor(Math.min(...xs)));
   const maxX = Math.min(bgWidth - 1, Math.ceil(Math.max(...xs)));
   const minY = Math.max(0, Math.floor(Math.min(...ys)));

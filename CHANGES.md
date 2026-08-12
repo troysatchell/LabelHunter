@@ -4,6 +4,70 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-537 — LH-032 · Prove the government warning FAIL path on a real image (2026-08-12)
+
+**What this proves.** TH-R9 names three acceptance cases. One passes. Two fail. Until this
+ticket, only the PASS case ran the real pipeline — case-01 in
+`src/server/warning/index.test.ts`. Both FAIL cases ran only against hand-built strings. Both
+went straight to `reconcileWarningChannels` (`reconcile.test.ts:59-63`, `:80-87`). That gap
+mattered. CP-2 §4.5's rule: "we never accuse on one channel." A single readable channel
+returns `NEEDS_REVIEW`, never `MISMATCH`. Comparator-level proof does not show that the live
+path reaches the same answer. Troy ruled on this (INT-001,
+`audit/requirements/interpretations.md:9-24`): comparator-level proof does not satisfy TH-R9.
+
+**Two new tests, one file.** Both live in `src/server/warning/index.test.ts`, in the existing
+"real image, real OCR, real region detection" `describe` block, beside the case-01 test they
+mirror. Neither passes a `deps` argument to `compareGovernmentWarningFromImage` — region
+detection, cropping, and OCR all run for real.
+
+- **case-08** (the case INT-001 requires): real pipeline against
+  `golden-set/images/case-08-title-case-warning-prefix-only.jpg`. Verdict `MISMATCH`, note
+  "Government Warning must print in capital letters."
+- **case-10** (optional under INT-001, added anyway — nearly free, and it closes TH-R9's third
+  acceptance shape on a real image): real pipeline against
+  `golden-set/images/case-10-reworded-warning-clause-one.jpg`. Verdict `MISMATCH`, note
+  "Government Warning wording differs from the required text."
+
+Both tests read their image path and warning text from `loadGoldenSetManifest()`, never a
+pasted literal. A manifest edit that changes the ground truth breaks the test right away.
+
+**The trap, confirmed and avoided.** `extractedWarning()`'s defaults are
+`prefix_casing: "ALL_CAPS"` and the canonical warning text. A standalone `tsx` script measured
+what those defaults do against case-08's real image. The script ran outside the repo and wrote
+no file. The result: `NEEDS_REVIEW`, reason `WARNING_MISMATCH`, note "Government Warning could
+not be read consistently" — not `MISMATCH`.
+
+The VLM channel reads the canonical, all-caps text. The real OCR channel reads the image's
+actual title-case text. The two disagree outright, so the code takes
+`reconcileDualChannel`'s disagree branch (`reconcile.ts:136-138`). Only the agree branch can
+return `MISMATCH`, and these two channels do not agree.
+
+The new tests avoid this trap. Each passes the case's own transcription and its real
+`prefix_casing`: `TITLE_CASE` for case-08, `ALL_CAPS` for case-10. Case-10's prefix is correct.
+Only clause (1)'s wording is off.
+
+**Evidence, measured this session.**
+
+| measurement | value |
+| -- | -- |
+| case-08, real pipeline, `pnpm test` | `MISMATCH`, "Government Warning must print in capital letters." |
+| case-08 wall clock | 296 ms (vitest run), 332 ms (standalone `tsx` script) |
+| case-08 with the ALL_CAPS trap (verification only, not shipped) | `NEEDS_REVIEW` / `WARNING_MISMATCH`, "Government Warning could not be read consistently." |
+| case-10, real pipeline, `pnpm test` | `MISMATCH`, "Government Warning wording differs from the required text." |
+| case-10 wall clock | 298 ms |
+
+**Not touched.** This ticket leaves `reconcile.ts`, `region-detect.ts`, `ocr.ts`, and
+`OCR_CONFIDENCE_FLOOR` unchanged. It adds tests. It fixes no production code.
+`reconcile.test.ts:59-63` and `:80-87` (the comparator-level title-case and reworded tests) stay
+untouched too. They remain the right unit tests. This ticket adds the missing integration proof
+beside them.
+
+**Effect on TH-R9.** This ticket meets INT-001's bar. A FAIL case now runs the real image
+pipeline. TH-R9 moves out of PARTIAL.
+
+**Rollback.** Revert this ticket's commits. They touch two files: this changelog entry and
+`src/server/warning/index.test.ts`. No schema change.
+
 ## TRO-536 — LH-031b · Drop the apostrophe at normalizer step 6 (2026-08-12)
 
 **What changed.** Step 6 of `normalizeForFuzzyMatch` (`src/server/comparators/normalize.ts`)

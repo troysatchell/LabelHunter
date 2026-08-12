@@ -73,6 +73,16 @@ jobs:
         if: steps.scaffold.outputs.present == 'true'
         run: pnpm install --frozen-lockfile
 
+      - name: Install Playwright browsers
+        if: steps.scaffold.outputs.present == 'true'
+        # `pnpm install` does not download Playwright's browser binaries — a
+        # separate, explicit install step is required. Without it, every test
+        # that launches a real Chromium (scripts/golden/build.test.ts,
+        # scripts/golden/render.test.ts) fails on a fresh runner with
+        # "browserType.launch: Executable doesn't exist". `--with-deps` also
+        # installs the Linux system libraries headless Chromium needs.
+        run: pnpm exec playwright install --with-deps chromium
+
       - name: Typecheck
         if: steps.scaffold.outputs.present == 'true'
         run: pnpm typecheck

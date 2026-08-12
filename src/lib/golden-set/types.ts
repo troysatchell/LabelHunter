@@ -120,12 +120,26 @@ export interface GoldenExpectedResult {
 }
 
 /**
+ * The three photographic conditions Gemini generates for the
+ * realistic-corpus track (design doc §3,
+ * docs/superpowers/specs/2026-08-11-realistic-corpus-gemini-design.md).
+ * Baked into the generation prompt itself, not a `degrade.ts` transform —
+ * these are properties of the Gemini-generated photo, not a deterministic
+ * sharp filter applied afterward.
+ */
+export type CameraCondition = "steady" | "motion-blur" | "camera-shake";
+
+/**
  * How a case's image will be produced. See
  * `docs/superpowers/specs/2026-08-10-golden-label-image-gen-design.md` §2 —
  * the render-first hybrid: a spec-driven renderer guarantees exact text,
  * Imagen adds realism only where exact text does not matter.
  */
-export type GoldenSetProvenance = "rendered" | "rendered+degraded" | "ai-generated";
+export type GoldenSetProvenance =
+  | "rendered"
+  | "rendered+degraded"
+  | "ai-generated"
+  | "rendered+ai-backdrop";
 
 /**
  * The five transforms `scripts/golden/degrade.ts` can apply to a clean
@@ -151,6 +165,43 @@ export type DegradationType =
 export interface Degradation {
   type: DegradationType;
   params: Record<string, number | string>;
+}
+
+/** One 2D point, in the pixel space of a committed backdrop image. */
+export interface Point2D {
+  readonly x: number;
+  readonly y: number;
+}
+
+/**
+ * The 4 corners of the blank label region a `rendered+ai-backdrop` case's
+ * backdrop photo carries, as either `blankRegionDetector.ts` found them or
+ * a human recorded them by hand (design doc §5). `build.ts` warps the
+ * renderer's label into this exact quad on every rebuild — recording it
+ * here, not re-detecting it at build time, is what keeps `build.ts`
+ * network-free and deterministic even though the backdrop photo itself
+ * was not.
+ */
+export interface LabelPlacementQuad {
+  readonly topLeft: Point2D;
+  readonly topRight: Point2D;
+  readonly bottomLeft: Point2D;
+  readonly bottomRight: Point2D;
+}
+
+/**
+ * Forensic record of how a `rendered+ai-backdrop` case's backdrop photo
+ * was generated — which model, at what resolution, with which prompt
+ * template version, and when. Not a reproducibility claim (design doc
+ * §6/§10): re-running generation will not produce the same bytes. This
+ * lets anyone looking at a committed image later understand why it looks
+ * the way it does.
+ */
+export interface GenerationMetadata {
+  readonly model: string;
+  readonly resolution: string;
+  readonly promptVersion: string;
+  readonly generatedAt: string;
 }
 
 /**
@@ -208,6 +259,20 @@ export interface GoldenSetCase {
    * empty otherwise.
    */
   degradations?: Degradation[];
+  /**
+   * The bottle reference JSON (`assets/golden/references/<id>.json`) this
+   * case's backdrop was generated from. Present only on a
+   * `rendered+ai-backdrop` case (design doc §6).
+   */
+  referenceBottle?: string;
+  /** The `sceneId` (from the bottle reference's `scenes` list) this case's backdrop used. Present only on a `rendered+ai-backdrop` case. */
+  scene?: string;
+  /** The photographic condition Gemini generated this case's backdrop under. Present only on a `rendered+ai-backdrop` case. */
+  cameraCondition?: CameraCondition;
+  /** Where on the backdrop the renderer's label gets composited. Present only on a `rendered+ai-backdrop` case. */
+  labelPlacement?: LabelPlacementQuad;
+  /** How this case's backdrop was generated — forensic, not reproducible. Present only on a `rendered+ai-backdrop` case. */
+  generationMetadata?: GenerationMetadata;
   /** Optional context: why this case is shaped the way it is, notes for whoever generates the image. */
   notes?: string;
 }

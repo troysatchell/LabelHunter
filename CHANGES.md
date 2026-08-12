@@ -4,6 +4,73 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-477 — LH-051: Imperfect-image handling (2026-08-11)
+
+**What changed.** TH-R10 sets one bar for a glare, rotation, or low-light label. The router
+must return a correct extraction. Or it must return an explicit `LOW_IMAGE_QUALITY` review.
+It must never return a confident wrong verdict. Investigation found the Validation Router
+(LH-012) already meets this bar. No router code changes here. This ticket adds proof.
+
+Two pieces already do the work. First, the Haiku extractor's prompt (LH-011,
+`src/server/extractor/prompt.ts` rule 6) tells the model to report low confidence when glare,
+blur, an angle, low light, a crop, or an obstruction blocks it. Second, the router
+(`src/server/router/label-blockers.ts`'s `isLowImageQuality`) already escalates a label to
+`LOW_IMAGE_QUALITY` review whenever the whole-image read is `"no"`, or `"partial"` with any
+required field below the Unusable confidence floor (0.60). Together, an honest extraction of
+a degraded photo already routes to review under the router's existing logic. This ticket did
+not need a new heuristic. It needed evidence the existing one covers the six glare/rotation/
+low-light golden-set cases.
+
+**Files.**
+- `src/server/router/golden-image-quality.test.ts` — new. One test per golden-set case,
+  case-17 through case-22 (`golden-set/manifest.json`'s `glare`, `rotation`, and `low-light`
+  categories — the complete set this ticket covers, not only the three
+  `docs/checkpoints/cp2-warning-subsystem.md` §9.1 names as warning-relevant). Each test
+  builds a `HaikuExtractionResult` shaped like an honest read of that case's documented photo
+  defect: glare over the brand name only, glare over the warning block only, a mild
+  15-degree tilt, an unreadable upside-down and blurred shot, dim light on the front label
+  only, and dim light on the warning block only. Each test then checks `routeLabel`'s output
+  against the golden-set manifest's own `expected` block — label verdict, headline reason,
+  and every field's verdict — pulled from the manifest directly, not retyped. Ground-truth
+  text (brand, class, ABV, net contents, warning) also comes from the manifest, the same
+  pattern `src/server/extractor/golden-case.test.ts` (LH-011) already uses for case-01.
+
+  The two warning-block cases (case-18, case-22) pass `warningResult: null`. That is today's
+  real production value: LH-020, the warning subsystem, is not merged, and `route.ts` always
+  passes `null` (see `scripts/latency/measure.ts`'s own comment on this gap). Passing `null`
+  here proves this ticket's own mechanism carries the `LOW_IMAGE_QUALITY` headline on its
+  own — not a hypothetical future warning subsystem standing in for it. An earlier draft of
+  these two tests passed a synthetic warning result instead. A mutation check (below) showed
+  that draft passed even with the router's own detection disabled — it was proving the test
+  fixture, not the router. Switched to `null` and reconfirmed.
+
+**Verification beyond a green test run.**
+- Mutation check, not shipped. Temporarily forced `isLowImageQuality` to always return
+  `false`, reran the suite, then always return `true`, reran again, then reverted both
+  changes (`git diff` confirmed zero lines each time). Forcing `false` failed the five
+  REVIEW-expecting cases (17, 18, 20, 21, 22) and left the PASS-expecting case (19) green.
+  Forcing `true` failed only case-19. Both directions show the new tests exercise real
+  router behavior, not a vacuous pass.
+- Confirmed all six images (`golden-set/images/case-17-*.jpg` through `case-22-*.jpg`) decode
+  through the real `preprocessImage` pipeline (LH-010) without rejection, at 800-1173px on
+  the long edge — above the 640px floor `isLowImageQuality` checks. This confirms the tests'
+  default `PreprocessingSignal` fixture (`rejected: false, longEdgePx: 1568`,
+  `test-support.ts`'s existing convention) does not paper over a real preprocessing-level
+  rejection.
+
+**How to run it.** `pnpm test -- src/server/router/golden-image-quality.test.ts`. No live
+model call and no real money — every fixture is a hand-built, clearly-labeled stand-in for a
+Haiku response, not a live extraction.
+
+**How to roll it back.** Delete `src/server/router/golden-image-quality.test.ts`. No
+production code changed.
+
+**Not verified.** Whether the real `claude-haiku-4-5` model reports confidence and
+`image_quality.legible` the way this ticket's fixtures assume, for these six specific
+photographs. That needs a live API call against the committed images. It is outside this
+ticket's TDD scope on deterministic router logic (PRD §6), and outside LH-011's own already-
+Done, already-out-of-scope-here extractor work.
+
 ## TRO-476 — PR #16 review round 2: 34 CodeRabbit findings, 30 fixed, 1 filed, 3 dismissed (2026-08-11)
 
 **What changed.** CodeRabbit reviewed PR #16 six times. The GitHub PR review reported 11

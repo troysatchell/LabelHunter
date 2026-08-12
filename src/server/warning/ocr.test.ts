@@ -12,6 +12,7 @@ import { readFileSync } from "node:fs";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { OCR_PAGE_SEGMENTATION_MODE, runWarningOcr, TESSDATA_DIR, TESSDATA_LANGUAGE_FILE } from "./ocr";
+import { OCR_CONFIDENCE_FLOOR } from "./reconcile";
 
 /** A small, crop-sized synthetic warning block — built with sharp/SVG, not
  * a real label photo, so this test is fast and has no external
@@ -84,9 +85,13 @@ describe("runWarningOcr — real recognition against the committed language data
         .toBuffer();
       const result = await runWarningOcr(blank);
       // Observed, not assumed: a blank crop must not throw, and must not
-      // be reported as a confident read.
+      // be reported as a confident read. Measured while building this
+      // ticket: a blank image reports confidence 0 — well under
+      // OCR_CONFIDENCE_FLOOR, the threshold reconcile.ts actually gates
+      // on, so this connects the observation to the value that matters.
       expect(result).not.toBeNull();
       expect(result?.text.trim()).toBe("");
+      expect(result?.confidence).toBeLessThan(OCR_CONFIDENCE_FLOOR);
     },
     15_000,
   );

@@ -68,13 +68,13 @@ describe("CANONICAL_WARNING_TEXT — the joined string CP-2 §2.4 derives from t
 
 describe("CANONICAL_WARNING_PARAGRAPHS vs the committed eCFR fixture — CP-2 §2.7/§9.3's drift check", () => {
   it("equals the paragraphs extracted from the committed retrieval, not a second hardcoded copy", () => {
-    const fixturePath = join(__dirname, "fixtures", "ecfr-16-21.xml");
+    const fixturePath = join(import.meta.dirname, "fixtures", "ecfr-16-21.xml");
     const xml = readFileSync(fixturePath, "utf8");
     expect(paragraphsFromFixture(xml)).toEqual([...CANONICAL_WARNING_PARAGRAPHS]);
   });
 
   it("fixture is the real retrieval — section 16.21, title 27, issue date 2026-07-06", () => {
-    const fixturePath = join(__dirname, "fixtures", "ecfr-16-21.xml");
+    const fixturePath = join(import.meta.dirname, "fixtures", "ecfr-16-21.xml");
     const xml = readFileSync(fixturePath, "utf8");
     expect(xml).toContain('N="16.21"');
     expect(xml).toContain("Mandatory label information");

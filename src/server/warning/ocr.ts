@@ -85,13 +85,27 @@ export async function runWarningOcr(cropImage: Buffer): Promise<OcrWarningResult
       cachePath: TESSDATA_CACHE_DIR,
       cacheMethod: "none",
     });
+
+    let result: OcrWarningResult | null = null;
     try {
       await worker.setParameters({ tessedit_pageseg_mode: OCR_PAGE_SEGMENTATION_MODE });
       const { data } = await worker.recognize(cropImage);
-      return { text: data.text, confidence: data.confidence };
+      result = { text: data.text, confidence: data.confidence };
     } finally {
-      await worker.terminate();
+      // A termination failure is cleanup noise, not a recognition
+      // failure — swallowed here so it can never override a successful
+      // `result` above. A plain `finally { await worker.terminate() }`
+      // (no inner try/catch) would let a thrown termination error replace
+      // an already-successful return value, silently discarding a good
+      // OCR read as "recognition failed."
+      try {
+        await worker.terminate();
+      } catch {
+        // Nothing to do — the worker process is gone or already dead
+        // either way, and `result` (or its absence) is unaffected.
+      }
     }
+    return result;
   } catch {
     return null;
   }

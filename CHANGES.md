@@ -85,9 +85,12 @@ extractor (LH-011) already produced. It runs its own OCR pass and its own region
 - One decision beyond the ten open questions: CP-2 §7.1 says the model's `prefix_casing`
   report is "a cross-check, not the source of truth," and that a disagreement between it and
   the derived caps result routes to REVIEW. CP-2 does not spell out the exact rule. This
-  ticket's reading: derived-ALL-CAPS and reported-ALL_CAPS must agree, treating `TITLE_CASE`,
-  `OTHER`, and `NOT_VISIBLE` alike as "not ALL_CAPS." A disagreement can only downgrade an
-  already-decided PASS or FAIL to REVIEW. It never upgrades a REVIEW to anything else.
+  ticket's reading: derived-ALL-CAPS and reported-ALL_CAPS must agree, treating `TITLE_CASE`
+  and `OTHER` as real, competing claims — the model asserting a specific non-ALL_CAPS reading.
+  `NOT_VISIBLE` is not a claim. It means the model could not judge the casing at all, so it is
+  excluded from the check rather than treated as an active "not ALL_CAPS" vote — a review-round
+  fix, below. A disagreement can only downgrade an already-decided PASS or FAIL to REVIEW. It
+  never upgrades a REVIEW to anything else.
 
 **Regression tests.** `src/server/warning/*.test.ts` — 11 files, 115 cases, all written
 before their implementation. Every file's first run failed on a missing module, confirmed
@@ -119,10 +122,11 @@ therefore correctly discarded); two images with no warning correctly return no r
   as it did before this ticket. This ticket was scoped to the comparator itself — CP-2's own
   "own component" framing, and the ticket's list of existing code to build on names
   `region.ts`, `pipeline.ts`, `constants.ts`, and `router/types.ts`, not `route.ts`. Wiring
-  `compareGovernmentWarningFromImage` into the live request path needs `route.ts` to start
-  region detection and OCR before it awaits the Haiku call, not after — a real control-flow
-  change to a file with its own extensive test suite, not a drive-by fix. This is real,
-  scoped-out follow-up work, not an oversight.
+  `compareGovernmentWarningFromImage` into the live request path is a separate, later change
+  to `route.ts` and its own test suite. `route.ts` must start region detection and OCR before
+  it awaits the Haiku call, not after, to keep PRD §3.8's concurrency requirement. That is a
+  real control-flow change, not a one-line import swap, so this ticket leaves it named here
+  as follow-up work rather than folding it in.
 - The full golden set's OCR/detection accuracy is not measured. LH-030's eval-harness sweep
   is the ticket that measures it, per CP-2 §12.
 - The live drift check CP-2 §2.7 describes (a scheduled or manual re-fetch of the eCFR text,

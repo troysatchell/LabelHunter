@@ -109,21 +109,32 @@ export interface CompareGovernmentWarningFromImageInput {
 }
 
 /** Runs region detection, crops, and OCRs — the OCR "channel" half of the
- * comparison. Never throws: `detectWarningRegion` failing, or `ocr`
- * returning `null`, both degrade to `{ available: false }`, which
- * `reconcileWarningChannels` already treats as "run single-channel"
- * (CP-2 §4.4 rule 3: a crashed OCR path must never fail the request). */
+ * comparison. Never throws: `detectWarningRegion` returning `null`, or
+ * `ocr` returning `null`, both degrade to `{ available: false }`, which
+ * `reconcileWarningChannels` already treats as "run single-channel" (CP-2
+ * §4.4 rule 3: a crashed OCR path must never fail the request). The outer
+ * `try`/`catch` covers the same rule for a REJECTED promise, not just a
+ * resolved `null` — `ocr.ts`'s `runWarningOcr` already catches its own
+ * errors, but `deps.detectRegion`/`deps.crop` (sharp calls against a
+ * caller-supplied buffer) are not guaranteed to, and an uncaught
+ * rejection here would otherwise reject the `Promise.all` this function
+ * is one half of, taking the VLM channel's already-good result down with
+ * it. */
 async function runOcrChannel(
   originalImage: Buffer,
   deps: CompareGovernmentWarningFromImageDeps,
 ): Promise<OcrChannelInput> {
-  const detection = await deps.detectRegion(originalImage, (crop) => deps.ocr(crop));
-  if (!detection) return { available: false };
+  try {
+    const detection = await deps.detectRegion(originalImage, (crop) => deps.ocr(crop));
+    if (!detection) return { available: false };
 
-  const crop = await deps.crop(originalImage, detection.region);
-  const result = await deps.ocr(crop);
-  if (!result) return { available: false };
-  return { available: true, text: result.text, confidence: result.confidence };
+    const crop = await deps.crop(originalImage, detection.region);
+    const result = await deps.ocr(crop);
+    if (!result) return { available: false };
+    return { available: true, text: result.text, confidence: result.confidence };
+  } catch {
+    return { available: false };
+  }
 }
 
 /**

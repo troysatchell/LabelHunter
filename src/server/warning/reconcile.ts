@@ -151,12 +151,22 @@ function reconcileDualChannel(vlmEval: CandidateEvaluation, ocrEval: CandidateEv
  * not a second vote — code remains the source of truth for the verdict.
  * A disagreement can only downgrade an already-decided PASS or FAIL to
  * REVIEW; a result that is already REVIEW is left alone.
+ *
+ * `NOT_VISIBLE` is not a claim, so it cannot disagree with one — it means
+ * the model could not judge the prefix's casing at all, not that it
+ * judged the prefix non-all-caps. Treating it as an active "not ALL_CAPS"
+ * vote would flag a correct, confident derived read as inconsistent
+ * whenever the model merely abstained. `OTHER` and `TITLE_CASE` are real,
+ * competing claims (the model asserts a specific casing that is not
+ * ALL_CAPS) and still participate in the check normally.
  */
 function applyPrefixCasingCrossCheck(
   result: WarningComparatorResult,
   vlmCaps: CandidateEvaluation["caps"],
   prefixCasing: WarningPrefixCasing,
 ): WarningComparatorResult {
+  if (prefixCasing === "NOT_VISIBLE") return result;
+
   const derivedAllCaps = isPrefixAllCaps(vlmCaps);
   const modelSaysAllCaps = prefixCasing === "ALL_CAPS";
   if (derivedAllCaps === modelSaysAllCaps) return result;

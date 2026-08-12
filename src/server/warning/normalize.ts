@@ -52,7 +52,14 @@ const ZERO_WIDTH_AND_SOFT_PATTERN = new RegExp(
  * once a line break becomes a space, a wrap hyphen is indistinguishable
  * from a printed one. */
 function dehyphenateAtLineBreaks(text: string): string {
-  return text.replace(/-\r?\n/g, "");
+  // Matches every line-break form rule 5 (`lineBreaksToSpace`) handles —
+  // CRLF, bare LF, and bare CR (the old Mac OS 9 and earlier convention).
+  // Missing the bare-CR case here, while rule 5 still collapses it,
+  // would leave a `-\r`-hyphenated wrap indistinguishable from a printed
+  // hyphen once rule 5 ran — the same failure mode this rule's own
+  // ordering-before-rule-5 exists to prevent, just for one line-ending
+  // style instead of all of them.
+  return text.replace(/-(?:\r\n|\r|\n)/g, "");
 }
 
 /** Rule 5 (CP-2 §5.2): every remaining line break becomes one space — the

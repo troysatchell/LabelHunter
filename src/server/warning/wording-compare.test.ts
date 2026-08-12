@@ -10,6 +10,7 @@
  * 24) and §5.6's worked examples (missing comma / singular "defect": 1).
  */
 import { describe, expect, it } from "vitest";
+import { capsCheckPasses } from "./caps";
 import { CANONICAL_WARNING_TEXT } from "./canonical";
 import { evaluateCandidate, isExactMatch, NEAR_MISS_MAX_DISTANCE } from "./wording-compare";
 
@@ -70,7 +71,7 @@ describe("evaluateCandidate — the near-miss band (CP-2 §5.5, distance 1-2)", 
     const result = evaluateCandidate(raw);
     expect(result.distance).toBe(1);
     expect(result.wording).toBe("NEAR_MISS");
-    expect(capsPassesFor(result)).toBe(true);
+    expect(capsCheckPasses(result.caps)).toBe(true);
   });
 
   it("'birth defect' (singular) is a NEAR_MISS at distance 1 — CP-2 §5.6's own worked example", () => {
@@ -126,13 +127,3 @@ describe("isExactMatch — CP-2 §5.5 guard: the band never turns a FAIL into a 
     expect(isExactMatch(evaluateCandidate(raw))).toBe(false);
   });
 });
-
-/** Local helper — true when every position is OK. */
-function capsPassesFor(result: ReturnType<typeof evaluateCandidate>): boolean {
-  return (
-    result.caps.government === "OK" &&
-    result.caps.warning === "OK" &&
-    result.caps.surgeon === "OK" &&
-    result.caps.general === "OK"
-  );
-}

@@ -29,7 +29,11 @@ import { describe, expect, it } from "vitest";
 import { OCR_PAGE_SEGMENTATION_MODE, TESSDATA_DIR } from "./ocr";
 
 const execFileAsync = promisify(execFile);
-const GUARD_PATH = path.join(__dirname, "ocr-network-guard.cjs");
+// `import.meta.dirname`, not `__dirname` — this file is genuine ESM
+// (package.json's `"type": "module"`); `__dirname` only resolves here
+// because vitest's Vite-based transform happens to shim it, not because
+// this module actually has one.
+const GUARD_PATH = path.join(import.meta.dirname, "ocr-network-guard.cjs");
 
 /** Plain Node ESM resolves a bare specifier like `"tesseract.js"` by
  * walking UP from the script's own directory through `node_modules` —
@@ -84,8 +88,15 @@ main().catch((e) => {
 async function runChildScript(langPath: string, scratchDir: string): Promise<{ stdout: string; stderr: string }> {
   const scriptPath = path.join(scratchDir, "child.mjs");
   writeFileSync(scriptPath, buildChildScript(langPath));
+  // Quote GUARD_PATH: NODE_OPTIONS is whitespace-split, so an unquoted
+  // path containing a space (a plausible repo checkout location) would
+  // split into two tokens and corrupt the --require flag. Append to,
+  // rather than replace, any NODE_OPTIONS the parent process already
+  // carries — a plain overwrite would silently drop it for this child.
+  const guardRequire = `--require "${GUARD_PATH}"`;
+  const nodeOptions = process.env.NODE_OPTIONS ? `${process.env.NODE_OPTIONS} ${guardRequire}` : guardRequire;
   return execFileAsync(process.execPath, [scriptPath], {
-    env: { ...process.env, NODE_OPTIONS: `--require ${GUARD_PATH}` },
+    env: { ...process.env, NODE_OPTIONS: nodeOptions },
     timeout: 20_000,
   });
 }

@@ -132,6 +132,10 @@ describe("reconcileWarningChannels — single channel: OCR unavailable (CP-2 §4
     const result = reconcileWarningChannels(vlm(MISSING_COMMA_TEXT, { confidence: 0.99 }), OCR_UNAVAILABLE);
     assertNeedsReview(result);
     expect(result.reviewReason).toBe("WARNING_MISMATCH");
+    // The near-miss note stays precise and distance-based even on one
+    // channel — CP-2 §5.5's band describes what was found, not how many
+    // readers found it.
+    expect(result.note).toBe("Government Warning differs by a single character — needs a closer look.");
   });
 
   it("VLM caps failure (single channel, title case) -> NEEDS_REVIEW, NEVER a hard FAIL", () => {
@@ -141,12 +145,14 @@ describe("reconcileWarningChannels — single channel: OCR unavailable (CP-2 §4
     const result = reconcileWarningChannels(vlm(TITLE_CASE_TEXT, { prefixCasing: "TITLE_CASE", confidence: 0.99 }), OCR_UNAVAILABLE);
     assertNeedsReview(result);
     expect(result.reviewReason).toBe("WARNING_MISMATCH");
+    expect(result.note).toBe("Government Warning could not be confirmed from this image alone.");
   });
 
   it("VLM genuine mismatch (single channel) -> NEEDS_REVIEW, never FAIL", () => {
     const result = reconcileWarningChannels(vlm(REWORDED_TEXT, { confidence: 0.99 }), OCR_UNAVAILABLE);
     assertNeedsReview(result);
     expect(result.reviewReason).toBe("WARNING_MISMATCH");
+    expect(result.note).toBe("Government Warning could not be confirmed from this image alone.");
   });
 
   it("never returns a MISMATCH verdict on a single channel, across every scenario above", () => {
@@ -204,12 +210,30 @@ describe("reconcileWarningChannels — CP-2 §7.1's prefix_casing cross-check", 
     expect(result.verdict).toBe("MATCH");
   });
 
-  it("NOT_VISIBLE from the model, while code derives ALL_CAPS, disagrees and downgrades to REVIEW", () => {
+  it("NOT_VISIBLE is not a claim, so it cannot disagree with one — a would-be MATCH stays MATCH", () => {
+    // CodeRabbit review round 1 (TRO-468): the first draft of this check
+    // treated NOT_VISIBLE as an active "not ALL_CAPS" vote, so a correct,
+    // confident derived read got flagged as inconsistent whenever the
+    // model merely abstained from judging casing. NOT_VISIBLE means "I
+    // could not tell," not "it is not all-caps" — it should never move
+    // the verdict, in either direction (the next test covers the other
+    // direction).
     const result = reconcileWarningChannels(
       vlm(CANONICAL_WARNING_TEXT, { prefixCasing: "NOT_VISIBLE" }),
       ocr(CANONICAL_WARNING_TEXT),
     );
-    expect(result.verdict).toBe("NEEDS_REVIEW");
+    expect(result.verdict).toBe("MATCH");
+  });
+
+  it("NOT_VISIBLE also does not rescue a would-be FAIL into REVIEW", () => {
+    const result = reconcileWarningChannels(vlm(TITLE_CASE_TEXT, { prefixCasing: "NOT_VISIBLE" }), ocr(TITLE_CASE_TEXT));
+    expect(result.verdict).toBe("MISMATCH");
+  });
+
+  it("OTHER, unlike NOT_VISIBLE, is a real competing claim and still participates in the cross-check", () => {
+    const result = reconcileWarningChannels(vlm(CANONICAL_WARNING_TEXT, { prefixCasing: "OTHER" }), ocr(CANONICAL_WARNING_TEXT));
+    assertNeedsReview(result);
+    expect(result.reviewReason).toBe("WARNING_MISMATCH");
   });
 });
 

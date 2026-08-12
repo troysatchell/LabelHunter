@@ -21,6 +21,7 @@ import { readFileSync } from "node:fs";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { runWarningOcr } from "./ocr";
+import { OCR_CONFIDENCE_FLOOR } from "./reconcile";
 import {
   cropForOcr,
   detectWarningRegion,
@@ -242,7 +243,12 @@ describe("region detection + crop + real OCR — a real golden-set label image",
       expect(ocrResult).not.toBeNull();
       expect(ocrResult?.text).toContain("GOVERNMENT WARNING");
       expect(ocrResult?.text).toContain("Surgeon General");
-      expect(ocrResult?.confidence).toBeGreaterThanOrEqual(90); // measured 95 while building this ticket
+      // Above the floor reconcile.ts actually gates on, not a specific
+      // measured number — a hardcoded ~95 would be fragile against a CI
+      // environment that substitutes a different font for the synthetic
+      // SVG render, and the property that matters is "trusted as a real
+      // channel," which OCR_CONFIDENCE_FLOOR is the source of truth for.
+      expect(ocrResult?.confidence).toBeGreaterThan(OCR_CONFIDENCE_FLOOR);
     },
     15_000,
   );

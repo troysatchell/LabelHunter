@@ -58,6 +58,10 @@ describe("normalizeTransport — CP-2 §5.2's six rules, in order", () => {
     expect(normalizeTransport("alcoholic bever-\r\nages")).toBe("alcoholic beverages");
   });
 
+  it("rule 4 also fires on a hyphen followed by a bare CR — every line-break form rule 5 handles", () => {
+    expect(normalizeTransport("alcoholic bever-\rages")).toBe("alcoholic beverages");
+  });
+
   it("rule 4 does not fire on a hyphen that is not at a line break", () => {
     expect(normalizeTransport("a well-known fact")).toBe("a well-known fact");
   });

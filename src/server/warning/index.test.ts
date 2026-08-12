@@ -71,6 +71,23 @@ describe("compareGovernmentWarningFromImage — defensive handling", () => {
     );
     expect(result.verdict).toBe("NEEDS_REVIEW");
   });
+
+  it("never rejects when a dependency promise itself rejects — degrades to single-channel instead", async () => {
+    const fakeDeps: CompareGovernmentWarningFromImageDeps = {
+      detectRegion: vi.fn().mockRejectedValue(new Error("sharp blew up on a corrupt buffer")),
+      crop: vi.fn(),
+      ocr: vi.fn(),
+    };
+    // The VLM channel is otherwise a clean, confident exact match — this
+    // proves a rejected OCR-side dependency degrades to single-channel
+    // (CP-2 §4.4 rule 3) rather than rejecting the whole Promise.all and
+    // discarding an already-good VLM read.
+    const result = await compareGovernmentWarningFromImage(
+      { extracted: extractedWarning({ confidence: 0.95 }), originalImage: Buffer.from([]) },
+      fakeDeps,
+    );
+    expect(result.verdict).toBe("MATCH");
+  });
 });
 
 describe("compareGovernmentWarningFromImage — wiring, with fast injected fakes", () => {

@@ -8,6 +8,7 @@ const VALID_WARNING_SEGMENTATION = {
   trueMismatch: { count: 1, rate: 0.1 },
   resolutionSuspect: { count: 1, rate: 0.1 },
   notFound: { count: 0, rate: 0 },
+  singleChannelPass: { count: 2, rate: 0.2 },
 };
 const VALID_RELIABILITY_DIAGRAM = Array.from({ length: 10 }, (_, decile) => ({ decile, n: 0, correct: 0, rate: 0 }));
 const VALID_SUMMARY = {
@@ -102,6 +103,12 @@ describe("validateEvalBaseline", () => {
   it("rejects a warningSegmentation whose resolutionSuspect count is negative", () => {
     const badSegmentation = { ...VALID_WARNING_SEGMENTATION, resolutionSuspect: { count: -1, rate: 0 } };
     const badSummary = { ...VALID_SUMMARY, warningSegmentation: badSegmentation };
+    expect(() => validateEvalBaseline(validBaseline({ summary: badSummary }), "baseline.json")).toThrow(/summary/);
+  });
+
+  it("rejects a warningSegmentation missing singleChannelPass (TRO-535 / LH-030b)", () => {
+    const { singleChannelPass: _drop, ...segmentationRest } = VALID_WARNING_SEGMENTATION;
+    const badSummary = { ...VALID_SUMMARY, warningSegmentation: segmentationRest };
     expect(() => validateEvalBaseline(validBaseline({ summary: badSummary }), "baseline.json")).toThrow(/summary/);
   });
 

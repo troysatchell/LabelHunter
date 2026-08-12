@@ -30,6 +30,7 @@ function summary(overrides: Partial<EvalReportSummary> = {}): EvalReportSummary 
       trueMismatch: { count: 1, rate: 0.1 },
       resolutionSuspect: { count: 1, rate: 0.1 },
       notFound: { count: 0, rate: 0 },
+      singleChannelPass: { count: 0, rate: 0 },
     },
     cascadeVerdictAccuracy: rate,
     extractionReliabilityDiagram: RELIABILITY_DIAGRAM_FIXTURE,

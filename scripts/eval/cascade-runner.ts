@@ -46,6 +46,7 @@ import type {
   FieldComparators,
   LabelRouterResult,
   ReviewReason,
+  WarningComparatorChannel,
   WarningComparatorResult,
 } from "../../src/server/router/types";
 import { resolveEscalatedLabel, SONNET_RESOLVER_MODEL } from "../../src/server/resolver";
@@ -230,12 +231,28 @@ function toActualFieldOutcome(f: FullVerifyFieldResult): ActualFieldOutcome {
  * of a suppressed one, not the router's original, dual-channel-corroborated
  * verdict. See this file's own test suite (`cascade-runner.test.ts`) for a
  * worked example.
+ *
+ * `routerWarningChannel` (TRO-535 / TRO-538 merge-integration fix, found
+ * resolving the two tickets' overlapping diffs — neither ticket's own test
+ * suite could have caught this alone, since the gap only exists once both
+ * land together): the router's own channel provenance for
+ * `government_warning` (`extractWarningChannel`'s return value at the real
+ * call site). Threaded through to the merged `ActualVerdict.warningChannel`
+ * ONLY when `government_warning` was NOT itself a resolved field — a
+ * resolved warning has no channel of its own (the second honest limit
+ * above), so the merge reports `null` there rather than the stale,
+ * misleading router-stage value. Without this parameter, EVERY cascade
+ * end-state verdict would silently report `warningChannel: null`, even on
+ * the common case where an unrelated field escalated and government_warning
+ * simply passed through the router unchanged with a perfectly good known
+ * channel.
  */
 export function mergeResolutionIntoActualVerdict(
   routerResult: LabelRouterResult,
   resolution: ResolverResolution,
   application: RouterApplicationRecord,
   comparators: FieldComparators,
+  routerWarningChannel: WarningComparatorChannel | null,
 ): ActualVerdict {
   const routerByField = new Map(routerResult.fields.map((row) => [row.field, row]));
   const resolvedByField = new Map(resolution.fields.map((field) => [field.field, field]));
@@ -260,7 +277,24 @@ export function mergeResolutionIntoActualVerdict(
   });
 
   const labelVerdict = rollupLabelVerdict(false, fields.map((f) => f.verdict));
-  return { labelVerdict, headlineReason: pickHeadlineReason(reasons), fields };
+  const warningChannel = resolvedByField.has("government_warning") ? null : routerWarningChannel;
+  return { labelVerdict, headlineReason: pickHeadlineReason(reasons), fields, warningChannel };
+}
+
+/**
+ * Reads `channel` off a possibly-`null` `WarningComparatorResult` (TRO-535 /
+ * LH-030b). A plain function, not an inline `capturedWarningResult?.channel
+ * ?? null` at the call site — TypeScript's control-flow analysis
+ * over-narrows a `let` variable that a nested closure
+ * (`deps.compareGovernmentWarning` below) reassigns: read directly, its
+ * type collapses to `never` at any later property access, even though the
+ * real runtime value is exactly what the closure assigned (a known
+ * TypeScript limitation, not a bug in the captured value itself). Passing
+ * the variable as an argument gives it a fresh type binding from this
+ * function's own parameter annotation, which resets that over-narrowing.
+ */
+function extractWarningChannel(result: WarningComparatorResult | null): WarningComparatorChannel | null {
+  return result?.channel ?? null;
 }
 
 export interface CaseRunOutcome {
@@ -395,6 +429,13 @@ export async function runOneCase(
       labelVerdict: body.labelVerdict,
       headlineReason: body.headlineReason,
       fields: body.fields.map(toActualFieldOutcome),
+      // TRO-535 / LH-030b: `capturedWarningResult` (captured above, at the
+      // `deps.compareGovernmentWarning` DI hook) is the ONLY place this
+      // harness can still see which reconciliation table decided the
+      // government_warning verdict — by the time `body.fields` (the HTTP
+      // response) is built, `routeLabel` has already turned it into a
+      // `FieldResultRow` that carries no channel of its own.
+      warningChannel: extractWarningChannel(capturedWarningResult),
     };
     const routerVerdictScore = scoreVerdict(caseSpec, actualVerdict, capturedExtraction);
     const haikuCost = buildMeasuredCost(HAIKU_EXTRACTOR_MODEL, haikuUsage, HAIKU_4_5_PRICING);
@@ -480,7 +521,13 @@ export async function runOneCase(
     const cascadeVerdictScore = resolution
       ? scoreVerdict(
           caseSpec,
-          mergeResolutionIntoActualVerdict(routerResult, resolution, application, productionComparators),
+          mergeResolutionIntoActualVerdict(
+            routerResult,
+            resolution,
+            application,
+            productionComparators,
+            extractWarningChannel(capturedWarningResult),
+          ),
           capturedExtraction,
         )
       : routerVerdictScore;

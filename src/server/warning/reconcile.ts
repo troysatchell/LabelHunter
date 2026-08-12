@@ -36,7 +36,7 @@
 import { capsResultsEqual, hasAnyCapsFailure, isPrefixAllCaps } from "./caps";
 import { evaluateCandidate, isExactMatch, type CandidateEvaluation } from "./wording-compare";
 import type { WarningPrefixCasing } from "../extractor/types";
-import type { WarningComparatorResult } from "../router/types";
+import type { WarningComparatorChannel, WarningComparatorResult } from "../router/types";
 
 /** The VLM channel's reading. `transcription` is non-null: the router
  * (`../router/field-resolution.ts`'s `resolveGovernmentWarningField`)
@@ -59,12 +59,51 @@ export interface VlmWarningCandidate {
  * are never compared to each other, only each against its own threshold. */
 export type OcrChannelInput = { available: true; text: string; confidence: number } | { available: false };
 
-/** CP-2 §4.5, "proposed": an OCR candidate below this Tesseract confidence
- * is discarded — the dual-channel path falls back to single-channel rules
- * as though OCR had not run at all. Open question 7: kept as the starting
- * value; LH-030's golden-set sweep is what would replace it with a
- * measured one. */
-export const OCR_CONFIDENCE_FLOOR = 60;
+/**
+ * CP-2 §4.5 / §12 open question 7 / TRO-535 (LH-030b): an OCR candidate
+ * below this Tesseract confidence is discarded — the dual-channel path
+ * falls back to single-channel rules as though OCR had not run at all.
+ *
+ * MEASURED, 2026-08-12. `scripts/eval/ocr-floor-sweep.ts` replayed the OCR
+ * channel (`detectWarningRegion` -> `cropForOcr` -> `runWarningOcr` ->
+ * `evaluateCandidate`) read-only against all 32 golden-set cases — no API
+ * call, no repo file written except the artifact
+ * (`scripts/eval/results/ocr-floor-sweep.json`). Every warning-bearing
+ * case's confidence landed in one of two clusters, with a wide, empty gap
+ * between them:
+ *
+ *   - {56, 58} — case-24 and case-23, tiny warning print. A real, if badly
+ *     degraded, reading: distance 42 and 47 from canonical, far past the
+ *     near-miss band.
+ *   - {91, 95, 96} — every other warning-bearing case, including one
+ *     glare-affected reading (case-18) that stayed confident despite
+ *     reading garbage — Tesseract's own confidence is not a read-quality
+ *     oracle, which is exactly why the dual-channel AGREEMENT check, not
+ *     this floor, is the real safety net.
+ *
+ * The old floor of 60 sits INSIDE that gap — above both tiny-print
+ * readings — which is exactly why it always discarded case-23 and
+ * case-24's OCR evidence, however badly the print degraded, and let a
+ * single confident VLM channel PASS a label whose only other reader
+ * produced 47 and 42 edits of garbage (TH-R9, rubric V4). A floor
+ * anywhere else in that 59-90 gap repeats the same bug: the corpus draws
+ * no boundary there, but nothing in it admits the tiny-print evidence
+ * either. The floor had to move below the low cluster, not within the gap
+ * above it.
+ *
+ * Set to 50 — the midpoint of Tesseract's 0-100 confidence scale, not the
+ * minimum value that flips two cases (55 or 56 would already do that).
+ * 50 sits a genuine 6-8 points under both measured tiny-print readings.
+ * The corpus has no case between blank-crop noise (confidence 0,
+ * `ocr.test.ts`'s own measured floor) and 56, so nothing here proves 50
+ * over 40 or 45 — that gap is a real, named limit, not a hidden one. See
+ * `docs/checkpoints/cp2-warning-subsystem.md`'s dated amendment after
+ * §4.5 for the same reasoning with the full sweep table, and
+ * `docs/diagnostics/2026-08-12-verdict-miss-triage.md` §3B and
+ * `docs/diagnostics/2026-08-12-fix-tickets.md` S2 for the diagnosis this
+ * measurement answers.
+ */
+export const OCR_CONFIDENCE_FLOOR = 50;
 
 /** CP-1 §4.2's warning-transcription trusted threshold, reused here as
  * CP-2 §4.5's single-channel PASS floor — the same "confident enough to
@@ -97,19 +136,20 @@ function capsFailureNote(caps: CandidateEvaluation["caps"]): string {
   return NOTE.surgeonGeneralCapsMismatch;
 }
 
-function matchResult(): WarningComparatorResult {
-  return { verdict: "MATCH", note: NOTE.match };
+function matchResult(channel: WarningComparatorChannel): WarningComparatorResult {
+  return { verdict: "MATCH", channel, note: NOTE.match };
 }
 
 function reviewResult(
   reviewReason: "WARNING_MISMATCH" | "LOW_IMAGE_QUALITY",
   note: string,
+  channel: WarningComparatorChannel,
 ): WarningComparatorResult {
-  return { verdict: "NEEDS_REVIEW", reviewReason, note };
+  return { verdict: "NEEDS_REVIEW", channel, reviewReason, note };
 }
 
-function mismatchResult(note: string): WarningComparatorResult {
-  return { verdict: "MISMATCH", note };
+function mismatchResult(note: string, channel: WarningComparatorChannel): WarningComparatorResult {
+  return { verdict: "MISMATCH", channel, note };
 }
 
 /** CP-2 §4.5's single-channel table. Never returns MISMATCH — "a
@@ -118,15 +158,15 @@ function mismatchResult(note: string): WarningComparatorResult {
 function reconcileSingleChannel(vlmEval: CandidateEvaluation, vlmConfidence: number): WarningComparatorResult {
   if (isExactMatch(vlmEval)) {
     return vlmConfidence >= SINGLE_CHANNEL_PASS_CONFIDENCE
-      ? matchResult()
-      : reviewResult("LOW_IMAGE_QUALITY", NOTE.lowImageQuality);
+      ? matchResult("single")
+      : reviewResult("LOW_IMAGE_QUALITY", NOTE.lowImageQuality, "single");
   }
   // A near miss keeps its precise, distance-based note (CP-2 §5.5) even on
   // one channel — it describes what was found, not how many readers found
   // it. Anything else (a caps failure or a real mismatch) gets the generic
   // single-channel note: one reading is never enough to accuse (§4.5).
   const note = vlmEval.wording === "NEAR_MISS" ? NOTE.nearMiss : NOTE.unconfirmedSingleChannel;
-  return reviewResult("WARNING_MISMATCH", note);
+  return reviewResult("WARNING_MISMATCH", note, "single");
 }
 
 /** CP-2 §4.5's dual-channel table, with the near-miss/caps interaction
@@ -134,15 +174,15 @@ function reconcileSingleChannel(vlmEval: CandidateEvaluation, vlmConfidence: num
 function reconcileDualChannel(vlmEval: CandidateEvaluation, ocrEval: CandidateEvaluation): WarningComparatorResult {
   const agree = vlmEval.folded === ocrEval.folded && capsResultsEqual(vlmEval.caps, ocrEval.caps);
   if (!agree) {
-    return reviewResult("WARNING_MISMATCH", NOTE.channelsInconsistent);
+    return reviewResult("WARNING_MISMATCH", NOTE.channelsInconsistent, "dual");
   }
 
   // Agreement makes the two candidates interchangeable for classification
   // purposes — use the VLM's own evaluation as the shared reading.
-  if (isExactMatch(vlmEval)) return matchResult();
-  if (hasAnyCapsFailure(vlmEval.caps)) return mismatchResult(capsFailureNote(vlmEval.caps));
-  if (vlmEval.wording === "NEAR_MISS") return reviewResult("WARNING_MISMATCH", NOTE.nearMiss);
-  return mismatchResult(NOTE.wordingMismatch); // wording === "MISMATCH", caps OK
+  if (isExactMatch(vlmEval)) return matchResult("dual");
+  if (hasAnyCapsFailure(vlmEval.caps)) return mismatchResult(capsFailureNote(vlmEval.caps), "dual");
+  if (vlmEval.wording === "NEAR_MISS") return reviewResult("WARNING_MISMATCH", NOTE.nearMiss, "dual");
+  return mismatchResult(NOTE.wordingMismatch, "dual"); // wording === "MISMATCH", caps OK
 }
 
 /**
@@ -159,11 +199,17 @@ function reconcileDualChannel(vlmEval: CandidateEvaluation, ocrEval: CandidateEv
  * whenever the model merely abstained. `OTHER` and `TITLE_CASE` are real,
  * competing claims (the model asserts a specific casing that is not
  * ALL_CAPS) and still participate in the check normally.
+ *
+ * `channel` is passed in, not read back off `result` — this function
+ * refines whichever table already decided `result` (TRO-535 / LH-030b); it
+ * runs no comparison of its own, so it reports the channel that actually
+ * produced the evidence rather than guessing from an optional field.
  */
 function applyPrefixCasingCrossCheck(
   result: WarningComparatorResult,
   vlmCaps: CandidateEvaluation["caps"],
   prefixCasing: WarningPrefixCasing,
+  channel: WarningComparatorChannel,
 ): WarningComparatorResult {
   if (prefixCasing === "NOT_VISIBLE") return result;
 
@@ -171,7 +217,7 @@ function applyPrefixCasingCrossCheck(
   const modelSaysAllCaps = prefixCasing === "ALL_CAPS";
   if (derivedAllCaps === modelSaysAllCaps) return result;
   if (result.verdict === "NEEDS_REVIEW") return result;
-  return reviewResult("WARNING_MISMATCH", NOTE.channelsInconsistent);
+  return reviewResult("WARNING_MISMATCH", NOTE.channelsInconsistent, channel);
 }
 
 /**
@@ -184,10 +230,11 @@ function applyPrefixCasingCrossCheck(
 export function reconcileWarningChannels(vlm: VlmWarningCandidate, ocr: OcrChannelInput): WarningComparatorResult {
   const vlmEval = evaluateCandidate(vlm.transcription);
   const ocrUsable = ocr.available && ocr.confidence >= OCR_CONFIDENCE_FLOOR;
+  const channel: WarningComparatorChannel = ocrUsable ? "dual" : "single";
 
   const tentative = ocrUsable && ocr.available // `ocr.available` narrows the union for TS a second time after `ocrUsable`
     ? reconcileDualChannel(vlmEval, evaluateCandidate(ocr.text))
     : reconcileSingleChannel(vlmEval, vlm.confidence);
 
-  return applyPrefixCasingCrossCheck(tentative, vlmEval.caps, vlm.prefixCasing);
+  return applyPrefixCasingCrossCheck(tentative, vlmEval.caps, vlm.prefixCasing, channel);
 }

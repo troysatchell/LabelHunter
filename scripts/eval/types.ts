@@ -15,7 +15,7 @@
  */
 import type { GoldenSetCategory, LabelVerdict } from "../../src/lib/golden-set/types";
 import type { ExtractedImageQuality } from "../../src/server/extractor/types";
-import type { FieldVerdict, ReviewReason, RouterFieldKey } from "../../src/server/router/types";
+import type { FieldVerdict, ReviewReason, RouterFieldKey, WarningComparatorChannel } from "../../src/server/router/types";
 
 /** The router's five field keys, in one place — `response-validation.ts`,
  * `flagged-fields.ts`, and `resolver-rollup.ts` each need this exact list
@@ -107,6 +107,17 @@ export interface VerdictCaseScore {
    * label verdict is right but reason is wrong is a real, separate miss —
    * TH-R9/TH-R10 both care which reason the UI shows, not only PASS/FAIL. */
   reviewReasonCorrect: boolean;
+  /** TRO-535 / LH-030b: which reconciliation table decided the
+   * `government_warning` field's comparator verdict — `"dual"`,
+   * `"single"`, or `null` when the real comparator never ran at all (e.g.
+   * the warning was absent, so `resolveGovernmentWarningField` never
+   * consults a comparator result — see `WarningComparatorResult`'s own doc
+   * comment, `src/server/router/types.ts`). Always present, never
+   * `undefined` — `verdict-scoring.ts`'s `scoreVerdict` normalizes an
+   * absent `ActualVerdict.warningChannel` to `null`.
+   * `warning-segmentation.ts`'s `singleChannelPass` reads this field
+   * directly. */
+  warningChannel: WarningComparatorChannel | null;
   fields: VerdictFieldScore[];
 }
 
@@ -250,6 +261,21 @@ export interface WarningSegmentationSummary {
    * CP-2 §8.4: "An absent warning is a labelling question, not a
    * resolution question. Report it beside the rate, never inside it." */
   readonly notFound: WarningSegmentCount;
+  /**
+   * TRO-535 / LH-030b: the subset of `clean` where `warningChannel` is
+   * `"single"` — a lone VLM reading, with no OCR channel to disagree with
+   * it, decided PASS. CP-2 §8.4 names this the residual false-PASS
+   * exposure (§10 Q7): nothing here proves the VLM read the label rather
+   * than reciting the statute from memory. NOT a fifth, mutually-exclusive
+   * partition member — it overlaps `clean` by construction ("Single-channel
+   * passes are counted as clean passes and ALSO reported as their own
+   * rate", CP-2 §8.4) — so it is not part of the four-class sum below.
+   * Denominator: `total`, the SAME denominator the four classes above
+   * share. CP-2 §8.4 states a denominator for the suspect rate only; this
+   * rate's denominator is `warning-segmentation.ts`'s own explicit choice,
+   * stated there because CP-2 states none for this one.
+   */
+  readonly singleChannelPass: WarningSegmentCount;
 }
 
 /**

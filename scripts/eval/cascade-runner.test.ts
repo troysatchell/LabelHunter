@@ -18,6 +18,7 @@ import type {
   LabelVerdict,
   ReviewReason,
   RouterFieldKey,
+  WarningComparatorChannel,
 } from "../../src/server/router/types";
 import type { CorrectionFieldResolution, JudgedFieldResolution, ResolverResolution } from "../../src/server/resolver";
 import { mergeResolutionIntoActualVerdict } from "./cascade-runner";
@@ -96,7 +97,7 @@ describe("mergeResolutionIntoActualVerdict", () => {
     const routerResult = router([needsReviewRow("brand_name", "AMBIGUOUS_BRAND"), ...cleanRows().slice(1)]);
     const resolution: ResolverResolution = { outcome: "resolved", fields: [judged("brand_name", "RESOLVED_MISMATCH")] };
 
-    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS);
+    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS, null);
 
     expect(merged.fields.find((f) => f.field === "brand_name")).toEqual({ field: "brand_name", verdict: "MISMATCH" });
   });
@@ -105,7 +106,7 @@ describe("mergeResolutionIntoActualVerdict", () => {
     const routerResult = router([needsReviewRow("brand_name", "AMBIGUOUS_BRAND"), ...cleanRows().slice(1)]);
     const resolution: ResolverResolution = { outcome: "resolved", fields: [judged("brand_name", "RESOLVED_MISMATCH")] };
 
-    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS);
+    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS, null);
 
     expect(merged.labelVerdict).toBe("FAIL");
   });
@@ -114,7 +115,7 @@ describe("mergeResolutionIntoActualVerdict", () => {
     const routerResult = router([needsReviewRow("brand_name", "AMBIGUOUS_BRAND"), ...cleanRows().slice(1)]);
     const resolution: ResolverResolution = { outcome: "resolved", fields: [judged("brand_name", "RESOLVED_MATCH")] };
 
-    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS);
+    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS, null);
 
     expect(merged.fields.find((f) => f.field === "class_type")).toEqual({ field: "class_type", verdict: "MATCH" });
     expect(merged.labelVerdict).toBe("PASS");
@@ -124,7 +125,7 @@ describe("mergeResolutionIntoActualVerdict", () => {
     const routerResult = router([needsReviewRow("brand_name", "AMBIGUOUS_BRAND"), mismatchRow("class_type", "Rye Whiskey"), ...cleanRows().slice(2)]);
     const resolution: ResolverResolution = { outcome: "resolved", fields: [judged("brand_name", "RESOLVED_MATCH")] };
 
-    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS);
+    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS, null);
 
     expect(merged.fields.find((f) => f.field === "class_type")).toEqual({ field: "class_type", verdict: "MISMATCH" });
     expect(merged.labelVerdict).toBe("FAIL");
@@ -138,7 +139,7 @@ describe("mergeResolutionIntoActualVerdict", () => {
     );
     const resolution: ResolverResolution = { outcome: "resolved", fields: [judged("brand_name", "RESOLVED_MATCH")] };
 
-    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS);
+    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS, null);
 
     expect(merged.fields.find((f) => f.field === "class_type")).toEqual({ field: "class_type", verdict: "NEEDS_REVIEW", reviewReason: null });
     expect(merged.labelVerdict).toBe("REVIEW");
@@ -148,7 +149,7 @@ describe("mergeResolutionIntoActualVerdict", () => {
     const routerResult = router([needsReviewRow("brand_name", "AMBIGUOUS_BRAND"), ...cleanRows().slice(1)]);
     const resolution: ResolverResolution = { outcome: "needs-human", fields: [judged("brand_name", "NEEDS_HUMAN")] };
 
-    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS);
+    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS, null);
 
     expect(merged.fields.find((f) => f.field === "brand_name")).toEqual({ field: "brand_name", verdict: "NEEDS_REVIEW", reviewReason: "LOW_MODEL_CONFIDENCE" });
     expect(merged.labelVerdict).toBe("REVIEW");
@@ -159,7 +160,7 @@ describe("mergeResolutionIntoActualVerdict", () => {
     const routerResult = router([needsReviewRow("alcohol_content", "AMBIGUOUS_ABV"), ...cleanRows().filter((r) => r.field !== "alcohol_content")]);
     const resolution: ResolverResolution = { outcome: "resolved", fields: [correction("alcohol_content", { correctedValue: "40" })] }; // disagrees with the 12% application
 
-    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS);
+    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS, null);
 
     expect(merged.fields.find((f) => f.field === "alcohol_content")).toEqual({ field: "alcohol_content", verdict: "MISMATCH" });
     expect(merged.labelVerdict).toBe("FAIL");
@@ -183,7 +184,7 @@ describe("mergeResolutionIntoActualVerdict", () => {
       ],
     };
 
-    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS);
+    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS, null);
 
     expect(merged.labelVerdict).toBe("PASS");
     expect(merged.headlineReason).toBeNull();
@@ -202,7 +203,7 @@ describe("mergeResolutionIntoActualVerdict", () => {
       ],
     };
 
-    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS);
+    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS, null);
 
     const warning = merged.fields.find((f) => f.field === "government_warning");
     expect(warning?.verdict).toBe("NEEDS_REVIEW");
@@ -214,7 +215,7 @@ describe("mergeResolutionIntoActualVerdict", () => {
     const routerResult = router(cleanRows().filter((r) => r.field !== "government_warning"));
     const resolution: ResolverResolution = { outcome: "resolved", fields: [judged("brand_name", "RESOLVED_MATCH")] };
 
-    expect(() => mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS)).toThrow(/no row for field "government_warning"/);
+    expect(() => mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS, null)).toThrow(/no row for field "government_warning"/);
   });
 
   it("rolls up to REVIEW, not PASS, when a resolved field returns MATCH but a different, unflagged field is still NEEDS_REVIEW", () => {
@@ -226,9 +227,52 @@ describe("mergeResolutionIntoActualVerdict", () => {
     // Only brand_name was flagged and resolved; class_type's own REVIEW never got a Sonnet look.
     const resolution: ResolverResolution = { outcome: "resolved", fields: [judged("brand_name", "RESOLVED_MATCH")] };
 
-    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS);
+    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS, null);
 
     expect(merged.fields.find((f) => f.field === "class_type")).toEqual({ field: "class_type", verdict: "NEEDS_REVIEW", reviewReason: "AMBIGUOUS_BRAND" });
     expect(merged.labelVerdict).toBe("REVIEW");
+  });
+
+  // TRO-535 / TRO-538 merge-integration fix: `warningChannel` provenance
+  // must survive the merge for a government_warning field that passed
+  // through unresolved, and must NOT survive it for one the resolver
+  // itself judged (the resolver has no channel of its own — see the
+  // function's own second honest limit).
+  it("carries the router's warningChannel through when government_warning was NOT itself resolved", () => {
+    const routerResult = router([needsReviewRow("brand_name", "AMBIGUOUS_BRAND"), ...cleanRows().slice(1)]);
+    const resolution: ResolverResolution = { outcome: "resolved", fields: [judged("brand_name", "RESOLVED_MATCH")] };
+    const routerWarningChannel: WarningComparatorChannel = "dual";
+
+    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS, routerWarningChannel);
+
+    expect(merged.warningChannel).toBe("dual");
+  });
+
+  it("reports warningChannel as null when government_warning itself was resolved by Sonnet, even though the router had a known channel", () => {
+    const routerResult = router(cleanRows(), "REVIEW", "CONFLICTING_EXTRACTION");
+    const resolution: ResolverResolution = {
+      outcome: "resolved",
+      fields: [
+        judged("brand_name", "RESOLVED_MATCH"),
+        judged("class_type", "RESOLVED_MATCH"),
+        correction("alcohol_content", { correctedValue: "12" }),
+        correction("net_contents", { correctedValue: "750 mL" }),
+        correction("government_warning", { correctedValue: CANONICAL_WARNING }),
+      ],
+    };
+    const routerWarningChannel: WarningComparatorChannel = "single";
+
+    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS, routerWarningChannel);
+
+    expect(merged.warningChannel).toBeNull();
+  });
+
+  it("reports warningChannel as null when the router itself had none to give (e.g. the warning field never reached the comparator)", () => {
+    const routerResult = router([needsReviewRow("brand_name", "AMBIGUOUS_BRAND"), ...cleanRows().slice(1)]);
+    const resolution: ResolverResolution = { outcome: "resolved", fields: [judged("brand_name", "RESOLVED_MATCH")] };
+
+    const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS, null);
+
+    expect(merged.warningChannel).toBeNull();
   });
 });

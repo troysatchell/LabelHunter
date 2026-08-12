@@ -56,7 +56,13 @@ function isWarningSegmentationSummary(value: unknown): value is WarningSegmentat
     isWarningSegmentCount(candidate.clean) &&
     isWarningSegmentCount(candidate.trueMismatch) &&
     isWarningSegmentCount(candidate.resolutionSuspect) &&
-    isWarningSegmentCount(candidate.notFound)
+    isWarningSegmentCount(candidate.notFound) &&
+    // TRO-535 / LH-030b: the single-channel-pass rate, CP-2 §8.4's residual
+    // false-PASS exposure — same light shape check as the four classes
+    // above, never compared against a floor here (baseline-compare.ts's
+    // own module comment explains why the gate only reads the three
+    // headline rates).
+    isWarningSegmentCount(candidate.singleChannelPass)
   );
 }
 

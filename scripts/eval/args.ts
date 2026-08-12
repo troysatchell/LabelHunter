@@ -193,3 +193,87 @@ export function resolveCaseIds(args: EvalCliArgs, allManifestCaseIds: readonly s
   }
   return ids;
 }
+
+/**
+ * Default repeat count for the variance runner (`variance.ts`, LH-038 /
+ * TRO-543). Five repeats is what it took to see case-17's own 3 REVIEW / 2
+ * PASS split (CHANGES.md's TRO-543 entry) — small enough to stay cheap on a
+ * default `--live` invocation, large enough to have a real chance of
+ * showing a split when one exists.
+ */
+export const DEFAULT_REPEATS = 5;
+
+/**
+ * Hard ceiling on `--repeats=<k>` (LH-038 / TRO-543) — the same backstop
+ * role `MAX_CASES` above and `scripts/latency/args.ts`'s `MAX_RUNS` play for
+ * their own axis. Cases and repeats are DIFFERENT axes, capped SEPARATELY
+ * on purpose — LH-038's own brief rules out raising `MAX_CASES` to fit more
+ * repeats. This constant exists so a typo like `--repeats=500` cannot
+ * silently multiply real API spend a hundredfold. The ticket's own worked
+ * examples use K=3 and K=5; this cap is a backstop against a typo, not a
+ * usage recommendation. No CLI override, matching `MAX_CASES`'s own
+ * precedent — raise it here, deliberately, if a genuine need arises.
+ */
+export const MAX_REPEATS = 10;
+
+export interface VarianceCliArgs extends EvalCliArgs {
+  /** How many times the variance runner repeats each selected case (K).
+   * Always a positive integer `<= MAX_REPEATS`, enforced by
+   * `parseVarianceArgs`. */
+  repeats: number;
+}
+
+const REPEATS_FLAG = /^--repeats=(\d+)$/;
+
+/**
+ * Parses `variance.ts`'s CLI args: every flag `parseEvalArgs` already
+ * understands (`--live`, `--full`, `--case=<id>`, `--update-baseline`) plus
+ * `--repeats=<k>`. Does not duplicate `parseEvalArgs` — LH-038's brief:
+ * reuse it, write no second parser for the flags it already owns.
+ * `--repeats=<k>` is pulled out of `argv` before the remainder is handed to
+ * `parseEvalArgs`, since that function rejects any argument it does not
+ * itself recognize.
+ */
+export function parseVarianceArgs(argv: readonly string[]): VarianceCliArgs {
+  const repeatsMatches = argv.filter((a) => REPEATS_FLAG.test(a));
+  if (repeatsMatches.length > 1) {
+    throw new Error(`eval args: --repeats may be passed at most once, got ${repeatsMatches.length}.`);
+  }
+  const rest = argv.filter((a) => !REPEATS_FLAG.test(a));
+  const base = parseEvalArgs(rest);
+
+  let repeats = DEFAULT_REPEATS;
+  if (repeatsMatches.length === 1) {
+    repeats = Number(REPEATS_FLAG.exec(repeatsMatches[0])![1]);
+  }
+  if (!Number.isInteger(repeats) || repeats < 1) {
+    throw new Error(`eval args: --repeats must be a positive integer, got ${repeats}`);
+  }
+  if (repeats > MAX_REPEATS) {
+    throw new Error(
+      `eval args: --repeats=${repeats} exceeds the ${MAX_REPEATS}-repeat safety cap (each repeat re-runs every ` +
+        `selected case for real API money — see this file's MAX_REPEATS comment). Edit MAX_REPEATS if you genuinely need more.`,
+    );
+  }
+
+  return { ...base, repeats };
+}
+
+/**
+ * `variance.ts`-specific validation, the same shape as `validateCheckArgs`
+ * for `check.ts`: a bare `pnpm eval:variance` is cheap mode, so
+ * `--full`/`--case=<id>`/`--repeats=<k>` — which only mean anything on a
+ * real sweep — must come with an explicit `--live`. `--update-baseline` is
+ * rejected outright: this runner has no baseline to update, the same
+ * explicit-rejection precedent `benchmark.ts` sets for the identical
+ * situation ("silently ignoring a typo'd flag would be more confusing than
+ * rejecting it").
+ */
+export function validateVarianceArgs(args: VarianceCliArgs): void {
+  if (args.updateBaseline) {
+    throw new Error("eval args: --update-baseline is not supported by the variance runner — it has no baseline to update.");
+  }
+  if ((args.full || args.caseId !== null || args.repeats !== DEFAULT_REPEATS) && !args.live) {
+    throw new Error("eval args: --full/--case=<id>/--repeats=<k> only affect a --live run — pass --live to select a sample.");
+  }
+}

@@ -3,6 +3,7 @@
  * §3.5, §5, TH-R4).
  */
 import type { BatchJobStatus, FieldVerdict } from "../../lib/db/enums";
+import type { BatchThroughputStats } from "../../lib/utils/batch-throughput";
 import type { LatencyStats } from "../../lib/utils/latency-stats";
 
 /**
@@ -92,6 +93,17 @@ export interface BatchProgressSummary {
   /** `null` until at least one label has finished the EXTRACT phase —
    * never a fabricated `0` (standing rules 1/2). */
   latency: LatencyStats | null;
+  /** Items/minute and the reciprocal per-item average, for the WHOLE batch
+   * (PRD §3.8, TH-R4) — `null` until the batch reaches a terminal state
+   * (`startedAt`/`completedAt` both set), since the wall-clock span is not
+   * final before then. See `../../lib/utils/batch-throughput.ts`'s own doc
+   * comment for how this differs from `latency` above. */
+  throughput: BatchThroughputStats | null;
+  /** The share of PROCESSED labels finished without a resolver call
+   * (CP-1 §4.5 step 3's own definition) — a `0..1` fraction, `null` until
+   * at least one label has processed. This is what turns the disposition
+   * mix into a claim about time an agent did not have to spend. */
+  autoVerifiedShare: number | null;
   rateLimitBackoff: BatchRateLimitBackoff;
   results: BatchResultRow[];
 }

@@ -92,7 +92,47 @@ extractor (LH-011) already produced. It runs its own OCR pass and its own region
   fix, below. A disagreement can only downgrade an already-decided PASS or FAIL to REVIEW. It
   never upgrades a REVIEW to anything else.
 
-**Regression tests.** `src/server/warning/*.test.ts` — 11 files, 115 cases, all written
+**Review round.** A local CodeRabbit pass ran against the first commit. It found 13 findings,
+folded into this same entry rather than a separate one, since no PR had opened yet.
+- **Major.** `applyPrefixCasingCrossCheck` treated `NOT_VISIBLE` — the model could not judge
+  the prefix's casing at all — the same as an active "not ALL_CAPS" claim. A correct, confident
+  derived ALL_CAPS read got flagged as inconsistent whenever the model merely abstained. Fixed:
+  `NOT_VISIBLE` now leaves the result unchanged, in both directions. `OTHER` and `TITLE_CASE`
+  still count, since those are real, competing claims.
+- **Major.** `runOcrChannel` did not catch a rejected `deps.detectRegion`/`crop`/`ocr` promise.
+  A rejection would reject the whole `Promise.all`, discarding an already-good VLM read along
+  with it. Fixed: wrapped in `try`/`catch`, returning `{ available: false }`.
+- **Major.** `runWarningOcr` called `worker.terminate()` inside a bare `finally` block. A
+  termination failure would replace an already-successful `recognize()` result with a thrown
+  error. Fixed: the result is captured first; `terminate()`'s own failure is isolated so it
+  cannot destroy a good read.
+- **Major.** The OCR startup test's child process set `NODE_OPTIONS` to the guard's `--require`
+  flag alone, overwriting any value the parent process already carried, and inserted the guard
+  path unquoted into a value Node splits on whitespace — a repo path with a space in it would
+  have corrupted the flag. Fixed: appends to any existing `NODE_OPTIONS`, quotes the path.
+- **Major.** `wording-compare.test.ts` defined its own `capsPassesFor` helper, duplicating
+  `caps.ts`'s own exported `capsCheckPasses`. Fixed: removed, call site uses the shared function.
+- **Minor.** `dehyphenateAtLineBreaks` matched a hyphen before `\n` or `\r\n` but not a bare
+  `\r` — inconsistent with `lineBreaksToSpace`, which handles all three line-break forms. Fixed.
+- **Minor.** `__dirname`, used in two test files, is not defined in genuine ESM; it only
+  resolved because vitest's own transform shims it. Fixed: `import.meta.dirname`.
+- **Minor.** A real-image OCR test pinned its confidence assertion to a specific measured
+  number, fragile against a CI environment that substitutes a different font for the synthetic
+  render. Fixed: asserts against `OCR_CONFIDENCE_FLOOR`, the number that actually matters.
+- **Trivial.** Three tests strengthened to check the exact UI note text or the
+  confidence-below-floor property, not only the verdict. CHANGES.md's own wording tightened.
+- **Dismissed, both false-positive.** A suggestion to add latency-metric instrumentation to
+  `region-detect.ts`, citing a metrics convention that does not exist anywhere in this
+  codebase — LH-031 is the latency-harness ticket, not this one. A suggestion to resolve
+  `TESSDATA_DIR` from something other than `process.cwd()`: that matches
+  `src/server/storage/local-file-storage.ts`'s own established convention exactly, and
+  `pnpm build` (measured, passes clean) already includes `tessdata/` with no extra
+  configuration — there is no `output: "standalone"` in `next.config.ts` to need one.
+
+All 13 findings are recorded in `factory/review-findings.jsonl`.
+
+**Regression tests.** `src/server/warning/*.test.ts` — 11 files, 119 cases (115 from the
+initial build, 4 more from the review round below), all written
 before their implementation. Every file's first run failed on a missing module, confirmed
 before any implementation code existed.
 

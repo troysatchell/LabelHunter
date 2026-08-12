@@ -84,10 +84,11 @@ Rendering a spec's exact text mechanically is not the same claim as a person con
 image looks right.
 
 **Rubric-vector coverage (`audit/rubric.md` Appendix A):** every case is tagged with the
-vectors it provides evidence for (`vectors` field). All ten vectors have at least one covering
-case today. **V10** (batch of ≥20) is a property of the manifest as a whole, not any single
-case. The manifest's 30 cases satisfy the ≥20 count, but no case individually claims V10.
-`loader.test.ts` asserts this explicitly, so V10's coverage can't silently drift.
+vectors it provides evidence for (`vectors` field). V1 through V9 each have at least one
+covering case today. **V10** is different: it is a property of the manifest as a whole (batch
+of ≥20), not any single case. The manifest's 30 cases satisfy the ≥20 count, but no case
+individually claims V10, and none ever should. `loader.test.ts` asserts both halves of this
+explicitly, so neither can silently drift.
 
 **V7** (net-contents format match, e.g. `"750 mL"` vs `"750ml"`) was the last vector with no
 covering case. TRO-515 closed it. `case-30-clean-match-net-contents-alt-format` isolates the

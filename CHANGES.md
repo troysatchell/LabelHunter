@@ -24,23 +24,25 @@ tracking entry being removed fails `vector-coverage-drift`. Adding the case with
 the entry would fail the same way, checked directly (see Evidence below) before the entry was
 removed. Both changes land in this one PR.
 
-**The known-gap test mechanism needed a seam, not just two updated assertions.** Closing the
-gap breaks the two tests that check the real committed manifest
-(`scripts/golden/verify.test.ts`'s "the real committed golden set" block,
-`src/lib/golden-set/loader.test.ts`'s vector-coverage test) — both now expect zero remaining
-gaps instead of `["V7"]`. It also breaks three synthetic-fixture tests in `verify.test.ts` that
-used V7 as a stand-in example of "a tracked gap": `KNOWN_VECTOR_GAPS` is a private, hardcoded
-constant with no injection seam, so once it went empty, those tests had nothing left to
-exercise. Rather than delete tests that prove the drift check works, `VerifyOptions` gained an
-optional `knownVectorGaps` override. `main()` (the CLI entry point) never passes it, so a real
-`pnpm golden:verify` run always checks the manifest against the actual, current
-`KNOWN_VECTOR_GAPS`. The three mechanism tests now inject their own fixture vector (`new
-Set(["V7"])`, chosen for a minimal diff — it is just a label now, not a live gap) instead of
-depending on whichever vector, if any, is a genuine gap in the committed manifest. Two more
-`validManifestCases()`-based tests (an ai-generated "passes" case, a rendered+ai-backdrop
-"passes" case) needed the same override for an unrelated, pre-existing reason: their shared
-fixture always leaves V7 uncovered by construction, and both assert `report.problems` comes
-back completely empty.
+**Closing the gap broke five tests, not just two.** Two tests check the real committed manifest
+directly: `verify.test.ts`'s "the real committed golden set" block, and `loader.test.ts`'s
+vector-coverage test. Both now expect zero remaining gaps instead of `["V7"]`.
+
+Three more tests broke for a less obvious reason. They build a synthetic fixture and use V7 as
+a worked example of "a tracked gap." `KNOWN_VECTOR_GAPS` is a private, hardcoded constant, so
+these tests had no way to supply their own example vector. Once the real constant went empty,
+V7 stopped being a gap, and the tests had nothing left to demonstrate.
+
+Rather than delete tests that prove the drift check works, `VerifyOptions` gained a new
+optional field, `knownVectorGaps`. `main()` (the CLI entry point) never sets it, so a real
+`pnpm golden:verify` run still checks the manifest against the real `KNOWN_VECTOR_GAPS`. The
+three mechanism tests now pass `knownVectorGaps: new Set(["V7"])` directly. They no longer
+depend on which vector, if any, is a genuine gap in the committed manifest.
+
+Two more tests needed the same fix for an unrelated reason. Both build their fixture from
+`validManifestCases()`, which always leaves V7 uncovered by construction, and both assert
+`report.problems` comes back completely empty: an ai-generated "passes" case, and a
+rendered+ai-backdrop "passes" case. Both get the same `knownVectorGaps` override.
 
 `golden-set/README.md`'s known-gap note is rewritten: V7 is closed; V10 remains the one
 property that stays manifest-wide, not per-case. Image count and total size move from 29 /

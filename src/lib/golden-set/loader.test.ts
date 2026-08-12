@@ -725,24 +725,25 @@ describe("loadGoldenSetManifest", () => {
     expect(altFormat?.vectors).toContain("V7");
   });
 
-  it("covers 9 of 10 rubric vectors; V10 is the only known gap (design doc §4)", () => {
+  it("covers all nine per-case rubric vectors; V10 stays a manifest-wide property, not a per-case gap (design doc §4)", () => {
     // V10 (batch of >=20) is a property of the manifest as a whole, not any
-    // single case, and is asserted separately below — it can never be
-    // "covered" by this per-case check, so it stays excluded here
-    // regardless of manifest content.
-    // TRO-515 closed the other known gap, V7 (net-contents format match,
-    // e.g. "750 mL" vs "750ml"): case-30-clean-match-net-contents-alt-format
-    // now carries it. If this test starts failing because one of the other
-    // nine vectors lost its only covering case, DELETE that vector from the
-    // exclusion below only once a real replacement case exists — don't
-    // widen the exclusion to paper over a real regression.
+    // single case. The "at least 20 cases" test below asserts V10 directly.
+    // No case may EVER individually tag it, so it is excluded from this
+    // per-case loop on purpose — that exclusion is not a gap.
+    //
+    // TRO-515 closed the one real per-case gap, V7 (net-contents format
+    // match, e.g. "750 mL" vs "750ml"): case-30-clean-match-net-contents-
+    // alt-format now carries it. If this test starts failing because one of
+    // the other eight vectors lost its only covering case, add a real
+    // replacement case first — don't widen the exclusion below to paper
+    // over a real regression.
     const result = loadGoldenSetManifest();
     const covered = new Set(result.cases.flatMap((c) => c.vectors));
     const allVectors = ["V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10"] as const;
-    const knownGaps = new Set(["V10"]);
+    const manifestWideOnly = new Set(["V10"]);
     for (const v of allVectors) {
-      if (knownGaps.has(v)) {
-        expect(covered.has(v), `${v} was expected to still be a known gap`).toBe(false);
+      if (manifestWideOnly.has(v)) {
+        expect(covered.has(v), `${v} is a manifest-wide property; no case should tag it individually`).toBe(false);
       } else {
         expect(covered.has(v), `${v} should be covered by at least one case`).toBe(true);
       }

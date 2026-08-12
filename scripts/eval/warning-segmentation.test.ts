@@ -20,6 +20,7 @@ function caseWithWarningOutcome(
     expectedVerdict: "MATCH",
     actualVerdict: "MATCH",
     correct: true,
+    confidence: 0.9,
     actualReviewReason: null,
   };
   return {
@@ -39,6 +40,7 @@ function caseWithWarningOutcome(
         expectedVerdict: "MATCH",
         actualVerdict: warningField.actualVerdict,
         correct: true,
+        confidence: 0.9,
         actualReviewReason: warningField.actualReviewReason,
       },
     ],

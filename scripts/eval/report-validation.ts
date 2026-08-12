@@ -66,14 +66,33 @@ function isWarningSegmentationSummary(value: unknown): value is WarningSegmentat
   );
 }
 
+/** Light shape check for one `ReliabilityBucket` — same "present and
+ * well-formed, never compared against a floor" discipline this file's own
+ * module comment already applies to `warningSegmentation` (TRO-538 /
+ * LH-033): `compareToBaseline` never reads this array, so a malformed one
+ * should fail loudly here, not surface as `undefined[decile]` downstream. */
+function isReliabilityBucket(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    isNonNegativeSafeInteger(candidate.decile) &&
+    isNonNegativeSafeInteger(candidate.n) &&
+    isNonNegativeSafeInteger(candidate.correct) &&
+    isFiniteUnitRate(candidate.rate)
+  );
+}
+
 function isEvalReportSummary(value: unknown): value is EvalReportSummary {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
   return (
     isAccuracySummary(candidate.extractionAccuracy) &&
-    isAccuracySummary(candidate.labelVerdictAccuracy) &&
+    isAccuracySummary(candidate.routerVerdictAccuracy) &&
+    isAccuracySummary(candidate.cascadeVerdictAccuracy) &&
     isAccuracySummary(candidate.reviewReasonAccuracy) &&
-    isWarningSegmentationSummary(candidate.warningSegmentation)
+    isWarningSegmentationSummary(candidate.warningSegmentation) &&
+    Array.isArray(candidate.extractionReliabilityDiagram) &&
+    candidate.extractionReliabilityDiagram.every(isReliabilityBucket)
   );
 }
 
@@ -91,10 +110,11 @@ export function validateEvalBaseline(parsed: unknown, filePath: string): EvalBas
   const candidate = parsed as Record<string, unknown>;
   const problems: string[] = [];
   if (typeof candidate.manifestVersion !== "string") problems.push('"manifestVersion" must be a string');
+  if (typeof candidate.manifestContentHash !== "string") problems.push('"manifestContentHash" must be a string');
   if (!isStringArray(candidate.caseIds)) problems.push('"caseIds" must be an array of strings');
   if (typeof candidate.establishedAt !== "string") problems.push('"establishedAt" must be a string');
   if (!isEvalReportSummary(candidate.summary)) {
-    problems.push('"summary" must carry valid extractionAccuracy/labelVerdictAccuracy/reviewReasonAccuracy AccuracySummary objects and a valid warningSegmentation');
+    problems.push('"summary" must carry valid extractionAccuracy/routerVerdictAccuracy/cascadeVerdictAccuracy/reviewReasonAccuracy AccuracySummary objects, a valid warningSegmentation, and a valid extractionReliabilityDiagram');
   }
   if (problems.length > 0) {
     throw new Error(`report-validation: ${filePath} is not a valid EvalBaseline — ${problems.join("; ")}.`);
@@ -112,10 +132,11 @@ export function validateEvalReport(parsed: unknown, filePath: string): EvalRepor
   const candidate = parsed as Record<string, unknown>;
   const problems: string[] = [];
   if (typeof candidate.manifestVersion !== "string") problems.push('"manifestVersion" must be a string');
+  if (typeof candidate.manifestContentHash !== "string") problems.push('"manifestContentHash" must be a string');
   if (!isStringArray(candidate.caseIds)) problems.push('"caseIds" must be an array of strings');
   if (typeof candidate.measuredAt !== "string") problems.push('"measuredAt" must be a string');
   if (!isEvalReportSummary(candidate.summary)) {
-    problems.push('"summary" must carry valid extractionAccuracy/labelVerdictAccuracy/reviewReasonAccuracy AccuracySummary objects and a valid warningSegmentation');
+    problems.push('"summary" must carry valid extractionAccuracy/routerVerdictAccuracy/cascadeVerdictAccuracy/reviewReasonAccuracy AccuracySummary objects, a valid warningSegmentation, and a valid extractionReliabilityDiagram');
   }
   if (!Array.isArray(candidate.failures)) problems.push('"failures" must be an array');
   if (problems.length > 0) {

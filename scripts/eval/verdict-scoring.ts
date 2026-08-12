@@ -21,8 +21,27 @@
  * further, to PASS or FAIL.
  */
 import type { GoldenExpectedResult, GoldenSetCase } from "../../src/lib/golden-set/types";
+import type { HaikuExtractionResult } from "../../src/server/extractor/types";
 import type { LabelVerdict, ReviewReason, RouterFieldKey, WarningComparatorChannel } from "../../src/server/router/types";
 import type { VerdictCaseScore, VerdictFieldScore } from "./types";
+
+/** `RouterFieldKey` -> the matching confidence on `HaikuExtractionResult`
+ * (TRO-538 / LH-033) — the SAME per-field confidence
+ * `extraction-scoring.ts`'s own `EXTRACTION_FIELD_CONFIDENCE` reads, kept
+ * as a second, small, router-field-keyed copy rather than shared: the two
+ * tables are keyed by different field-name conventions
+ * (`ExtractionFieldKey`'s `brandName` vs `RouterFieldKey`'s `brand_name` —
+ * `types.ts`'s own doc comment on `ExtractionFieldKey` names this exact
+ * naming split) and importing one from the other's module would blur which
+ * question ("did Haiku read this right" vs "did the verdict match") each
+ * table serves. */
+const ROUTER_FIELD_CONFIDENCE: Record<RouterFieldKey, (extraction: HaikuExtractionResult) => number> = {
+  brand_name: (e) => e.brand_name.confidence,
+  class_type: (e) => e.class_type.confidence,
+  alcohol_content: (e) => e.alcohol_content.confidence,
+  net_contents: (e) => e.net_contents.confidence,
+  government_warning: (e) => e.government_warning.confidence,
+};
 
 /**
  * One field's actual outcome. A discriminated union on `verdict`, not an
@@ -91,8 +110,15 @@ const EXPECTED_FIELD_TO_ROUTER_FIELD: Record<keyof GoldenExpectedResult["fields"
  * malformed pipeline result), not a scoring judgment call to paper over. A
  * duplicate would otherwise disappear silently into the `Map` below
  * (whichever entry is built last wins) instead of being caught here.
+ *
+ * `extraction` (TRO-538 / LH-033) is the SAME real `HaikuExtractionResult`
+ * every caller already has in hand — `cascade-runner.ts`'s captured
+ * extraction, reused (not re-called) for the Sonnet-only arm too
+ * (`benchmark.ts`). Required, not optional: every `VerdictFieldScore` this
+ * function builds needs a real confidence, never a silent default standing
+ * in for one.
  */
-export function scoreVerdict(caseSpec: GoldenSetCase, actual: ActualVerdict): VerdictCaseScore {
+export function scoreVerdict(caseSpec: GoldenSetCase, actual: ActualVerdict, extraction: HaikuExtractionResult): VerdictCaseScore {
   const expected = caseSpec.expected;
   const actualByField = new Map(actual.fields.map((f) => [f.field, f]));
   if (actualByField.size !== actual.fields.length) {
@@ -118,6 +144,7 @@ export function scoreVerdict(caseSpec: GoldenSetCase, actual: ActualVerdict): Ve
       expectedVerdict,
       actualVerdict,
       correct: expectedVerdict === actualVerdict,
+      confidence: ROUTER_FIELD_CONFIDENCE[routerField](extraction),
       actualReviewReason: actualField.verdict === "NEEDS_REVIEW" ? actualField.reviewReason : null,
     };
   });

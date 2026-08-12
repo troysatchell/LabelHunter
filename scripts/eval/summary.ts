@@ -10,6 +10,8 @@ import {
   type EvalReportSummary,
   type ExtractionCaseScore,
   type ExtractionFieldKey,
+  type ExtractionFieldScore,
+  type ReliabilityBucket,
   type VerdictCaseScore,
   type WarningSegmentationSummary,
 } from "./types";
@@ -22,6 +24,9 @@ const EXTRACTION_FIELD_KEYS: readonly ExtractionFieldKey[] = [
   "netContents",
   "governmentWarning",
 ];
+
+/** CP-1 §4.5 step 2's reliability diagram has ten confidence deciles. */
+const RELIABILITY_DECILE_COUNT = 10;
 
 /** `correct / total`, or `0` on an empty population — see `AccuracySummary`'s
  * own doc comment for why `0`, not `NaN`, is the honest empty answer. */
@@ -71,6 +76,40 @@ export function summarizeExtraction(cases: readonly ExtractionCaseScore[]): Extr
   return { overall: summarizeBy(allFields, (f) => f.correct), byField };
 }
 
+/**
+ * CP-1 §4.5 step 2's reliability diagram (TRO-538 / LH-033): every scored
+ * extraction field bucketed by its own confidence, rounded down to the
+ * nearest tenth, with each bucket's own measured accuracy. Always returns
+ * exactly `RELIABILITY_DECILE_COUNT` buckets, in order, even when a
+ * bucket's `n` is 0 — a reader should see an empty decile, not a missing
+ * key.
+ */
+export function buildExtractionReliabilityDiagram(fields: readonly ExtractionFieldScore[]): ReliabilityBucket[] {
+  const buckets: { n: number; correct: number }[] = Array.from({ length: RELIABILITY_DECILE_COUNT }, () => ({ n: 0, correct: 0 }));
+  for (const field of fields) {
+    // Clamped into [0, RELIABILITY_DECILE_COUNT - 1]: confidence is
+    // documented as 0.00-1.00 (`ExtractedField`'s own doc comment), so a
+    // value of exactly 1.0 must land in the last bucket, not overflow one
+    // past it, and a boundary-violating value from a malformed response
+    // still lands somewhere rather than throwing this diagnostic-only
+    // diagram off a live run. Non-finite (NaN, +/-Infinity) is normalized
+    // to 0 first (CodeRabbit finding, TRO-538 triage): every arithmetic
+    // comparison against NaN is false, so Math.max/Math.min would both
+    // pass NaN straight through unclamped, and `buckets[NaN]` is
+    // `undefined` — a real crash, not a wrong-bucket miscount.
+    const rawConfidence = Number.isFinite(field.confidence) ? field.confidence : 0;
+    const decile = Math.min(RELIABILITY_DECILE_COUNT - 1, Math.max(0, Math.floor(rawConfidence * RELIABILITY_DECILE_COUNT)));
+    buckets[decile].n += 1;
+    if (field.correct) buckets[decile].correct += 1;
+  }
+  return buckets.map((bucket, decile) => ({
+    decile,
+    n: bucket.n,
+    correct: bucket.correct,
+    rate: bucket.n === 0 ? 0 : bucket.correct / bucket.n,
+  }));
+}
+
 export interface VerdictSummary {
   labelVerdictAccuracy: AccuracySummary;
   fieldVerdictAccuracyByField: Record<RouterFieldKey, AccuracySummary>;
@@ -104,20 +143,34 @@ export function summarizeVerdict(cases: readonly VerdictCaseScore[]): VerdictSum
 }
 
 /** Builds the full `EvalReportSummary` the committed report and baseline
- * artifacts both carry. `extractionCases` and `verdictCases` must cover the
- * same case set — callers build both from the same run. */
+ * artifacts both carry. `extractionCases`, `routerVerdictCases`, and
+ * `cascadeVerdictCases` must all cover the same case set — callers build
+ * all three from the same run.
+ *
+ * `routerVerdictCases` and `cascadeVerdictCases` (TRO-538 / LH-033) are
+ * deliberately TWO separate lists, not one: the per-field breakdown
+ * (`fieldVerdictAccuracyByField`), `reviewReasonAccuracy`, and
+ * `warningSegmentation` are all scored at the ROUTER stage only — see
+ * `EvalReportSummary.routerVerdictAccuracy`'s own doc comment for why
+ * doubling every one of those into a cascade-stage twin is out of this
+ * ticket's scope. `cascadeVerdictCases` feeds exactly one number:
+ * `cascadeVerdictAccuracy`.
+ */
 export function buildEvalReportSummary(
   extractionCases: readonly ExtractionCaseScore[],
-  verdictCases: readonly VerdictCaseScore[],
+  routerVerdictCases: readonly VerdictCaseScore[],
+  cascadeVerdictCases: readonly VerdictCaseScore[],
 ): EvalReportSummary {
   const extraction = summarizeExtraction(extractionCases);
-  const verdict = summarizeVerdict(verdictCases);
+  const routerVerdict = summarizeVerdict(routerVerdictCases);
   return {
     extractionAccuracy: extraction.overall,
     extractionAccuracyByField: extraction.byField,
-    labelVerdictAccuracy: verdict.labelVerdictAccuracy,
-    fieldVerdictAccuracyByField: verdict.fieldVerdictAccuracyByField,
-    reviewReasonAccuracy: verdict.reviewReasonAccuracy,
-    warningSegmentation: verdict.warningSegmentation,
+    routerVerdictAccuracy: routerVerdict.labelVerdictAccuracy,
+    fieldVerdictAccuracyByField: routerVerdict.fieldVerdictAccuracyByField,
+    reviewReasonAccuracy: routerVerdict.reviewReasonAccuracy,
+    warningSegmentation: routerVerdict.warningSegmentation,
+    cascadeVerdictAccuracy: summarizeBy(cascadeVerdictCases, (c) => c.labelVerdictCorrect),
+    extractionReliabilityDiagram: buildExtractionReliabilityDiagram(extractionCases.flatMap((c) => c.fields)),
   };
 }

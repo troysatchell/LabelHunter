@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { testGoldenCase } from "./test-support";
+import { testExtraction, testGoldenCase } from "./test-support";
 import { scoreVerdict, type ActualVerdict } from "./verdict-scoring";
 
 const ALL_MATCH_FIELDS: ActualVerdict["fields"] = [
@@ -12,7 +12,7 @@ const ALL_MATCH_FIELDS: ActualVerdict["fields"] = [
 
 describe("scoreVerdict", () => {
   it("scores a clean PASS as fully correct", () => {
-    const result = scoreVerdict(testGoldenCase(), { labelVerdict: "PASS", headlineReason: null, fields: ALL_MATCH_FIELDS });
+    const result = scoreVerdict(testGoldenCase(), { labelVerdict: "PASS", headlineReason: null, fields: ALL_MATCH_FIELDS }, testExtraction());
     expect(result.labelVerdictCorrect).toBe(true);
     expect(result.reviewReasonCorrect).toBe(true);
     expect(result.fields.every((f) => f.correct)).toBe(true);
@@ -40,7 +40,7 @@ describe("scoreVerdict", () => {
         { field: "government_warning", verdict: "MATCH" },
       ],
     };
-    const result = scoreVerdict(caseSpec, actual);
+    const result = scoreVerdict(caseSpec, actual, testExtraction());
     expect(result.labelVerdictCorrect).toBe(true);
     expect(result.fields.find((f) => f.field === "alcohol_content")?.correct).toBe(true);
   });
@@ -68,7 +68,7 @@ describe("scoreVerdict", () => {
         { field: "government_warning", verdict: "MATCH" },
       ],
     };
-    const result = scoreVerdict(caseSpec, actual);
+    const result = scoreVerdict(caseSpec, actual, testExtraction());
     expect(result.labelVerdictCorrect).toBe(true);
     expect(result.reviewReasonCorrect).toBe(true);
     expect(result.fields.find((f) => f.field === "brand_name")?.actualReviewReason).toBe("LOW_IMAGE_QUALITY");
@@ -97,7 +97,7 @@ describe("scoreVerdict", () => {
         { field: "government_warning", verdict: "MATCH" },
       ],
     };
-    const result = scoreVerdict(caseSpec, actual);
+    const result = scoreVerdict(caseSpec, actual, testExtraction());
     expect(result.labelVerdictCorrect).toBe(true);
     expect(result.reviewReasonCorrect).toBe(false);
   });
@@ -111,12 +111,12 @@ describe("scoreVerdict", () => {
       },
     });
     const actual: ActualVerdict = { labelVerdict: "PASS", headlineReason: null, fields: ALL_MATCH_FIELDS };
-    const result = scoreVerdict(caseSpec, actual);
+    const result = scoreVerdict(caseSpec, actual, testExtraction());
     expect(result.labelVerdictCorrect).toBe(false);
   });
 
   it("does not penalize reviewReasonCorrect on a PASS/FAIL case even when headlineReason differs (both should be null)", () => {
-    const result = scoreVerdict(testGoldenCase(), { labelVerdict: "PASS", headlineReason: null, fields: ALL_MATCH_FIELDS });
+    const result = scoreVerdict(testGoldenCase(), { labelVerdict: "PASS", headlineReason: null, fields: ALL_MATCH_FIELDS }, testExtraction());
     expect(result.reviewReasonCorrect).toBe(true);
   });
 
@@ -126,7 +126,7 @@ describe("scoreVerdict", () => {
       headlineReason: null,
       fields: ALL_MATCH_FIELDS.filter((f) => f.field !== "government_warning"),
     };
-    expect(() => scoreVerdict(testGoldenCase(), incomplete)).toThrow(/no entry for "government_warning"/);
+    expect(() => scoreVerdict(testGoldenCase(), incomplete, testExtraction())).toThrow(/no entry for "government_warning"/);
   });
 
   it("throws when actual.fields has a duplicate field entry, rather than silently dropping one", () => {
@@ -135,7 +135,7 @@ describe("scoreVerdict", () => {
       headlineReason: null,
       fields: [...ALL_MATCH_FIELDS, { field: "brand_name", verdict: "MISMATCH" }],
     };
-    expect(() => scoreVerdict(testGoldenCase(), duplicated)).toThrow(/duplicate field entries/);
+    expect(() => scoreVerdict(testGoldenCase(), duplicated, testExtraction())).toThrow(/duplicate field entries/);
   });
 
   it("sets actualReviewReason to null on every MATCH/MISMATCH field, never leftover from a different field's reason", () => {
@@ -157,7 +157,7 @@ describe("scoreVerdict", () => {
         { field: "government_warning", verdict: "MATCH" },
       ],
     };
-    const result = scoreVerdict(caseSpec, actual);
+    const result = scoreVerdict(caseSpec, actual, testExtraction());
     for (const field of result.fields) {
       expect(field.actualReviewReason, `${field.field} should carry no reviewReason`).toBeNull();
     }
@@ -182,19 +182,19 @@ describe("scoreVerdict", () => {
         { field: "government_warning", verdict: "NEEDS_REVIEW", reviewReason: null },
       ],
     };
-    const result = scoreVerdict(testGoldenCase(), actual);
+    const result = scoreVerdict(testGoldenCase(), actual, testExtraction());
     expect(result.fields.find((f) => f.field === "brand_name")?.actualReviewReason).toBeNull();
     expect(result.fields.find((f) => f.field === "government_warning")?.actualReviewReason).toBeNull();
   });
 
   it("carries warningChannel through onto the case score when the caller supplies one (TRO-535 / LH-030b)", () => {
     const actual: ActualVerdict = { labelVerdict: "PASS", headlineReason: null, fields: ALL_MATCH_FIELDS, warningChannel: "single" };
-    const result = scoreVerdict(testGoldenCase(), actual);
+    const result = scoreVerdict(testGoldenCase(), actual, testExtraction());
     expect(result.warningChannel).toBe("single");
   });
 
   it("normalizes an absent warningChannel to null, never undefined — the Sonnet-only benchmark arm never sets it", () => {
-    const result = scoreVerdict(testGoldenCase(), { labelVerdict: "PASS", headlineReason: null, fields: ALL_MATCH_FIELDS });
+    const result = scoreVerdict(testGoldenCase(), { labelVerdict: "PASS", headlineReason: null, fields: ALL_MATCH_FIELDS }, testExtraction());
     expect(result.warningChannel).toBeNull();
   });
 
@@ -222,9 +222,30 @@ describe("scoreVerdict", () => {
         { field: "government_warning", verdict: "MISMATCH" },
       ],
     };
-    const result = scoreVerdict(caseSpec, actual);
+    const result = scoreVerdict(caseSpec, actual, testExtraction());
     const warningField = result.fields.find((f) => f.field === "government_warning");
     expect(warningField?.actualVerdict).toBe("MISMATCH");
     expect(warningField?.actualReviewReason).toBeNull();
+  });
+
+  it("records each field's own confidence from the captured extraction, never a single shared number (TRO-538 / LH-033)", () => {
+    const extraction = testExtraction({
+      brand_name: { value: "Old Tom Distillery", evidence: "Old Tom Distillery", confidence: 0.42, alternates: [] },
+      government_warning: {
+        present: true,
+        transcription: "x",
+        prefix_casing: "ALL_CAPS",
+        formatting: { bold: "uncertain" },
+        evidence: "x",
+        confidence: 0.81,
+      },
+    });
+    const result = scoreVerdict(testGoldenCase(), { labelVerdict: "PASS", headlineReason: null, fields: ALL_MATCH_FIELDS }, extraction);
+    expect(result.fields.find((f) => f.field === "brand_name")?.confidence).toBe(0.42);
+    expect(result.fields.find((f) => f.field === "government_warning")?.confidence).toBe(0.81);
+    // class_type was not overridden — still the test-support default, and
+    // distinct from brand_name's, proving this isn't one number copied
+    // across every field.
+    expect(result.fields.find((f) => f.field === "class_type")?.confidence).toBe(0.95);
   });
 });

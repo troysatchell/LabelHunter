@@ -17,7 +17,13 @@
  * (`getVerificationDetail`, `DetailView`) is tested on its own, the same
  * division `src/app/page.tsx` (untested, equally thin) already uses for
  * the verify form.
+ *
+ * TRO-480: before this ticket, arriving here left no on-page way back —
+ * only this route's own `not-found.tsx` had one. The bottom nav link below
+ * matches `src/app/page.tsx`'s own `.page__nav-links` pattern (TH-R3: a
+ * screen this deep in the app still needs one obvious way out).
  */
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "../../../lib/db";
 import { getVerificationDetail } from "../../../server/verification-detail";
@@ -54,6 +60,11 @@ export default async function VerificationDetailPage({
     <main className="page">
       <h1 className="page__title">Label detail</h1>
       <DetailView detail={result.detail} />
+      <p className="page__nav-links">
+        <Link href="/" className="secondary-button">
+          Verify a label
+        </Link>
+      </p>
     </main>
   );
 }

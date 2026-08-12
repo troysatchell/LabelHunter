@@ -97,6 +97,19 @@ describe("buildAiBackdropCase", () => {
       const meta = await sharp(image).metadata();
       expect(meta.width).toBe(1000);
       expect(meta.height).toBe(800);
+
+      // Dimensions alone don't prove compositing happened -- a bug that
+      // silently returned the backdrop untouched would still pass the two
+      // assertions above. labelPlacement covers the entire backdrop here,
+      // so a pixel at the center must show the renderer's real label
+      // content (at minimum an opaque white card, per render.ts), not the
+      // untouched backdrop's solid (5, 5, 5).
+      const centerPixel = await sharp(image)
+        .extract({ left: 500, top: 400, width: 1, height: 1 })
+        .removeAlpha()
+        .raw()
+        .toBuffer();
+      expect([centerPixel[0], centerPixel[1], centerPixel[2]]).not.toEqual([5, 5, 5]);
     } finally {
       await renderer.close();
       rmSync(backdropsDir, { recursive: true, force: true });

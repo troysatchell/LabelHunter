@@ -6,82 +6,131 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
 ## TRO-473 — LH-040: Batch input — CSV manifest + images + pairing preview (2026-08-11)
 
-**What changed.** TH-R4 asks for batch upload: many label applications at once, each
-reported individually. This ticket builds the first stage — a CSV manifest, paired against
-uploaded images, validated before any processing starts. It does not start a batch job.
-LH-041 (job queue + worker pool) and LH-042 (batch progress + results UI) build on this
-ticket's output. Neither is touched here.
+**What changed.** TH-R4 asks for batch upload. This ticket builds the first stage: a CSV
+manifest, paired against uploaded images, validated before any processing starts. It does
+not start a batch job. LH-041 (job queue + worker pool) and LH-042 (batch progress + results
+UI) build on this ticket's output. Neither is touched here.
 
 New module, `src/server/batch/` — pure logic, no database call, TDD throughout:
 
-- `csv.ts` — a small RFC 4180 CSV tokenizer. Handles quoted fields, a comma or a newline
-  inside one, CRLF and LF line endings, a leading UTF-8 BOM, and blank lines. Reports a
-  syntax error (an unterminated quote) at the line where the quote opened.
+- `csv.ts` — an RFC 4180 CSV tokenizer. Handles quoted fields, a comma or a newline inside
+  one, CRLF and LF line endings, a leading UTF-8 BOM, and blank lines. Reports a syntax
+  error at the line it actually started on.
 - `manifest.ts` — turns CSV rows into validated `ManifestRow` values. Reuses
-  `src/app/api/verify/parse-request.ts`'s own field rules: the same beverage types, the
-  same ABV range, the same net-contents units. Tells apart two kinds of "wrong": a
-  structural problem (bad headers, a duplicated column, a row with the wrong cell count)
-  fails the whole file — a ragged row is a sign columns have shifted, so guessing which
-  cell means what past that point is not safe. A value problem in one row (a bad beverage
-  type, a non-numeric ABV) fails only that row. It is reported in `rowErrors`, never
-  dropped, and it does not block any other row.
-- `pairing.ts` — deterministic filename pairing. Every row and every uploaded image ends
-  up in exactly one of `matched`, `unmatchedRows`, `unmatchedImages`. Nothing is dropped;
-  nothing is silently paired with the wrong piece. Filename comparison is Unicode
-  NFC-normalized (standing rule 20) and case-sensitive — matching the case-sensitive
-  uniqueness Postgres itself will enforce once a batch's `label_images` rows exist
-  (`schema.ts`'s `label_images_batch_filename_unique` index).
-- `zip.ts` — extracts filenames and sizes from an uploaded zip, using `fflate` (new
-  dependency). Every entry's declared uncompressed size is checked, and decompression
-  skipped past the limit, through `fflate`'s own pre-decompression filter — a zip bomb
-  never actually decompresses far enough to matter. Every entry path is reduced to a
-  basename before anything else sees it; nothing ever uses a zip entry's raw path for a
-  real filesystem read or write, which closes off zip-slip as a concern.
-- `index.ts` — `buildBatchPreview`, the facade. Produces the exact handoff shape for
-  whatever starts a batch job next: `PairedItem[]` (`{ row, image }`), plus every
+  `src/app/api/verify/parse-request.ts`'s own field rules: the same beverage types, ABV
+  range, and net-contents units. A structural problem (bad headers, a duplicated column, a
+  wrong cell count) fails the whole file — a ragged row means columns may have shifted, so
+  guessing past that point is not safe. A value problem in one row (a bad beverage type, a
+  non-numeric ABV) fails only that row, reported in `rowErrors`, never dropped.
+- `pairing.ts` — deterministic filename pairing. Every row and every uploaded image ends up
+  in exactly one of `matched`, `unmatchedRows`, `unmatchedImages`. Filename comparison is
+  Unicode NFC-normalized (standing rule 20) and case-sensitive, matching the case-sensitive
+  uniqueness Postgres will enforce once a batch's `label_images` rows exist.
+- `zip.ts` — filenames and sizes from an uploaded zip, via `fflate` (new dependency). No
+  entry is ever decompressed: its `fflate` filter reads name and declared size from
+  central-directory metadata alone. Every entry path reduces to a basename before anything
+  else sees it, so nothing ever uses a zip entry's raw path for a filesystem operation —
+  closing off zip-slip as a concern.
+- `index.ts` — `buildBatchPreview`, the facade. Its output, `PairedItem[]` (`{ row, image
+  }`), is the exact handoff shape for whatever starts a batch job next, plus every
   unmatched or invalid item TH-R20 requires reported alongside it.
 
-New route: `POST /api/batch/preview` (`src/app/api/batch/preview/`). Accepts a CSV
-manifest plus images — individual multi-file-drop entries, a zip, or both together — and
-returns a 200 pairing preview. An unmatched row or image is data inside that 200 response,
-not a request failure: TH-R20 asks for these to be reported, never silently dropped, which
-is a different thing from rejected. Only a request the server cannot turn into a preview at
-all — no manifest, an unreadable CSV, a corrupt zip, too many images — returns a designed
-error response (`kind: VALIDATION | MALFORMED_CSV | MALFORMED_ZIP | SERVICE`), the same
-pattern `src/app/api/verify/types.ts`'s `VerifyErrorKind` already uses.
+New route: `POST /api/batch/preview`. Accepts a CSV manifest plus images — multi-file drop,
+a zip, or both — and returns a 200 pairing preview. An unmatched row or image is data inside
+that response, not a request failure: TH-R20 asks for these to be reported, never silently
+dropped, which is not the same as rejected. Only a request the server cannot preview at all
+(no manifest, an unreadable CSV, a corrupt zip, too many images) returns a designed error
+(`kind: VALIDATION | MALFORMED_CSV | MALFORMED_ZIP | SERVICE`), matching
+`src/app/api/verify/types.ts`'s `VerifyErrorKind` pattern.
 
-**Scope boundary, and the judgment call behind it.** `docs/checkpoints/cp3-batch-queue.md`
-§10 states plainly: "this document assumes a `batch_jobs` row only exists once pairing has
-already succeeded." Pairing happens before any batch job exists — it is not part of
-creating one. This ticket writes nothing to the database. It creates no `batch_jobs`,
-`applications`, or `label_images` row, and no `batch_queue_items` row either — that table
-does not exist on this branch. LH-041 adds it in its own migration, in a sibling worktree.
-
-`docs/error-states.md` (LH-052, already merged) reached the same boundary from the UI
-side, independently. It names the malformed-CSV and unpairable-row states as ones LH-052
-deliberately left unbuilt, "buildable and testable once LH-040 and LH-041 merge," and names
-LH-042 — not LH-040 — as "the natural ticket to carry them" into an actual UI panel. This
-ticket builds the pipeline LH-042 needs for that. It does not build the UI panels
-themselves, and no `src/app/batch` page exists yet.
+**Scope boundary.** This ticket writes nothing to the database — no `batch_jobs`,
+`applications`, `label_images`, or `batch_queue_items` row. Two reasons.
+`docs/checkpoints/cp3-batch-queue.md` §10: "this document assumes a `batch_jobs` row only
+exists once pairing has already succeeded" — pairing precedes job creation, it is not part
+of it. And `batch_queue_items` does not exist on this branch; LH-041 adds it in its own
+migration, in a sibling worktree. `docs/error-states.md` (LH-052, already merged) reached
+the same boundary independently from the UI side, naming LH-042 — not LH-040 — as the
+ticket to carry the malformed-CSV and unpairable-row states into an actual UI panel. This
+ticket builds the pipeline LH-042 needs; it builds no UI page.
 
 **Tests.** `pnpm test -- src/server/batch/ src/app/api/batch/` — 7 files, 70 new test
-cases, all green (verified: `npx vitest run src/server/batch/ src/app/api/batch/`, 2026-08-11).
-Every new module's test file was written first, and confirmed to fail on
-"module not found" before the module existed — the correct red for a brand-new file. One
-real assertion failure came up along the way: `csv.ts`'s first draft reported an
-unterminated quote at the line the parser ran out of input on, not the line the quote
-actually opened on, whenever the unterminated field itself contained a newline. Fixed by
-tracking the quote's own start line separately from the running line counter.
+cases, all green (verified 2026-08-11). Every new module's test file was written first and
+confirmed to fail on "module not found" before the module existed. One real bug caught this
+way: `csv.ts`'s first draft reported an unterminated quote at the line the parser ran out of
+input on, not the line the quote actually opened on, when the unterminated field itself
+spanned a newline. Fixed by tracking the quote's own start line separately from the running
+line counter.
 
-**How to run it.** `source .factory-env` first, matching every other ticket's convention —
-though this ticket's own tests touch no database at all; nothing in `src/server/batch/` or
-the new route makes a DB call. Then run `pnpm test -- src/server/batch/ src/app/api/batch/`,
-or `pnpm test` for the full suite.
+**How to run it.** `source .factory-env` first, matching this repo's convention — though
+this ticket's own tests touch no database. Then `pnpm test -- src/server/batch/
+src/app/api/batch/`, or `pnpm test` for the full suite.
 
 **Rollback.** `git revert` this ticket's commits. No schema change, no migration. Outside
 this changelog, the only existing files touched are `package.json` and `pnpm-lock.yaml`
-(the new `fflate` dependency, used only by `zip.ts`) — every other file this ticket adds is
-new.
+(the new `fflate` dependency) — every other file this ticket adds is new.
+
+## TRO-473 — local CodeRabbit review round 1: 11 findings, 11 fixed (2026-08-11)
+
+**What changed.** The gate's first local CodeRabbit pass hit the organization's rate limit
+(see the PR body — confirmed via `coderabbit auth status`, not an auth problem). An
+independent re-run minutes later captured 11 findings. All 11 were real. All are fixed.
+
+- `parse-request.ts` (major): the uploaded zip archive had no size ceiling before
+  `.arrayBuffer()` read it, and no whole-request check ran before `request.formData()`.
+  Added `MAX_ZIP_ARCHIVE_BYTES` (`parse-request.ts`, injectable so a test can prove the
+  rejection cheaply) and `checkRequestSize()` (`route.ts`, checked against the
+  `Content-Length` header before `formData()` runs).
+- `csv.ts` (minor, two findings): a quoted empty field (`""`) was indistinguishable from a
+  blank line and silently dropped. Fixed by tracking whether a record used real CSV syntax,
+  not just its final shape. Separately, quote placement was too permissive — `a"b"` and
+  `"a"b` both silently parsed as `ab` instead of erroring. Fixed with explicit field-start
+  and after-closed-quote state, matching RFC 4180's own placement rule.
+- `pairing.ts` (major + minor): a row referencing a zero-byte image got the generic "no
+  image found" message instead of the empty-file reason, because zero-byte images were
+  already filtered out before the row-side lookup ran. Fixed by tracking empty-image
+  filenames separately. Separately, the image-side loop reported only the FIRST image for a
+  shared filename, silently dropping every image past it — contradicted this module's own
+  documented "every image ends up in exactly one list" contract. Fixed to report every one.
+- `pairing.test.ts` (minor): the zero-byte-image fixture was named `empty.jpg`, so its
+  `/empty/i` assertion could pass on the filename rather than the actual reported reason —
+  and did, coincidentally, on the row side, while the bug above was still live. Renamed the
+  fixture; the `pairing.ts` fix above was needed before the test passed again for the right
+  reason.
+- `zip.test.ts` (trivial): added a regression test proving the zip-slip protection
+  directly — a crafted `../../../etc/evil.jpg` entry extracts to just `evil.jpg`.
+- `types.ts` (major): `ManifestRow.netContentsUnit` was a bare `string`, even though
+  `manifest.ts` already validated it against a closed set at runtime. Added
+  `NET_CONTENTS_UNITS`/`NetContentsUnit` as the canonical export; `manifest.ts` now imports
+  and casts instead of re-declaring the set locally.
+- `zip.ts` (major, two findings). First: `extractZipEntries` returned `true` from its
+  `fflate` filter for every accepted entry, so `fflate` decompressed each one even though
+  this module only ever needed its filename and declared size. Restructured to always
+  return `false` — name and declared size are captured inside the filter itself, before
+  that decision — so no entry is ever inflated. Also moved the directory check before the
+  entry-count increment, so folders no longer consume that budget.
+  Second, and the one worth real scrutiny: does trusting a zip's declared size for the
+  cap hold up against a hostile file? **Verified, not assumed.** Two hand-crafted zips (a
+  real DEFLATE stream; local- and central-directory size fields forged in both directions —
+  declared 10 bytes/real 20 MB, and declared 200 MB/real 2 bytes), tested directly against
+  `fflate.unzipSync`, 2026-08-11. Finding: `fflate` bounds real inflate output to the
+  declared size either way — the pre-fix code was not actually exploitable the way the
+  finding worried. The restructuring above was adopted anyway, so the guarantee is now
+  architectural (nothing is ever decompressed, full stop), not dependent on an unstated,
+  version-specific `fflate` behavior. `zip.ts`'s own file comment states this precisely.
+
+Recorded in `factory/review-findings.jsonl` — categories `boundary-validation` (2),
+`correctness` (5), `prose-style` (1), `test-coverage` (2), `type-safety` (1).
+
+**Tests.** `pnpm test -- src/server/batch/ src/app/api/batch/` — same 7 files, now 83 test
+cases (was 70), all green. Every fix's regression test was confirmed red first for the
+right reason against the unfixed code — most prospectively (test written, confirmed
+red, then the fix); the `Content-Length` check was confirmed red retroactively (fix
+temporarily disabled, test re-run, fix restored), recorded here rather than left unstated.
+
+**How to run it.** `source .factory-env` first. `pnpm test -- src/server/batch/
+src/app/api/batch/`, or `pnpm test` for the full suite. `pnpm typecheck` is clean.
+
+**Rollback.** `git revert` this round's commits. No schema change, no migration.
 
 ## TRO-499 — LH-006: Golden set verify gate + CI smoke (2026-08-11)
 

@@ -149,6 +149,20 @@ jobs:
             --repo-root "$GITHUB_WORKSPACE"
 
       - name: Eval harness not regressed
+        # TRO-470 / LH-030: `pnpm eval:check` with no flags makes NO live
+        # Anthropic API call — it reads the committed
+        # scripts/eval/results/eval-report.json and scripts/eval/baseline.json
+        # (checked out by this job like any other file) and compares them.
+        # This job has no ANTHROPIC_API_KEY and must not need one: CI runs on
+        # every push and every PR update, and a real per-case pipeline sweep
+        # here would be real, unbounded, per-commit API spend. The real
+        # sweep — `pnpm eval:check -- --live --full --update-baseline` — is a
+        # deliberate, human-or-agent-invoked step that refreshes the
+        # committed report/baseline; this job only checks that the last
+        # committed refresh still holds. Same convention TRO-499 already set
+        # for "Golden set verify"/"Golden set render smoke" above: no live
+        # call, no network. See CHANGES.md's TRO-470 entry for the full
+        # reasoning and the alternative this design rejected.
         if: steps.scaffold.outputs.present == 'true'
         run: |
           if node -e 'const p=require("./package.json"); process.exit(p.scripts && p.scripts["eval:check"] ? 0 : 1)'; then

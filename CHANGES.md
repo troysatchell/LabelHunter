@@ -4,6 +4,95 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-511 — Single-label REVIEW verdicts now get an automatic resolution trigger (2026-08-12)
+
+**The gap.** `src/app/api/verify/route.ts` inserts a `review_queue` row on every REVIEW
+verdict. It never called `resolveEscalatedLabel`. Nothing else in the codebase called that
+function outside its own test files. A REVIEW-verdict single-label verification sat with
+`resolver_output: NULL` forever. A human could still act on it, but never saw a Sonnet
+suggestion — quieter than PRD §5's "Resolved by Sonnet annotations" promise. TRO-474's own
+checkpoint doc named this gap and carried it forward as open question 5
+(`docs/checkpoints/cp3-batch-queue.md` §9, §12).
+
+**What changed.** `app/api/verify/route.ts` still inserts the `review_queue` row immediately
+on a REVIEW verdict — a human sees "needs review" the moment the request returns, unchanged.
+The route now ALSO snapshots `{ schemaVersion, extraction, router, flaggedFields }` into a new
+`resolverInput` column on that same row, built by `deriveFlaggedFields`/
+`buildResolverInputSnapshot` (`src/server/batch-queue/resolver-snapshot.ts`) — the same pure
+functions the batch `EXTRACT` worker already uses for `batch_queue_items.resolver_input`. A new
+module, `src/server/single-label-resolve/`, claims that row later and calls
+`resolveEscalatedLabel` for it, off the request path, in the same background-worker process
+`scripts/batch-worker/run.ts` already runs (PRD §3.6 names one worker process, singular).
+
+**The claim query is new; it does not touch `batch_queue_items`.** CP-3 §12 Q5's own
+recommendation reads `review_queue WHERE resolver_output IS NULL AND batch job is absent`.
+`batch_queue_items.batch_job_id` is `NOT NULL`. Its claim query's own `JOIN batch_jobs ...
+WHERE bj.status = 'RUNNING'` is load-bearing for the batch design (CP-3 §3.1). Loosening that
+column and rewriting the join would touch shared, already-tested batch-worker infrastructure —
+`claim.ts`, `resolve-worker.ts`'s counters, and the escalation cap. The cap is defined in terms
+of `batch_jobs.totalCount`, a number a single-label row does not have.
+
+`src/server/single-label-resolve/claim.ts` is a new, small, dedicated claim query against
+`review_queue` instead — the same atomic-claim shape as `batch-queue/claim.ts`
+(`UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING *`, a fresh
+`claim_token` on every claim, lease-expiry recovery), applied to a table that already carries
+every column this needs once `resolverInput` and six claim/lease columns are added. "Batch job
+is absent" turns out to be exactly `resolver_input IS NOT NULL`. Only the verify route ever sets
+that column, so a batch-originated row can never satisfy the claim query.
+
+**No escalation cap for single-label rows — not a gap, a non-applicability.** The batch cap
+(`batch-queue/escalation-cap.ts`) bounds Sonnet call attempts as a fraction of a batch's
+`totalCount`. A single-label verification has no `batch_jobs` row to count against. This ticket
+does not reuse that cap with different semantics. It does not invent a second one either. A
+single-label REVIEW row gets exactly one Sonnet call attempt, retried on transient failure with
+the same backoff the batch path uses — the same one call it always needed.
+
+**`resolveEscalatedLabel` needed a fix for an INSERT-vs-UPDATE collision.**
+`resolveEscalatedLabel` always inserted a fresh `review_queue` row. It refused, via
+`findExistingReviewQueueEntry`, to touch a row that it did not recognize as a valid prior
+resolution. The verify route now pre-files a bare row: reason and `resolverInput` set,
+`resolverOutput` still null. Calling `resolveEscalatedLabel` for that row would have hit the
+same refusal every time. `findExistingReviewQueueEntry` now returns a
+three-state result (`"none"` / `"pending"` / `"resolved"`, `src/server/resolver/queue.ts`) instead
+of a nullable single shape. A new `updateReviewQueueEntryResolution` fills in a pending row
+instead of inserting a second one. The batch path never produces a `"pending"` row (nothing
+writes a bare `review_queue` row for a batch-originated escalation), so this branch is
+unreachable from batch code — its own insert-and-throw-on-conflict behavior, and
+`resolve-worker.ts`'s existing recovery from that throw, are unchanged.
+
+**How to run it.** `pnpm worker` starts all three worker loops in one process — the existing
+batch extract/resolve pools, plus this ticket's single-label resolve worker (concurrency 1 by
+default, `SINGLE_LABEL_RESOLVE_WORKER_CONCURRENCY` to change it). No new command; the existing
+`pnpm worker` entry point now does more.
+
+**Known limitation, named rather than silently absent.** The batch RESOLVE pool has a
+whole-pool rate-limit cooldown (CP-3 §5.3). It stops several concurrent workers from each
+re-discovering the same exhausted Sonnet budget on their own. This worker's own per-item backoff
+still degrades gracefully on a 429. But at its default concurrency of 1, it has no cooldown to
+coordinate, and it does not share the batch RESOLVE pool's cooldown state either. Picture a batch
+running at the same time as a single-label REVIEW item, both drawing down the same Sonnet rate
+limit. Each backs off on its own, not in coordination with the other. That is a minor
+inefficiency, not a spend-safety or correctness gap — the same `maxAttempts` cap still bounds
+every retry. Worth revisiting only if this worker's concurrency ever rises well above 1.
+
+**Migration.** `drizzle/migrations/0003_single_label_resolve_trigger.sql` adds `resolverInput`,
+`claimedBy`, `claimToken`, `claimedAt`, `leaseExpiresAt`, `availableAt`, `attempts`, `lastError`
+to `review_queue`, plus a partial index matching the claim query's own `WHERE` clause. Every new
+column is nullable or defaulted — no data migration, no effect on an existing row.
+
+**Regression test.** `src/server/single-label-resolve/worker.test.ts`'s "end to end" case drives
+the real `handleVerifyRequest` route to a REVIEW verdict, confirms the resulting `review_queue`
+row has `resolverOutput: null` and a populated `resolverInput`, then runs this ticket's worker
+against that exact row with a fake Anthropic client and confirms `resolverOutput` gets filled in
+on the SAME row. Confirmed to fail for the right reason before this ticket's `route.ts` change
+(`resolverInput` stays null, so the claim query finds nothing) — not just a missing-module error.
+
+**Rollback.** Revert this ticket's commits; run `pnpm db:migrate` after reverting to leave the
+added `review_queue` columns as harmless, unused nullable columns, or write a down-migration
+dropping them. `scripts/batch-worker/run.ts` reverts to two pools. No other shipped behavior
+changes — the verify route's response shape and its immediate `review_queue` visibility are
+unchanged either way.
+
 ## TRO-469 — LH-021: Warning cases in golden set + eval (2026-08-12)
 
 **Investigated first, per the ticket's own instruction.** The golden set already had six

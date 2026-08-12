@@ -58,6 +58,21 @@
  * — never the resized `haikuVariant`. CP-2 §8.3: the resized variant falls
  * below the OCR engine's usable resolution at the statute's legal minimum
  * print size (1 mm).
+ *
+ * **Single-label resolution trigger (TRO-511, CP-3 §9/§12 open question
+ * 5).** On a REVIEW verdict this route still inserts a `review_queue` row
+ * immediately, unchanged — a human sees "needs review" the moment this
+ * request returns (PRD §5), never gated on a Sonnet call this route does
+ * NOT make (TH-R19, PRD §3.8's 5-second budget). New: the row now ALSO
+ * carries `resolverInput`, a `{ schemaVersion, extraction, router,
+ * flaggedFields }` snapshot built by `deriveFlaggedFields`/
+ * `buildResolverInputSnapshot` (`../../../server/batch-queue/resolver-snapshot`
+ * — the SAME pure functions the batch `EXTRACT` worker already uses for its
+ * own `batch_queue_items.resolver_input` snapshot, CP-3 §2.3, reused here
+ * rather than re-derived). `src/server/single-label-resolve`'s worker polls
+ * for exactly this: a `review_queue` row with `resolverInput` set and no
+ * resolution yet, and calls `resolveEscalatedLabel` for it off the request
+ * path, in the SAME background-worker process PRD §3.6 names (singular).
  */
 import { NextResponse } from "next/server";
 import type { FieldName } from "../../../lib/db/enums";
@@ -85,6 +100,7 @@ import {
   type WarningComparatorResult,
 } from "../../../server/router";
 import { productionComparators } from "../../../server/comparators";
+import { buildResolverInputSnapshot, deriveFlaggedFields } from "../../../server/batch-queue/resolver-snapshot";
 import { buildFieldReasonText } from "../../../server/router/reason-text";
 import {
   compareGovernmentWarningFromImage as defaultCompareGovernmentWarning,
@@ -319,9 +335,16 @@ export async function handleVerifyRequest(request: Request, deps: VerifyRouteDep
       );
 
       if (result.labelVerdict === "REVIEW" && result.headlineReason) {
+        // TRO-511 — see this file's header comment. flaggedFields/the
+        // snapshot use the SAME derivation the batch EXTRACT worker already
+        // uses for its own resolver_input column (resolver-snapshot.ts) —
+        // deriveFlaggedFields's own contract guarantees a non-empty result
+        // whenever routeLabel produced a genuine REVIEW verdict.
+        const flaggedFields = deriveFlaggedFields(result);
         await tx.insert(reviewQueue).values({
           verificationId: verificationRow.id,
           reason: result.headlineReason,
+          resolverInput: buildResolverInputSnapshot(extraction, result, flaggedFields),
         });
       }
 

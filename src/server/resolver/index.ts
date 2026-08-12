@@ -10,17 +10,31 @@
  *
  * One call per escalated label: builds the request (`request.ts`), calls
  * the model, parses and validates the response while enforcing the
- * judges-only-brand/class rule (`response.ts`), then inserts one
+ * judges-only-brand/class rule (`response.ts`), then files one
  * `review_queue` row (`queue.ts`) — both a `resolved` and a `needs-human`
- * outcome insert (see `queue.ts`'s doc comment). This is the clean async
- * entry point the pipeline (LH-015/LH-016, sibling branches) and the future
- * batch worker call — the agent-facing 5-second promise is verdict-or-flag
- * (PRD §3.8); resolution runs after and separately.
+ * outcome (see `queue.ts`'s doc comment). This is the clean async entry
+ * point the single-label pipeline, the batch resolve-worker (LH-041 /
+ * TRO-474), and the single-label resolve trigger (TRO-511) all call — the
+ * agent-facing 5-second promise is verdict-or-flag (PRD §3.8); resolution
+ * runs after and separately.
+ *
+ * **INSERT vs UPDATE (TRO-511).** `findExistingReviewQueueEntry` now
+ * answers one of three states, not just "found or not" — see its own doc
+ * comment in `queue.ts`. A `"pending"` result means the caller (today, only
+ * `app/api/verify/route.ts`) already pre-filed a bare row at verify time,
+ * before this function ever ran, so a human sees "needs review" immediately
+ * instead of waiting on Sonnet. This function fills THAT row in with
+ * `updateReviewQueueEntryResolution` rather than inserting a second one.
+ * The batch path never produces a `"pending"` row (nothing writes a bare
+ * `review_queue` row for a batch-originated escalation — CP-3 §2.3), so
+ * this branch is unreachable from batch code; its own behavior (insert
+ * fresh, throw on a genuine unique-constraint race, recovered by
+ * `resolve-worker.ts`'s `readReviewQueueOutcome`) is unchanged.
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { buildResolverRequestParams } from "./request";
 import { parseResolverResponse } from "./response";
-import { findExistingReviewQueueEntry, insertReviewQueueEntry, type ResolverDb } from "./queue";
+import { findExistingReviewQueueEntry, insertReviewQueueEntry, updateReviewQueueEntryResolution, type ResolverDb } from "./queue";
 import type { ResolverInput, ResolverResult } from "./types";
 
 /**
@@ -106,7 +120,7 @@ export async function resolveEscalatedLabel(
   // review_queue unique constraint at insert time — check first (queue.ts's
   // `findExistingReviewQueueEntry` doc comment has the full reasoning).
   const existing = await findExistingReviewQueueEntry(input.verificationId, options.db);
-  if (existing) {
+  if (existing.kind === "resolved") {
     return { ...existing.resolverOutput, reviewQueueId: existing.id };
   }
 
@@ -114,6 +128,29 @@ export async function resolveEscalatedLabel(
   const params = buildResolverRequestParams(input);
   const message = await client.messages.create(params);
   const resolution = parseResolverResponse(message, input.flaggedFields);
+
+  if (existing.kind === "pending") {
+    // TRO-511 — see this file's header comment. Fill in the pre-existing
+    // bare row rather than inserting a second one.
+    const updated = await updateReviewQueueEntryResolution({ id: existing.id, resolverOutput: resolution }, options.db);
+    if (updated) {
+      return { ...resolution, reviewQueueId: updated.id };
+    }
+    // Lost a TRO-506-shaped race: another caller's update landed between
+    // our pre-flight check and this one (the narrow lease-expiry window
+    // CP-3 §3.3 names for the analogous batch-path race). The Sonnet call
+    // above already happened — that money is spent either way — but the
+    // WRITE lost, so re-read the winner's row rather than erroring
+    // (queue.ts's `updateReviewQueueEntryResolution` doc comment).
+    const after = await findExistingReviewQueueEntry(input.verificationId, options.db);
+    if (after.kind !== "resolved") {
+      throw new Error(
+        `resolveEscalatedLabel: lost the update race for review_queue row ${existing.id} (verification ` +
+          `${input.verificationId}), but no resolved row was found on re-read (got "${after.kind}").`,
+      );
+    }
+    return { ...after.resolverOutput, reviewQueueId: after.id };
+  }
 
   const { id: reviewQueueId } = await insertReviewQueueEntry(
     {
@@ -145,8 +182,14 @@ export {
   deriveResolvedFields,
 } from "./response";
 export { toJudgedFieldResultRow } from "./field-result";
-export { findExistingReviewQueueEntry, insertReviewQueueEntry, insertSkippedReviewQueueEntry } from "./queue";
-export type { ExistingReviewQueueEntry, InsertReviewQueueEntryParams, InsertSkippedReviewQueueEntryParams, ResolverDb } from "./queue";
+export { findExistingReviewQueueEntry, insertReviewQueueEntry, insertSkippedReviewQueueEntry, updateReviewQueueEntryResolution } from "./queue";
+export type {
+  ExistingReviewQueueEntry,
+  InsertReviewQueueEntryParams,
+  InsertSkippedReviewQueueEntryParams,
+  ResolverDb,
+  UpdateReviewQueueEntryResolutionParams,
+} from "./queue";
 export type {
   ApplicationRecord,
   CorrectionFieldResolution,

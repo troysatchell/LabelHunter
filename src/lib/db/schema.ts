@@ -342,6 +342,28 @@ export const fieldResults = pgTable(
  * would put a real person's identity in a compliance-data table for no
  * product requirement that asks for it; the disposition alone is enough
  * for the review-queue UI (PRD §5) and this prototype's scope (TH-R6).
+ *
+ * **The single-label resolution trigger (TRO-511, CP-3 §9/§12 open question
+ * 5).** `resolverInput` and the six columns after it exist for exactly one
+ * caller: `src/app/api/verify/route.ts`. That route inserts a row here
+ * immediately on a REVIEW verdict — unchanged, so a human still sees "needs
+ * review" the moment the request returns (PRD §5) — but now ALSO snapshots
+ * `{ schemaVersion, extraction, router, flaggedFields }` into `resolverInput`
+ * (the same shape `batch_queue_items.resolver_input` carries for the batch
+ * path, CP-3 §2.3), so a background worker can call `resolveEscalatedLabel`
+ * for it later without ever re-running Haiku. `claimedBy`/`claimToken`/
+ * `claimedAt`/`leaseExpiresAt`/`availableAt`/`attempts` mirror
+ * `batch_queue_items`'s own claim columns (CP-3 §2.2/§3.1) — the same
+ * atomic-claim shape, applied to this table instead of a second one,
+ * because "batch job is absent" (CP-3 §12 Q5's own recommended predicate)
+ * is exactly `resolverInput IS NOT NULL`: only this one route ever sets it,
+ * so a batch-originated row (created by `insertReviewQueueEntry` /
+ * `insertSkippedReviewQueueEntry`, never by a bare pre-insert) can never
+ * collide with the single-label claim query. No separate `status` enum is
+ * needed the way `batch_queue_items` has one: this table's own
+ * `resolverOutput`/`resolverSkipReason` columns already say "done" the
+ * moment either is set, and the claim query's `WHERE` clause already
+ * excludes both.
  */
 export const reviewQueue = pgTable(
   "review_queue",
@@ -359,6 +381,23 @@ export const reviewQueue = pgTable(
     // going to run for this" (the cap). This column names the second state
     // instead of letting absence stand in for it (CP-3 §6.4).
     resolverSkipReason: text("resolver_skip_reason"),
+    // TRO-511 — see this table's own doc comment above. Null for every
+    // batch-originated row; set at insert time by the single-label verify
+    // route for every REVIEW-verdict row it files.
+    resolverInput: jsonb("resolver_input"),
+    claimedBy: text("claimed_by"),
+    claimToken: uuid("claim_token"),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    availableAt: timestamp("available_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    attempts: integer("attempts").notNull().default(0),
+    // The single-label resolve worker's own diagnostic breadcrumb (mirrors
+    // `batch_queue_items.lastError`) — set on a retryable failure's latest
+    // attempt or a permanent one; never blocks the row from still being
+    // visible and human-actionable in the review-queue UI.
+    lastError: text("last_error"),
     disposition: reviewDispositionEnum("disposition"),
     disposedAt: timestamp("disposed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -381,6 +420,15 @@ export const reviewQueue = pgTable(
     index("review_queue_unresolved_idx")
       .on(table.createdAt)
       .where(sql`${table.disposition} IS NULL`),
+    // TRO-511's own claim query's WHERE clause, almost verbatim — mirrors
+    // `batch_queue_items_claim_idx`'s reasoning (CP-3 §2.2): keeps the scan
+    // cheap without a separate status column to filter on. Every
+    // batch-originated row has `resolverInput IS NULL` and is excluded by
+    // this partial index's own predicate, the same way it is excluded from
+    // the claim query itself.
+    index("review_queue_pending_resolve_idx")
+      .on(table.availableAt)
+      .where(sql`${table.resolverOutput} IS NULL AND ${table.resolverSkipReason} IS NULL AND ${table.resolverInput} IS NOT NULL`),
     // A disposition and its timestamp are one fact recorded in two
     // columns — either both are set (resolved) or neither is (pending).
     check(
@@ -396,6 +444,7 @@ export const reviewQueue = pgTable(
       "review_queue_resolver_output_skip_reason_exclusive",
       sql`NOT (${table.resolverOutput} IS NOT NULL AND ${table.resolverSkipReason} IS NOT NULL)`,
     ),
+    check("review_queue_attempts_non_negative", sql`${table.attempts} >= 0`),
   ],
 );
 

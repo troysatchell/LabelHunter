@@ -17,7 +17,10 @@ import { db as defaultDb } from "../../lib/db";
 import { applications, labelImages, reviewQueue, verifications } from "../../lib/db/schema";
 import type { ReviewReason } from "../../lib/db/enums";
 import { saveLabelImage } from "../storage/local-file-storage";
+import { buildResolverInputSnapshot } from "../batch-queue/resolver-snapshot";
 import type { ResolverInputSnapshotV1 } from "../batch-queue/resolver-snapshot";
+import { makeExtraction } from "../router/test-support";
+import { makeFlaggedFields, makeRouterResult } from "../resolver/test-support";
 
 type Db = typeof defaultDb;
 
@@ -123,17 +126,33 @@ export async function createVerificationFixture(db: Db = defaultDb, applicationI
   return row.id;
 }
 
-/** A minimal, valid `ResolverInputSnapshotV1` — enough to satisfy
- * `parseResolverInputSnapshot`'s shape check. Tests that need a REALISTIC
- * extraction/router pair (the end-to-end worker test) build their own. */
+/**
+ * A REAL, worker-processable `ResolverInputSnapshotV1` — built from
+ * `../resolver/test-support.ts`'s own `makeExtraction`/`makeRouterResult`/
+ * `makeFlaggedFields`, the same fixtures `../batch-queue/resolve-worker.test.ts`'s
+ * own `escalatedFixture` and this ticket's `worker.test.ts`/
+ * `worker-loop.test.ts` already use — not `{}` stand-ins.
+ *
+ * Found in local review, second round: an earlier version of this function
+ * defaulted `extraction`/`router` to empty objects cast through
+ * `ResolverInputSnapshotV1["extraction"]`/`["router"]`. That satisfies
+ * `parseResolverInputSnapshot`'s own shallow shape check (it only verifies
+ * `extraction`/`router` are non-null objects, CP-3 §2.3's own documented
+ * scope for that check), but `router.headlineReason` — read by
+ * `processSingleLabelResolveClaim` right after parsing — would be
+ * `undefined` on an empty object, so any test relying on THIS function's
+ * default to reach real processing would fail confusingly far from the
+ * actual gap. `enqueuePendingReviewQueueItemFixture`'s own default uses
+ * this function, and claim-only tests (this file's `claim.test.ts`) never
+ * process a claimed row, so the gap was invisible there — but a future
+ * test author reasonably expects a queue module's own default fixture to
+ * be usable end to end.
+ */
 export function placeholderSnapshot(overrides: Partial<ResolverInputSnapshotV1> = {}): ResolverInputSnapshotV1 {
-  return {
-    schemaVersion: "1",
-    extraction: {} as ResolverInputSnapshotV1["extraction"],
-    router: {} as ResolverInputSnapshotV1["router"],
-    flaggedFields: [{ field: "brand_name", reviewReason: "AMBIGUOUS_BRAND", trigger: "test fixture" }],
-    ...overrides,
-  };
+  const router = makeRouterResult();
+  const flaggedFields = makeFlaggedFields();
+  const built = buildResolverInputSnapshot(makeExtraction(), router, flaggedFields);
+  return { ...built, ...overrides };
 }
 
 export interface EnqueuePendingReviewQueueItemOverrides {

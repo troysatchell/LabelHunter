@@ -137,13 +137,18 @@ export async function claimNextReviewQueueResolveItem(
         ? sql`AND rq.verification_id IN ${options.scopeToVerificationIds}`
         : sql`AND false`;
 
+  // last_error = NULL: a fresh claim episode starts clean (found in local
+  // review) — a stale message from an earlier, unrelated attempt must not
+  // sit next to this episode's own (possibly successful) outcome once it
+  // completes.
   const result = await db.execute<RawReviewQueueRow>(sql`
     UPDATE review_queue
     SET claimed_by = ${workerId},
         claim_token = gen_random_uuid(),
         claimed_at = now(),
         lease_expires_at = now() + (${leaseSeconds} * interval '1 second'),
-        attempts = attempts + 1
+        attempts = attempts + 1,
+        last_error = NULL
     WHERE id = (
       SELECT rq.id FROM review_queue rq
       WHERE rq.resolver_output IS NULL

@@ -208,24 +208,23 @@ describe("claimNextReviewQueueResolveItem — scopeToVerificationIds: empty vs. 
     expect(claimed).toBeNull();
   });
 
-  it("an ABSENT scope (the option left out entirely) is unrestricted — the two are not the same", async () => {
-    const { itemId, verificationId } = await makePendingFixture();
-    // No scopeToVerificationIds at all — production's own real call shape.
-    const claimed = await claimNextReviewQueueResolveItem(db, "worker-1", 60, 5, {});
-    // This assertion is only meaningful because the row above is the ONLY
-    // one this worker could plausibly find scoped to itself; an unrelated
-    // concurrently-running test file's own row could also satisfy an
-    // unrestricted claim, so this checks the row we know about was
-    // eligible, not that it uniquely won.
-    if (claimed?.verificationId === verificationId) {
-      expect(claimed.id).toBe(itemId);
-    } else {
-      // Another file's row won the race under real parallel test
-      // execution — still proves "absent" did not silently match nothing
-      // the way an empty array now correctly does.
-      expect(claimed).not.toBeNull();
-    }
-  });
+  // No test here exercises an ABSENT scope end to end (found in local
+  // review, second round): doing so against this file's shared, real,
+  // concurrently-used Postgres database would issue a genuinely
+  // UNRESTRICTED claim — one that could claim a lease on a DIFFERENT test
+  // file's own row (e.g. `../../app/api/verify/route.test.ts`'s own
+  // happy-path fixture, which also sets `resolverInput`) purely by
+  // coincidence of timing, not a bug in either file. Every OTHER test in
+  // this codebase that reads a `review_queue` row back only ever asserts
+  // on `resolverOutput`/`resolverSkipReason`/`reason`/`resolverInput` —
+  // never on the claim columns (`claimedBy`/`claimToken`/`leaseExpiresAt`/
+  // `attempts`) an incidental claim would touch — but relying on that
+  // holding forever, for every future test anyone adds, is a fragile
+  // foundation for an assertion. The `undefined` branch itself is a
+  // trivially simple code path (`sql\`\``, no fragment appended at all) —
+  // the meaningful, previously-buggy branch is the EMPTY-array one above,
+  // and it is proven safely, deterministically, without touching any row
+  // this test did not create itself.
 });
 
 describe("claimNextReviewQueueResolveItem — input validation (standing rule 13)", () => {

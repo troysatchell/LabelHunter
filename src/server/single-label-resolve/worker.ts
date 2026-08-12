@@ -167,15 +167,21 @@ async function clearClaimFields(db: typeof defaultDb, id: number): Promise<void>
   await db.update(reviewQueue).set({ claimedBy: null, claimToken: null, claimedAt: null, leaseExpiresAt: null }).where(eq(reviewQueue.id, id));
 }
 
+/** `claimToken` is its own required, non-nullable parameter — not read back
+ * off `item.claimToken` inside this function — so the ONLY way to call
+ * this is to have already narrowed it at the caller, genuinely, not via a
+ * cast (found in local review: an inline `item.claimToken as string` here
+ * previously did the same job with nothing to catch a future call site
+ * that forgot `processSingleLabelResolveClaim`'s own null guard). */
 async function handleFailure(
   db: typeof defaultDb,
   item: ClaimedReviewQueueResolveItem,
+  claimToken: string,
   backoffConfig: BackoffConfig,
   error: unknown,
 ): Promise<SingleLabelResolveClaimOutcome> {
   const classification = classifyModelCallError(error);
   const message = error instanceof Error ? error.message : String(error);
-  const claimToken = item.claimToken as string;
 
   if (classification.retryable && item.attempts < backoffConfig.maxAttempts) {
     const delayMs = computeBackoffDelayMs(item.attempts, backoffConfig, classification.retryAfterMs);
@@ -204,10 +210,18 @@ export async function processSingleLabelResolveClaim(
   if (item.claimToken === null) {
     throw new Error(`processSingleLabelResolveClaim called with a malformed claim (review_queue row ${item.id}, no claimToken)`);
   }
+  // Narrowed ONCE, genuinely (no cast) — `item.claimToken` reads as
+  // `string` right here, immediately after the runtime check above.
+  // TypeScript does not carry that narrowing across a later call to a
+  // DIFFERENT function that takes `item` as a whole, so `handleFailure`
+  // below takes this already-narrowed value as its own explicit parameter
+  // instead of re-reading `item.claimToken` internally (found in local
+  // review — see `handleFailure`'s own doc comment).
+  const claimToken: string = item.claimToken;
 
   const parsed = parseResolverInputSnapshot(item.resolverInput);
   if (!parsed.ok) {
-    return handleFailure(d.db, item, d.backoffConfig, new Error(`resolver_input rejected: ${parsed.reason}`));
+    return handleFailure(d.db, item, claimToken, d.backoffConfig, new Error(`resolver_input rejected: ${parsed.reason}`));
   }
   const snapshot = parsed.snapshot;
   const headlineReason = snapshot.router.headlineReason;
@@ -215,7 +229,7 @@ export async function processSingleLabelResolveClaim(
     // Contract violation, not a normal input — `deriveFlaggedFields`'s own
     // guarantee (via `app/api/verify/route.ts`'s only call site) means a
     // genuine REVIEW snapshot always carries one. Defensive, standing rule 13.
-    return handleFailure(d.db, item, d.backoffConfig, new Error("resolver_input.router has labelVerdict REVIEW but no headlineReason"));
+    return handleFailure(d.db, item, claimToken, d.backoffConfig, new Error("resolver_input.router has labelVerdict REVIEW but no headlineReason"));
   }
 
   let resolverInput: ResolverInput;
@@ -242,7 +256,7 @@ export async function processSingleLabelResolveClaim(
       flaggedFields: snapshot.flaggedFields,
     };
   } catch (error) {
-    return handleFailure(d.db, item, d.backoffConfig, error);
+    return handleFailure(d.db, item, claimToken, d.backoffConfig, error);
   }
 
   try {
@@ -250,7 +264,7 @@ export async function processSingleLabelResolveClaim(
     await clearClaimFields(d.db, item.id);
     return { kind: "done", outcome: result.outcome };
   } catch (error) {
-    return handleFailure(d.db, item, d.backoffConfig, error);
+    return handleFailure(d.db, item, claimToken, d.backoffConfig, error);
   }
 }
 

@@ -13,12 +13,13 @@ job queue, two worker pools, backoff, and a hard cap on Sonnet spend. It advance
 A new table, `batch_queue_items`, holds two logical queues in one place — `EXTRACT` rows
 run the Haiku-extract-then-route cascade for one label; `RESOLVE` rows run the Sonnet
 resolver for one escalated label. A worker claims a row with one atomic SQL statement
-(`FOR UPDATE SKIP LOCKED`) and mints a fresh `claim_token` on every claim. A completion
-write checks that token before it commits. A worker whose lease expired mid-call — the
-process died, or the call just ran long — loses that check. The transaction discards its
-result instead of double-applying it. `claim.test.ts` and `complete.test.ts` fire ten
-workers at one row and prove exactly one wins; they also force a lease to expire mid-claim
-and prove the late worker's write touches nothing.
+(`FOR UPDATE SKIP LOCKED`). Every claim creates a new `claim_token`, even a reclaim of the
+same row. A completion write updates the row only when its `claim_token` still matches —
+the write rejects a worker whose lease already expired, even if that worker is still
+running. The transaction discards that worker's result instead of double-applying it.
+`claim.test.ts` and `complete.test.ts` fire ten workers at one row and prove exactly one
+wins; they also force a lease to expire mid-claim and prove the late worker's write
+touches nothing.
 
 Two separate worker pools run the two queues — 5 extract-workers, 2 resolve-workers,
 both proposed defaults from CP-3 §4.4, both environment variables
@@ -45,7 +46,7 @@ exactly one thing (Sonnet has not run yet) rather than two different things at o
 One bad image fails only that item. `batch_queue_items.last_error` holds the reason. The
 batch itself finishes once every item reaches `DONE` or `FAILED`, no matter the mix. A
 batch's own `RUNNING` status gates every claim, so no worker can start on a batch that has
-not begun, or one that was cancelled.
+not started yet, or one that has already finished.
 
 **TRO-506: the required stopgap, not the full fix.** `resolveEscalatedLabel` can, under
 lease expiry, still have two workers reach its own Sonnet call for the same label. The

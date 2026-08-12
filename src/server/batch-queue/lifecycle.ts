@@ -39,37 +39,54 @@ export interface ExtractPairing {
 
 /**
  * Enqueues one `EXTRACT` `batch_queue_items` row per (application, image)
- * pairing. `ON CONFLICT ... DO NOTHING` against
- * `batch_queue_items_extract_pairing_unique` (`schema.ts`) makes this
- * idempotent: a retried batch-creation step (a client timeout, a partial
- * failure) reuses the existing rows instead of duplicating them — which
- * matters concretely, because `verifications` carries no unique constraint
- * on `(applicationId, labelImageId)` either, so a duplicate `EXTRACT` row
- * would not just waste a claim slot, it would let the SAME label run the
- * cascade twice and double-count itself downstream (CP-3 §2.2).
+ * pairing, and keeps `batch_jobs.total_count` in step with what actually
+ * got enqueued — in the SAME transaction, so a crash between the two
+ * writes leaves neither committed rather than a batch whose `total_count`
+ * permanently undercounts its own queue. `ON CONFLICT ... DO NOTHING`
+ * against `batch_queue_items_extract_pairing_unique` (`schema.ts`) makes
+ * the enqueue itself idempotent: a retried batch-creation step (a client
+ * timeout, a partial failure) reuses the existing rows instead of
+ * duplicating them — which matters concretely, because `verifications`
+ * carries no unique constraint on `(applicationId, labelImageId)` either,
+ * so a duplicate `EXTRACT` row would not just waste a claim slot, it would
+ * let the SAME label run the cascade twice and double-count itself
+ * downstream (CP-3 §2.2).
  *
- * Returns the number of rows ACTUALLY inserted (excludes ones a conflict
- * skipped) — callers that want to confirm "every pairing is now queued"
- * should compare this against `pairings.length` only loosely: a smaller
- * number on a retry is the expected, correct idempotent outcome, not an
- * error.
+ * `total_count` is incremented by the number of rows THIS call actually
+ * inserted, not by `pairings.length` — a retry that re-submits pairings
+ * already enqueued must add zero to `total_count`, not double-count them
+ * (`lifecycle.test.ts`'s own idempotent-retry case proves this).
+ *
+ * Returns that same actually-inserted count — callers that want to
+ * confirm "every pairing is now queued" should compare this against
+ * `pairings.length` only loosely: a smaller number on a retry is the
+ * expected, correct idempotent outcome, not an error.
  */
 export async function enqueueExtractItems(db: DbOrTx, batchJobId: number, pairings: ExtractPairing[]): Promise<number> {
   if (pairings.length === 0) return 0;
-  const rows = await db
-    .insert(batchQueueItems)
-    .values(
-      pairings.map((p) => ({
-        batchJobId,
-        kind: "EXTRACT" as const,
-        applicationId: p.applicationId,
-        labelImageId: p.labelImageId,
-      })),
-    )
-    .onConflictDoNothing({
-      target: [batchQueueItems.batchJobId, batchQueueItems.applicationId, batchQueueItems.labelImageId],
-      where: sql`${batchQueueItems.kind} = 'EXTRACT'`,
-    })
-    .returning({ id: batchQueueItems.id });
-  return rows.length;
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .insert(batchQueueItems)
+      .values(
+        pairings.map((p) => ({
+          batchJobId,
+          kind: "EXTRACT" as const,
+          applicationId: p.applicationId,
+          labelImageId: p.labelImageId,
+        })),
+      )
+      .onConflictDoNothing({
+        target: [batchQueueItems.batchJobId, batchQueueItems.applicationId, batchQueueItems.labelImageId],
+        where: sql`${batchQueueItems.kind} = 'EXTRACT'`,
+      })
+      .returning({ id: batchQueueItems.id });
+
+    if (rows.length > 0) {
+      await tx
+        .update(batchJobs)
+        .set({ totalCount: sql`${batchJobs.totalCount} + ${rows.length}` })
+        .where(eq(batchJobs.id, batchJobId));
+    }
+    return rows.length;
+  });
 }

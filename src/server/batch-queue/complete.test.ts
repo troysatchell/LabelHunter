@@ -5,7 +5,7 @@
  * this stops a worker whose lease already expired from FINISHING it after
  * someone else already has.
  */
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { db } from "../../lib/db";
 import { batchJobs, batchQueueItems } from "../../lib/db/schema";
@@ -95,7 +95,11 @@ describe("releaseForRetry", () => {
   it("releases a claimed row back to PENDING, clears claim fields, and pushes availableAt forward", async () => {
     const batchJobId = await trackBatch();
     const claimed = await claimedFixture(batchJobId);
-    const before = Date.now();
+    // The database's own clock, not Date.now() — availableAt is computed by
+    // Postgres's now(), and comparing it against a Node-side timestamp is
+    // exactly the clock-skew race test-support.ts's own comment documents
+    // fixing once already in this ticket.
+    const [{ before }] = await db.execute<{ before: Date }>(sql`SELECT now() AS before`).then((r) => r.rows);
 
     const guarded = await releaseForRetry(db, claimed.id, claimed.claimToken as string, 5000);
     expect(guarded).toBe(true);
@@ -106,7 +110,7 @@ describe("releaseForRetry", () => {
     expect(row.claimToken).toBeNull();
     expect(row.claimedAt).toBeNull();
     expect(row.leaseExpiresAt).toBeNull();
-    expect(row.availableAt.getTime()).toBeGreaterThanOrEqual(before + 4000); // allow scheduling slack
+    expect(row.availableAt.getTime()).toBeGreaterThanOrEqual(new Date(before).getTime() + 4000); // allow scheduling slack
   });
 
   it("does not release using a stale claim_token", async () => {

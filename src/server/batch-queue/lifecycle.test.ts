@@ -43,8 +43,10 @@ describe("startBatchJob", () => {
 });
 
 describe("enqueueExtractItems (CP-3 §2.2 — idempotent enqueue)", () => {
-  it("enqueues one EXTRACT row per (application, image) pairing", async () => {
-    const batchJobId = await trackBatch();
+  it("enqueues one EXTRACT row per (application, image) pairing, and sets total_count to match", async () => {
+    // totalCount: 0 — the real starting state a batch-creation caller
+    // (LH-040) would use, before enqueueExtractItems has run at all.
+    const batchJobId = await trackBatch({ totalCount: 0 });
     const a = await createApplicationAndImageFixture(db, batchJobId, "a.jpg");
     const b = await createApplicationAndImageFixture(db, batchJobId, "b.jpg");
 
@@ -57,10 +59,13 @@ describe("enqueueExtractItems (CP-3 §2.2 — idempotent enqueue)", () => {
     const rows = await db.select().from(batchQueueItems).where(eq(batchQueueItems.batchJobId, batchJobId));
     expect(rows).toHaveLength(2);
     expect(rows.every((r) => r.kind === "EXTRACT" && r.status === "PENDING")).toBe(true);
+
+    const [job] = await db.select().from(batchJobs).where(eq(batchJobs.id, batchJobId));
+    expect(job.totalCount).toBe(2);
   });
 
-  it("is idempotent: re-enqueueing the SAME pairing (a retried upload handler) inserts nothing new", async () => {
-    const batchJobId = await trackBatch();
+  it("is idempotent: re-enqueueing the SAME pairing (a retried upload handler) inserts nothing new, and does not double-count total_count", async () => {
+    const batchJobId = await trackBatch({ totalCount: 0 });
     const a = await createApplicationAndImageFixture(db, batchJobId, "a.jpg");
     const pairs = [{ applicationId: a.applicationId, labelImageId: a.labelImageId }];
 
@@ -71,10 +76,15 @@ describe("enqueueExtractItems (CP-3 §2.2 — idempotent enqueue)", () => {
 
     const rows = await db.select().from(batchQueueItems).where(eq(batchQueueItems.batchJobId, batchJobId));
     expect(rows).toHaveLength(1);
+
+    // The naive fix (total_count += pairings.length on every call) would
+    // land on 2 here — wrong, since the retry inserted zero NEW rows.
+    const [job] = await db.select().from(batchJobs).where(eq(batchJobs.id, batchJobId));
+    expect(job.totalCount).toBe(1);
   });
 
-  it("enqueues only the genuinely new pairings in a partially-overlapping retry", async () => {
-    const batchJobId = await trackBatch();
+  it("enqueues only the genuinely new pairings in a partially-overlapping retry, and total_count reflects only the real total", async () => {
+    const batchJobId = await trackBatch({ totalCount: 0 });
     const a = await createApplicationAndImageFixture(db, batchJobId, "a.jpg");
     const b = await createApplicationAndImageFixture(db, batchJobId, "b.jpg");
 
@@ -87,5 +97,8 @@ describe("enqueueExtractItems (CP-3 §2.2 — idempotent enqueue)", () => {
 
     const rows = await db.select().from(batchQueueItems).where(eq(batchQueueItems.batchJobId, batchJobId));
     expect(rows).toHaveLength(2);
+
+    const [job] = await db.select().from(batchJobs).where(eq(batchJobs.id, batchJobId));
+    expect(job.totalCount).toBe(2);
   });
 });

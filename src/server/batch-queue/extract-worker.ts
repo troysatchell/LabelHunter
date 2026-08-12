@@ -164,11 +164,22 @@ async function handleExtractFailure(
  * Never throws for an ordinary processing failure — every retryable/
  * non-retryable/stale-lease outcome is returned, not thrown, so a worker
  * pool loop (`pool.ts`) can move on to its next claim unconditionally.
+ *
+ * Throws (does NOT return a `failed` outcome) for a caller/config bug: a
+ * malformed claim, or a missing `comparators` dependency. `defaultDeps()`
+ * deliberately stubs `comparators` with a value that is unsafe to actually
+ * call `routeLabel` with — a misconfigured worker must stop loudly, not
+ * mark every item it touches `FAILED` one at a time with a confusing
+ * `TypeError` as `last_error`, which would read as a data problem instead
+ * of the deployment problem it actually is.
  */
 export async function processExtractClaim(item: ClaimedBatchQueueItem, deps: Partial<ExtractWorkerDeps> = {}): Promise<ExtractClaimOutcome> {
   const d: ExtractWorkerDeps = { ...defaultDeps(), ...deps };
   if (item.kind !== "EXTRACT" || item.applicationId === null || item.labelImageId === null || item.claimToken === null) {
     throw new Error(`processExtractClaim called with a non-EXTRACT or malformed claim (item ${item.id})`);
+  }
+  if (!d.comparators) {
+    throw new Error("processExtractClaim: ExtractWorkerDeps.comparators is required — the pool operator must supply real comparators, e.g. productionComparators.");
   }
 
   let extraction: HaikuExtractionResult;

@@ -290,3 +290,22 @@ describe("processExtractClaim — lost-lease race (CP-3 §3.2)", () => {
     expect(job.autoVerifiedCount).toBe(1);
   });
 });
+
+describe("processExtractClaim — misconfiguration fails loudly, not per-item", () => {
+  it("throws immediately when comparators is missing, rather than marking the item FAILED", async () => {
+    const batchJobId = await trackBatch({ totalCount: 1 });
+    const claimed = await claimedFixture(batchJobId, "misconfigured.jpg");
+    const deps = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY) });
+    // @ts-expect-error — deliberately simulating a caller that forgot to
+    // supply comparators, the exact misconfiguration this guard exists for.
+    delete deps.comparators;
+
+    await expect(processExtractClaim(claimed, deps)).rejects.toThrow(/comparators is required/);
+
+    // The item must still be CLAIMED, not FAILED — a config bug is not a
+    // per-item outcome; the pool operator needs to see this loudly, and a
+    // corrected redeploy should still be able to claim and process it.
+    const [item] = await db.select().from(batchQueueItems).where(eq(batchQueueItems.id, claimed.id));
+    expect(item.status).toBe("CLAIMED");
+  });
+});

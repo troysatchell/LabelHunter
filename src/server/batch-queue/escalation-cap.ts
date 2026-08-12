@@ -28,9 +28,20 @@ export function computeSonnetCallCapThreshold(totalCount: number): number {
   return Math.ceil(SONNET_ESCALATION_CAP_FRACTION * totalCount);
 }
 
-/** The one `resolverSkipReason` value this ticket produces (CP-3 §6.2/§6.4)
- * — passed to `../resolver/queue.ts`'s `insertSkippedReviewQueueEntry`. */
-export const ESCALATION_CAP_EXCEEDED_SKIP_REASON = "ESCALATION_CAP_EXCEEDED";
+/**
+ * Closed set of `resolverSkipReason` values this ticket can produce (CP-3
+ * §6.2/§6.4) — passed to `../resolver/queue.ts`'s
+ * `insertSkippedReviewQueueEntry`, whose own `resolverSkipReason` parameter
+ * takes this type rather than a bare `string`, so a typo in a future
+ * second skip reason fails to compile instead of silently writing an
+ * unrecognized value `readReviewQueueOutcome` (`resolve-worker.ts`) would
+ * then be unable to interpret.
+ */
+export const RESOLVER_SKIP_REASONS = ["ESCALATION_CAP_EXCEEDED"] as const;
+export type ResolverSkipReason = (typeof RESOLVER_SKIP_REASONS)[number];
+
+/** The one `resolverSkipReason` value this ticket produces. */
+export const ESCALATION_CAP_EXCEEDED_SKIP_REASON: ResolverSkipReason = "ESCALATION_CAP_EXCEEDED";
 
 /**
  * Atomically reserves one unit of this batch's Sonnet call budget. Returns

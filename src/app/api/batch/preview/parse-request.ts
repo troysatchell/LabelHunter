@@ -9,7 +9,7 @@
  * or CSV/zip content — that starts one layer up, in `route.ts` — so it is
  * trivial to unit test.
  */
-import { MAX_IMAGE_COUNT, MAX_MANIFEST_BYTES } from "../../../../server/batch/constants";
+import { MAX_IMAGE_COUNT, MAX_MANIFEST_BYTES, MAX_ZIP_ARCHIVE_BYTES } from "../../../../server/batch/constants";
 
 export interface ParsedBatchPreviewInput {
   manifest: File;
@@ -23,13 +23,30 @@ export interface ParsedBatchPreviewInput {
 
 export type ParseBatchPreviewResult = { ok: true; value: ParsedBatchPreviewInput } | { ok: false; message: string };
 
-export function parseBatchPreviewFormData(formData: FormData): ParseBatchPreviewResult {
+/** Overridable ceilings, mirroring `zip.ts`'s own `ExtractZipLimits`
+ * pattern — a test can prove a rejection cheaply, against a tiny fixture
+ * and a tiny pretend ceiling, instead of allocating a real multi-hundred-
+ * megabyte buffer just to cross the real one. */
+export interface ParseBatchPreviewLimits {
+  maxManifestBytes?: number;
+  maxImageCount?: number;
+  maxZipArchiveBytes?: number;
+}
+
+export function parseBatchPreviewFormData(
+  formData: FormData,
+  limits: ParseBatchPreviewLimits = {},
+): ParseBatchPreviewResult {
+  const maxManifestBytes = limits.maxManifestBytes ?? MAX_MANIFEST_BYTES;
+  const maxImageCount = limits.maxImageCount ?? MAX_IMAGE_COUNT;
+  const maxZipArchiveBytes = limits.maxZipArchiveBytes ?? MAX_ZIP_ARCHIVE_BYTES;
+
   const manifestEntry = formData.get("manifest");
   if (!(manifestEntry instanceof File) || manifestEntry.size === 0) {
     return { ok: false, message: "Add a CSV manifest file before you upload." };
   }
-  if (manifestEntry.size > MAX_MANIFEST_BYTES) {
-    const limitMb = (MAX_MANIFEST_BYTES / (1024 * 1024)).toFixed(1);
+  if (manifestEntry.size > maxManifestBytes) {
+    const limitMb = (maxManifestBytes / (1024 * 1024)).toFixed(1);
     return { ok: false, message: `This manifest file is too large. The limit is ${limitMb} MB.` };
   }
 
@@ -38,14 +55,24 @@ export function parseBatchPreviewFormData(formData: FormData): ParseBatchPreview
   const zipEntry = formData.get("imagesZip");
   const imagesZip = zipEntry instanceof File && zipEntry.size > 0 ? zipEntry : null;
 
+  // Checked before anything reads a single byte of the archive (review
+  // finding) — the same "reject cheaply, before doing real work" shape
+  // `manifestEntry.size` above already uses, and `zip.ts`'s own
+  // `MAX_ZIP_UNCOMPRESSED_BYTES` uses one layer further in, once the
+  // archive is actually opened.
+  if (imagesZip && imagesZip.size > maxZipArchiveBytes) {
+    const limitMb = (maxZipArchiveBytes / (1024 * 1024)).toFixed(0);
+    return { ok: false, message: `This zip file is too large. The limit is ${limitMb} MB. Split it into smaller batches.` };
+  }
+
   if (imageFiles.length === 0 && !imagesZip) {
     return { ok: false, message: "Add label images before you upload — a zip file or individual image files." };
   }
 
-  if (imageFiles.length > MAX_IMAGE_COUNT) {
+  if (imageFiles.length > maxImageCount) {
     return {
       ok: false,
-      message: `This batch has too many image files (${imageFiles.length}). The limit is ${MAX_IMAGE_COUNT}. Split it into smaller batches.`,
+      message: `This batch has too many image files (${imageFiles.length}). The limit is ${maxImageCount}. Split it into smaller batches.`,
     };
   }
 

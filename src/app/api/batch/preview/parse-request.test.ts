@@ -93,4 +93,27 @@ describe("parseBatchPreviewFormData", () => {
     if (result.ok) return;
     expect(result.message).toMatch(/add label images/i);
   });
+
+  it("rejects a zip archive over the configured size ceiling, before anything reads its bytes (review finding)", () => {
+    const fd = new FormData();
+    fd.set("manifest", csvFile());
+    // A real 600MB+ buffer would make this test itself slow and
+    // memory-heavy for no real benefit — the limit is injectable
+    // (mirroring `extractZipEntries`'s own `limits` parameter) precisely
+    // so this can be proven cheaply, against a tiny fixture and a tiny
+    // pretend ceiling, instead.
+    fd.set("imagesZip", new File(["x".repeat(200)], "images.zip", { type: "application/zip" }));
+    const result = parseBatchPreviewFormData(fd, { maxZipArchiveBytes: 100 });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toMatch(/too large/i);
+  });
+
+  it("accepts a zip archive at or under the configured size ceiling", () => {
+    const fd = new FormData();
+    fd.set("manifest", csvFile());
+    fd.set("imagesZip", new File(["x".repeat(100)], "images.zip", { type: "application/zip" }));
+    const result = parseBatchPreviewFormData(fd, { maxZipArchiveBytes: 100 });
+    expect(result.ok).toBe(true);
+  });
 });

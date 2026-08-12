@@ -20,7 +20,7 @@
  */
 import { NextResponse } from "next/server";
 import { buildBatchPreview } from "../../../../server/batch";
-import { MAX_IMAGE_COUNT } from "../../../../server/batch/constants";
+import { MAX_IMAGE_COUNT, MAX_TOTAL_REQUEST_BYTES } from "../../../../server/batch/constants";
 import { extractZipEntries } from "../../../../server/batch/zip";
 import type { BatchImageRef } from "../../../../server/batch/types";
 import { parseBatchPreviewFormData } from "./parse-request";
@@ -30,7 +30,40 @@ function errorResponse(status: number, kind: BatchPreviewErrorKind, message: str
   return NextResponse.json({ error: { kind, message } }, { status });
 }
 
+/**
+ * Rejects a request whose declared `Content-Length` alone already exceeds
+ * `maxBytes`, before `request.formData()` ever runs (review finding) —
+ * buffering a multi-gigabyte body just to discover it is too large is
+ * exactly the cost this check exists to skip. Exported so it is directly
+ * unit-testable against a `Request`'s headers alone, without needing a
+ * real oversized body to prove the rejection.
+ *
+ * A request with no `Content-Length` header at all — for example,
+ * chunked transfer-encoding, or (confirmed empirically) Node's own
+ * `Request` implementation for a `FormData` body, which never sets one —
+ * is NOT rejected here. This check defends the case where the header is
+ * present and honest; it is not a guarantee against every request shape
+ * a client could send, and every per-field check later in this route
+ * (`parse-request.ts`, `zip.ts`) still runs regardless.
+ */
+export function checkRequestSize(
+  request: Request,
+  maxBytes: number = MAX_TOTAL_REQUEST_BYTES,
+): { ok: true } | { ok: false; message: string } {
+  const raw = request.headers.get("content-length");
+  if (raw === null) return { ok: true };
+  const declaredBytes = Number(raw);
+  if (!Number.isFinite(declaredBytes) || declaredBytes <= maxBytes) return { ok: true };
+  const limitGb = (maxBytes / (1024 * 1024 * 1024)).toFixed(1);
+  return { ok: false, message: `This upload is too large. The limit is ${limitGb} GB. Split it into smaller batches.` };
+}
+
 export async function handleBatchPreviewRequest(request: Request): Promise<Response> {
+  const sizeCheck = checkRequestSize(request);
+  if (!sizeCheck.ok) {
+    return errorResponse(400, "VALIDATION", sizeCheck.message);
+  }
+
   let formData: FormData;
   try {
     formData = await request.formData();

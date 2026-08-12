@@ -151,4 +151,43 @@ describe("handleBatchPreviewRequest", () => {
     const body = (await response.json()) as BatchPreviewErrorResponse;
     expect(body.error.message).not.toMatch(/Error:|at handleBatchPreviewRequest|\.ts:\d/);
   });
+
+  it("rejects an oversized request from its Content-Length header alone, before request.formData() ever runs (review finding)", async () => {
+    // A real multi-gigabyte body would make this test itself slow and
+    // memory-heavy for no benefit — Node's own Request implementation
+    // respects an explicitly-set Content-Length header independent of
+    // the real (here, tiny) body (confirmed empirically), so the
+    // rejection is provable without allocating anything large.
+    const request = new Request("http://localhost/api/batch/preview", {
+      method: "POST",
+      headers: { "content-length": "3000000000" }, // 3 GB, declared only
+      body: "tiny-body-does-not-matter",
+    });
+
+    let formDataWasCalled = false;
+    const originalFormData = request.formData.bind(request);
+    request.formData = async () => {
+      formDataWasCalled = true;
+      return originalFormData();
+    };
+
+    const response = await handleBatchPreviewRequest(request);
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as BatchPreviewErrorResponse;
+    expect(body.error.kind).toBe("VALIDATION");
+    expect(body.error.message).toMatch(/too large/i);
+    expect(formDataWasCalled).toBe(false);
+  });
+
+  it("does not reject a request with no Content-Length header (e.g. chunked bodies) at this check", async () => {
+    const csvText = [HEADER, "beer,Hopyard Co,IPA,5,355,mL,can-01.jpg"].join("\n");
+    const fd = new FormData();
+    fd.set("manifest", csvFile(csvText));
+    fd.append("images", imageFile("can-01.jpg"));
+    const request = requestWith(fd);
+    expect(request.headers.get("content-length")).toBeNull(); // confirms this case is real, not assumed
+
+    const response = await handleBatchPreviewRequest(request);
+    expect(response.status).toBe(200);
+  });
 });

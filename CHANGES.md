@@ -32,7 +32,8 @@ batch:throughput` (`scripts/batch-throughput/measure.ts`), runs the real thing. 
 that fixture through the real running app (`pnpm dev`). A real worker process (`pnpm worker`)
 processes it. Both are the same two HTTP routes the upload screen calls. The harness then
 polls the batch's progress endpoint. It waits for a real status change until the batch
-finishes. Batch 124, 32 items, cross-checked against a direct read of the `batch_jobs` row:
+finishes. Batch 124 processed 32 items. These figures are cross-checked against a direct
+read of the `batch_jobs` row:
 
 | Figure | Value | N |
 |---|---|---|
@@ -57,11 +58,13 @@ Sonnet. It would show a different `resolvedBySonnetCount`/`needsHumanCount` spli
 
 **Cost is derived, not measured.** The batch worker records no per-call token usage. That
 seam exists only in the eval harness. The $0.2371 total multiplies this run's real call
-counts — 32 Haiku calls, 8 Sonnet calls — by the eval harness's own measured mean per-call
-cost. Haiku averages $0.004668 per call; the resolver averages $0.010969
-(`scripts/eval/results/eval-report.json`, measured 2026-08-12T13:26:45.488Z). `pnpm
-batch:throughput` reads that file fresh on every run. This figure moves if a newer eval run
-changes the means.
+counts by the eval harness's own measured mean per-call cost. This run made 32 real Haiku
+calls and 8 real Sonnet calls. Each is a sum of `batch_queue_items.attempts`, not a bare
+label count — a retried call would count twice. Haiku averages $0.004668 per call. The
+resolver
+averages $0.010969 (`scripts/eval/results/eval-report.json`, measured
+2026-08-12T13:26:45.488Z). `pnpm batch:throughput` reads that file fresh on every run. This
+figure moves if a newer eval run changes the means.
 
 **Verdict correctness is a separate, already-tracked concern.** The golden set's ground truth
 expects 8 PASS / 10 FAIL / 14 REVIEW for these 32 cases. This run produced 11 PASS / 7 FAIL /
@@ -80,34 +83,58 @@ worker`, `pnpm batch:throughput`. Output lands at
 `scripts/batch-throughput/results/local-batch-run.json`. This costs real money — about
 $0.15-0.30 for the full 32-case fixture, at the eval harness's measured per-call rates.
 
-**Regression tests.** `src/lib/utils/batch-throughput.test.ts` covers both null-input states,
-both `RangeError` paths, and exact arithmetic on known inputs — including a case proving an
-impossible `(1, 0)` pair throws instead of silently reading as "not measured yet" (review
-finding, local review round 1). `src/lib/utils/format.test.ts` gained `formatPercent`
-coverage. `get-batch-progress.test.ts` and the `/api/batch/:id` route test each gained
-real-database cases. Both prove `throughput`/`autoVerifiedShare` compute correctly from a live
-`batch_jobs` row. Both prove the two fields serialize correctly over the wire.
-`BatchProgressSummary.test.tsx` gained six cases for the two new tiles. One is a regression
-case: a genuine 0% share must render as "0.0%," never as "Not measured yet." A naive truthy
-check on the fraction would get this wrong. `scripts/batch-throughput/args.test.ts` and
-`cost.test.ts` cover the harness's own pure CLI-parsing and cost-derivation logic.
+**Regression tests.** `src/lib/utils/batch-throughput.test.ts` covers both null-input states
+and both `RangeError` paths. It also covers exact arithmetic on known inputs. One case proves
+an impossible `(1, 0)` pair throws, instead of silently reading as "not measured yet" (a local
+review finding). `src/lib/utils/format.test.ts` gained `formatPercent` coverage.
+`get-batch-progress.test.ts` and the `/api/batch/:id` route test each gained real-database
+cases. Both prove `throughput`/`autoVerifiedShare` compute correctly from a live `batch_jobs`
+row and serialize correctly over the wire. `BatchProgressSummary.test.tsx` gained six cases
+for the two new tiles. One is a regression case: a genuine 0% share must render as "0.0%,"
+never as "Not measured yet." A naive truthy check on the fraction would get this wrong.
+`scripts/batch-throughput/args.test.ts` and `cost.test.ts` cover the harness's own pure
+CLI-parsing and cost-derivation logic, including its own new boundary checks.
 
 **Confirmed in a real browser, not just a component test.** `/batch/124` loaded in a real
 headless Chromium session against the running app. Every new tile rendered with its real
 value. "AUTO-VERIFIED SHARE 56.3%" appeared. So did "ITEMS PER MINUTE 50.48" with its "1.19s
 per label" sub-note. Both sat in the same stat-tile grid as the five existing tiles.
 
-**Local CodeRabbit review triage (4 findings).** Fixed: `computeAutoVerifiedShare` now checks
-`autoVerifiedCount`'s bound before the `processedCount <= 0` early return, so an impossible
-`(1, 0)` pair throws `RangeError` instead of reading as unmeasured (minor). The harness's poll
-loop now bounds each request's own timeout by the time left in `--max-wait-ms`, not a flat
-30s, so one slow request cannot overshoot the documented budget (minor). This entry's own
-prose was tightened to ASD-STE100's sentence-length rule (minor). Skipped, with a reason
-recorded in `scripts/batch-throughput/types.ts`: reading worker concurrency live from the
-worker process itself (major) — `scripts/batch-worker/run.ts` has no HTTP server or IPC
-channel today, and building one just for a diagnostic field is new production surface, not a
-fix to an existing one. The harness already states this limitation plainly, both in the type
-and in the artifact's own `notes` field.
+**Local CodeRabbit review triage, two rounds, 11 findings total.** Ten fixed; one skipped with
+a documented reason (below).
+
+Round 1, four findings, all fixed or skipped:
+- `computeAutoVerifiedShare` checked `processedCount <= 0` before validating
+  `autoVerifiedCount`'s own bound. An impossible `(1, 0)` pair read as unmeasured instead of
+  throwing. Fixed: the checks now run in the other order.
+- This entry's own prose ran over ASD-STE100's 25-word sentence cap in several places. Fixed:
+  every long sentence split into shorter ones.
+- Skipped: reading worker concurrency live from the worker process itself.
+  `scripts/batch-worker/run.ts` has no HTTP server or IPC channel today. Building one only to
+  report a diagnostic field would be new production surface, not a fix to an existing gap.
+  The limitation is already stated plainly, in the type and in the artifact's own `notes`
+  field.
+
+Round 2, seven findings, all fixed:
+- The harness's poll loop bounded each request's own fetch timeout to the time left in
+  `--max-wait-ms`, but not the sleep BETWEEN polls. Fixed: the sleep is now bounded the same
+  way.
+- `--poll-interval-ms`/`--max-wait-ms` accepted any integer, including one large enough to
+  overflow `setTimeout`'s 32-bit delay and silently fire almost immediately. Fixed: both now
+  reject a value above that ceiling.
+- `cost.ts`'s `meanCost`/`deriveBatchCostUsd` accepted negative or non-finite inputs without
+  complaint. Fixed: both now throw `RangeError` on a bad value.
+- The harness assumed one real Haiku call per label (`totalCount`). A retried extraction
+  makes a second real call that assumption would miss. Fixed: the harness now sums
+  `batch_queue_items.attempts` for this batch's own EXTRACT items instead. This run's own
+  number does not change — a direct query confirmed zero retries occurred. The harness is
+  now correct for a future run that does retry.
+- `measure.ts` created its database pool without checking `DATABASE_URL` first, risking a
+  confusing raw `pg` error. Fixed: it now checks and throws a clear message first, matching
+  `scripts/eval/check.ts`'s own established pattern.
+- This entry's own lead-in to the results table was a sentence fragment, with no verb. Fixed:
+  it now reads as two complete sentences.
+- Two more sentences elsewhere in this entry ran over the 25-word cap. Fixed: both split.
 
 **Do NOT.** No column was added to `batch_jobs` — every input already existed. No claim was
 extrapolated past this run's real 32 items to TH-R4's 200-300 label reference.

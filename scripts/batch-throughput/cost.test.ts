@@ -13,6 +13,15 @@ describe("meanCost", () => {
   it("throws on an empty list rather than returning a fabricated 0", () => {
     expect(() => meanCost([])).toThrow(RangeError);
   });
+
+  it("throws on a negative cost (review finding, local review round 2)", () => {
+    expect(() => meanCost([0.005, -0.001])).toThrow(RangeError);
+  });
+
+  it("throws on a non-finite cost (NaN or Infinity)", () => {
+    expect(() => meanCost([0.005, Number.NaN])).toThrow(RangeError);
+    expect(() => meanCost([0.005, Number.POSITIVE_INFINITY])).toThrow(RangeError);
+  });
 });
 
 describe("deriveBatchCostUsd", () => {
@@ -35,5 +44,26 @@ describe("deriveBatchCostUsd", () => {
       sonnetMeanCostUsd: 0.010969,
     });
     expect(usd).toBeCloseTo(0.04668, 6);
+  });
+
+  it("counts a retried extraction as more than one call — haikuCallCount is an attempt sum, not a label count", () => {
+    // 5 labels, one of which retried once (6 real Haiku attempts total).
+    const usd = deriveBatchCostUsd({ haikuCallCount: 6, haikuMeanCostUsd: 0.004668, sonnetCallCount: 0, sonnetMeanCostUsd: 0.010969 });
+    expect(usd).toBeCloseTo(6 * 0.004668, 6);
+  });
+
+  it("throws on a negative call count (review finding, local review round 2)", () => {
+    expect(() => deriveBatchCostUsd({ haikuCallCount: -1, haikuMeanCostUsd: 0.004668, sonnetCallCount: 0, sonnetMeanCostUsd: 0.010969 })).toThrow(
+      RangeError,
+    );
+    expect(() => deriveBatchCostUsd({ haikuCallCount: 10, haikuMeanCostUsd: 0.004668, sonnetCallCount: -1, sonnetMeanCostUsd: 0.010969 })).toThrow(
+      RangeError,
+    );
+  });
+
+  it("throws on a non-finite mean cost", () => {
+    expect(() => deriveBatchCostUsd({ haikuCallCount: 10, haikuMeanCostUsd: Number.NaN, sonnetCallCount: 0, sonnetMeanCostUsd: 0.010969 })).toThrow(
+      RangeError,
+    );
   });
 });

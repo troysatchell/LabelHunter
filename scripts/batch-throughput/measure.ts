@@ -42,18 +42,20 @@
  * (`src/server/batch-queue/`) records no per-call token usage — that seam
  * (`createUsageCapturingClient`) exists only in the eval harness
  * (`scripts/eval/usage.ts`). This script multiplies this run's REAL call
- * counts (`totalCount` Haiku calls, `sonnetCallCount` Sonnet call
- * attempts — both read from the real `batch_jobs` row after the batch
- * completes) by the eval harness's own measured MEAN per-call cost,
- * re-read from `scripts/eval/results/eval-report.json` on every run so
- * this number always reflects whatever that file currently says, never a
- * value copied in by hand and left to go stale.
+ * counts by the eval harness's own measured MEAN per-call cost, re-read
+ * from `scripts/eval/results/eval-report.json` on every run so this
+ * number always reflects whatever that file currently says, never a value
+ * copied in by hand and left to go stale. The Haiku call count is the sum
+ * of `attempts` over this batch's own EXTRACT queue items, not a bare
+ * label count — a retried extraction makes more than one real call. The
+ * Sonnet call count is `batch_jobs.sonnet_call_count`, read directly from
+ * the database after the batch completes.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import type { BatchProgressResponse } from "../../src/app/api/batch/[batchJobId]/types";
@@ -210,7 +212,12 @@ async function pollUntilTerminal(
     if (Date.now() > deadline) {
       throw new Error(`measure.ts: batch ${batchJobId} did not reach a terminal state within ${maxWaitMs}ms (last status: ${progress.status})`);
     }
-    await new Promise((res) => setTimeout(res, pollIntervalMs));
+    // Bound the sleep itself by whatever budget is left too (review
+    // finding, local review round 2) — without this, a poll tick could
+    // sleep past `deadline` before the next iteration's own check ever
+    // runs, on top of the per-request fetch timeout already bounded above.
+    const sleepMs = Math.min(pollIntervalMs, deadline - Date.now());
+    await new Promise((res) => setTimeout(res, sleepMs));
   }
 }
 
@@ -250,7 +257,18 @@ async function main(): Promise<void> {
     throw new Error(`measure.ts: batch ${started.batchJobId} reached COMPLETED but autoVerifiedShare was null — this is a bug, not a real result.`);
   }
 
-  // One direct database read for the one figure the progress API does not
+  // Same validate-and-throw shape scripts/eval/check.ts's own runLive and
+  // scripts/latency/measure.ts's own main already use (review finding,
+  // local review round 2) — a clear, actionable error instead of pg's own
+  // confusing failure when DATABASE_URL is unset (it does not throw
+  // immediately; it tries to connect with default, almost certainly wrong,
+  // connection parameters).
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error("measure.ts: DATABASE_URL is not set. source .factory-env in a factory worktree, or set it in .env.local before running pnpm batch:throughput.");
+  }
+
+  // One direct database read for the figures the progress API does not
   // expose (sonnetCallCount is an internal safety counter, not a
   // user-facing stat — see get-batch-progress.ts's own scope). A one-shot
   // script opens and closes its own pool rather than reusing
@@ -258,10 +276,11 @@ async function main(): Promise<void> {
   // (scripts/eval/check.ts's own runLive does the same, for the same
   // reason; see that file and scripts/batch-worker/run.ts's own comment on
   // the distinction).
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 10_000 });
+  const pool = new Pool({ connectionString, connectionTimeoutMillis: 10_000 });
   pool.on("error", (err) => console.error("measure.ts: unexpected error on idle Postgres client", err));
   const db = drizzle(pool, { schema });
   let sonnetCallCount: number;
+  let haikuCallCount: number;
   try {
     const [row] = await db.select().from(schema.batchJobs).where(eq(schema.batchJobs.id, started.batchJobId));
     if (!row) {
@@ -278,6 +297,28 @@ async function main(): Promise<void> {
           `api totalCount=${finalProgress.totalCount}/processedCount=${finalProgress.processedCount}) — investigate before trusting this run.`,
       );
     }
+
+    // `totalCount` is the label count, not the real Haiku call count — a
+    // label whose first EXTRACT attempt fails retryably gets a SECOND real
+    // Haiku call before it succeeds or is permanently marked FAILED
+    // (`extract-worker.ts`'s own `releaseForRetry` path; `claim.ts`
+    // increments `attempts` on every claim, retries included). Summing
+    // `attempts` over this batch's own EXTRACT queue items is the true
+    // count (review finding, local review round 2) — the same "first
+    // attempts and retries alike" accounting `sonnetCallCount` already
+    // uses for the resolver side (`escalation-cap.ts`'s own doc comment).
+    const [{ totalExtractAttempts }] = await db
+      .select({ totalExtractAttempts: sql<string>`COALESCE(SUM(${schema.batchQueueItems.attempts}), 0)` })
+      .from(schema.batchQueueItems)
+      .where(and(eq(schema.batchQueueItems.batchJobId, started.batchJobId), eq(schema.batchQueueItems.kind, "EXTRACT")));
+    haikuCallCount = Number(totalExtractAttempts);
+    if (!Number.isFinite(haikuCallCount) || haikuCallCount < finalProgress.totalCount) {
+      // Every EXTRACT item is claimed (attempts >= 1) at least once by the
+      // time the batch is COMPLETED, so the sum can never be smaller than
+      // the label count — a smaller sum means the query or the batch's own
+      // state is not what this script assumes.
+      throw new Error(`measure.ts: EXTRACT attempts sum (${totalExtractAttempts}) is less than totalCount (${finalProgress.totalCount}) — investigate before trusting this run.`);
+    }
   } finally {
     await pool.end();
   }
@@ -285,7 +326,7 @@ async function main(): Promise<void> {
   const costMeans = readCostMeans();
   const capThreshold = computeSonnetCallCapThreshold(finalProgress.totalCount);
   const derivedTotalUsd = deriveBatchCostUsd({
-    haikuCallCount: finalProgress.totalCount,
+    haikuCallCount,
     haikuMeanCostUsd: costMeans.haikuMeanCostUsd,
     sonnetCallCount,
     sonnetMeanCostUsd: costMeans.sonnetMeanCostUsd,
@@ -322,7 +363,7 @@ async function main(): Promise<void> {
       capHit: sonnetCallCount >= capThreshold,
     },
     cost: {
-      haikuCallCount: finalProgress.totalCount,
+      haikuCallCount,
       haikuMeanCostUsd: costMeans.haikuMeanCostUsd,
       sonnetCallCount,
       sonnetMeanCostUsd: costMeans.sonnetMeanCostUsd,
@@ -334,6 +375,9 @@ async function main(): Promise<void> {
         "computed by the same computeBatchThroughput/computeAutoVerifiedShare the product's batch-results screen uses.",
       "sonnetCallCount is OBSERVED: read directly from the batch_jobs row after the batch reached COMPLETED, and cross-checked " +
         "against the polled API response's totalCount/processedCount.",
+      "cost.haikuCallCount is OBSERVED, not assumed equal to totalCount: it sums batch_queue_items.attempts over this batch's " +
+        "own EXTRACT items, so a retried extraction (a transient failure that succeeded on a later attempt) counts as more " +
+        "than one real Haiku call.",
       "cost.derivedTotalUsd is DERIVED: real call counts from this run, multiplied by the eval harness's measured MEAN " +
         "per-call cost from scripts/eval/results/eval-report.json (see cost.meanCostSource for that file's own measuredAt). " +
         "This run's own per-call token usage was not captured — the batch worker has no usage-capturing seam today.",

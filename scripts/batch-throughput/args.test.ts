@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_FIXTURE_DIR, DEFAULT_MAX_WAIT_MS, DEFAULT_POLL_INTERVAL_MS, parseArgs } from "./args";
+import { DEFAULT_FIXTURE_DIR, DEFAULT_MAX_WAIT_MS, DEFAULT_POLL_INTERVAL_MS, MAX_TIMER_DELAY_MS, parseArgs } from "./args";
 
 describe("parseArgs", () => {
   const originalAppPort = process.env.APP_PORT;
@@ -66,5 +66,22 @@ describe("parseArgs", () => {
 
   it("throws when --max-wait-ms is smaller than --poll-interval-ms", () => {
     expect(() => parseArgs(["--poll-interval-ms=5000", "--max-wait-ms=1000"])).toThrow(/max-wait-ms/);
+  });
+
+  it("throws when --poll-interval-ms exceeds the 32-bit timer delay Node silently clamps (review finding)", () => {
+    expect(() => parseArgs([`--poll-interval-ms=${MAX_TIMER_DELAY_MS + 1}`])).toThrow(/poll-interval-ms/);
+  });
+
+  it("throws when --max-wait-ms exceeds the 32-bit timer delay Node silently clamps", () => {
+    expect(() => parseArgs([`--max-wait-ms=${MAX_TIMER_DELAY_MS + 1}`])).toThrow(/max-wait-ms/);
+  });
+
+  it("throws when --max-wait-ms is not a safe integer (e.g. larger than Number.MAX_SAFE_INTEGER)", () => {
+    expect(() => parseArgs(["--max-wait-ms=99999999999999999999"])).toThrow(/max-wait-ms/);
+  });
+
+  it("accepts --max-wait-ms exactly at the timer delay ceiling", () => {
+    const args = parseArgs([`--max-wait-ms=${MAX_TIMER_DELAY_MS}`]);
+    expect(args.maxWaitMs).toBe(MAX_TIMER_DELAY_MS);
   });
 });

@@ -21,6 +21,14 @@ export const DEFAULT_MAX_WAIT_MS = 30 * 60_000;
 
 export const DEFAULT_FIXTURE_DIR = "var/batch-fixture";
 
+/** Node (and every browser) silently clamps a `setTimeout`/`AbortSignal.timeout`
+ * delay above the 32-bit signed integer range to a near-immediate fire —
+ * the HTML timer spec's own documented behavior, not a Node bug. A
+ * `--max-wait-ms` above this would silently mean "almost no wait," the
+ * opposite of what a caller typing a huge number intends (review finding,
+ * local review round 2). Rejected explicitly instead. */
+export const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
 function defaultBaseUrl(): string {
   // APP_PORT is the factory-assigned port for this worktree (.factory-env);
   // PORT is the equivalent for a plain local checkout — same fallback order
@@ -76,11 +84,11 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     );
   }
 
-  if (!Number.isInteger(pollIntervalMs) || pollIntervalMs < 250) {
-    throw new Error(`measure.ts: --poll-interval-ms must be an integer >= 250, got ${pollIntervalMs}`);
+  if (!Number.isSafeInteger(pollIntervalMs) || pollIntervalMs < 250 || pollIntervalMs > MAX_TIMER_DELAY_MS) {
+    throw new Error(`measure.ts: --poll-interval-ms must be an integer between 250 and ${MAX_TIMER_DELAY_MS}, got ${pollIntervalMs}`);
   }
-  if (!Number.isInteger(maxWaitMs) || maxWaitMs < pollIntervalMs) {
-    throw new Error(`measure.ts: --max-wait-ms must be an integer >= --poll-interval-ms, got ${maxWaitMs}`);
+  if (!Number.isSafeInteger(maxWaitMs) || maxWaitMs < pollIntervalMs || maxWaitMs > MAX_TIMER_DELAY_MS) {
+    throw new Error(`measure.ts: --max-wait-ms must be an integer between --poll-interval-ms and ${MAX_TIMER_DELAY_MS}, got ${maxWaitMs}`);
   }
 
   return { baseUrl, fixtureDir, pollIntervalMs, maxWaitMs };

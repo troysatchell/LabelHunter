@@ -10,8 +10,15 @@
  */
 import { readFileSync } from "node:fs";
 import sharp from "sharp";
-import { describe, expect, it } from "vitest";
-import { OCR_PAGE_SEGMENTATION_MODE, runWarningOcr, TESSDATA_DIR, TESSDATA_LANGUAGE_FILE } from "./ocr";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  OCR_PAGE_SEGMENTATION_MODE,
+  OCR_TIMEOUT_MS,
+  runWarningOcr,
+  TESSDATA_DIR,
+  TESSDATA_LANGUAGE_FILE,
+  type RunWarningOcrDeps,
+} from "./ocr";
 import { OCR_CONFIDENCE_FLOOR } from "./reconcile";
 
 /** A small, crop-sized synthetic warning block — built with sharp/SVG, not
@@ -95,4 +102,96 @@ describe("runWarningOcr — real recognition against the committed language data
     },
     15_000,
   );
+});
+
+/**
+ * TRO-519: a hung `worker_threads` worker used to hang `runWarningOcr`
+ * forever, and `/api/verify` with it. These tests inject a `createWorker`
+ * that never resolves (or a worker whose `recognize` never resolves) —
+ * never a real sleep (lessons.md rule 8) — and drive vitest's fake timers
+ * forward by exactly `OCR_TIMEOUT_MS`, so the whole suite stays fast and
+ * deterministic instead of waiting on a real 2-second clock.
+ */
+describe("runWarningOcr — timeout (TRO-519)", () => {
+  afterEach(() => {
+    // Always restored, even if an assertion above throws mid-test — a
+    // fake-timer leak into a later, unrelated test file is exactly the
+    // kind of failure that is hard to diagnose from its own symptoms.
+    vi.useRealTimers();
+  });
+
+  /** A loosely-typed `createWorker` fake — `runWarningOcr` only ever calls
+   * `createWorker(...)` and, on what it resolves to, `setParameters`,
+   * `recognize`, and `terminate`. Implementing tesseract.js's full
+   * `Worker` interface here would test nothing extra. */
+  function fakeCreateWorker(worker: {
+    setParameters: ReturnType<typeof vi.fn>;
+    recognize: ReturnType<typeof vi.fn>;
+    terminate: ReturnType<typeof vi.fn>;
+  }): RunWarningOcrDeps["createWorker"] {
+    return vi.fn().mockResolvedValue(worker) as unknown as RunWarningOcrDeps["createWorker"];
+  }
+
+  const neverResolvingCreateWorker: RunWarningOcrDeps["createWorker"] = vi.fn(
+    () => new Promise(() => {}),
+  ) as unknown as RunWarningOcrDeps["createWorker"];
+
+  it("degrades to null within OCR_TIMEOUT_MS when createWorker itself never resolves — the Turbopack MODULE_NOT_FOUND shape", async () => {
+    vi.useFakeTimers();
+
+    const resultPromise = runWarningOcr(Buffer.from("crop"), { createWorker: neverResolvingCreateWorker });
+    await vi.advanceTimersByTimeAsync(OCR_TIMEOUT_MS);
+
+    await expect(resultPromise).resolves.toBeNull();
+  });
+
+  it("degrades to null within OCR_TIMEOUT_MS when recognize() never resolves, and terminates the worker instead of abandoning it", async () => {
+    vi.useFakeTimers();
+    const terminate = vi.fn().mockResolvedValue(undefined);
+    const worker = {
+      setParameters: vi.fn().mockResolvedValue(undefined),
+      recognize: vi.fn(() => new Promise(() => {})),
+      terminate,
+    };
+
+    const resultPromise = runWarningOcr(Buffer.from("crop"), { createWorker: fakeCreateWorker(worker) });
+    await vi.advanceTimersByTimeAsync(OCR_TIMEOUT_MS);
+
+    await expect(resultPromise).resolves.toBeNull();
+    expect(terminate).toHaveBeenCalledTimes(1); // the loser is terminated, not abandoned
+  });
+
+  it("does not fire on a fast, successful recognition, and still terminates the worker used to get it", async () => {
+    vi.useFakeTimers();
+    const terminate = vi.fn().mockResolvedValue(undefined);
+    const worker = {
+      setParameters: vi.fn().mockResolvedValue(undefined),
+      recognize: vi.fn().mockResolvedValue({ data: { text: "GOVERNMENT WARNING", confidence: 91 } }),
+      terminate,
+    };
+
+    const result = await runWarningOcr(Buffer.from("crop"), { createWorker: fakeCreateWorker(worker) });
+
+    expect(result).toEqual({ text: "GOVERNMENT WARNING", confidence: 91 });
+    expect(terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it("a thrown createWorker error and a createWorker timeout converge on the identical degraded value — CP-2 §4.4 rule 3, one rule for both", async () => {
+    // The thrown-error side closes a real, pre-existing coverage gap:
+    // nothing in this suite previously forced runWarningOcr's OWN
+    // catch-all to fire (index.test.ts's rejection test exercises a
+    // rejected DEPENDENCY one layer up, in index.ts, not this function).
+    const throwingCreateWorker: RunWarningOcrDeps["createWorker"] = vi.fn(() =>
+      Promise.reject(new Error("createWorker: synthetic failure for this test")),
+    ) as unknown as RunWarningOcrDeps["createWorker"];
+    const thrownResult = await runWarningOcr(Buffer.from("crop"), { createWorker: throwingCreateWorker });
+
+    vi.useFakeTimers();
+    const timedOutPromise = runWarningOcr(Buffer.from("crop"), { createWorker: neverResolvingCreateWorker });
+    await vi.advanceTimersByTimeAsync(OCR_TIMEOUT_MS);
+    const timedOutResult = await timedOutPromise;
+
+    expect(thrownResult).toBeNull();
+    expect(timedOutResult).toBeNull();
+  });
 });

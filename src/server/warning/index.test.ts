@@ -16,8 +16,11 @@ import type { ExtractedGovernmentWarning } from "../extractor/types";
 import type { PixelRegion } from "../preprocessing/region";
 import {
   compareGovernmentWarningFromImage,
+  OCR_TIMEOUT_MS,
+  runWarningOcr,
   toVlmWarningCandidate,
   type CompareGovernmentWarningFromImageDeps,
+  type RunWarningOcrDeps,
 } from "./index";
 import { CANONICAL_WARNING_TEXT } from "./canonical";
 
@@ -174,4 +177,51 @@ describe("compareGovernmentWarningFromImage — real image, real OCR, real regio
     },
     15_000,
   );
+});
+
+/**
+ * TRO-519, at this module's own public entry point. `ocr.test.ts` proves
+ * `runWarningOcr` itself degrades to `null` on a timeout; this proves the
+ * REAL production wiring built from it — `compareGovernmentWarningFromImage`
+ * -> `runOcrChannel` -> `runWarningOcr` — degrades all the way through to a
+ * `WarningComparatorResult` within a bounded time, not just that the
+ * innermost function does. Only `createWorker` is faked (never resolving —
+ * the hung-worker shape, not a real sleep, lessons.md rule 8); region
+ * detection, cropping, and `runWarningOcr` itself are all the real
+ * production code.
+ */
+describe("compareGovernmentWarningFromImage — OCR channel timeout (TRO-519)", () => {
+  const FAKE_REGION: PixelRegion = { x: 0, y: 0, width: 10, height: 10 };
+
+  it("degrades to single-channel MATCH, not an indefinite hang, when the real runWarningOcr's own createWorker never resolves", async () => {
+    vi.useFakeTimers();
+    try {
+      const neverResolvingCreateWorker: RunWarningOcrDeps["createWorker"] = vi.fn(
+        () => new Promise(() => {}),
+      ) as unknown as RunWarningOcrDeps["createWorker"];
+
+      const fakeDeps: CompareGovernmentWarningFromImageDeps = {
+        detectRegion: vi.fn().mockResolvedValue({ region: FAKE_REGION, method: "classical" }),
+        crop: vi.fn().mockResolvedValue(Buffer.from([])),
+        ocr: (crop) => runWarningOcr(crop, { createWorker: neverResolvingCreateWorker }),
+      };
+
+      // A clean, confident VLM read: once OCR degrades to unavailable, CP-2
+      // §4.5's single-channel table makes the expected verdict unambiguous
+      // (exact match, confidence >= 0.90 -> MATCH), so this test proves
+      // more than "it eventually returns something" without depending on
+      // reconcile.ts's own internals (out of this ticket's scope).
+      const resultPromise = compareGovernmentWarningFromImage(
+        { extracted: extractedWarning({ confidence: 0.95 }), originalImage: Buffer.from([]) },
+        fakeDeps,
+      );
+
+      await vi.advanceTimersByTimeAsync(OCR_TIMEOUT_MS);
+      const result = await resultPromise;
+
+      expect(result.verdict).toBe("MATCH");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

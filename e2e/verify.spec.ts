@@ -215,4 +215,53 @@ test.describe("Verify — helper correctness", () => {
     // returns here.
     expect(await page.getByTestId("label-verdict-banner").isVisible()).toBe(true);
   });
+
+  test("errorPanel resolves to the real panel, not a decoy sharing the route announcer's own id, even when both are non-empty at once", async ({ page }) => {
+    // Regression test for a CodeRabbit finding (TRO-479 local review
+    // round 3): an earlier version of errorPanel() filtered on non-empty
+    // text alone, which is only a proxy for "not the announcer" — if the
+    // announcer is ALSO non-empty at the same moment a real ErrorPanel is
+    // showing, that filter alone cannot tell them apart, and Playwright's
+    // strict mode would reject the ambiguity. Excluding the announcer by
+    // its own stable id is the precise fix.
+    //
+    // Next's REAL announcer element turns out to mount/remount on its own
+    // schedule (confirmed directly: `document.getElementById(...)`
+    // sometimes reports it absent at a point Playwright's own
+    // accessibility-tree query finds it moments later) — trying to read
+    // or mutate the live one is exactly the kind of timing dependency
+    // rule 8 warns against, and an earlier version of this test proved
+    // nothing because of it (passed even against the deliberately
+    // reverted, buggy errorPanel() — a vacuous proof this ticket's own
+    // break/restore discipline exists to catch). This test sidesteps
+    // that mystery entirely: it creates its OWN element sharing the
+    // announcer's exact id, fully under this test's control, and proves
+    // errorPanel() excludes it BY ID — the actual mechanism the fix
+    // relies on, independent of whatever Next's real announcer is doing.
+    await page.goto("/");
+    await fillVerifyForm(page, {
+      image: jpegFile("huge.jpg", buildOversizedFile()),
+      beverageType: "spirits",
+      brandName: uniqueTag("verify-announcer-and-real-error"),
+      classType: "Straight Bourbon Whiskey",
+      alcoholContentPercent: 45,
+      netContentsValue: 750,
+      netContentsUnit: "mL",
+    });
+    await submitVerifyFormAndWait(page);
+
+    await page.evaluate(() => {
+      const decoy = document.createElement("div");
+      decoy.id = "__next-route-announcer__";
+      decoy.setAttribute("role", "alert");
+      decoy.textContent = "stale text from an earlier client-side navigation";
+      document.body.appendChild(decoy);
+    });
+
+    // A single, unambiguous match — not a strict-mode violation — that
+    // is the REAL panel, not the decoy.
+    const alert = errorPanel(page);
+    await expect(alert).toHaveCount(1);
+    await expect(alert).toContainText(/20(\.0)? ?MB/i);
+  });
 });

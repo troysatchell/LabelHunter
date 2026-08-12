@@ -84,15 +84,28 @@ export function verifySubmitButton(page: Page): Locator {
  * anchor; title/message text is asserted separately, tolerantly, by each
  * spec (TRO-480 may reword it).
  *
- * Filtered to non-empty text: Next.js itself renders a second, always-
- * present `role="alert"` element on every page
- * (`id="__next-route-announcer__"`, its own route-change announcer for
- * assistive tech) — empty except right after a client-side navigation.
- * Without this filter, `getByRole("alert")` matches both and Playwright's
- * strict mode rejects the ambiguity (observed directly: every error-state
- * spec failed on this before the filter was added, not a hypothetical). */
+ * Next.js itself renders a second, always-present `role="alert"` element
+ * on every page (`id="__next-route-announcer__"`, its own route-change
+ * announcer for assistive tech) — empty except right after a client-side
+ * navigation. Without narrowing this down, `getByRole("alert")` matches
+ * both, and Playwright's strict mode rejects the ambiguity (observed
+ * directly: every error-state spec failed on this before a filter was
+ * added, not a hypothetical).
+ *
+ * Excludes the announcer by its own stable id, not only by non-empty
+ * text — an earlier version of this helper filtered on `{ hasText: /.+/
+ * }` alone, which is only a proxy: a stale announcer left non-empty by an
+ * earlier client-side navigation (exactly the scenario
+ * `e2e/verify.spec.ts`'s "helper correctness" test constructs) would
+ * still match that filter and could be confused for a real panel
+ * (CodeRabbit finding, TRO-479 local review round 3). Excluding by id is
+ * the precise fix; the non-empty filter stays as a second, independent
+ * layer of defense. */
 export function errorPanel(page: Page): Locator {
-  return page.getByRole("alert").filter({ hasText: /.+/ });
+  return page
+    .getByRole("alert")
+    .filter({ hasText: /.+/ })
+    .and(page.locator(":not(#__next-route-announcer__)"));
 }
 
 /** Submits the verify form and waits for the request to settle — either

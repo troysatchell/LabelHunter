@@ -113,11 +113,15 @@ describe("selectResponseForRequest", () => {
     const parsed = JSON.parse((textBlock as { text: string }).text) as { overall: string; fields: { field: string }[] };
     expect(parsed.overall).toBe("RESOLVED");
     // Every possible flagged field must be answered exactly once — see
-    // this module's own comment on RESOLVER_BODY.
-    const fieldNames = parsed.fields.map((f) => f.field);
-    expect(new Set(fieldNames).size).toBe(fieldNames.length);
+    // this module's own comment on RESOLVER_BODY. Compares the sorted set
+    // directly, not `expect.arrayContaining`, which only checks "at least
+    // these six are present" and would stay green even if a stray seventh
+    // field name snuck into RESOLVER_BODY (CodeRabbit finding, TRO-479
+    // local review round 3) — this asserts the set is exactly these six,
+    // no more, no fewer, with no duplicates.
+    const fieldNames = parsed.fields.map((f) => f.field).sort();
     expect(fieldNames).toEqual(
-      expect.arrayContaining(["brand_name", "class_type", "alcohol_content", "net_contents", "government_warning", "beverage_type"]),
+      ["alcohol_content", "beverage_type", "brand_name", "class_type", "government_warning", "net_contents"].sort(),
     );
   });
 

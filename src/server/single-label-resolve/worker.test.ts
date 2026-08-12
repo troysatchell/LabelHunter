@@ -15,14 +15,11 @@
  * fails for exactly that reason against pre-TRO-511 code, not because of a
  * fixture or wiring mistake.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
 import { RateLimitError } from "@anthropic-ai/sdk";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { db } from "../../lib/db";
 import { reviewQueue } from "../../lib/db/schema";
 import { handleVerifyRequest, type VerifyRouteDeps } from "../../app/api/verify/route";
@@ -32,7 +29,7 @@ import { makeMockMessage as makeExtractorMockMessage, WELL_FORMED_EXTRACTION_BOD
 import { preprocessImage } from "../preprocessing";
 import { productionComparators } from "../comparators";
 import type { WarningComparatorResult } from "../router";
-import { readLabelImage, saveLabelImage } from "../storage/local-file-storage";
+import { readLabelImage, saveLabelImage } from "../storage/db-image-storage";
 import { buildResolverInputSnapshot } from "../batch-queue/resolver-snapshot";
 import { DEFAULT_BACKOFF_CONFIG } from "../batch-queue/backoff";
 import { makeFlaggedFields, makeMockMessage, makeRouterResult, WELL_FORMED_RESOLVER_BODY } from "../resolver/test-support";
@@ -48,15 +45,9 @@ import {
   enqueuePendingReviewQueueItemFixture,
 } from "./test-support";
 
-let scratchDir: string;
 const createdApplicationIds: number[] = [];
 
-beforeEach(async () => {
-  scratchDir = await mkdtemp(path.join(tmpdir(), "labelhunter-tro511-worker-"));
-});
-
 afterEach(async () => {
-  await rm(scratchDir, { recursive: true, force: true });
   for (const id of createdApplicationIds.splice(0)) {
     await cleanupApplicationFixture(db, id);
   }
@@ -77,7 +68,7 @@ function clientThrowing(error: unknown): Anthropic {
 function makeDeps(overrides: Partial<SingleLabelResolveWorkerDeps> = {}): SingleLabelResolveWorkerDeps {
   return {
     db,
-    readLabelImage: (storagePath) => readLabelImage(storagePath, { baseDir: scratchDir }),
+    readLabelImage,
     backoffConfig: DEFAULT_BACKOFF_CONFIG,
     ...overrides,
   };
@@ -106,7 +97,7 @@ describe("processSingleLabelResolveClaim — end to end, off the real verify rou
       preprocessImage,
       extractLabel,
       compareGovernmentWarning: warningNeedsReviewStub,
-      saveLabelImage: (bytes, originalFilename) => saveLabelImage(bytes, originalFilename, { baseDir: scratchDir }),
+      saveLabelImage,
       comparators: productionComparators,
       anthropicClient: fakeAnthropicClient(async () => makeExtractorMockMessage(JSON.stringify(WELL_FORMED_EXTRACTION_BODY))),
     };
@@ -173,7 +164,7 @@ describe("processSingleLabelResolveClaim — end to end, off the real verify rou
  * `../batch-queue/resolve-worker.test.ts`'s own `escalatedFixture`, adapted
  * to a batch-less verification and a `review_queue`-based claim. */
 async function escalatedFixture(filename: string) {
-  const { applicationId, labelImageId } = await createApplicationAndSavedImageFixture(db, filename, scratchDir);
+  const { applicationId, labelImageId } = await createApplicationAndSavedImageFixture(db, filename);
   createdApplicationIds.push(applicationId);
   const verificationId = await createVerificationFixture(db, applicationId, labelImageId);
   const snapshot = buildResolverInputSnapshot(makeExtraction(), makeRouterResult(), makeFlaggedFields());

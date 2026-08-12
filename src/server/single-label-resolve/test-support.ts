@@ -16,7 +16,7 @@ import sharp from "sharp";
 import { db as defaultDb } from "../../lib/db";
 import { applications, labelImages, reviewQueue, verifications } from "../../lib/db/schema";
 import type { ReviewReason } from "../../lib/db/enums";
-import { saveLabelImage } from "../storage/local-file-storage";
+import { deleteLabelImageBlobsWhere, saveLabelImage } from "../storage/db-image-storage";
 import { buildResolverInputSnapshot } from "../batch-queue/resolver-snapshot";
 import type { ResolverInputSnapshotV1 } from "../batch-queue/resolver-snapshot";
 import { makeExtraction } from "../router/test-support";
@@ -75,16 +75,17 @@ export async function createApplicationAndImageFixture(db: Db = defaultDb, filen
   return { applicationId: application.id, labelImageId: labelImage.id };
 }
 
-/** Same as `createApplicationAndImageFixture`, but writes a REAL JPEG to
- * `scratchDir` via the real `saveLabelImage` — for tests that exercise the
- * worker's own image-rebuild step, not just DB round-tripping. */
+/** Same as `createApplicationAndImageFixture`, but writes a REAL JPEG
+ * through the real `saveLabelImage` (TRO-518: `label_image_blobs`, the same
+ * worktree Postgres database every other fixture in this file already
+ * writes to) — for tests that exercise the worker's own image-rebuild
+ * step, not just DB round-tripping. */
 export async function createApplicationAndSavedImageFixture(
   db: Db = defaultDb,
   filename: string,
-  scratchDir: string,
 ): Promise<ApplicationAndImageFixture> {
   const bytes = await makeTestJpeg();
-  const saved = await saveLabelImage(bytes, filename, { baseDir: scratchDir });
+  const saved = await saveLabelImage(bytes, filename);
 
   const [application] = await db
     .insert(applications)
@@ -188,8 +189,14 @@ export async function enqueuePendingReviewQueueItemFixture(
 
 /** Deletes the fixture application, cascading to its label image,
  * verification, and review_queue row (every FK in `schema.ts` is
- * `onDelete: "cascade"`) — one delete cleans up the whole fixture tree. */
+ * `onDelete: "cascade"`) — one delete cleans up the whole fixture tree.
+ *
+ * TRO-518: `label_image_blobs` rows are NOT reached by that cascade — see
+ * `../batch-queue/test-support.ts`'s own `cleanupBatchJobFixture` comment
+ * for why. Any real saved image this application's fixture created is
+ * deleted explicitly first. */
 export async function cleanupApplicationFixture(db: Db = defaultDb, applicationId: number): Promise<void> {
+  await deleteLabelImageBlobsWhere(eq(labelImages.applicationId, applicationId), { db });
   await db.delete(applications).where(eq(applications.id, applicationId));
 }
 

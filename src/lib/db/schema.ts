@@ -1,6 +1,7 @@
 import { relations, sql } from "drizzle-orm";
 import {
   check,
+  customType,
   index,
   integer,
   jsonb,
@@ -245,6 +246,68 @@ export const labelImages = pgTable(
     // not invented ahead of that design. Flagged in this ticket's report.
   ],
 );
+
+/**
+ * A Postgres `bytea` column. drizzle-orm 0.45's `pg-core` has no built-in
+ * `bytea` helper (checked against the installed package — no
+ * `columns/bytea.*` file, unlike `text`/`jsonb`/etc), so this defines the
+ * minimal one `labelImageBlobs` needs below. No `toDriver`/`fromDriver`
+ * mapping functions: node-postgres already reads a `bytea` value back as a
+ * `Buffer` (confirmed against the installed `pg`/`pg-types`/`postgres-bytea`
+ * packages' own source — `postgres-bytea`'s parser returns `Buffer.from(...)`)
+ * and already accepts a `Buffer` directly as a query parameter, so `data`
+ * and `driverData` are the same `Buffer` on both sides — nothing to convert.
+ */
+const bytea = customType<{ data: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
+
+/**
+ * The bytes for one uploaded label image (TRO-518). Split out from
+ * `labelImages` rather than added as a column on it: `labelImages` rows are
+ * read on every batch-progress poll and every worker claim (Drizzle
+ * relations eager-load the whole row — see `extract-worker.ts`/
+ * `resolve-worker.ts`), and none of those reads want a multi-hundred-
+ * kilobyte blob riding along for free.
+ *
+ * Replaces `local-file-storage.ts` (deleted by this ticket), which wrote
+ * each image to a directory on the running process's own filesystem.
+ * `render.yaml` deploys `web` (writes the image) and `worker` (reads it
+ * back) as two separate Render services with two separate disks, so a file
+ * `web` wrote was never visible to `worker` once actually deployed. Postgres
+ * is the one resource `render.yaml` already gives both services
+ * (`DATABASE_URL`, same instance) — storing the bytes here removes the
+ * cross-service gap with no new external dependency, no new credential, and
+ * no new account (TRO-518's own hard constraint). See `db-image-storage.ts`
+ * for the read/write functions and CHANGES.md's TRO-518 entry for the size/
+ * scale/quota numbers behind this choice over an S3-compatible bucket.
+ */
+export const labelImageBlobs = pgTable("label_image_blobs", {
+  // Plain `text`, not a Postgres `uuid` column, even though every value
+  // this app writes IS a v4 UUID (`db-image-storage.ts`'s `saveLabelImage`
+  // generates one with `randomUUID()`). A `uuid`-typed column makes
+  // Postgres itself THROW ("invalid input syntax for type uuid") on a
+  // lookup for a value that is not valid UUID syntax — and a stale
+  // `labelImages.storagePath` value written under the pre-TRO-518
+  // filesystem-storage regime (shape: "uploads/<uuid>-name.jpg") is exactly
+  // that: not a bare UUID. `readLabelImage` must turn a lookup like that
+  // into a clean "not found" (`LabelImageNotFoundError`, TH-R20's designed
+  // 404), never an unhandled database error (standing rule 13) — a plain
+  // `text` primary key gives that for free, since a non-matching lookup
+  // just returns zero rows instead of raising a type error.
+  storageKey: text("storage_key").primaryKey(),
+  bytes: bytea("bytes").notNull(),
+  // Diagnostic only — no code path reads this column back (the same
+  // "opaque outside this module" contract `local-file-storage.ts`'s own
+  // `storagePath` had). Lets a human reading this table with a Postgres
+  // client tell which upload a row came from.
+  originalFilename: text("original_filename").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
 
 /**
  * One row per label-level verification, single or batch (PRD §3.3).

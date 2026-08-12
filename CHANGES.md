@@ -80,6 +80,212 @@ Drizzle does not generate a down migration — once `0002_batch_queue` is applie
 undoing it is a manual step: drop `batch_queue_items`, drop `batch_jobs.sonnet_call_count`, and
 drop `review_queue.resolver_skip_reason` by hand, on top of the code revert.
 
+## TRO-473 — local CodeRabbit review round 3: 4 findings, 4 fixed (2026-08-11)
+
+**What changed.** A full gate run against round 2's own fix commits captured 4 findings —
+one critical. All 4 were real. All are fixed.
+
+- `route.ts` (**critical**): `readLimitedBody` (round 2) accumulated every chunk, then
+  allocated a SECOND full-body-sized `Uint8Array` to merge them into — a request near the
+  cap briefly held roughly twice its own size in memory, on the exact route meant to bound
+  memory use. That second allocation also ran outside the function's `try`/`catch`, so a
+  real allocation failure would have propagated uncaught instead of reaching the designed
+  error response. Switched to `new Blob(chunks)` — verified empirically first that
+  `Response(blob, ...).formData()` re-parses identically, with no second full-size copy —
+  wrapped in its own `try`/`catch`. Also lowered `MAX_TOTAL_REQUEST_BYTES` from 2 GB to 1 GB:
+  this cap is now also a peak-memory bound, on a hosting instance this design cannot assume
+  is generously provisioned. A new test simulates a `Blob`-construction throw and confirms
+  the designed `VALIDATION` response, not an uncaught exception.
+- `constants.ts` (minor): `MAX_TOTAL_REQUEST_BYTES`'s own doc comment still claimed
+  `request.formData()` ran uncapped when `Content-Length` is absent — stale the moment round
+  2 added `readLimitedBody` to close exactly that gap. Rewritten to describe
+  `checkRequestSize` as the fast path and `readLimitedBody` as the authoritative check.
+- `pairing.ts` (major): zero-byte images were filtered out before duplicate detection ran, so
+  a row matching a filename with BOTH an empty and a non-empty upload silently matched the
+  non-empty one — the exact "guess instead of report" shape this module's own philosophy
+  refuses everywhere else. `imagesByFilename` is now built from every image, empty or not;
+  emptiness is checked per-image only after the duplicate question is settled, so an empty
+  duplicate correctly makes the pairing ambiguous — unmatched, both images reported — instead
+  of silently losing to its non-empty twin.
+- `pairing.test.ts` (trivial): added the suggested regression test directly — one row, two
+  uploads sharing its filename (one zero-byte, one real). Confirms no row matches and both
+  uploads are reported.
+
+Recorded in `factory/review-findings.jsonl` — categories `correctness` (2), `doc-accuracy`
+(1), `test-coverage` (1).
+
+**Tests.** `pnpm test -- src/server/batch/ src/app/api/batch/` — same 7 files, now 91 test
+cases (was 89), all green. `pnpm typecheck` and `pnpm lint` both clean.
+
+**How to run it.** `source .factory-env` first. `pnpm test -- src/server/batch/
+src/app/api/batch/`, or `pnpm test` for the full suite.
+
+**Rollback.** `git revert` this round's commits. No schema change, no migration.
+
+## TRO-473 — local CodeRabbit review round 2: 2 findings, 2 fixed (2026-08-11)
+
+**What changed.** A second independent CodeRabbit pass, against round 1's own fix commits,
+captured 2 findings. Both were real. Both are fixed.
+
+- `csv.ts` (moderate): a bare carriage return (`\r` not followed by `\n`) was silently
+  dropped in an unquoted field and silently kept as literal content in a quoted field —
+  neither an error. The unquoted case is the serious one: dropping the `\r` merges what
+  looks like two lines into one cell with no separator, invisible data corruption. Both
+  branches now return a syntax error for a bare `\r`; a genuine CRLF pair is unaffected in
+  either branch. Four new regression tests, confirmed red first.
+- `route.ts` (major, and correctly flagged as bypassing round 1's own fix rather than a new
+  problem): `checkRequestSize` only rejects a request whose `Content-Length` header is
+  present and already reveals it is too large. A request with no such header — this route's
+  own normal shape in production, confirmed empirically — sailed past that check into an
+  uncapped `request.formData()`, the exact risk round 1 meant to close. Added
+  `readLimitedBody()`: reads the request's real bytes via its own stream reader, aborting
+  the instant the cap is exceeded, measured rather than declared. `checkRequestSize` stays
+  as a cheap fast path; `readLimitedBody` is now the authoritative check. Verified
+  empirically first that reconstructing a `Response` from the buffered bytes plus the
+  original `Content-Type` header re-parses as `FormData` identically to the original
+  request, and that an early `reader.cancel()` exits cleanly. The existing "no
+  Content-Length header" test's framing was updated (a small such request still succeeds,
+  unchanged); two new tests prove a large one is now rejected and a small one still isn't.
+
+Recorded in `factory/review-findings.jsonl` — categories `correctness` (1),
+`boundary-validation` (1).
+
+**Tests.** `pnpm test -- src/server/batch/ src/app/api/batch/` — same 7 files, now 89 test
+cases (was 83), all green. `pnpm typecheck` and `pnpm lint` both clean.
+
+**How to run it.** `source .factory-env` first. `pnpm test -- src/server/batch/
+src/app/api/batch/`, or `pnpm test` for the full suite.
+
+**Rollback.** `git revert` this round's commits. No schema change, no migration.
+
+## TRO-473 — LH-040: Batch input — CSV manifest + images + pairing preview (2026-08-11)
+
+**What changed.** TH-R4 asks for batch upload. This ticket builds the first stage: a CSV
+manifest, paired against uploaded images, validated before any processing starts. It does
+not start a batch job. LH-041 (job queue + worker pool) and LH-042 (batch progress + results
+UI) build on this ticket's output. Neither is touched here.
+
+New module, `src/server/batch/` — pure logic, no database call, TDD throughout:
+
+- `csv.ts` — an RFC 4180 CSV tokenizer. Handles quoted fields, a comma or a newline inside
+  one, CRLF and LF line endings, a leading UTF-8 BOM, and blank lines. Reports a syntax
+  error at the line it actually started on.
+- `manifest.ts` — turns CSV rows into validated `ManifestRow` values. Reuses
+  `src/app/api/verify/parse-request.ts`'s own field rules: the same beverage types, ABV
+  range, and net-contents units. A structural problem (bad headers, a duplicated column, a
+  wrong cell count) fails the whole file — a ragged row means columns may have shifted, so
+  guessing past that point is not safe. A value problem in one row (a bad beverage type, a
+  non-numeric ABV) fails only that row, reported in `rowErrors`, never dropped.
+- `pairing.ts` — deterministic filename pairing. Every row and every uploaded image ends up
+  in exactly one of `matched`, `unmatchedRows`, `unmatchedImages`. Filename comparison is
+  Unicode NFC-normalized (standing rule 20) and case-sensitive, matching the case-sensitive
+  uniqueness Postgres will enforce once a batch's `label_images` rows exist.
+- `zip.ts` — filenames and sizes from an uploaded zip, via `fflate` (new dependency). No
+  entry is ever decompressed: its `fflate` filter reads name and declared size from
+  central-directory metadata alone. Every entry path reduces to a basename before anything
+  else sees it, so nothing ever uses a zip entry's raw path for a filesystem operation —
+  closing off zip-slip as a concern.
+- `index.ts` — `buildBatchPreview`, the facade. Its output, `PairedItem[]` (`{ row, image
+  }`), is the exact handoff shape for whatever starts a batch job next, plus every
+  unmatched or invalid item TH-R20 requires reported alongside it.
+
+New route: `POST /api/batch/preview`. Accepts a CSV manifest plus images — multi-file drop,
+a zip, or both — and returns a 200 pairing preview. An unmatched row or image is data inside
+that response, not a request failure: TH-R20 asks for these to be reported, never silently
+dropped, which is not the same as rejected. Only a request the server cannot preview at all
+(no manifest, an unreadable CSV, a corrupt zip, too many images) returns a designed error
+(`kind: VALIDATION | MALFORMED_CSV | MALFORMED_ZIP | SERVICE`), matching
+`src/app/api/verify/types.ts`'s `VerifyErrorKind` pattern.
+
+**Scope boundary.** This ticket writes nothing to the database — no `batch_jobs`,
+`applications`, `label_images`, or `batch_queue_items` row. Two reasons.
+`docs/checkpoints/cp3-batch-queue.md` §10: "this document assumes a `batch_jobs` row only
+exists once pairing has already succeeded" — pairing precedes job creation, it is not part
+of it. And `batch_queue_items` does not exist on this branch; LH-041 adds it in its own
+migration, in a sibling worktree. `docs/error-states.md` (LH-052, already merged) reached
+the same boundary independently from the UI side, naming LH-042 — not LH-040 — as the
+ticket to carry the malformed-CSV and unpairable-row states into an actual UI panel. This
+ticket builds the pipeline LH-042 needs; it builds no UI page.
+
+**Tests.** `pnpm test -- src/server/batch/ src/app/api/batch/` — 7 files, 70 new test
+cases, all green (verified 2026-08-11). Every new module's test file was written first and
+confirmed to fail on "module not found" before the module existed. One real bug caught this
+way: `csv.ts`'s first draft reported an unterminated quote at the line the parser ran out of
+input on, not the line the quote actually opened on, when the unterminated field itself
+spanned a newline. Fixed by tracking the quote's own start line separately from the running
+line counter.
+
+**How to run it.** `source .factory-env` first, matching this repo's convention — though
+this ticket's own tests touch no database. Then `pnpm test -- src/server/batch/
+src/app/api/batch/`, or `pnpm test` for the full suite.
+
+**Rollback.** `git revert` this ticket's commits. No schema change, no migration. Outside
+this changelog, the only existing files touched are `package.json` and `pnpm-lock.yaml`
+(the new `fflate` dependency) — every other file this ticket adds is new.
+
+## TRO-473 — local CodeRabbit review round 1: 11 findings, 11 fixed (2026-08-11)
+
+**What changed.** The gate's first local CodeRabbit pass hit the organization's rate limit
+(see the PR body — confirmed via `coderabbit auth status`, not an auth problem). An
+independent re-run minutes later captured 11 findings. All 11 were real. All are fixed.
+
+- `parse-request.ts` (major): the uploaded zip archive had no size ceiling before
+  `.arrayBuffer()` read it, and no whole-request check ran before `request.formData()`.
+  Added `MAX_ZIP_ARCHIVE_BYTES` (`parse-request.ts`, injectable so a test can prove the
+  rejection cheaply) and `checkRequestSize()` (`route.ts`, checked against the
+  `Content-Length` header before `formData()` runs).
+- `csv.ts` (minor, two findings): a quoted empty field (`""`) was indistinguishable from a
+  blank line and silently dropped. Fixed by tracking whether a record used real CSV syntax,
+  not just its final shape. Separately, quote placement was too permissive — `a"b"` and
+  `"a"b` both silently parsed as `ab` instead of erroring. Fixed with explicit field-start
+  and after-closed-quote state, matching RFC 4180's own placement rule.
+- `pairing.ts` (major + minor): a row referencing a zero-byte image got the generic "no
+  image found" message instead of the empty-file reason, because zero-byte images were
+  already filtered out before the row-side lookup ran. Fixed by tracking empty-image
+  filenames separately. Separately, the image-side loop reported only the FIRST image for a
+  shared filename, silently dropping every image past it — contradicted this module's own
+  documented "every image ends up in exactly one list" contract. Fixed to report every one.
+- `pairing.test.ts` (minor): the zero-byte-image fixture was named `empty.jpg`, so its
+  `/empty/i` assertion could pass on the filename rather than the actual reported reason —
+  and did, coincidentally, on the row side, while the bug above was still live. Renamed the
+  fixture; the `pairing.ts` fix above was needed before the test passed again for the right
+  reason.
+- `zip.test.ts` (trivial): added a regression test proving the zip-slip protection
+  directly — a crafted `../../../etc/evil.jpg` entry extracts to just `evil.jpg`.
+- `types.ts` (major): `ManifestRow.netContentsUnit` was a bare `string`, even though
+  `manifest.ts` already validated it against a closed set at runtime. Added
+  `NET_CONTENTS_UNITS`/`NetContentsUnit` as the canonical export; `manifest.ts` now imports
+  and casts instead of re-declaring the set locally.
+- `zip.ts` (major, two findings). First: `extractZipEntries` returned `true` from its
+  `fflate` filter for every accepted entry, so `fflate` decompressed each one even though
+  this module only ever needed its filename and declared size. Restructured to always
+  return `false` — name and declared size are captured inside the filter itself, before
+  that decision — so no entry is ever inflated. Also moved the directory check before the
+  entry-count increment, so folders no longer consume that budget.
+  Second, and the one worth real scrutiny: does trusting a zip's declared size for the
+  cap hold up against a hostile file? **Verified, not assumed.** Two hand-crafted zips (a
+  real DEFLATE stream; local- and central-directory size fields forged in both directions —
+  declared 10 bytes/real 20 MB, and declared 200 MB/real 2 bytes), tested directly against
+  `fflate.unzipSync`, 2026-08-11. Finding: `fflate` bounds real inflate output to the
+  declared size either way — the pre-fix code was not actually exploitable the way the
+  finding worried. The restructuring above was adopted anyway, so the guarantee is now
+  architectural (nothing is ever decompressed, full stop), not dependent on an unstated,
+  version-specific `fflate` behavior. `zip.ts`'s own file comment states this precisely.
+
+Recorded in `factory/review-findings.jsonl` — categories `boundary-validation` (2),
+`correctness` (5), `prose-style` (1), `test-coverage` (2), `type-safety` (1).
+
+**Tests.** `pnpm test -- src/server/batch/ src/app/api/batch/` — same 7 files, now 83 test
+cases (was 70), all green. Every fix's regression test was confirmed red first for the
+right reason against the unfixed code — most prospectively (test written, confirmed
+red, then the fix); the `Content-Length` check was confirmed red retroactively (fix
+temporarily disabled, test re-run, fix restored), recorded here rather than left unstated.
+
+**How to run it.** `source .factory-env` first. `pnpm test -- src/server/batch/
+src/app/api/batch/`, or `pnpm test` for the full suite. `pnpm typecheck` is clean.
+
+**Rollback.** `git revert` this round's commits. No schema change, no migration.
+
 ## TRO-499 — LH-006: Golden set verify gate + CI smoke (2026-08-11)
 
 **What changed.** `scripts/golden/verify.ts` is the golden set's health check. It checks one
@@ -153,6 +359,7 @@ follow-up. It does not paper over the gap.
 **Rollback.** `git revert` this ticket's commits. That removes `scripts/golden/verify.ts` and
 `renderSmoke.ts`, their tests, the two `package.json` scripts, and the two CI steps.
 `golden-set/manifest.json` itself is untouched. Nothing else depends on this ticket yet.
+
 ## TRO-509 — Compositor silently truncated the label on trapezoid quads (2026-08-11)
 
 **What changed.** `compositeLabelOntoBackdrop` (`scripts/golden/compositeBackdrop.ts`) built

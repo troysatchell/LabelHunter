@@ -261,6 +261,27 @@ describe("path and slug safety", () => {
       rmSync(outDir, { recursive: true, force: true });
     }
   });
+
+  it("generateOne rejects an unsafe target before ever calling generate (no wasted Gemini spend)", async () => {
+    const outDir = mkdtempSync(path.join(tmpdir(), "imagen-test-order-"));
+    let generateCallCount = 0;
+    const spyGenerate: ImageGenerator = async () => {
+      generateCallCount++;
+      return fakeGeneratorWithBlankRegion();
+    };
+    try {
+      const maliciousTarget = {
+        bottleId: "x/../../../../../../../../tmp/pwned",
+        referencePhotoPath: "/fake.jpg",
+        scene: { sceneId: "bar-counter", setting: "a bar counter", lighting: "warm light" },
+        cameraCondition: "steady" as const,
+      };
+      await expect(generateOne(maliciousTarget, spyGenerate, outDir)).rejects.toThrow(/resolves outside/);
+      expect(generateCallCount).toBe(0);
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("detectImageMimeType", () => {

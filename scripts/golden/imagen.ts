@@ -275,14 +275,21 @@ export async function generateOne(
   generate: ImageGenerator,
   outDir: string = BACKDROPS_DIR,
 ): Promise<GenerationResult> {
-  const prompt = buildBackdropPrompt(target.scene, target.cameraCondition);
-  const image = await generate(prompt, target.referencePhotoPath);
-  const quad = await detectBlankRegionQuad(image, BLANK_LABEL_COLOR_RGB, DETECTION_TOLERANCE);
-
+  // Path safety first, before the network call: an unsafe target should
+  // never cost a real Gemini spend before it is rejected. enumerateTargets
+  // already validates every target it builds (assertSafeSlug,
+  // resolveReferencePhotoPath), so this only matters for a target built by
+  // hand — generateOne is exported on its own and takes a GenerationTarget,
+  // not raw reference JSON — but the ordering is free to get right either way.
   const caseId = targetCaseId(target);
   mkdirSync(outDir, { recursive: true });
   const backdropPath = resolveWithinDir(outDir, `${caseId}.png`, "backdrop path");
   const metaPath = resolveWithinDir(outDir, `${caseId}.meta.json`, "meta path");
+
+  const prompt = buildBackdropPrompt(target.scene, target.cameraCondition);
+  const image = await generate(prompt, target.referencePhotoPath);
+  const quad = await detectBlankRegionQuad(image, BLANK_LABEL_COLOR_RGB, DETECTION_TOLERANCE);
+
   writeFileSync(backdropPath, image);
   writeFileSync(
     metaPath,

@@ -4,6 +4,80 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-475 — LH-042: batch progress + results UI (2026-08-12)
+
+**What changed.** This ticket builds the two screens PRD §5 names: "manifest upload → pairing
+preview → run → live progress summary → results table." `/batch` uploads a CSV manifest and
+label images, previews the pairing, and starts the batch. `/batch/:id` polls the batch live
+and shows the results table.
+
+**The missing connection.** LH-040's preview endpoint never started a job. LH-041's queue and
+worker pool had no caller yet. Both said so in their own file comments. `POST /api/batch/start`
+(`src/app/api/batch/start/route.ts`) is that caller. It re-parses the same manifest-and-images
+upload `POST /api/batch/preview` accepts. It resolves real image bytes for every matched
+pairing, including — for the first time — real bytes pulled out of a zip
+(`src/server/batch-start/extract-zip-bytes.ts`). The preview step never decompresses a zip
+entry, by design; this ticket is the first that needs the real bytes, not just a filename and a
+declared size. `startBatchFromPairings` (`src/server/batch-start/start-batch.ts`) then creates
+`applications` and `label_images` rows, and calls LH-041's own `enqueueExtractItems` and
+`startBatchJob`, untouched. One unreadable image skips only that label. It never fails the whole
+batch. If every image in a batch is unreadable, the batch is marked `FAILED` outright — never
+left `RUNNING` with nothing in it, forever.
+
+**The polling endpoint.** `GET /api/batch/:batchJobId` (`src/app/api/batch/[batchJobId]/route.ts`)
+reads a live summary straight off `batch_jobs`, `batch_queue_items`, and `verifications` — no
+separate cached counters of its own. The counts match PRD §3.5's own words: processed,
+auto-verified, resolved-by-Sonnet, needs-human, plus average and p95 latency computed from each
+label's own claim-to-done gap (`src/lib/utils/latency-stats.ts`). CP-3 §7.1 flags that
+"auto-verified" bundles PASS and FAIL together. The summary shows the real split too, computed
+straight from `verifications.verdict`, so a batch with real compliance problems never reads as
+though everything passed.
+
+**The results table.** Label / Brand / ABV / Net / Warning / Status, one row per label — the
+same ✓ / ✗ / ⚠ vocabulary the single-label checklist already uses, for the same four fields
+Sarah's own interview quote names one at a time ("Brand name matches? Check. ABV is correct?
+Check. Government warning is there? Check."). A row with a finished verdict links to the
+existing single-label detail view (`/verify/:verificationId`). A still-queued, processing, or
+failed row links nowhere — there is nothing to open yet.
+
+**The four batch-scoped designed states (TH-R20), all real and tested, not just described:**
+- Malformed CSV / malformed zip — the upload screen shows the exact plain-English error the
+  preview endpoint already produces.
+- Unpairable rows — unmatched rows, unmatched images, and invalid rows are each listed by name
+  and reason on the same screen. Nothing is silently dropped.
+- Partial batch failure — the progress screen shows a count, and each failed row's own status
+  detail is read straight from `batch_queue_items.last_error` — CP-3 §7.3's own instruction for
+  where that text lives.
+- Rate-limit backoff notice — LH-041's own backoff state is read, not recomputed. An item
+  pushed back to `PENDING`, with `available_at` still in the future and at least one prior
+  attempt, means a retry is genuinely scheduled. The notice never names a specific cause. A
+  rate limit and any other transient error look identical from the queue rows alone — standing
+  rule 12 says uncertain beats wrong.
+
+**How to run it.** Source `.factory-env` first.
+`pnpm test -- src/server/batch-start src/server/batch-progress src/app/api/batch src/lib/utils/latency-stats.test.ts src/app/_lib/batch-client.test.ts`
+runs this ticket's own suite. `pnpm test` runs the full suite. `pnpm dev`, then open `/batch` to
+upload a manifest and images, or open `/` and follow "Start a batch."
+
+**Rollback.** `git revert` this ticket's commits. No schema change — every table this ticket
+writes to already existed before it.
+
+**Observed.** Every new server/API/component file has a red-before-green test against a real
+Postgres database or a real DOM render — 1399 tests pass across the full suite (128 files),
+`pnpm typecheck`/`pnpm lint`/`pnpm build` all clean. Beyond the unit suite, this ticket's own
+flow was also run once against a live `pnpm dev` server with `curl`: a real CSV manifest and two
+real JPEGs through `POST /api/batch/preview`, then `POST /api/batch/start` (a real batch job
+created, id confirmed), then `GET /api/batch/:id` (both labels showed as queued), then `/batch`
+and `/batch/:id` (both rendered, 200), then `/batch/abc` (404, malformed id) and a well-formed
+but nonexistent id (200 — the client-side NOT_FOUND state, not a hard page 404). The test batch
+job and its uploaded files were deleted afterward; they never reached this branch's history.
+
+**Not measured.** Real multi-hundred-image batch-start latency — `startBatchFromPairings`
+processes matched images sequentially, a deliberate simplicity-over-throughput trade-off stated
+in that file's own comment, not benchmarked against this project's 200-300-label scale
+reference. A live-browser click-through of the results table into the detail view — this repo's
+established convention is HTTP-handler-level and component-level testing, not a live browser.
+
 ## TRO-474 — PR #26 review: GitHub CodeRabbit, 24 findings, 21 fixed, 3 dismissed (2026-08-12)
 
 **What changed.** GitHub's CodeRabbit reviewed PR #26's full diff — this ticket's whole batch

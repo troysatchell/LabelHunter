@@ -169,6 +169,21 @@ describe("POST /api/verify — happy path", () => {
     const [queueRow] = await db.select().from(reviewQueue).where(eq(reviewQueue.verificationId, body.verificationId));
     expect(queueRow.reason).toBe(body.headlineReason);
     expect(queueRow.disposition).toBeNull();
+
+    // TRO-511: the route now snapshots {schemaVersion, extraction, router,
+    // flaggedFields} into resolverInput at insert time — the same shape
+    // batch_queue_items.resolver_input carries (CP-3 §2.3) — so a
+    // background worker can call resolveEscalatedLabel for this row later
+    // without ever re-running Haiku. resolverOutput stays null until that
+    // worker actually runs; this route never calls Sonnet inline (TH-R19).
+    const snapshot = queueRow.resolverInput as { schemaVersion: string; extraction: unknown; router: unknown; flaggedFields: unknown[] };
+    expect(snapshot).not.toBeNull();
+    expect(snapshot.schemaVersion).toBe("1");
+    expect(snapshot.extraction).toBeTruthy();
+    expect(snapshot.router).toBeTruthy();
+    expect(Array.isArray(snapshot.flaggedFields)).toBe(true);
+    expect(snapshot.flaggedFields.length).toBeGreaterThan(0);
+    expect(queueRow.resolverOutput).toBeNull();
   });
 
   it("brand_name never reports a silent MISMATCH — a real disagreement is a judgment call, routed to REVIEW (CP-1 §5.3, PRD §3.3)", async () => {

@@ -4,6 +4,112 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-481 — LH-060: Render deploy config (2026-08-12)
+
+**What changed.** This ticket builds the deploy config PRD §3.6 and §8 name.
+`render.yaml`, at the repo root, wires three resources: a `web` service (the
+Next.js app), a `worker` service (the batch worker — LH-041/TRO-474's
+`scripts/batch-worker/run.ts`), and a Postgres database. All three deploy
+from `main`. This advances TH-R16 — a deployed URL an evaluator can open and
+test.
+
+This ticket does not create a live deployment. Deploying Troy's real
+Anthropic key to a third-party platform is a hard stop. The factory does not
+cross that stop on its own
+(`.claude/skills/labelhunter-factory/references/escalation.md`, item 4).
+Instead, this ticket builds the config for Troy's own first deploy — no
+further code change needed — plus the runbook for his manual half
+(`docs/deploy.md`).
+
+**Design decisions.**
+- Every secret (`ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`) is `sync: false`.
+  This is Render's own convention: the operator fills the value in by hand,
+  once, in the dashboard. Neither key, nor a placeholder shaped like one,
+  appears anywhere in `render.yaml`.
+- `DATABASE_URL` is wired through `fromDatabase`, never a literal connection
+  string.
+- Migrations run as a `preDeployCommand` on the web service only
+  (`pnpm db:migrate`) — Render's release-phase hook: it runs after build,
+  before the new code starts serving traffic. Not duplicated on the worker:
+  running the same migration from two services on one deploy risks a race
+  between them.
+- The worker's `buildCommand` skips `pnpm build`. It runs
+  `scripts/batch-worker/run.ts` directly through `tsx`, never the Next.js
+  build output, so building it would spend build minutes on nothing.
+- The worker's pool-size env vars (`BATCH_WORKER_CONCURRENCY`,
+  `BATCH_RESOLVE_WORKER_CONCURRENCY`, `BATCH_WORKER_SHUTDOWN_TIMEOUT_MS`)
+  are plain, non-secret env vars, set to `run.ts`'s own in-code defaults.
+  That file's own header comment names this as the intended lever for
+  tuning the pools with no redeploy, once the real deployed key's
+  rate-limit tier is known.
+- Every resource defaults to a paid plan tier (`starter` / `starter` /
+  `basic-256mb`), not free. Render has no free-tier option for `type:
+  worker` services at all. A free Postgres database also auto-deletes 30
+  days after creation — a real risk for a submission evaluators may revisit
+  past that window. `render.yaml`'s own comment and `docs/deploy.md` both
+  flag this as a default, not a Troy-confirmed budget decision.
+- `autoDeployTrigger: checksPass`: Render will not deploy a commit until its
+  GitHub Actions checks (`.github/workflows/ci.yml`) pass. This is the same
+  green-CI bar this repo's merge policy already requires, applied a second
+  time at the deploy step.
+
+**Flagged, not fixed: batch image storage does not survive the web/worker
+split.** `src/server/storage/local-file-storage.ts`'s own header comment
+already names local disk as "a prototype-appropriate stand-in, not a
+durable object store." `POST /api/batch/start` (LH-042/TRO-475, merged to
+`main` after this branch started) saves a batch's images this way, on the
+`web` service. The `worker` service (`extract-worker.ts`, `resolve-worker.ts`)
+reads them back the same way. Once both are real, separate Render services —
+exactly what this ticket wires up — they are two different disks. A real
+batch run will fail to read every image it queues. Single-label verify is
+unaffected: one process saves the image and, later, reads that same file
+back. This needs a shared or durable store before batch is real on Render.
+Documented in `docs/deploy.md`'s "Known limitations." Not fixed here — out
+of this ticket's scope, and it touches application code this ticket does
+not own.
+
+**Regression test.** `scripts/deploy/render-yaml.test.ts` (21 cases) parses
+`render.yaml` with `js-yaml` and checks its real structure: exactly one
+`web` service, one `worker` service, and one database; every build, start,
+and migrate command matches a real `package.json` script (a drift between
+the two files fails this test); `DATABASE_URL` references the real database
+resource by name; every secret-shaped env var is `sync: false` with no
+literal `value`; and the file's raw text contains no string shaped like a
+real Anthropic key. Confirmed failing for the right reason: temporarily
+hardcoding a fake `sk-ant-...` value in place of `sync: false` failed 3 of
+the 21 cases — the two structural secret checks and the raw-text scan, all
+naming the injected value — before the fix was reverted.
+
+**How to run it.** `pnpm test -- scripts/deploy/render-yaml.test.ts` runs
+the regression suite. `pnpm typecheck` and `pnpm lint` both run clean across
+the whole repo.
+
+**Observed.** `pnpm install --frozen-lockfile && pnpm build` — the web
+service's exact `buildCommand` — exits 0. `PORT=3791 pnpm start` — the web
+service's exact `startCommand`; `APP_PORT` from `.factory-env` stands in for
+Render's own injected `PORT` — serves `GET /api/health` at HTTP 200 with
+`{"status":"ok", ...}`, and `GET /` at HTTP 200. `pnpm worker` — the
+worker's exact `startCommand` — starts both pools with zero errors across
+several 2-second poll cycles against this worktree's real database, then
+shuts down cleanly on `SIGTERM` ("stopped cleanly", matching `run.ts`'s own
+shutdown log).
+
+**Derived.** `render.yaml`'s field names and service types match Render's
+currently-documented Blueprint spec (`services[].type`: `web` / `worker` /
+`pserv` / `cron` / `keyvalue`; `runtime: node`; `envVars[].sync` /
+`fromDatabase`; `databases[].plan`), and its free-tier and Postgres-expiry
+behavior, both checked against Render's own docs during this ticket, not
+recalled from memory.
+
+**Not verified.** A real Render deployment. No Render account was available
+to this ticket — that is Troy's own step, documented in `docs/deploy.md`.
+
+**Rollback.** `git revert` this ticket's commits. This deletes `render.yaml`,
+`docs/deploy.md`, and `scripts/deploy/render-yaml.test.ts`, and drops the
+`js-yaml` / `@types/js-yaml` devDependencies (run `pnpm install` after
+reverting, to sync `node_modules`). No other file in the repo references
+any of these three, so nothing else breaks.
+
 ## TRO-517 — Wire the warning comparator into the batch extract-worker (2026-08-12)
 
 **What changed.** `src/server/batch-queue/extract-worker.ts` now calls LH-020's real warning

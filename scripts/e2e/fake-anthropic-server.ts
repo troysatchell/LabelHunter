@@ -198,6 +198,24 @@ export function isFailureTriggerImage(base64Data: string): boolean {
   return Buffer.byteLength(base64Data, "base64") < FAILURE_TRIGGER_MAX_BYTES;
 }
 
+/** An Anthropic-shaped 400 for a request naming a model this fake server
+ * does not recognize. `src/server/extractor/index.ts` and
+ * `src/server/resolver/index.ts` only ever send `HAIKU_EXTRACTOR_MODEL`
+ * or `SONNET_RESOLVER_MODEL` — this app is the only caller of this fake
+ * server, so any other value is either a caller bug or real drift between
+ * this file and those two constants (standing rule 13: validate at the
+ * boundary). Silently treating an unrecognized model as "must be the
+ * extractor" — this file's own earlier version — would hide exactly that
+ * drift behind a confusing "it passed, but for the wrong reason" result
+ * (CodeRabbit finding, TRO-479 local review round 1). */
+const UNRECOGNIZED_MODEL_BODY = {
+  type: "error",
+  error: {
+    type: "invalid_request_error",
+    message: "fake-anthropic-server: unrecognized model — this fake only understands the extractor's and resolver's own model constants.",
+  },
+};
+
 /**
  * The one decision this whole fake server makes: given a parsed request
  * body, which canned response to return. Pure and synchronous — no I/O —
@@ -209,6 +227,9 @@ export function selectResponseForRequest(parsed: ParsedRequestBody): FakeMessage
   if (model === SONNET_RESOLVER_MODEL) {
     return { status: 200, body: makeMockMessage(JSON.stringify(RESOLVER_BODY), { model }) };
   }
+  if (model !== HAIKU_EXTRACTOR_MODEL) {
+    return { status: 400, body: UNRECOGNIZED_MODEL_BODY };
+  }
 
   const imageBase64 = extractFirstImageBase64(parsed);
   if (imageBase64 !== null && isFailureTriggerImage(imageBase64)) {
@@ -217,9 +238,7 @@ export function selectResponseForRequest(parsed: ParsedRequestBody): FakeMessage
 
   return {
     status: 200,
-    body: makeMockMessage(JSON.stringify(WELL_FORMED_EXTRACTION_BODY), {
-      model: model || HAIKU_EXTRACTOR_MODEL,
-    }),
+    body: makeMockMessage(JSON.stringify(WELL_FORMED_EXTRACTION_BODY), { model }),
   };
 }
 

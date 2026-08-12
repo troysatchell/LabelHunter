@@ -121,13 +121,26 @@ describe("selectResponseForRequest", () => {
     );
   });
 
-  it("defaults to the extraction response for a request with an unrecognized model", () => {
+  it("rejects a request naming a model neither the extractor nor the resolver ever sends", () => {
+    // Loud, not silent (standing rule 13): this app is the only caller of
+    // this fake server, so an unrecognized model is either a caller bug
+    // or real drift from HAIKU_EXTRACTOR_MODEL/SONNET_RESOLVER_MODEL — an
+    // earlier version of this function treated it as "must be the
+    // extractor" and returned a normal 200, which would have hidden
+    // exactly that drift (CodeRabbit finding, TRO-479 local review round 1).
     const normalSizedImage = base64OfLength(FAILURE_TRIGGER_MAX_BYTES * 3);
     const result = selectResponseForRequest({ model: "some-future-model", messages: haikuRequestWithImage(normalSizedImage).messages });
 
-    expect(result.status).toBe(200);
-    const message = result.body as { content: { type: string; text: string }[] };
-    const textBlock = message.content.find((block) => block.type === "text");
-    expect(JSON.parse((textBlock as { text: string }).text)).toEqual(WELL_FORMED_EXTRACTION_BODY);
+    expect(result.status).toBe(400);
+    const body = result.body as { type: string; error: { message: string } };
+    expect(body.type).toBe("error");
+    expect(body.error.message.length).toBeGreaterThan(0);
+  });
+
+  it("rejects a request with no model field at all", () => {
+    const normalSizedImage = base64OfLength(FAILURE_TRIGGER_MAX_BYTES * 3);
+    const result = selectResponseForRequest({ messages: haikuRequestWithImage(normalSizedImage).messages });
+
+    expect(result.status).toBe(400);
   });
 });

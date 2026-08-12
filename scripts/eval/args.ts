@@ -221,6 +221,14 @@ export interface VarianceCliArgs extends EvalCliArgs {
    * Always a positive integer `<= MAX_REPEATS`, enforced by
    * `parseVarianceArgs`. */
   repeats: number;
+  /** `true` only when `--repeats=<k>` was actually present in `argv` — NOT
+   * derived by comparing `repeats` to `DEFAULT_REPEATS` (a PR review
+   * finding, TRO-543: `--repeats=5` explicitly typed is indistinguishable
+   * from the default by VALUE alone, since 5 IS the default; only
+   * PRESENCE tells the two apart). `validateVarianceArgs` reads this
+   * field, not a value comparison, to decide whether an explicit
+   * `--repeats` was passed without the required `--live`. */
+  repeatsExplicit: boolean;
 }
 
 const REPEATS_FLAG = /^--repeats=(\d+)$/;
@@ -256,7 +264,7 @@ export function parseVarianceArgs(argv: readonly string[]): VarianceCliArgs {
     );
   }
 
-  return { ...base, repeats };
+  return { ...base, repeats, repeatsExplicit: repeatsMatches.length === 1 };
 }
 
 /**
@@ -273,7 +281,7 @@ export function validateVarianceArgs(args: VarianceCliArgs): void {
   if (args.updateBaseline) {
     throw new Error("eval args: --update-baseline is not supported by the variance runner — it has no baseline to update.");
   }
-  if ((args.full || args.caseId !== null || args.repeats !== DEFAULT_REPEATS) && !args.live) {
+  if ((args.full || args.caseId !== null || args.repeatsExplicit) && !args.live) {
     throw new Error("eval args: --full/--case=<id>/--repeats=<k> only affect a --live run — pass --live to select a sample.");
   }
 }

@@ -157,7 +157,29 @@ async function runLive(args: VarianceCliArgs): Promise<void> {
     for (let ci = 0; ci < caseIds.length; ci++) {
       const caseSpec = casesById.get(caseIds[ci])!;
       for (let repeatIndex = 1; repeatIndex <= args.repeats; repeatIndex++) {
-        const outcome = await runOneCase(caseSpec, db, scratchDir);
+        // runOneCase catches most real-world failures into
+        // CaseRunOutcome.failure (cascade-runner.ts) but is NOT guaranteed
+        // never to throw — its own doc comments name deliberate
+        // "harness bug, not a case result" throws (e.g. a router-verdict
+        // consistency check) that propagate past it. check.ts/benchmark.ts
+        // each run N such calls; this script runs N x K, so ONE throw
+        // partway through a real sweep risks losing every already-paid-for
+        // repeat before it (a PR review finding, TRO-543) — the same
+        // "must not take down the whole sweep" concern cascade-runner.ts's
+        // own resolver-call try/catch already documents, applied one level
+        // up. The error's own message (self-labeling — cascade-runner.ts's
+        // harness-bug throws say so in the text) still reaches the report
+        // either way, so a real harness bug stays visible in `failures`,
+        // just without aborting every repeat still to come.
+        let outcome: CaseRunOutcome;
+        try {
+          outcome = await runOneCase(caseSpec, db, scratchDir);
+        } catch (cause) {
+          const error = cause instanceof Error ? cause.message : String(cause);
+          console.warn(`  ${caseSpec.caseId} [${repeatIndex}/${args.repeats}]: FAILED — runOneCase threw: ${error}`);
+          failures.push({ caseId: caseSpec.caseId, repeatIndex, error });
+          continue;
+        }
         printRunLine(caseSpec.caseId, repeatIndex, args.repeats, outcome);
         if (outcome.failure) {
           failures.push({ ...outcome.failure, repeatIndex });

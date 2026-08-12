@@ -235,6 +235,11 @@ describe("computeAccuracySpread", () => {
     expect(result).toEqual({ available: false, perRun: [], lowestRate: null, highestRate: null });
   });
 
+  it("is unavailable, never Infinity/-Infinity, when completeCaseIds is non-empty but byRepeat has no matching data (a mismatched-argument call buildVarianceReport itself never makes, but this exported pure function must still guard against)", () => {
+    const result = computeAccuracySpread(new Map(), new Set(["a"]));
+    expect(result).toEqual({ available: false, perRun: [], lowestRate: null, highestRate: null });
+  });
+
   it("reproduces the two-run 62.1% / 65.5% shape this ticket's CHANGES.md already reports by hand", () => {
     // 29 cases, all expecting PASS for simplicity — 18 correct in run 1,
     // 19 correct in run 2 (one case flips, exactly the case-17 shape).

@@ -233,6 +233,18 @@ export function computeAccuracySpread(
     }))
     .sort((a, b) => a.repeatIndex - b.repeatIndex);
   const rates = perRun.map((r) => r.labelVerdictAccuracy.rate);
+  if (rates.length === 0) {
+    // Unreachable from buildVarianceReport's own construction (a non-empty
+    // completeCaseIds implies byRepeat has an entry at every repeat index —
+    // see findCompleteCaseIds's own doc comment) — but this function is
+    // exported and pure, callable with any (byRepeat, completeCaseIds)
+    // pair, including a mismatched one a direct caller or test constructs
+    // by hand. `Math.min()`/`Math.max()` on an empty array return
+    // Infinity/-Infinity, not a real rate (a PR review finding) — guard
+    // here rather than let a fabricated-looking number escape this
+    // function at all.
+    return { available: false, perRun: [], lowestRate: null, highestRate: null };
+  }
   return {
     available: true,
     perRun,

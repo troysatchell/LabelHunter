@@ -135,17 +135,25 @@ describe("parseVarianceArgs", () => {
       caseId: null,
       updateBaseline: false,
       repeats: DEFAULT_REPEATS,
+      repeatsExplicit: false,
     });
   });
 
-  it("parses --repeats=<k> as a number", () => {
+  it("parses --repeats=<k> as a number, and marks it explicit", () => {
     expect(parseVarianceArgs(["--live", "--repeats=3"])).toEqual({
       live: true,
       full: false,
       caseId: null,
       updateBaseline: false,
       repeats: 3,
+      repeatsExplicit: true,
     });
+  });
+
+  it("marks repeatsExplicit true even when the explicit value equals DEFAULT_REPEATS (PR review finding: value equality cannot stand in for presence)", () => {
+    const args = parseVarianceArgs(["--live", `--repeats=${DEFAULT_REPEATS}`]);
+    expect(args.repeats).toBe(DEFAULT_REPEATS);
+    expect(args.repeatsExplicit).toBe(true);
   });
 
   it("combines --repeats=<k> with --case=<id>, both taking effect", () => {
@@ -167,6 +175,7 @@ describe("parseVarianceArgs", () => {
       caseId: null,
       updateBaseline: false,
       repeats: 2,
+      repeatsExplicit: true,
     });
   });
 
@@ -212,6 +221,10 @@ describe("validateVarianceArgs", () => {
 
   it("throws when --repeats=<k> (non-default) is passed without --live", () => {
     expect(() => validateVarianceArgs(parseVarianceArgs(["--repeats=3"]))).toThrow(/only affect a --live run/);
+  });
+
+  it("throws when --repeats=<DEFAULT_REPEATS> is explicitly passed without --live (PR review finding: an explicit value equal to the default must not silently pass validation)", () => {
+    expect(() => validateVarianceArgs(parseVarianceArgs([`--repeats=${DEFAULT_REPEATS}`]))).toThrow(/only affect a --live run/);
   });
 
   it("throws when --full is passed without --live", () => {

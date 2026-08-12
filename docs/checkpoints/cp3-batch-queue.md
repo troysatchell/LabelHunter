@@ -138,6 +138,36 @@ Two indexes carry the actual load:
    almost verbatim (§3.1).
 2. An index on `batch_job_id` — the progress-summary query LH-042 runs every poll.
 
+**Two constraints, matching this schema's own existing conventions rather than inventing new
+ones.** `label_images_belongs_to_something` (`schema.ts:216-219`) already enforces "exactly the
+right columns for this row's role" with a plain `CHECK`; `batch_queue_items` needs the same
+shape, one level more specific because it has two roles instead of one:
+
+```sql
+CHECK (
+  (kind = 'EXTRACT' AND application_id IS NOT NULL AND label_image_id IS NOT NULL
+     AND verification_id IS NULL AND resolver_input IS NULL)
+  OR
+  (kind = 'RESOLVE' AND verification_id IS NOT NULL AND resolver_input IS NOT NULL
+     AND application_id IS NULL AND label_image_id IS NULL)
+)
+```
+
+And a partial unique index, `UNIQUE (verification_id) WHERE kind = 'RESOLVE'` — the same
+one-row-per-verification guarantee `review_queue_verification_id_unique`
+(`schema.ts:348-350`) already gives that table, applied here too, so a retried or duplicated
+`EXTRACT` transaction cannot enqueue two `RESOLVE` rows for the same escalation.
+
+**What neither constraint checks: that `application_id`, `label_image_id`, and (transitively,
+for a `RESOLVE` row) `verification_id` all belong to the *same* `batch_job_id`.** That needs a
+trigger or composite foreign keys to enforce at the database level, and LH-002's own comment on
+`labelImages` already declined to build that machinery ahead of the code that would need it —
+"real complexity that belongs with the code that creates verification rows \[...\], not
+invented ahead of that design." The same call applies here, for the same reason: every row this
+table holds is written by one trusted writer (the `EXTRACT` worker, which derives all three IDs
+from its own claimed batch context), not by arbitrary callers assembling a row from parts. A
+prototype-scale batch queue can rely on that; a multi-tenant one could not.
+
 ### 2.3 The Sonnet sub-queue reuses `review_queue`, not a second escalation table
 
 PRD §3.5 states this as a rule, not a suggestion: "Sonnet workers consume only the review
@@ -163,10 +193,21 @@ defensible in the first place (CP-1 §8, Q1).
 
 **So `resolver_input` (jsonb) is not a convenience column — it is required.** The `EXTRACT`
 worker, having just computed `extraction` and `router` in memory to decide the verdict, snapshots
-`{ extraction, router, flaggedFields }` into the `RESOLVE` row it inserts, in the same
-transaction that writes the `verifications` and `field_results` rows. The resolve-worker later
-deserializes it, rebuilds `application` and `image` cheaply, and calls `resolveEscalatedLabel`
-with an input that reads the label exactly once.
+`{ schemaVersion, extraction, router, flaggedFields }` into the `RESOLVE` row it inserts, in the
+same transaction that writes the `verifications` and `field_results` rows. The resolve-worker
+later deserializes it, rebuilds `application` and `image` cheaply, and calls
+`resolveEscalatedLabel` with an input that reads the label exactly once.
+
+**The snapshot needs a version tag, named as a requirement rather than left implicit.** A batch
+can sit in the queue for as long as the batch itself takes to drain — long enough for a code
+deploy to land between the `EXTRACT` worker that wrote a snapshot and the resolve-worker that
+reads it, if `ResolverInput`'s own shape ever changes. A resolve-worker that receives a
+`resolver_input` payload at a `schemaVersion` it does not recognize must reject the row —
+`FAILED`, `last_error` naming the version mismatch — never guess at a compatible reading. This
+is the same "reject, never clamp or guess" boundary this codebase already applies to untyped
+input elsewhere (`findExistingReviewQueueEntry`'s own refusal to reuse a `resolverOutput` shape
+it cannot validate, `src/server/resolver/queue.ts:173-189`), applied here to a payload this
+design introduces.
 
 **What does *not* change.** `resolveEscalatedLabel`, `insertReviewQueueEntry`, and
 `findExistingReviewQueueEntry` (`src/server/resolver/{index,queue}.ts`) are already built,
@@ -247,6 +288,36 @@ correctly in progress, which is exactly the race §3.3 discusses. A lease that i
 delays recovery from a genuinely dead worker, which costs seconds inside a batch that runs for
 minutes. The asymmetry favours generous.
 
+**Completing a claim needs the same guard the claim itself has — a requirement, not a detail.**
+§3.1's `UPDATE ... FOR UPDATE SKIP LOCKED` stops two workers from *starting* the same item. On
+its own, that says nothing about *finishing* it. Walk the same lease-expiry scenario §3.3 walks
+for the Sonnet case, but for the `EXTRACT` side: worker A claims a row, the call runs long, the
+lease passes, worker B reclaims the same row and completes it correctly. If worker A's
+now-stale call finally does return, and worker A writes its `verifications` row without
+checking anything first, it can insert a **second** `verifications` row for a label B already
+finished — real data duplication, not merely wasted money, because `verifications` carries no
+unique constraint on `(applicationId, labelImageId)` to stop it.
+
+The fix is the same shape as the claim itself: **the write that completes an item is
+conditioned on still holding it**, not unconditional.
+
+```sql
+UPDATE batch_queue_items
+SET status = 'DONE'   -- or the PENDING/FAILED release from §5.2
+WHERE id = $id AND claimed_by = $workerId AND status = 'CLAIMED'
+RETURNING id;
+```
+
+Run this **first**, inside the same transaction that writes `verifications` / `field_results` /
+`review_queue`. Zero rows returned means this worker's lease is already gone — someone else
+reclaimed and, most likely, already finished this item. The transaction rolls back without
+writing anything else, and the worker's own extraction or resolution result is discarded, not
+reconciled. That is a real cost — the model call that produced the discarded result was not
+free — but it is the same trade this document already makes in §3.3 for the Sonnet case: waste
+money rather than risk corrupting data. §7's decision table and §8's worked example both assume
+this guard runs on every completion write, for both queue kinds, not only where §3.3 discusses
+it explicitly.
+
 ### 3.3 Can two workers double-process the same item?
 
 This is the question this checkpoint exists to catch, and Linear already has a finding on it:
@@ -272,20 +343,25 @@ for it, and the TOCTOU window inside that function is never exercised by the bat
 not because the window closed, but because the batch design never lets two callers reach it
 concurrently in the first place.
 
-**The residual risk, named precisely rather than waved away.** A lease is a timeout, not a
-proof of death. Consider: worker A claims a `RESOLVE` row, the Sonnet call runs long — slow
-network, a large image, adaptive thinking taking its time — past the 120-second lease. Worker A
-is not dead, only slow. Worker B's claim query now sees a `CLAIMED` row whose lease has expired
-and reclaims it. Both workers are now, briefly, genuinely concurrent on the same
-`verificationId` — exactly the race TRO-506 describes, reopened by lease expiry rather than by
-a missing claim mechanism. If worker A finishes first and its insert lands, worker B's own
-`findExistingReviewQueueEntry` pre-check (run just before it would call Sonnet) has a chance of
-catching it — but only if B's check happens to run after A's insert commits. If B's check runs
-first, B also calls Sonnet. One of the two inserts then hits the unique constraint and throws,
-uncaught, per `queue.ts`'s own documented behaviour ("this function alone does not prevent the
-WASTE a duplicate call causes"). Money is wasted; data is not corrupted. That is the honest
-size of the residual gap: **narrower than "any two workers, any time" — reachable only through
-lease expiry during a call that is slow but still alive — but real.**
+**The residual risk, named precisely rather than waved away.** A lease is a timeout, not a proof
+of death. Here is the exact sequence that reopens TRO-506's race, one event at a time:
+
+1. Worker A claims a `RESOLVE` row and calls Sonnet. The call runs long — slow network, a large
+   image, adaptive thinking taking its time.
+2. The call passes the 120-second lease. Worker A is not dead. It is only slow.
+3. Worker B's claim query sees the row as `CLAIMED`, with an expired lease. It reclaims the row.
+4. Both workers now hold the same `verificationId`, genuinely concurrently — the exact race
+   TRO-506 describes, reopened by lease expiry rather than by a missing claim mechanism.
+5. Each worker's own `findExistingReviewQueueEntry` pre-check ran before its own Sonnet call, at
+   a moment when no `review_queue` row existed yet for either of them. Neither check stops
+   either call.
+6. Whichever call finishes first inserts the `review_queue` row. The second insert hits the
+   table's own unique constraint and throws, uncaught — `queue.ts`'s own documented behaviour:
+   "this function alone does not prevent the WASTE a duplicate call causes."
+
+Money is wasted. Data is not corrupted — the unique constraint still holds. The honest size of
+the residual gap: **narrower than "any two workers, any time" — reachable only through lease
+expiry during a call that is slow but still alive — but real.**
 
 **The recommended fix, adopting TRO-506's own suggestion, as a follow-up — not a blocker.**
 TRO-506 recommends replacing the check-then-insert with an atomic reservation:
@@ -404,11 +480,13 @@ Even CP-1's own stress case — Q7's 40% escalation blowout — arrives at 120 �
 minute: 5% RPM, 16% ITPM, 24% OTPM. Still nowhere near the ceiling.
 
 **The honest conclusion: at Start tier — the lowest tier Anthropic's own page quantifies — a
-5-worker extraction pool and its resolve sub-queue use well under a fifth of the published
-budget on every axis, even under CP-1's own worst-case escalation assumption.** The PRD's
-"tuned to Anthropic rate limits" is not literally true against the numbers Anthropic itself
-publishes. Anthropic's org-level limits allow far more parallelism than 5, at any tier this
-document could verify a number for.
+5-worker extraction pool uses under a fifth of the published budget on every axis, and its
+resolve sub-queue stays under a quarter even under CP-1's own worst-case, 40% escalation
+assumption (the single highest figure computed above is 24% OTPM, not the 9–18% typical of the
+other rows).** No figure in either table approaches saturating even the lowest published tier.
+The PRD's "tuned to Anthropic rate limits" is not literally true against the numbers Anthropic
+itself publishes. Anthropic's org-level limits allow far more parallelism than 5, at any tier
+this document could verify a number for.
 
 ### 4.4 So why 5, if not rate limits?
 
@@ -487,19 +565,26 @@ failure carries one:
 
 ```text
 delay = min(baseDelayMs * 2^(attempts - 1), maxDelayMs) + random jitter
-delay = max(delay, retryAfterMs)   # honor the API's own number when it gives one
+delay = max(delay, retryAfterMs)   # honor the API's own number when it gives one — the
+                                    # 429 response's retry-after is in whole seconds
+                                    # (verified, §4.2's page); convert to milliseconds
+                                    # before this comparison, not after
 ```
 
 **Proposed starting values, not measured:** `baseDelayMs = 1000`, `maxDelayMs = 30000`,
-`maxAttempts = 5`. Worst case before permanent failure: roughly 1 + 2 + 4 + 8 + 16 ≈ 31 seconds
-of cumulative backoff across 5 attempts — a small fraction of a batch that runs for minutes.
+`maxAttempts = 5`. Five attempts means four waits between them — after attempts 1 through 4,
+before attempts 2 through 5 — at 1, 2, 4, and 8 seconds: 15 seconds of scheduled delay before
+jitter, not an upper bound on wall-clock time, since jitter and a large `retryAfterMs` can both
+push an individual wait higher. Either way, a small fraction of a batch that runs for minutes.
 
-**The worker does not sleep holding the claim.** On a retryable failure, the worker sets
-`status = 'PENDING'` (or leaves it, since the claim's own `attempts` increment already
-happened) and `available_at = now() + delay`, releasing the row immediately, then goes and
-claims a *different* available item. Sleeping in place would hold a worker-pool slot idle for
-up to 30 seconds doing nothing — exactly the throughput loss TH-R4's "never serial" rule exists
-to prevent, just reintroduced one layer up.
+**The worker does not sleep holding the claim, and the release is unconditional, never
+partial.** On a retryable failure, in one update: `status → 'PENDING'`, `claimed_by`,
+`claimed_at`, and `lease_expires_at` all cleared to `NULL`, `available_at = now() + delay`. The
+`attempts` counter is not touched again here — it already incremented once, at claim time
+(§3.1's own `UPDATE`). The worker then claims a *different* available item immediately, rather
+than sleeping. Sleeping in place would hold a worker-pool slot idle for up to several seconds
+doing nothing — exactly the throughput loss TH-R4's "never serial" rule exists to prevent, just
+reintroduced one layer up.
 
 ### 5.3 A whole-pool cooldown, not just a per-item one
 
@@ -549,6 +634,14 @@ make the cap's trigger point drift with processing order and speed: a batch coul
 "so the rate has a denominator anyone can audit" — and this design follows the same reasoning
 for the same reason.
 
+**A rounding edge, named rather than left for someone to trip over.** `ceil(0.25 * totalCount)`
+gives a floor of one, not zero, for any batch with at least one item — a 1-label batch's
+"25% cap" is `ceil(0.25) = 1`, an effective 100%; a 2-label batch is 50%; a 3-label batch is
+33%. TH-R4's own scale reference is 200–300 labels, where this rounding is invisible — 25% of
+300 is a plain 75. It only matters for a batch far smaller than this design was ever asked to
+serve, and it is worth one sentence rather than a surprise: the cap guarantees at least one
+Sonnet call happens before it engages, never zero.
+
 ### 6.2 What happens when it trips
 
 The check runs at claim time, on the `RESOLVE` side, before calling Sonnet:
@@ -561,6 +654,17 @@ and increments `needsHumanCount`, matching PRD §12's own risk mitigation almost
 "further REVIEW labels go straight to the human queue without a resolver call." The batch's
 live progress summary (LH-042) must say so, not leave a human to infer it from a suspiciously
 high `needsHumanCount`.
+
+**The check itself is approximate under concurrency, and that is worth saying plainly rather
+than implying an exact cap.** Two resolve-workers checking `resolvedBySonnetCount +
+needsHumanCount` at nearly the same instant can both read a value just under the threshold and
+both proceed to call Sonnet — the same check-then-act shape §3.3 names for TRO-506, applied
+here to a counter instead of a row. The overshoot this can cause is bounded by the resolve
+pool's own size (proposed at 2, §4.5): at most one extra Sonnet call past the nominal cap, not
+an unbounded one, and the batch is finite, so it cannot compound. An exact cap would need the
+same fix already recommended in §3.3 and §12 — reserving capacity atomically as part of the
+claim, rather than checking a counter that a completed item updates later. This document treats
+that as the same open follow-up, not a second, unrelated problem.
 
 ### 6.3 The cost arithmetic
 
@@ -599,18 +703,40 @@ absence stand in for it.
 
 | Situation | Queue-item outcome | `batchJobs` effect | Job-level effect |
 |---|---|---|---|
-| Extraction succeeds, router PASS or FAIL | `EXTRACT` row → `DONE` | `processedCount++`, `autoVerifiedCount++` | none |
-| Extraction succeeds, router REVIEW, resolver resolves it | `EXTRACT` → `DONE`, `RESOLVE` → `DONE` | `processedCount++`, `resolvedBySonnetCount++` | none |
+| Extraction succeeds, router **PASS** | `EXTRACT` row → `DONE` | `processedCount++`, `autoVerifiedCount++` | none |
+| Extraction succeeds, router **FAIL** | `EXTRACT` row → `DONE` | `processedCount++`, `autoVerifiedCount++` | none — see the note below the table before reading this row as "compliant" |
+| Extraction succeeds, router REVIEW, resolver resolves it | `EXTRACT` → `DONE`, `RESOLVE` → `DONE` | `processedCount++` (at `EXTRACT` `DONE`), `resolvedBySonnetCount++` (at `RESOLVE` `DONE`) | none |
 | Extraction succeeds, router REVIEW, resolver says needs-human | `EXTRACT` → `DONE`, `RESOLVE` → `DONE` | `processedCount++`, `needsHumanCount++` | none |
 | Extraction succeeds, router REVIEW, escalation cap already tripped (§6) | `EXTRACT` → `DONE`, `RESOLVE` → `DONE`, no Sonnet call | `processedCount++`, `needsHumanCount++` | none — batch summary shows the cap message |
 | Extraction throws a retryable error, attempts < cap | Row released to `PENDING`, `available_at` pushed forward | no change yet | none |
 | Extraction throws a retryable error, attempts exhausted | `EXTRACT` → `FAILED`, `last_error` set | `processedCount++`, `failedCount++` | none — other items continue |
 | Extraction throws a non-retryable error (corrupt image) | `EXTRACT` → `FAILED` immediately | `processedCount++`, `failedCount++` | none |
 | Resolver call throws, attempts < cap | `RESOLVE` row released to `PENDING` | no change yet | none |
-| Resolver call throws, attempts exhausted | `RESOLVE` → `FAILED` | `processedCount++`, `failedCount++` | none — the `verifications` row from the `EXTRACT` phase still exists with `verdict = REVIEW`; a human can review the extracted fields even without a resolver suggestion |
+| Resolver call throws, attempts exhausted | `RESOLVE` → `FAILED` | `failedCount++` **only** — `processedCount` already incremented when this label's `EXTRACT` item reached `DONE` (the row above); incrementing it again here would double-count one label and could push `processedCount` past `totalCount`, which `batch_jobs_processed_count_bounded` (`schema.ts:112-115`) would then reject | none — the `verifications` row from the `EXTRACT` phase still exists with `verdict = REVIEW`; a human can review the extracted fields even without a resolver suggestion |
 | Worker process crashes mid-claim | Lease expires, another worker reclaims it (§3.2) | no change | none — invisible to the batch except a latency delay |
 | Whole-batch setup fails before `RUNNING` (should not happen — LH-040 validates the manifest first) | n/a | n/a | `batchJobs.status = FAILED` |
 | Every queue item for the batch reaches `DONE` or `FAILED` | n/a | n/a | `batchJobs.status = COMPLETED`, `completedAt` set |
+
+**`processedCount` counts `EXTRACT`-phase conclusions, exactly once per label — never a second
+time for whatever the label's own `RESOLVE` phase later does.** It answers "how many labels has
+this batch finished reading," not "how many labels are fully settled, escalation included." The
+stronger fact — every phase of every label is done — is what job-level `COMPLETED` (§7.2)
+requires, checked against the queue items directly, not against this one counter.
+
+**`autoVerifiedCount` bundles PASS and FAIL together, and that reading needs to be stated, not
+assumed.** Nothing in `batchJobs`' own schema names a separate counter for "the router
+determined this label non-compliant, on its own, no escalation needed" — only
+`autoVerifiedCount`, `resolvedBySonnetCount`, `needsHumanCount`, and `failedCount` exist. Read
+literally, "auto-verified" means *verified automatically* — decided without Sonnet or a human,
+which is true of a router FAIL exactly as it is true of a router PASS — not *verified as
+compliant*. That reading is defensible, and this document adopts it rather than inventing a new
+column. But it means `autoVerifiedCount` alone cannot answer "how many labels passed," and
+LH-042's results summary must not present it as though it can — a batch showing "180
+auto-verified" could include labels the router flagged as clearly non-compliant. LH-042 should
+compute a PASS/FAIL split from `verifications.verdict` directly, which already carries that
+distinction, and reserve `autoVerifiedCount` for what it actually measures: throughput without
+escalation, the same "how much needed no second look" question CP-1 §8.4's own segmentation
+asks for the warning subsystem.
 
 ### 7.2 What "the batch finished" means
 
@@ -649,10 +775,14 @@ not a repurposed one.
    the structured-output schema's one-time compilation cost (CP-1 §7.3: cached 24 hours once
    paid).
 3. **Steady state.** Five extract-workers each run §3.1's claim query, moving five rows to
-   `CLAIMED`; 195 remain `PENDING`. As each worker finishes a label, it writes `verifications` +
-   `field_results` (+ `review_queue` and a new `RESOLVE` `batch_queue_items` row, if the router
-   said REVIEW), marks its `EXTRACT` row `DONE`, updates `batchJobs` counters, and claims the
-   next available row.
+   `CLAIMED`; 195 remain `PENDING`. As each worker finishes a label, it runs §3.2's completion
+   guard — the conditional `UPDATE ... WHERE claimed_by = $self AND status = 'CLAIMED'` — and
+   only on a successful guard does the same transaction write `verifications` + `field_results`
+   (+ `review_queue` and a new `RESOLVE` `batch_queue_items` row, if the router said REVIEW),
+   mark its `EXTRACT` row `DONE`, and update `batchJobs` counters, all atomically. The worker
+   then claims the next available row. A guard that returns zero rows — this worker's lease
+   already expired and someone else has the item — rolls the whole transaction back instead;
+   nothing above gets written twice.
 4. **Label #47 fails.** A worker claims it; the Haiku call returns a 529. Retryable (§5.1),
    `attempts = 1`, delay ≈ 1–2 seconds plus jitter (§5.2). The row releases to `PENDING` with
    `available_at` pushed forward; the worker claims a different item immediately rather than
@@ -673,15 +803,19 @@ not a repurposed one.
    `EXTRACT` item is marked `DONE`; `processedCount` increments. The escalation itself has not
    resolved yet — that is a separate unit of work.
 6. **Resolution.** One of the (proposed) two resolve-workers claims label #112's `RESOLVE` row.
-   `resolvedBySonnetCount + needsHumanCount` for this batch is well under the 25% cap (§6), so
-   the worker rebuilds `ResolverInput` from the snapshot, calls `resolveEscalatedLabel`, and —
-   inside that already-built function — `findExistingReviewQueueEntry` finds nothing (this is
-   the first attempt), Sonnet runs, and `insertReviewQueueEntry` writes the `review_queue` row
-   with the real `resolverOutput`. The worker then updates `verifications.resolutionPath` to
-   `"EXTRACTOR_RESOLVER"` (the value's own evident purpose, per `verify/route.ts:225-227`'s
+   `resolvedBySonnetCount + needsHumanCount` for this batch is well under the 25% cap (§6.2's own
+   caveat: checked, not reserved — with only two resolve-workers the possible overshoot is at
+   most one item, and this is not it), so the worker rebuilds `ResolverInput` from the snapshot,
+   calls `resolveEscalatedLabel`, and — inside that already-built function —
+   `findExistingReviewQueueEntry` finds nothing (this is the first attempt), Sonnet runs, and
+   `insertReviewQueueEntry` writes the `review_queue` row with the real `resolverOutput`. The
+   worker then runs §3.2's completion guard against its `RESOLVE` row; it succeeds (this worker
+   still holds the lease), so in the same transaction it updates `verifications.resolutionPath`
+   to `"EXTRACTOR_RESOLVER"` (the value's own evident purpose, per `verify/route.ts:225-227`'s
    comment: "LH-014's resolver updates this once it consumes the review_queue row") and marks
    the `RESOLVE` item `DONE`. `resolvedBySonnetCount` or `needsHumanCount` increments, depending
-   on the resolver's own disposition.
+   on the resolver's own disposition — `processedCount` does not increment again here; it
+   already counted this label when the `EXTRACT` item reached `DONE` in step 5.
 7. **Completion.** Once all 200 `EXTRACT` items and every `RESOLVE` item they spawned have
    reached `DONE` or `FAILED` — some number of items PASS or FAIL outright, some escalate and
    resolve, label #47 sits `FAILED` with a reason, label #112 sits resolved — `batchJobs.status →

@@ -4,13 +4,57 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-472 — gate's local CodeRabbit pass: 13 findings, 13 fixed (2026-08-11)
+
+**What changed.** The full gate's CodeRabbit capture reviewed `cp3-batch-queue.md` and this
+file, found 13 issues, and all 13 were real. Three were genuine correctness gaps in the design
+itself, not writing nits:
+
+- **A double-counted `processedCount`.** The decision table incremented `processedCount` again
+  when a resolver call exhausted its retries, on a label that had already incremented it once
+  at `EXTRACT` `DONE`. Left in, this could push `processedCount` past `totalCount` and fail
+  `batch_jobs_processed_count_bounded` outright. Fixed, and the table now says in one sentence
+  what `processedCount` counts and does not count.
+- **No completion guard.** The design specified an atomic *claim* (§3.1) but not an atomic
+  *completion* — a worker whose lease expired mid-call could still write a stale result after
+  another worker reclaimed and finished the same item, with nothing stopping a duplicate
+  `verifications` row. Added a completion guard to §3.2, same shape as the claim: the write that
+  finishes an item is conditioned on still holding it.
+- **A missing schema constraint.** `batch_queue_items`'s columns had no rule tying which ones
+  apply to which `kind`, and no unique index stopping two `RESOLVE` rows for one verification.
+  Added both, mirroring constraints this schema already uses elsewhere for the same shape of
+  problem (`label_images_belongs_to_something`, `review_queue_verification_id_unique`).
+
+Two more real gaps, smaller: the escalation-cap check (§6.2) is itself a check-then-act race
+under concurrent resolve-workers, bounded but real — named, with the fix tied to the same
+pattern already recommended for TRO-506; and the `resolver_input` snapshot had no version tag,
+so a code change between when a `RESOLVE` row is written and read could be silently
+misinterpreted — fixed by adding one.
+
+The rest were accuracy and prose fixes: a PASS/FAIL decision-table row that read as if a router
+FAIL were "auto-verified" with no caveat; a rate-limit-utilization claim ("under a fifth") that
+did not hold for the document's own worst-case number (24%); a backoff arithmetic error (four
+waits for five attempts, not five); a small-batch rounding edge on the escalation cap, unnamed;
+and two prose passages — one burying a five-step sequence in a single sentence, one running
+three separate facts into two dense sentences — rewritten per this repo's ASD-STE100 rule.
+
+Every finding and its fix is recorded in `factory/review-findings.jsonl`.
+
+**How to run it.** Nothing to build or test — still no code. Re-run
+`scripts/factory/gate.sh` to see the same 13-finding capture, or read
+`docs/checkpoints/cp3-batch-queue.md` directly; every fix above is in the sections named.
+
+**Rollback.** `git revert` this commit; the prior commit's document is still internally
+consistent on its own, just missing these corrections.
+
 ## TRO-472 — LH-CP3: ⛔ CHECKPOINT 3 walkthrough material (2026-08-11)
 
 **This entry does not clear a checkpoint.** It adds the material Troy reads at the checkpoint.
-One thing differs from CP-1 and CP-2's own entries: per Troy's 2026-08-11 policy change (commit
-`c09250e`), dispatch of LH-040, LH-041, and LH-042 no longer waits on his acknowledgment — only
-the material has to exist and he has to be notified. The design still is not accepted until
-Troy says so.
+One thing differs from CP-1 and CP-2's own entries. Troy's 2026-08-11 policy change (commit
+`c09250e`) removed the block on dispatch: LH-040, LH-041, and LH-042 can start once this
+material exists and Troy has been notified, without waiting for his reply. That change affects
+dispatch only. Troy's acknowledgment is still what makes this design one he accepts, not one an
+agent merely produced.
 
 **What changed.** One new document: `docs/checkpoints/cp3-batch-queue.md`. No product code, no
 `src/` change, no schema migration. It covers everything the ticket asks for — queue design,
@@ -34,7 +78,9 @@ TH-R21, TH-R23).
 - **The PRD's own "tuned to Anthropic rate limits" claim, tested against real numbers and found
   not to hold.** Anthropic's published Start/Build/Scale rate limits for Haiku 4.5 and Sonnet 5
   (retrieved live 2026-08-11) show a 5-worker pool using under a fifth of the Start-tier budget
-  on every axis, even under CP-1's own 40%-escalation stress case. The real reasons for ~5 are
+  on every axis for extraction, and under a quarter for resolution even under CP-1's own
+  40%-escalation stress case (24% OTPM, the single highest figure computed). The real reasons
+  for ~5 are
   named instead: an unquantified "Evaluation" tier the real account may sit in, unmeasured
   local-compute limits, and blast-radius/cost discipline — and the recommendation is to make the
   number an environment variable rather than a constant "tuned to" a constraint that, on the

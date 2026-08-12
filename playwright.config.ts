@@ -59,6 +59,20 @@ const modelEnv: Record<string, string> = E2E_LIVE
       ANTHROPIC_API_KEY: "sk-ant-e2e-fake-key-not-a-real-credential",
     };
 
+// TRO-482 / LH-061, PRD §8: src/proxy.ts now gates every route behind the
+// shared access code. A fixed, obviously-fake, non-production string — the
+// same "clearly not a real credential" convention modelEnv's own
+// ANTHROPIC_API_KEY placeholder above already uses. Set on the app's
+// webServer env below so the running instance actually accepts it, and on
+// `use.extraHTTPHeaders` so EVERY request Playwright makes (page
+// navigation and the `request` fixture alike) carries it automatically —
+// one central place, not a per-spec change (this ticket's brief's own
+// "add the credential once, centrally" instruction, applied here since
+// e2e specs are real browser/HTTP traffic that DOES go through
+// src/proxy.ts, unlike route.test.ts's direct handler calls, which never
+// do — see that ticket's other commits for the full reasoning).
+const E2E_ACCESS_CODE = "e2e-test-access-code-not-a-real-credential";
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
@@ -68,6 +82,7 @@ export default defineConfig({
   use: {
     baseURL,
     trace: "on-first-retry",
+    extraHTTPHeaders: { "x-access-code": E2E_ACCESS_CODE },
   },
   webServer: [
     // Only started in the default (fake) mode — E2E_LIVE has nothing for
@@ -96,7 +111,10 @@ export default defineConfig({
       // quirk hitting `pnpm test -- --reporter=json ...`.
       command: "pnpm build && pnpm start",
       url: baseURL,
-      env: { PORT, ...modelEnv },
+      // ACCESS_CODE only — not modelEnv's own concern, but this is the one
+      // webServer entry that actually serves the HTTP traffic src/proxy.ts
+      // gates. The worker entry below serves none, so it does not get this.
+      env: { PORT, ACCESS_CODE: E2E_ACCESS_CODE, ...modelEnv },
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },

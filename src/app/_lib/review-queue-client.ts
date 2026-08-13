@@ -121,7 +121,13 @@ function isReviewQueueListResponse(payload: unknown): payload is ReviewQueueList
   // empty, or a page ended exactly on its boundary. There is no item to
   // check, so the page is valid — said here rather than left to
   // `.every()`'s vacuous truth to imply.
-  if (body.items.length === 0) return true;
+  //
+  // An empty page must still end the queue. `list.ts` builds `nextCursor`
+  // from the last item of the page it just returned, so "no items" and
+  // "more items follow" cannot both be true. A body claiming both would
+  // leave the browser clicking "Load more" against a list that never grows
+  // (CodeRabbit finding, local review round 6).
+  if (body.items.length === 0) return body.nextCursor === null;
   return body.items.every(isReviewQueueListItemWire);
 }
 

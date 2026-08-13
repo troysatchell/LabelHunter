@@ -45,6 +45,22 @@ describe("fetchReviewQueue — the happy path", () => {
     await expect(fetchReviewQueue({ fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
   });
 
+  it("rejects a 200 body with no items but a cursor that promises more (TRO-507)", async () => {
+    // `list.ts` builds `nextCursor` from the last item of the page it just
+    // returned, so "no items" and "more items follow" cannot both be true.
+    // A body claiming both would loop the browser forever on a page that
+    // never grows (CodeRabbit finding, local review round 6).
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ items: [], nextCursor: "cursor/two" }), { status: 200 }));
+    await expect(fetchReviewQueue({ fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
+  });
+
+  it("accepts an empty page that ends the queue", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }));
+    const page = await fetchReviewQueue({ fetchImpl });
+    expect(page.items).toEqual([]);
+    expect(page.nextCursor).toBeNull();
+  });
+
   it("rejects a 200 body whose item carries an unknown resolver status (TRO-512)", async () => {
     const malformed = { ...SAMPLE_ITEM, resolverStatus: "NOT_A_REAL_STATUS" };
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ items: [malformed], nextCursor: null }), { status: 200 }));

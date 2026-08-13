@@ -99,7 +99,7 @@ Round 3:
   running. A synchronous hang freezes the event loop itself. The test now passes its own
   `timeout: 45_000` to `spawnSync`.
 
-Round 4 (2 fixed, 2 dismissed):
+Round 4 (2 fixed, 1 dismissed, 1 new-ticket):
 - `CHANGES.md` (minor, fixed): one sentence in the round-3 timeout note ran past the 25-word
   description limit. Split into three shorter sentences.
 - `CHANGES.md` (minor, fixed): "How to run it" named `.factory-env` and Postgres but not

@@ -4,6 +4,75 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-558 / TRO-559 — measurement scripts stop clobbering evidence; the stale OCR floor numbers are re-measured (2026-08-13)
+
+**TRO-559.** `pnpm eval:ocr-floor-sweep` used to overwrite its own committed evidence file in
+place, with no warning. An agent diagnosing TRO-546 re-ran it and silently replaced TRO-535's
+committed artifact with numbers from a different image set. `scripts/eval/artifact-guard.ts`
+closes that gap: a guarded writer now refuses to overwrite an existing artifact unless the
+caller passes `--force`. Pass `--out=<path>` instead to write a separate comparison copy without
+touching the committed file. The regression test (`artifact-guard.test.ts`) ran red first,
+against a version of the guard with no `existsSync` check — today's real, silent-overwrite
+behavior — then green once the check was added.
+
+Two scripts convert to the guarded path: `scripts/eval/ocr-floor-sweep.ts` and
+`scripts/eval/tro-546-case22-ocr-region-check.ts`. Both are one ticket's frozen evidence
+snapshot, not a rolling report — git history shows exactly one commit ever touched each output
+file, before this ticket's own re-measurement. Every other `scripts/eval/` writer is left alone,
+each for a stated reason — no writer is skipped silently:
+
+| Writer | File | Why it is safe as-is |
+|---|---|---|
+| `check.ts` (`--live`) | `scripts/eval/results/eval-report.json` | A rolling "last real run" report by design, not one ticket's frozen evidence. Self-describing (`measuredAt`, `manifestContentHash`, `caseIds`). Gated behind a real, paid API call — never an accidental cheap re-run. 10 intentional refreshes already in git history: a working, established pattern, not the silent-clobber bug this ticket targets. |
+| `benchmark.ts` | `scripts/eval/results/benchmark-report.json` | Always-live by design — it has no cheap mode, so there is no accidental-cheap-run path to a clobber. Same rolling, self-describing shape as `eval-report.json`. 2 intentional refreshes in git history. |
+| `variance.ts` (`--live`) | `scripts/eval/results/variance-report.json` | Same rolling, paid, self-describing shape. Already has its own bespoke guard, `warnIfNarrowingCommittedReport` (lines 150-168) — a deliberate warn-not-refuse design its own authors already reasoned through. Converting it to hard-refuse would fight that existing, working design, not fix a gap. 4 intentional refreshes in git history. |
+| `variance.ts` (`--establish-baseline`) | `scripts/eval/baseline.json` | The ticket's own named exception. TRO-561's re-baseline protocol: an explicit flag, archives the old baseline first (`archiveExistingBaseline`, never deletes), git history is the provenance trail. |
+| `variance.ts` (`--establish-baseline`) | `scripts/eval/results/eval-report.json` (refresh) | A byproduct of the same protocol-gated, explicit-flag path as `baseline.json` above — not a second, separate risk. |
+
+**TRO-558.** `scripts/eval/results/ocr-floor-sweep.json` and CP-2 §4.5's amendment table both
+quoted confidences measured on 2026-08-12 against a 32-case golden set. That golden set no
+longer exists: TRO-527 rebuilt every image (bold ground-truth prefix), TRO-516 C5 merged
+case-24 into case-23, and TRO-529 added five real-photograph cases, case-35 through case-39.
+The current golden set has 36 cases, not 32.
+
+Re-measured via the new guarded path. `pnpm eval:ocr-floor-sweep` refused on the first attempt,
+because the stale file already existed — a live demonstration TRO-559's fix works against the
+exact file its own bug report names. `pnpm eval:ocr-floor-sweep -- --force` then wrote the fresh
+measurement, deliberately:
+
+- 36 cases total. 31 are warning-bearing with a usable OCR candidate.
+- Sorted confidences: 33, 41, 47, 65, 91, 93, then 95 (22 cases) and 96 (3 cases).
+- `goldenSetCommitSha`: `0e6e3e1432f63609ad49febf5445fb866cadaf91`. `manifestContentHash`:
+  `fa3dbcfb60a6ecbd6c2de4ec837c54c72b87e909865ee9429946ac79cc5e0784`. Both fields are new on this
+  artifact (TRO-558) and both match `scripts/eval/baseline.json`'s own values for the same
+  commit — an independent cross-check that this run measured the golden set it claims to.
+
+**Measured, not assumed: the floor decision is unchanged.** `OCR_CONFIDENCE_FLOOR` stays 50.
+Case-23 — the original reason the floor had to move below 56 — measured 65 this run, further
+from the floor than before, not closer. The three new real-photograph rotation cases (case-36,
+case-37, case-39) measure 33, 41, and 47, all below 50. Their edit distances, 186 to 215 against
+the 283-character canonical string, confirm the OCR read is genuine garbage, not a borderline
+reading — the floor correctly discards all three. The full table, and the one honest limit the
+new data surfaces (case-36's 47 sits only 3 points under the floor, the closest any measured
+case has come), are in `docs/checkpoints/cp2-warning-subsystem.md` §4.5's new 2026-08-13
+amendment, appended after the 2026-08-12 amendment. The original row and the first amendment are
+unchanged, per CP-2's own stated discipline of dating a later finding rather than rewriting an
+earlier one.
+
+**How to run it.**
+
+```bash
+pnpm eval:ocr-floor-sweep                                # refuses: the committed file already exists
+pnpm eval:ocr-floor-sweep -- --force                     # deliberately refreshes the committed evidence file
+pnpm eval:ocr-floor-sweep -- --out=scratch/compare.json  # writes a comparison copy, leaves the committed file untouched
+```
+
+The same three forms work for `pnpm eval:tro-546-case22-check`.
+
+**Rollback.** `git revert` this commit range. `ocr-floor-sweep.json` and the CP-2 doc return to
+their pre-TRO-558 state. `artifact-guard.ts` and its test are additive — safe to leave in place
+even on a partial revert.
+
 ## TRO-502 — beverage_type's evidence exemption, finished in the prompt (2026-08-13)
 
 **The ticket's premise was tested first, and half of it is wrong.** The 2026-08-12 update asked

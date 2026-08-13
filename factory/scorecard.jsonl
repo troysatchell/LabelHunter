@@ -76,3 +76,4 @@
 {"ticket": "TRO-543", "attempt": 3, "verdict": "pass", "failedGates": [], "ts": "2026-08-13T00:49:21Z", "note": "orchestrator gate after TRO-518 signature fix; ts from gate-result ranAt | review step was WARN (rc=124 timeout, kept earlier findings), not a failed gate \u2014 cleared from failedGates for verdict consistency"}
 {"ticket": "TRO-543", "attempt": 4, "verdict": "fail", "failedGates": ["tests"], "ts": "2026-08-13T00:57:35Z", "note": "orchestrator gate after manifest-hash wiring; ts from gate-result ranAt"}
 {"ticket": "TRO-543", "attempt": 5, "verdict": "pass", "failedGates": [], "ts": "2026-08-13T01:02:44Z", "note": "rerun after 12-file load-sensitive failure (all passed standalone); ts from gate-result ranAt"}
+{"ticket": "TRO-543", "attempt": 6, "verdict": "pass", "failedGates": [], "ts": "2026-08-13T01:10:37Z", "note": "certifying gate after single-pass triage fixes; ts from gate-result ranAt"}

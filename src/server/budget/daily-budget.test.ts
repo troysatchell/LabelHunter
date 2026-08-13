@@ -143,8 +143,11 @@ describe("recordSpendUsd / getTodaySpendUsd — immune to a real day rollover du
   const JUST_BEFORE_MIDNIGHT = new Date(`${BOUNDARY_DAY}T23:59:59.900Z`);
 
   afterEach(async () => {
-    await db.delete(dailySpend).where(eq(dailySpend.spendDate, BOUNDARY_DAY));
-    vi.useRealTimers();
+    try {
+      await db.delete(dailySpend).where(eq(dailySpend.spendDate, BOUNDARY_DAY));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps a write and the read right after it on the SAME day even if the real system clock crosses midnight in between", async () => {

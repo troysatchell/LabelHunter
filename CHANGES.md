@@ -34,8 +34,11 @@ exact `x-forwarded-for` behavior against the live deployment. It has no deploy
 credentials. The code comment above `getClientIp` records what public Render
 documentation confirms, and what it does not. It also names the follow-up check: send a
 forged leading hop to the deployed instance, then check what the function receives.
-Trusting the rightmost entry is the standard, conservative default either way — its only
-failure mode is over-restrictive (shared bucket), never under-protective.
+Trusting the rightmost entry is safe only if Render itself appends or rewrites that hop.
+If Render instead passes a client-supplied `x-forwarded-for` through untouched, a caller
+can still control the rightmost entry and bypass the per-IP bucket. The follow-up check
+above resolves this open question; until then, treat the protection as unconfirmed, not
+guaranteed.
 
 **3. The rate-limiter map grew without bound (major).** `fixed-window.ts` reset a key
 lazily on its next check, but never freed a key nobody revisited.

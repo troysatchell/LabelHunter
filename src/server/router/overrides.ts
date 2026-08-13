@@ -53,11 +53,18 @@ export interface FieldOverrideOutcome {
 }
 
 /**
- * Matches one character that a label can actually print: not whitespace, not
- * a format character (`\p{Cf}`, which includes U+200B ZERO WIDTH SPACE and
- * U+200E LEFT-TO-RIGHT MARK), and not a control character (`\p{Cc}`).
+ * Matches one character a label can print: a letter, a number, a punctuation
+ * mark, or a symbol. This names what evidence must contain, rather than
+ * listing what it may not. A deny-list (whitespace, `\p{Cf}`, `\p{Cc}`)
+ * silently accepts every category nobody listed — unassigned code points
+ * (`\p{Cn}`, which is where the noncharacters U+FDD0 and U+FFFE sit),
+ * surrogates, private-use code points, and a lone combining mark. None of
+ * those print ink on a label (CodeRabbit finding, TRO-502).
+ *
+ * Punctuation and symbols stay in: a label really does print "45%", "&",
+ * and "°".
  */
-const PRINTABLE_LABEL_CHARACTER = /[^\s\p{Cf}\p{Cc}]/u;
+const PRINTABLE_LABEL_CHARACTER = /[\p{L}\p{N}\p{P}\p{S}]/u;
 
 /**
  * The real invariant behind CP-1 §4.4 rule 1. The doc says `evidence` "must

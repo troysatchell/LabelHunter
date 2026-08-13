@@ -166,6 +166,17 @@ describe("applyFieldOverrides — rule 2 exemption for beverage_type (TRO-502)",
     expect(outcome.violation).toBe("evidence_missing");
   });
 
+  it("rejects an exempt field whose evidence holds only noncharacters (TRO-502)", () => {
+    // U+FDD0 and U+FFFE are permanently unassigned (`\p{Cn}`). They print
+    // nothing, and a deny-list built from whitespace and `\p{Cf}`/`\p{Cc}`
+    // would wave them through.
+    for (const evidence of ["﷐", "￾", "﷐￾"]) {
+      const outcome = applyFieldOverrides(field({ value: "spirits", evidence }), "exempt");
+      expect(outcome.rejected).toBe(true);
+      expect(outcome.violation).toBe("evidence_missing");
+    }
+  });
+
   it("accepts an exempt field whose evidence is padded label text", () => {
     const outcome = applyFieldOverrides(
       field({ value: "spirits", evidence: "  Kentucky Straight Bourbon Whiskey  " }),

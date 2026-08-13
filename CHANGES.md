@@ -6,68 +6,110 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
 ## TRO-506, TRO-512, TRO-507, TRO-524 — The review-queue persistence layer and the UI that reads it (2026-08-13)
 
-**What changed.** Four tickets, one root cause: the review queue's persistence layer and the
-screen that reads it.
+**What changed.** Four tickets share one root cause. That cause is the review queue's
+persistence layer and the screen that reads it.
 
-**TRO-506 and TRO-512 — two workers could pay twice for one Sonnet call.** `resolveEscalatedLabel`
-checked for an existing `review_queue` row, called Sonnet, then wrote the result. Two callers for
-one `verificationId` both passed the check and both bought a call. The unique index stopped the
-second WRITE; nothing stopped the second CALL.
+### TRO-506 and TRO-512 — two workers could pay twice for one Sonnet call
+
+`resolveEscalatedLabel` checked for an existing `review_queue` row. It then called Sonnet. It
+then wrote the result. Two callers for one `verificationId` both passed the check. Both bought a
+call. The unique index stopped the second write. Nothing stopped the second call.
 
 The fix is CP-3 §3.3's own prescription. `src/server/resolver/reservation.ts` takes an atomic
 per-verification reservation before the model call. Postgres serializes that one statement, so
 exactly one caller wins. The winner calls Sonnet. Every other caller reuses a resolution that
-already exists, or waits for the winner's, bounded, and throws a named
-`ResolverReservationTimeoutError` rather than starting a second call.
+already exists. A caller with no resolution to reuse waits for the winner's, bounded, then throws
+a named `ResolverReservationTimeoutError`. No second call starts. A failed model call releases
+the reservation, so a retry proceeds at once.
 
-CP-3 §12 open question 2 left two decisions to this ticket. Both are answered here:
+CP-3 §12 open question 2 left two decisions to this ticket. This entry answers both.
 
-1. **A reservation gets its own lease** (`review_queue.resolver_reserved_until`, migration 0005),
-   not a rule that piggybacks on `batch_queue_items`. A later caller takes over an expired
-   reservation, so a caller that dies mid-call never blocks the row forever. The lease is 120
-   seconds — CP-3 §3.2's own value, and twice the resolver client's 60-second timeout.
+1. **A reservation gets its own lease.** The lease lives in
+   `review_queue.resolver_reserved_until` (migration 0005). It does not piggyback on
+   `batch_queue_items`. A later caller takes over an expired reservation, so a caller that dies
+   mid-call never blocks the row forever. The lease is 120 seconds. That is CP-3 §3.2's own
+   value, and twice the resolver client's 60-second timeout.
 2. **The conflict action is `DO UPDATE ... WHERE`, not `DO NOTHING`.** TRO-511 shipped after CP-3
-   was written: the verify route now pre-files a bare row, so `DO NOTHING` would find a row for
-   every single-label escalation and no caller would ever resolve one. The `WHERE` clause keeps
-   CP-3's guarantee exactly — it matches nothing while a live reservation exists.
-
-A failed model call releases the reservation, so a retry proceeds at once.
+   was written. The verify route now pre-files a bare row. `DO NOTHING` would therefore find a
+   row for every single-label escalation, and no caller would ever resolve one. The `WHERE`
+   clause keeps CP-3's guarantee exactly: it matches nothing while a live reservation exists.
 
 TRO-512's second half is the coordinated display change. A reserved row exists before Sonnet
-answers, so "no suggestion on this row" now means one of four things. Each row carries a
-`resolverStatus`, and the list prints one plain sentence for it: an item being checked never
+answers. "No suggestion on this row" now means one of four things. Each row carries a
+`resolverStatus`, and the list prints one plain sentence for it. An item being checked never
 reads the same as one the escalation cap skipped.
 
-**TRO-507 — the queue hid everything past the first 100 items.** `listUnresolvedReviewQueue`
-returned the first 100 and said nothing about the rest. A reviewer saw a complete-looking list
-that was not one — the wrong side of TH-R10/TH-R20, on the feature TH-R22 names as this
-project's differentiator.
+### TRO-507 — the queue hid everything past the first 100 items
+
+`listUnresolvedReviewQueue` returned the first 100 items and said nothing about the rest. A
+reviewer saw a complete-looking list that was not one. That is the wrong side of TH-R10/TH-R20,
+on the feature TH-R22 names as this project's differentiator.
 
 The list now returns one page plus a `nextCursor`. The cursor is a keyset position on
-`(createdAt, id)`, the pair the query already orders by, so a concurrent insert or disposal
-cannot make a row skip a page the way OFFSET can. `GET /api/review-queue` accepts `limit` and
-`after` and validates both, answering 400 with the reason. `ReviewQueueBrowser` says "More items
-are waiting" and offers "Load more" whenever a cursor exists. The 100-item ceiling per page is
-unchanged; this ticket added a way to read past it, not a bigger number.
+`(createdAt, id)`, the pair the query already orders by. A concurrent insert or disposal
+therefore cannot make a row skip a page, the way OFFSET can. `GET /api/review-queue` accepts
+`limit` and `after`. It validates both and answers 400 with the reason. `ReviewQueueBrowser` says
+"More items are waiting" and offers "Load more" whenever a cursor exists. The 100-item page
+ceiling is unchanged. This ticket added a way to read past that ceiling, not a bigger number.
 
-One real defect surfaced while testing this. `review_queue.created_at` stored microseconds, but
-a cursor is built from the JavaScript `Date` the driver returns, which carries milliseconds. The
-truncated cursor compared as "before" the row it came from, so the next page served that row
-again, forever. Migration 0006 drops the column to millisecond precision, which is exactly what a
-cursor can name.
+One real defect surfaced while testing this. `review_queue.created_at` stored microseconds. A
+cursor is built from the JavaScript `Date` the driver returns, which carries milliseconds. The
+truncated cursor compared as "before" the row it came from. The next page therefore served that
+row again, forever. Migration 0006 drops the column to millisecond precision, which is exactly
+what a cursor can name.
 
-**TRO-524 — E2E runs left unresolved rows behind.** The suite seeds through the real product
-surface, so every run files real `review_queue` rows. `scripts/e2e/cleanup.ts` deletes every
-application whose brand carries `fixtures.ts`'s own `e2e-` tag; the cascade removes the label
-image, the verification, and the review-queue row. Playwright runs it in global setup, before the
-suite — a run that crashes never reaches a teardown, and those are the runs that leave rows
-behind. No spec assertion was weakened.
+### TRO-524 — E2E runs left unresolved rows behind
+
+The suite seeds through the real product surface, so every run files real `review_queue` rows.
+`scripts/e2e/cleanup.ts` deletes every application whose brand carries `fixtures.ts`'s own `e2e-`
+tag. The cascade removes the label image, the verification, and the review-queue row. Playwright
+runs the cleanup in global setup, before the suite. A run that crashes never reaches a teardown,
+and those are the runs that leave rows behind. No spec assertion was weakened.
+
+### Review round 6 — what the local CodeRabbit round changed
+
+Six of seven findings became changes. The seventh is dismissed below, with its measurements.
+
+- **"Load more" was a dead button after a failed page load.** A failed page load leaves the
+  browser in the `refresh-error` state, holding the cursor it failed on. `loadMore` ran only from
+  the `success` state. The button stayed on screen and enabled, and did nothing. It now runs from
+  `refresh-error` too, and reuses the same cursor. Regression test:
+  `src/app/_components/ReviewQueueBrowser.test.tsx`.
+- **An empty page may no longer promise more items.** `list.ts` builds `nextCursor` from the last
+  item of the page it returns. "No items" and "more items follow" cannot both be true. The client
+  validator now rejects that pair. Regression test: `src/app/_lib/review-queue-client.test.ts`.
+- **Migration 0007 gives `review_queue_unresolved_idx` both sort keys.** The index carried
+  `created_at` alone. The keyset page boundary compares the pair `(created_at, id)`. Measured
+  plans are in `src/server/review-queue/list.ts`. The short version: with distinct timestamps the
+  plan improves and the clock does not. With 20,000 rows sharing one timestamp, the old index ran
+  10.77 ms and the new index ran 0.188 ms.
+- **The E2E cleanup test now creates its fixtures inside its own `try`.** A failure while
+  building the second fixture used to leave the first one's rows behind for good.
+- **The resolver-status test now reads the page after an anchor cursor.** Sibling test files
+  share this database. Enough sibling rows could fill the first page and hide the four fixtures.
+
+**Dismissed: the ACCESS EXCLUSIVE lock migrations 0006 and 0007 take.** The review asked for
+expand-and-backfill, or a scheduled maintenance window. Both migrations take that lock, and
+Render runs `pnpm db:migrate` as a pre-deploy step while the previous version still serves
+traffic. The lock is therefore real, and it blocks live reads of this one table while it is held.
+Measured on this worktree's Postgres, on the real `review_queue` table seeded to 20,000
+unresolved rows:
+
+- 0006's type change held the lock for 139.94 ms.
+- 0007's `DROP INDEX` held it for 3.03 ms.
+- 0007's `CREATE INDEX` held it for 18.01 ms.
+
+A separate probe table gave 601.70 ms for the same type change at 100,000 rows.
+Expand-and-backfill removes the lock. It costs a second column, a backfill, and two more
+deploys. That price buys nothing at this table size. `0007`'s own SQL comment carries this
+reasoning. It names roughly one million rows as the point to revisit the decision. That row
+count is derived from the measurements above, not measured.
 
 **How to run it.**
 
 ```bash
 source .factory-env
-pnpm db:migrate                              # applies 0005 and 0006
+pnpm db:migrate                              # applies 0005, 0006 and 0007
 pnpm test                                    # full unit suite
 npx vitest run src/server/resolver/reservation.test.ts   # the double-pay regression
 npx vitest run src/server/review-queue                   # paging and resolver status
@@ -75,17 +117,29 @@ npx vitest run scripts/e2e/cleanup.test.ts               # the E2E cleanup
 pnpm test:e2e                                # global setup clears earlier runs first
 ```
 
-**Rollback.** Revert this PR's commits. The two migrations are additive to the resolver's own
-behavior: `resolver_reserved_until` becomes an unread column, and `created_at`'s precision can be
-left at milliseconds — no code depends on the finer value. To undo them anyway, run
-`ALTER TABLE review_queue DROP COLUMN resolver_reserved_until;` and
-`ALTER TABLE review_queue ALTER COLUMN created_at TYPE timestamptz;`, then delete the 0005 and
-0006 entries from `drizzle/migrations/meta/_journal.json`.
+**Rollback.** Revert this PR's commits. The three migrations are additive to the resolver's own
+behavior. `resolver_reserved_until` becomes an unread column. `created_at` can stay at
+millisecond precision, because no code depends on the finer value. The index can stay on both
+keys, because a two-key index still serves a `created_at`-only query. To undo them anyway, run
+these three statements:
 
-**Not measured.** No latency, throughput, or cost figure is claimed here. The reservation's own
-120-second lease and the waiter's 500 ms poll interval are bounds chosen against the resolver
-client's 60-second timeout, not measurements of a real slow call. The paging query's plan on a
-large table is not measured either — `list.ts`'s own comment says so.
+```sql
+ALTER TABLE review_queue DROP COLUMN resolver_reserved_until;
+ALTER TABLE review_queue ALTER COLUMN created_at TYPE timestamptz;
+DROP INDEX review_queue_unresolved_idx;
+CREATE INDEX review_queue_unresolved_idx ON review_queue USING btree (created_at)
+  WHERE disposition IS NULL;
+```
+
+Then delete the 0005, 0006 and 0007 entries from `drizzle/migrations/meta/_journal.json`.
+
+**Not measured.** No latency, throughput, or cost figure for the model path is claimed here. The
+reservation's 120-second lease and the waiter's 500 ms poll interval are bounds. They were chosen
+against the resolver client's 60-second timeout, not measured against a real slow call. The
+paging query's plan IS measured, at 20,000 rows, in this worktree's database — `list.ts` carries
+the plans and says what each run showed. This table's real production row count is not measured,
+because this project has never run at production scale.
+
 ## TRO-516 — C5 execution: merge case-24 into case-23 (2026-08-13)
 
 **Troy's ruling (TRO-516 comment, 2026-08-13):** merge case-24 into case-23. Both cases print

@@ -1,7 +1,8 @@
 # Factory defect gates: turning recurring review findings into executable invariants, and repairing them without stalling the pipeline
 
 **Date:** 2026-08-12
-**Status:** design, not yet built. Revision 3 — factory-first reframing.
+**Status:** defect detection is shipped (Plan 1: engine, one rule, replay harness, G11).
+Repair orchestration (Plan 3) is not yet built. Revision 3 — factory-first reframing.
 **Supersedes:** `2026-08-12-defect-class-extraction-design.md` (revisions 1–2), which wrongly
 framed this as a LabelHunter subsystem.
 **Tracks:** TRO-508
@@ -13,10 +14,10 @@ framed this as a LabelHunter subsystem.
 **This modifies the factory.** LabelHunter is the target repository the factory happens to be
 building. Nothing here is a LabelHunter application feature.
 
-The subsystem is called **defect-gate**. Revisions 1–2 called it "LabelHunter," which was
-wrong twice over: it collided with the product name, and it implied the capability belonged to
-the product. It belongs to the factory, and it must port to `ship` and to any future target by
-copying factory code and supplying new configuration.
+The subsystem is called **defect-gate**. Revisions 1–2 called it "LabelHunter." That name was
+wrong twice over. It collided with the product name. It also implied the capability belonged
+to the product. The capability belongs to the factory instead. It must port to `ship`, and to
+any future target, by copying factory code and supplying new configuration.
 
 ### The core question
 

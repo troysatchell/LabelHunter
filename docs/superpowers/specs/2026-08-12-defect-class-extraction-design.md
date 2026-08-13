@@ -1,7 +1,9 @@
 # LabelHunter: defect-class extraction for the factory gate
 
 **Date:** 2026-08-12
-**Status:** design, not yet built. Revision 2.
+**Status:** superseded and historical. `2026-08-12-factory-defect-gates-design.md` (revision 3)
+replaces this document. It uses a factory-first reframing. The engine and replay artifact this
+revision only proposed now exist. Kept for record. Revision 2.
 **Tracks:** TRO-508 (nine categories past the gate-check threshold, no check built)
 
 ---
@@ -146,9 +148,9 @@ obligations the gate enforces, not patterns the gate matches. M4, and the domain
 **Band 4 — CodeRabbit and human.** Context-dependent judgment. LabelHunter must never try.
 M9, M11, the semantic part of M7, all novel `correctness`, every `open-design-question`.
 
-The residue matters. About **92 findings — 19% of the full 484-finding ledger — are novel
-one-off `correctness`** with no recurring mechanism. That is the honest ceiling, and it is why
-this reduces dependence on CodeRabbit rather than ending it.
+The residue matters. About **92 findings are novel, one-off `correctness`** findings with no
+recurring mechanism. That is 19% of the full 484-finding ledger. That is the honest ceiling.
+It is why this reduces dependence on CodeRabbit, rather than ending it.
 
 ---
 

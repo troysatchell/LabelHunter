@@ -4,7 +4,7 @@
 
 **Goal:** Build the factory's generic defect-detection engine, prove it end-to-end with one calibrated rule, and wire it into `gate.sh` as G11.
 
-**Architecture:** A generic rule runner in `scripts/factory/defect-gates/` loads rule modules, runs them against the changeset, and fails only on violations the branch introduced — measured against `BASE_REF` by content identity, the same discipline the quarantine system already uses. Target-specific configuration lives in `factory/rules/` and is never referenced by engine code. A replay harness calibrates each rule against the historical review ledger before it is allowed to block.
+**Architecture:** A generic rule runner in `scripts/factory/defect-gates/` loads rule modules and runs them against the changeset. It fails only on violations the branch introduced. It measures introduction against `BASE_REF` by content identity — the same discipline the quarantine system already uses. Target-specific configuration lives in `factory/rules/`. Engine code never references that configuration directly. A replay harness calibrates each rule against the historical review ledger before the rule is allowed to block.
 
 **Tech Stack:** TypeScript 5.9.3 (compiler API for AST), `tsx` 4.23.12 for execution, vitest for tests, bash for the `gate.sh` integration.
 
@@ -517,6 +517,12 @@ export function preExistingFindings(head: Finding[], base: Finding[]): Finding[]
   return head.filter((f) => baseline.has(f.identity));
 }
 ```
+
+> **Historical sample, not current guidance.** The shipped `baseline.ts` no longer matches
+> this `Set`-based sketch. A later review round found that a `Set` cannot count multiplicity:
+> a function with one existing violation that grows a second, identical one would report zero
+> introduced findings. The shipped version compares by per-identity count instead. Read
+> `scripts/factory/defect-gates/baseline.ts` for the real implementation.
 
 - [ ] **Step 4: Run the test to verify it passes**
 

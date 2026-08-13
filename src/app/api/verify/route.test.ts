@@ -13,6 +13,7 @@ import type { WarningComparatorResult } from "../../../server/router";
 import type { CompareGovernmentWarningFromImageInput } from "../../../server/warning";
 import { deleteLabelImageBlobsWhere, saveLabelImage } from "../../../server/storage/db-image-storage";
 import { handleVerifyRequest, type VerifyRouteDeps } from "./route";
+import { parseServerTimingHeader, SERVER_TIMING_STAGES } from "./server-timing";
 import type { VerifyErrorResponse, VerifySuccessResponse } from "./types";
 
 // This suite makes NO live Anthropic call — every Anthropic response is a
@@ -251,6 +252,36 @@ describe("POST /api/verify — happy path", () => {
     expect(body.headlineReason).toBe("MISSING_REQUIRED_FIELD");
     const [queueRow] = await db.select().from(reviewQueue).where(eq(reviewQueue.verificationId, body.verificationId));
     expect(queueRow.reason).toBe("MISSING_REQUIRED_FIELD");
+  });
+});
+
+describe("POST /api/verify — Server-Timing header (TRO-539, PRD §3.8)", () => {
+  it("returns one dur= metric per PRD §3.8 stage on a 200 response", async () => {
+    const deps = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY) });
+    const response = await post(await buildFormData(), deps);
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as VerifySuccessResponse;
+    createdApplicationIds.push(body.applicationId);
+
+    const header = response.headers.get("server-timing");
+    expect(header).not.toBeNull();
+    const parsed = parseServerTimingHeader(header ?? "");
+    for (const stage of SERVER_TIMING_STAGES) {
+      expect(parsed[stage], `expected a numeric "${stage}" entry in Server-Timing: ${header}`).toBeDefined();
+      expect(parsed[stage]).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("omits the header on a non-200 (error) response — an early error means a stage never ran", async () => {
+    const garbage = new File([Buffer.from("this is not an image, just padded text bytes")], "photo.jpg", {
+      type: "image/jpeg",
+    });
+    const deps = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY) });
+
+    const response = await post(await buildFormData({ image: garbage }), deps);
+    expect(response.status).toBe(422);
+    expect(response.headers.get("server-timing")).toBeNull();
   });
 });
 

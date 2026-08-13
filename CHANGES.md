@@ -50,8 +50,9 @@ field reaches rule 2, which rejects blank evidence on its own. `beverage_type` d
 one remaining check has to be exact. `hasLabelText` now requires one character that a label can
 print. `String.prototype.trim` alone is not enough: U+200B is not JavaScript whitespace.
 
-**Evidence.** Both new tests failed first, for the stated reason. Two live single-case runs
-under the amended prompt, `claude-haiku-4-5`, worktree database:
+**Evidence.** Both new tests failed first, for the stated reason. Two live single-case runs ran
+under the amended prompt, on `claude-haiku-4-5`, against this worktree's own database. Both ran
+after the merge with `origin/main`, so they read TRO-527's re-rendered golden images:
 
 | Case | `beverage_type` before (committed run) | after | Label verdict |
 |---|---|---|---|

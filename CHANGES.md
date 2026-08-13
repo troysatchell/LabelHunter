@@ -14,8 +14,8 @@ caller passes `--force`. Pass `--out=<path>` instead to write a separate compari
 touching the committed file. The regression test (`artifact-guard.test.ts`) ran red first. It
 ran against a version of the guard with no `existsSync` check — today's real, silent-overwrite
 behavior. It ran green once the check was added. A review round then found the check alone left
-a race window between the check and the write; `writeGuardedJsonArtifact` now opens the file
-with Node's `wx` flag instead, so the guarantee is atomic, not check-then-write.
+a race window between the check and the write. `writeGuardedJsonArtifact` now opens the file
+with Node's `wx` flag instead. The guarantee is atomic, not check-then-write.
 
 Two scripts convert to the guarded path: `scripts/eval/ocr-floor-sweep.ts` and
 `scripts/eval/tro-546-case22-ocr-region-check.ts`. Both are one ticket's frozen evidence
@@ -33,7 +33,9 @@ each for a stated reason — no writer is skipped silently:
 
 Review also found `--out=` with no path attached (`--out=` alone) fell through unrecognized and
 silently used the default path instead. `parseArtifactGuardArgs` now rejects it explicitly,
-matching the module's own no-silent-failure rule.
+matching the module's own no-silent-failure rule. It also found neither converted script checked
+`rest` for unrecognized arguments — a typo like `--forc` was silently ignored instead of
+rejected. Both scripts now exit 2 on any leftover argument.
 
 **TRO-558.** `scripts/eval/results/ocr-floor-sweep.json` and CP-2 §4.5's amendment table both
 quoted confidences measured on 2026-08-12 against a 32-case golden set. That golden set no

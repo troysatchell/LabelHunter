@@ -1,9 +1,9 @@
 /**
  * Regression tests for the TRO-559 artifact write-path guard. Uses a real
  * temp directory (`mkdtempSync`/`rmSync`) per case rather than mocking
- * `node:fs` — the same pattern `scripts/golden/verify.test.ts` and
- * `variance.ts`'s own `mkdtemp` usage already establish in this repo — so
- * the assertions are about real file bytes on disk, not about which fs
+ * `node:fs`. `scripts/golden/verify.test.ts` and `variance.ts`'s own
+ * `mkdtemp` usage already establish this pattern in this repo. The
+ * assertions are about real file bytes on disk, not about which fs
  * functions got called.
  */
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";

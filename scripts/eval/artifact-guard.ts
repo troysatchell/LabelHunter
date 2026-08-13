@@ -6,26 +6,26 @@
  * measurement — `scripts/eval/ocr-floor-sweep.ts` (TRO-535 / LH-030b) and
  * `scripts/eval/tro-546-case22-ocr-region-check.ts` (TRO-546) today. Running
  * either script again, with no flags, used to silently overwrite that
- * committed evidence with numbers from a different code or image state —
- * observed in production on 2026-08-13, when a TRO-546 diagnostic agent
- * re-ran the OCR sweep and replaced TRO-535's committed artifact in place,
- * with nothing in the tree explaining the gap. This module closes that gap:
+ * committed evidence with numbers from a different code or image state.
+ * This happened in production on 2026-08-13: a TRO-546 diagnostic agent
+ * re-ran the OCR sweep and replaced TRO-535's committed artifact in place.
+ * Nothing in the tree explained the gap. This module closes that gap:
  * refuse to overwrite an existing artifact unless the caller says so
  * explicitly.
  *
  * WHAT THIS IS DELIBERATELY NOT FOR. `check.ts`/`benchmark.ts`/`variance.ts`
  * (`--live` mode) write a ROLLING "last real run" report by design, not one
- * ticket's frozen snapshot — each already self-describes its own
- * `measuredAt`/`manifestContentHash`/`caseIds`, each is gated behind a real,
- * paid API call, and each already has an established, working refresh
+ * ticket's frozen snapshot. Each already self-describes its own
+ * `measuredAt`/`manifestContentHash`/`caseIds`. Each is gated behind a
+ * real, paid API call. Each already has an established, working refresh
  * history. `variance.ts` additionally already has its own bespoke
  * narrower-report warning (`warnIfNarrowingCommittedReport`) that this
  * module does not replace. `scripts/eval/baseline.json` is TRO-561's
  * explicit-flag, archive-then-replace re-baseline protocol
  * (`archiveExistingBaseline`), a different and already-safe mechanism. See
- * the CHANGES.md TRO-558/TRO-559 entry for the full per-writer accounting —
- * every `scripts/eval/` writer is either converted to this module or listed
- * there with a reason it is safe as-is.
+ * the CHANGES.md TRO-558/TRO-559 entry for the full per-writer accounting.
+ * Every `scripts/eval/` writer is either converted to this module or
+ * listed there with a reason it is safe as-is.
  *
  * SHAPE CHOSEN: refuse-by-default at the writer's existing conventional
  * path, not a dated/SHA-stamped filename. Every existing reference to e.g.
@@ -33,8 +33,8 @@
  * `reconcile.ts`, `tro-546-case22-ocr-region-check.ts`'s own module
  * comment) stays correct with no new "latest" pointer convention invented.
  * A bare `pnpm eval:ocr-floor-sweep` still works unchanged on a clean
- * checkout; it only refuses once a file already exists at that path — the
- * exact failure mode this ticket exists to close.
+ * checkout. It only refuses once a file already exists at that path. That
+ * is the exact failure mode this ticket exists to close.
  */
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -48,12 +48,15 @@ const OUT_FLAG = /^--out=(.*)$/;
 const FORCE_FLAG = "--force";
 
 /**
- * Pulls `--out=<path>` and `--force` out of `argv`, the same "pull my own
- * flags out, leave the rest for the next parser" convention
+ * Pulls `--out=<path>` and `--force` out of `argv`. Uses the same "pull my
+ * own flags out, leave the rest for the next parser" convention
  * `parseVarianceArgs` (`args.ts`) already uses for `--repeats=<k>` and
- * `--establish-baseline`. Does not itself skip the `--` token pnpm forwards
- * — callers that hand `rest` to `parseEvalArgs` get that handled there, the
- * same layering `parseVarianceArgs` already relies on.
+ * `--establish-baseline`. Does not itself skip the `--` token pnpm
+ * forwards. Callers that hand `rest` to `parseEvalArgs` get that handled
+ * there — the same layering `parseVarianceArgs` already relies on. A
+ * caller with no further parser (both current callers) must check `rest`
+ * itself and reject anything left over. Otherwise an unrecognized or
+ * misspelled flag is silently ignored.
  */
 export function parseArtifactGuardArgs(argv: readonly string[]): { guard: ArtifactGuardArgs; rest: string[] } {
   const outMatches = argv.filter((a) => OUT_FLAG.test(a));
@@ -98,9 +101,9 @@ export function resolveGuardedOutputPath(params: { repoRoot: string; defaultPath
 
 /**
  * Writes `content` as pretty-printed, newline-terminated JSON to the path
- * `resolveGuardedOutputPath` resolves, creating the parent directory if
- * needed (matches every converted writer's existing `mkdirSync(...,
- * {recursive: true})` behavior). Returns the path actually written, so a
+ * `resolveGuardedOutputPath` resolves. Creates the parent directory if
+ * needed, matching every converted writer's existing `mkdirSync(...,
+ * {recursive: true})` behavior. Returns the path actually written, so a
  * caller's own log line can name it.
  */
 export function writeGuardedJsonArtifact(params: {
@@ -116,9 +119,10 @@ export function writeGuardedJsonArtifact(params: {
     writeFileSync(target, payload);
     return target;
   }
-  // "wx" creates the file exclusively and fails on EEXIST, so a file created
-  // between the existsSync check above and this write still cannot be
-  // clobbered — the actual guarantee lives here, not in the check above.
+  // "wx" creates the file exclusively and fails on EEXIST. So a file
+  // created between the existsSync check above and this write still
+  // cannot be clobbered. The actual guarantee lives here, not in the
+  // check above.
   try {
     writeFileSync(target, payload, { flag: "wx" });
   } catch (err) {

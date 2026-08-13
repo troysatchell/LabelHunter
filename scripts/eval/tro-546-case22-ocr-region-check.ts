@@ -18,8 +18,8 @@
  * Run: pnpm eval:tro-546-case22-check -- [--out=<path>] [--force]
  * Writes: scripts/eval/results/tro-546-case22-ocr-region-check.json by
  *   default. Refuses to overwrite an existing file at that path unless
- *   --force is also passed (TRO-559) — pass --out=<path> instead to write a
- *   comparison copy without touching the committed one.
+ *   --force is also passed (TRO-559). Pass --out=<path> instead to write
+ *   a comparison copy without touching the committed one.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -110,7 +110,12 @@ async function checkOneCase(caseSpec: GoldenSetCase): Promise<CaseResult> {
 }
 
 async function main(): Promise<void> {
-  const { guard } = parseArtifactGuardArgs(process.argv.slice(2));
+  const { guard, rest } = parseArtifactGuardArgs(process.argv.slice(2));
+  if (rest.length > 0) {
+    console.error(`tro-546-case22-ocr-region-check.ts: unrecognized argument(s): ${rest.join(" ")}`);
+    console.error("This script only accepts --out=<path> and --force.");
+    process.exit(2);
+  }
   const manifest = loadGoldenSetManifest();
   console.log(
     `tro-546-case22-ocr-region-check.ts: sweeping ${manifest.cases.length} golden-set case(s), OCR channel only, no API call.`,

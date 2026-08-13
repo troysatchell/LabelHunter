@@ -57,7 +57,8 @@ script, it failed because no `.factory-owner` file existed yet.
 A second test case covers a stamp file that exists but has no `FACTORY_OWNER_SESSION` line. See
 the CodeRabbit triage note below for what that case caught.
 
-**CodeRabbit review triage, 4 rounds, 11 findings, 9 fixed, 2 dismissed.**
+**CodeRabbit review triage, 4 rounds, 11 findings, 9 fixed, 1 dismissed, 1 new-ticket
+(TRO-572, the concurrent-invocation lock race — a real, unresolved gap, not dismissed).**
 
 Round 1:
 - `scripts/factory/worktree.sh` (major): the stamp-read pipeline, `grep | cut`, could abort the

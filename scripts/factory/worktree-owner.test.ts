@@ -62,6 +62,7 @@ function requirePgTargetFromEnv(): Omit<PgTarget, "container"> {
 function discoverPgContainer(port: string): string {
   const result = spawnSync("docker", ["ps", "--filter", `publish=${port}`, "--format", "{{.Names}}"], {
     encoding: "utf8",
+    timeout: 10_000,
   });
   if (result.error || result.status !== 0) {
     throw new Error(

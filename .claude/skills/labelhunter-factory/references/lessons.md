@@ -149,6 +149,13 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     or does it drop only a test-only mechanism with no legitimate real-world counterpart
     (not banned, but still narrow it and say so in `CHANGES.md`)?
 
+31. **The gate's review step re-reviews the whole branch every run, including the previous
+    round's own triage prose — findings regenerate forever, so triage runs to a stop rule,
+    not to zero.** After a round whose findings change no shipped behavior and no factual
+    claim, record every disposition and stop; do not fix-iterate prose, and do not re-run
+    the gate just to re-review. (TRO-544: 13 rounds, 45 findings; real substance ended at
+    round 12, and the last round was seven comment-shortening requests against stable files.)
+
 ## Mechanized (no longer prompt-dependent)
 
 - `gate.sh` refuses (`exit 2`) on an uncommitted worktree before running anything (unless

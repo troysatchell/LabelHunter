@@ -262,6 +262,25 @@ export function validateVarianceReport(parsed: unknown, filePath: string): Varia
   if (typeof candidate.totalCostUsd !== "number" || !Number.isFinite(candidate.totalCostUsd)) {
     problems.push('"totalCostUsd" must be a finite number');
   }
+  // TRO-543 Part 2 (a review finding, triaged): these four fields were cast
+  // through with no check at all — a caller that trusts the return type
+  // (this file's own test suite included, until this fix) reads
+  // `report.haikuModel`/`sonnetModel`/`commitSha`/`requestedFull` on faith.
+  // Standing rule 13: validate at the boundary where a value's shape is only
+  // assumed, not guaranteed — a committed JSON file, hand-editable, is
+  // exactly that boundary.
+  if (typeof candidate.haikuModel !== "string" || candidate.haikuModel.length === 0) {
+    problems.push('"haikuModel" must be a non-empty string');
+  }
+  if (typeof candidate.sonnetModel !== "string" || candidate.sonnetModel.length === 0) {
+    problems.push('"sonnetModel" must be a non-empty string');
+  }
+  if (typeof candidate.commitSha !== "string" || candidate.commitSha.length === 0) {
+    problems.push('"commitSha" must be a non-empty string');
+  }
+  if (typeof candidate.requestedFull !== "boolean") {
+    problems.push('"requestedFull" must be a boolean');
+  }
   if (problems.length > 0) {
     throw new Error(`report-validation: ${filePath} is not a valid VarianceReport — ${problems.join("; ")}.`);
   }

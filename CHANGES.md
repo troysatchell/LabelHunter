@@ -40,14 +40,14 @@ variance is a property of the model, not a property of one fixed case.
 
 **Accuracy spread.** Across the K=3 repeats, label-verdict accuracy on the same N=32 cases
 ranged from 78.1% (25/32, repeats 2 and 3) to 81.3% (26/32, repeat 1) — a 3.2-point spread
-from unchanged code against unchanged images. This spread sits next to any single-run
-accuracy figure this ticket's own report, or any other eval report, quotes: a single run's
-number is one draw from this range, not the system's fixed accuracy.
+from unchanged code against unchanged images. Read every single-run accuracy figure against
+this spread. A single run's number is one draw from this range. It is not the system's fixed
+accuracy.
 
 **Cost: measured, not derived.** Total **$0.8346**. 96 Haiku calls, mean $0.004670 each,
 $0.4483 total. 37 of 96 case-runs escalated to the Sonnet resolver (38.5%), mean $0.010439
-each, $0.3862 total. Below Part 1's own derived $0.88 estimate at the 40.6% rate — close
-enough to trust that derivation held.
+each, $0.3862 total. The measured total sits below Part 1's derived $0.88 estimate at the
+40.6% rate. That derivation held.
 
 **The artifact.** `scripts/eval/results/variance-report.json`, committed with this entry. It
 carries every field Part 1's own discipline requires:
@@ -62,13 +62,13 @@ carries every field Part 1's own discipline requires:
   Independently recomputed from the committed manifest's own SHA-256 during review. It matches.
 
 **New regression test, red first.** `scripts/eval/variance-report-artifact.test.ts` loads the
-committed artifact straight off disk — not a synthetic fixture; `report-validation.test.ts`
-already owns that — and asserts the 32 x 3 contract: 32 case IDs, `requestedFull: true`, 3
-repeats, 0 incomplete cases, 96 runs, 0 failures, a positive total cost, both model IDs, a
-commit SHA, and a 64-character manifest hash. Red before the sweep ran: the artifact did not
-exist (`ENOENT`). Green after. This test is deliberately coupled to a measured artifact — its
-job is proving the authorized sweep ran, at the authorized scope, not re-proving
-`variance-analysis.ts`'s own arithmetic (the pure-function suite already does that).
+committed artifact straight off disk. It is not a synthetic fixture. `report-validation.test.ts`
+already owns that job. This test asserts the 32 x 3 contract instead: 32 distinct case IDs,
+`requestedFull: true`, 3 repeats, 0 incomplete cases, 96 runs, 0 failures, a positive total
+cost, both model IDs, a commit SHA, and a 64-character manifest hash. It was red before the
+sweep ran — the artifact did not exist (`ENOENT`). It is green now. The coupling is
+deliberate: this test proves the authorized sweep ran, at the authorized scope. It does not
+re-prove `variance-analysis.ts`'s own arithmetic — the pure-function suite already does that.
 
 **How to run it.** Do not re-run the live sweep without new written authorization — this was
 the one authorized run. `pnpm eval:variance` alone, no flags, reads this committed report

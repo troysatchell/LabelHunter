@@ -38,10 +38,16 @@ describe("variance-report.json — the TRO-543 Part 2 authorized sweep artifact"
     const report = validateVarianceReport(parsed, REPORT_PATH);
 
     // N = 32 -- the full golden set, Troy's authorized scope. Not the
-    // 8-case DEFAULT_SAMPLE_CASE_IDS smoke sample (args.ts).
+    // 8-case DEFAULT_SAMPLE_CASE_IDS smoke sample (args.ts). Distinct, not
+    // just 32 in length -- a duplicate case ID could still satisfy a bare
+    // length check while covering fewer than 32 real cases.
     expect(report.caseIds).toHaveLength(32);
+    expect(new Set(report.caseIds).size).toBe(32);
     expect(report.requestedFull).toBe(true);
     expect(report.summary.caseCount).toBe(32);
+    // summary.perCase carries one row per case -- the same population
+    // caseIds names, not a narrower or wider set.
+    expect(report.summary.perCase).toHaveLength(32);
 
     // K = 3 repeats -- exactly what Troy authorized. Not MAX_REPEATS (10),
     // and not silently narrowed to fewer.
@@ -67,8 +73,13 @@ describe("variance-report.json — the TRO-543 Part 2 authorized sweep artifact"
 
     // Provenance: commit SHA and manifest content hash, both present
     // (TH-R19 discipline -- a measured number is worthless without knowing
-    // which code and which golden set produced it).
+    // which code and which golden set produced it). manifestContentHash is
+    // typed string | null (validateVarianceReport allows a hash-less report
+    // by design) -- check it is actually a string before the regex match,
+    // so a null here fails on a clear "must be present" assertion instead
+    // of a confusing regex-on-null error.
     expect(report.commitSha).toMatch(/^[0-9a-f]{7,40}$/);
+    expect(typeof report.manifestContentHash).toBe("string");
     expect(report.manifestContentHash).toMatch(/^[0-9a-f]{64}$/);
     expect(typeof report.measuredAt).toBe("string");
     expect(Number.isNaN(new Date(report.measuredAt).getTime())).toBe(false);

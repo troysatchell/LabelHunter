@@ -4,6 +4,55 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-483 — LH-062: seeded demo deployment (2026-08-13)
+
+**What changed.** This ticket submits the full 36-case golden set as one real batch job
+against the live deployed instance. This seeds it, so an evaluator lands on real results
+instead of an empty app. Adds `scripts/golden/results/seeded-demo-batch-2026-08-13.json`, the
+completed batch's own progress response, as evidence. No application code changed.
+
+**The run found a real production defect, not just a demo.** The batch stalled at 2 of 36 items
+for over 30 minutes. `render logs` on `labelhunter-worker` showed a genuine OOM crash loop.
+Render's supervisor restarted the process every few minutes, with no deploy behind it and no
+error message. The process just went silent between one "starting" line and the next. Root
+cause, found and fixed on `main` (not by this ticket): five concurrent `tesseract.js` OCR
+workers, each loading its own model, ran alongside `sharp`'s full-size JPEG decodes. Together
+they exceeded the worker's Render "starter" plan memory ceiling. Single-label verify never
+triggers this — it processes one image at a time. The fix moved `BATCH_WORKER_CONCURRENCY` from
+5 to 2 and `BATCH_RESOLVE_WORKER_CONCURRENCY` from 2 to 1, in `render.yaml`.
+
+**Nothing was lost or duplicated during the crash loop.** The stranded `CLAIMED` items swept
+automatically via lease-expiry reclaim (`claim.ts:152`) once the worker survived past a lease
+window. This ticket did not resubmit the batch — re-submitting mid-incident would have
+duplicated both the work and the spend.
+
+**Observed, not derived.** Final batch state: 36/36 processed, 11 PASS, 3 FAIL, 22 REVIEW (21
+routed to the human review queue, 1 recovered from a crash-era retry). `resolvedBySonnetCount:
+0` is CP-3 §6.2's documented batch escalation cap deliberately skipping Sonnet resolution for
+this batch size, not a broken resolve path — confirmed by reading
+`src/server/review-queue/types.ts`'s own comment on the `"skipped"` resolver status, not
+assumed. Real cost: 36 Haiku-only calls, no Sonnet calls.
+
+**Timing, corrected once against the actual deploy log rather than left as a first guess.**
+Total wall-clock was 60m26s (18:23:47-19:24:13 UTC). The concurrency fix
+(`BATCH_WORKER_CONCURRENCY` 5→2) did not go live until 19:21:22-19:21:50 — a `render logs`
+line reading `starting — 2 extract worker(s)...`, not the `5 extract worker(s)` lines every
+deploy before it still showed. The batch finished at 19:24:13, under three minutes later, and
+one more worker restart (19:23:08) landed inside that window too. So the batch's own
+instrumented throughput field — `itemsPerMinute: 0.6`, `avgMsPerItem: 100741` (TRO-544's
+calculation) — is a real, tool-measured number for this run, but it averages across the
+incident-dominated wall-clock, not a clean post-fix steady state. No clean throughput
+measurement at the concurrency this batch now runs at exists yet, and none is claimed here.
+
+**How to run it.** `pnpm batch:fixture` builds `var/batch-fixture/{manifest.csv,images.zip}`
+from the current golden set. Upload both through the batch screen, or `POST` them as multipart
+form fields `manifest` and `imagesZip` to `/api/batch/start` with the `x-access-code` header.
+
+**Rollback.** Delete `scripts/golden/results/seeded-demo-batch-2026-08-13.json` and this
+changelog entry. The seeded verification/application rows stay in the deployed database — they
+are real, useful demo data, not a defect to revert. Truncating them is a separate, deliberate
+choice for whoever runs the demo next.
+
 ## TRO-558 / TRO-559 — measurement scripts stop clobbering evidence; the stale OCR floor numbers are re-measured (2026-08-13)
 
 **TRO-559.** `pnpm eval:ocr-floor-sweep` used to overwrite its own committed evidence file in

@@ -469,6 +469,940 @@ source .factory-env && pnpm test -- scripts/factory/defect-gates/rules/vacuous-e
 **Rollback.** Delete `scripts/factory/defect-gates/ast.ts` and
 `scripts/factory/defect-gates/rules/`. No other file depends on them yet. The engine does
 not run this rule automatically — nothing else breaks if you remove it.
+## TRO-539 — LH-034 · Fix the latency harness's provenance trap, add a per-stage breakdown, add a real-HTTP `--url` mode (2026-08-12)
+
+Advances TH-R2, TH-R15, TH-R19. This entry covers the code-side steps only (ticket steps 1-4,
+plus a zero-cost local validation). The real deployed measurement stays blocked on Troy. See
+"What stays blocked on Troy" below.
+
+**Four defects. Four fixes.**
+
+1. **The provenance trap.** Commit `c5e49f8` (TRO-514) wired the warning comparator into
+   `route.ts`. It fixed `measure.ts`'s header comment. It never touched the `pipelineScope`
+   string the harness writes into every report. The next run would record correct new timings
+   under an old, false claim: "No OCR/warning-subsystem comparator (LH-020 not merged)." Fixed
+   first, before anything else. `pipelineScope` is no longer a string literal.
+   `buildPipelineScope(boundary)` (`scripts/latency/target-info.ts`) builds it fresh every run.
+   It names the warning comparator, the OCR deadline (TRO-519), and TH-R19's cascade rule. It
+   cannot go stale silently again. The next pipeline change must change what this function
+   returns, not a separate string someone can forget.
+2. **Wrong machine.** The committed artifact measures an in-process call on a developer's own M4
+   Pro. It does not measure Render's `starter` plan (0.5 CPU / 512 MB, `render.yaml:29`). Still
+   true after this PR. Closing it needs a real deployed run, which needs Troy (see below). This
+   PR adds the tool to close it — `--url` mode — without spending money or needing Render
+   access itself.
+3. **Wrong boundary.** The harness only ever measured `handleVerifyRequest` in-process. It never
+   measured a real HTTP round-trip. That excludes the Next.js framing layer and the network path
+   the real user waits on. Fixed: `scripts/latency/measure.ts` now supports `--url=<origin>`. It
+   sends a real multipart `fetch` POST to `${url}/api/verify` instead (`runOnceHttp`). The
+   in-process mode stops its clock before `response.json()` on purpose — that parse is the
+   harness's own bookkeeping, not server time (see that function's own comment). `--url` mode
+   stops its clock AFTER the full response body arrives. A real client's wait includes that time.
+4. **No stage breakdown.** `POST /api/verify` now returns a `Server-Timing` response header on
+   every 200 response. It carries one `name;dur=<ms>` entry per PRD §3.8 stage: preprocess, ocr,
+   haiku, router, db (`src/app/api/verify/server-timing.ts`, wired into
+   `src/app/api/verify/route.ts`). `ocr` times the whole warning-comparator call: region
+   detection, OCR, and reconciliation. PRD §3.8's table has one row named "OCR", not three. `db`
+   times `saveLabelImage` (TRO-518) together with the verification-tables transaction, as one
+   combined figure. `haiku` and `ocr` run concurrently (CP-2 §4.4) but are measured
+   independently. Their reported durations can overlap. They are not meant to sum to the total.
+   A non-200 response carries no header — an early error means at least one stage never ran. The
+   harness parses this header off the `Response` object either mode produces
+   (`parseServerTimingHeader`) — the in-process mode reads it off the same object
+   `handleVerifyRequest` returns; `--url` mode reads it off the real HTTP response. Either way,
+   every successful run's samples roll into a per-stage `stageBreakdownMs` summary
+   (`scripts/latency/stage-breakdown.ts`), reusing the same `summarizeLatencies` the overall
+   p50/p95 already uses. Only a successful run's samples ever count.
+
+**New artifact fields (ticket step 4).** Every report now carries a `target` object: `boundary`
+(`"in-process"` or `"http"`), `host`, `url`, and `renderPlan`. `renderPlan` is read from this
+repo's own `render.yaml` at measurement time (`scripts/latency/render-target.ts`, `js-yaml` —
+the same library and pattern `scripts/deploy/render-yaml.test.ts` already uses). It is never a
+hard-coded `"starter"`. It is non-null only when the run's own target hostname matches the
+hostname Render's naming convention (`<service-name>.onrender.com`) would give `render.yaml`'s
+`web` service. A `--url` run against `localhost`, or any other host, gets `renderPlan: null` —
+never a false Render claim. This script has no Render API credentials. CLAUDE.md's own
+non-negotiables keep the real key out of this repo. "The Render plan" is always this repo's own
+committed config, read fresh, never a live query.
+
+**Two more honesty fixes, found while wiring the above.**
+
+- `model` used to always report `HAIKU_EXTRACTOR_MODEL`, even in `--url` mode. This script
+  cannot back that claim in `--url` mode — it never observes what the target server runs. Fixed:
+  `--url` mode now says so plainly instead of repeating the constant as if confirmed.
+- Added `--note=<text>`, written verbatim into a new `validationNote` report field. A run whose
+  numbers are not a real TH-R2 measurement can now say so loudly inside the artifact itself —
+  not only in its filename, not only in this changelog. See the fake-server validation below.
+
+**How to run `--url` mode.**
+
+```bash
+pnpm latency:check -- --url=http://localhost:3874 --runs=5
+```
+
+`--out=<path>` redirects the report path. The default for `--url` mode is
+`scripts/latency/results/single-label-verify-url-mode.json` — deliberately NOT the in-process
+default, `single-label-verify.json`. The committed real-measurement evidence file must never be
+overwritten by a different-boundary or fake-model run just because `--out` was forgotten.
+`--note=<text>` stamps a `validationNote` into the report. `ANTHROPIC_API_KEY` is not required in
+`--url` mode — the target server holds its own key.
+
+`DATABASE_URL` is optional in `--url` mode. Cleanup against it needs TWO explicit signals, even
+when it is set: the `--cleanup-db` flag, AND a loopback target
+(`localhost`/`127.0.0.1/8`/`::1`). A real deployed target's own database has no reliable link to
+whatever `DATABASE_URL` a shell happens to export. Deleting by ID against the wrong database
+risks a cross-database collision. A loopback hostname alone is not enough proof of "same
+database" either — this repo's own factory workflow runs several worktree-scoped databases on
+one localhost Postgres server (round 2 below). Skipped cleanup is never silent:
+`cleanupSkippedReason` in the report names why, and it is never counted as a `cleanupFailure`
+(skipped is not failed).
+
+Every real network request is bounded by one 30-second timeout. It covers the request and the
+body read together. TRO-519 already applied the same "no request hangs forever" rule to the OCR
+channel; this applies it client-side too.
+
+**Zero-cost local validation — not a TH-R2 number.** Ran the local app
+(`ANTHROPIC_BASE_URL=http://localhost:4874`, pointed at `scripts/e2e/fake-anthropic-server.ts`,
+the same fake server `playwright.config.ts` already uses for E2E). Drove 5 sequential requests
+through `--url` mode:
+
+```bash
+pnpm latency:check -- --url=http://localhost:3874 --runs=5 --cleanup-db \
+  --out=scripts/latency/results/single-label-verify-fake-server-validation.json \
+  --note="TRO-539 harness validation ONLY. Target ran scripts/e2e/fake-anthropic-server.ts via \
+ANTHROPIC_BASE_URL, not the real Anthropic API. This is a zero-cost, local-machine, \
+in-memory-canned-response run that proves the --url mode, Server-Timing capture, \
+--cleanup-db-gated loopback cleanup, and the request timeout all work end to end. It is NOT a \
+TH-R2 measurement, NOT a deployed-instance measurement, and must never be quoted as either."
+```
+
+Committed at `scripts/latency/results/single-label-verify-fake-server-validation.json`. Real
+numbers, from a real run, conditions named: 5/5 succeeded, all `PASS`. Wall-clock p50 381 ms, p95
+688 ms, mean 443 ms. Per-stage p50, from the real `Server-Timing` header:
+
+- `ocr` 328.8 ms — real tesseract OCR against the real golden-set photo; this channel is not faked
+- `haiku` 2.4 ms — the fake server's canned, near-instant response; nothing like a real Haiku call
+- `preprocess` 34.4 ms
+- `router` 0.6 ms
+- `db` 10.1 ms
+
+Confirmed by direct query afterward, not just "no error thrown": all 5 `applications` rows this
+run created were deleted. 0 rows of that table remained in the worktree database. `target.boundary`
+read `"http"`. `target.host` read `"localhost:3874"`. `target.renderPlan` read `null` — correct,
+since localhost does not match `render.yaml`'s expected host. `pipelineScope` named the warning
+comparator and the `http` boundary, with no "LH-020 not merged" claim, and no unconditional "real
+API call" claim either (round 2 below). This proves the `--url` mechanism, the `Server-Timing`
+capture, the `--cleanup-db`-gated loopback cleanup path, the request timeout, and the provenance
+fields all work end to end.
+
+**It is not a latency number for TH-R2.** The `haiku` stage timing alone — a canned local HTTP
+response, not a ~2.5s live model call — makes the whole run's wall-clock total unrepresentative
+of anything real. The artifact's own `validationNote` and `model` fields say so explicitly.
+
+**Corrected the already-false 4232 ms figure.** This is a provenance-trap cleanup, not a new
+measurement. `audit/requirements/REPORT.md` and this file's own TRO-471 entry both quoted 4232
+ms as if it were the committed artifact's number. It never was.
+`scripts/latency/results/single-label-verify.json` was overwritten the same day by a second run
+(commit `5a16263`). That run recorded p50 3690 ms, p95 4339 ms — the number the file holds
+today. This changelog never recorded that second run at all, until now. (A real gap: a grep for
+`3690` across this file's history returned 0 matches before this entry.) Both figures are
+corrected in place. The original 4232 ms figures stay, clearly marked as the FIRST run's own
+historical record — not deleted. See the "Correction (TRO-539, 2026-08-12)" note inside the
+TRO-471 entry below. Neither 4232 ms nor 3690 ms is a valid current TH-R2 figure. Both predate
+commit `c5e49f8`'s warning comparator. TH-R2 stays PARTIAL.
+
+**What this PR makes satisfiable, and what stays blocked on Troy.** The code-side steps are
+done and tested: fix the string, add `Server-Timing`, add `--url` mode, add the provenance
+fields. What TH-R2 still needs, and cannot get from this worktree: a real run of
+`pnpm latency:check -- --url=<the deployed Render URL>` against the actual `starter`-plan
+instance. That needs two things from Troy. First, provisioning the deployed environment — a
+real `ANTHROPIC_API_KEY` in Render's env config, a hard-stop credential action
+(`docs/deploy.md`). Second, Troy's go-ahead — a real run against a real deployed instance spends
+real money end to end (preprocessing, Haiku, OCR — not the fake server's near-instant
+stand-ins). Until that run happens and its artifact is committed, TH-R2 stays PARTIAL. This PR
+does not raise it to VERIFIED, and does not claim to.
+
+**Tests.** `src/app/api/verify/server-timing.test.ts` (20 cases): `buildServerTimingHeader`
+round-trips through `parseServerTimingHeader`. Malformed, negative, non-numeric, and
+unknown-stage header entries are dropped, never trusted. A quoted `desc` param containing a
+comma no longer mis-splits the entry (round 1), an unmatched quote on a `dur` value is rejected
+(round 2), and a backslash-escaped quote inside a `desc` value no longer ends the quoted span
+early (round 3) — all three below.
+
+`src/app/api/verify/route.test.ts` gained two cases in a "Server-Timing header (TRO-539, PRD
+§3.8)" describe block. A 200 response carries all five stage entries with non-negative
+durations. A non-200 response carries no header at all. The first case fails for the right
+reason before this change: `expected null not to be null`, since no header existed at all. That
+was confirmed by running it against `HEAD`'s own copy of `route.ts` (`git show HEAD:... >
+scratch-file`, never `git stash` — lessons.md rule 4), then restoring.
+
+`scripts/latency/render-target.test.ts` (12 cases) and `scripts/latency/target-info.test.ts` (23
+cases) cover the provenance-derivation logic directly. Two different `render.yaml` texts for the
+same host produce two different plans — proof this is read, not hard-coded. A `localhost` target
+always gets `renderPlan: null`. The two boundaries produce two different `pipelineScope` strings.
+Neither contains "LH-020 not merged".
+
+`scripts/latency/args.test.ts` gained 18 cases in total, for `--url`/`--out`/`--note`/
+`--cleanup-db` parsing and validation (both this ticket's own new flags and the two review
+rounds below). Every pre-existing case is unchanged — the new fields are `undefined` when
+absent, and vitest's `toEqual` ignores `undefined` properties.
+
+`scripts/latency/stage-breakdown.test.ts` (7 cases, new) and `scripts/latency/http-error.test.ts`
+(6 cases, new) cover the two modules the review rounds below extracted. Full suite: 1822 tests,
+all pass (`pnpm test`).
+
+**Local CodeRabbit review, round 1 (9 findings, 9 fixed, 0 dismissed).**
+
+- (major) `parseServerTimingHeader` split on every comma, so a quoted `desc` param containing
+  its own comma (`haiku;desc="crop, v2";dur=2500.0`) mis-split into two unparseable pieces.
+  Fixed: a real tokenizer that respects `"`-quoted spans (`splitOutsideQuotes`,
+  `server-timing.ts`). New regression tests cover the exact reported shape.
+- (minor) Added the suggested regression test for that same case.
+- (major) The stage-breakdown accumulation would have counted a FAILED run's own
+  `serverTimingMs`, if one were ever present. Today's `route.ts` never attaches the header to a
+  non-200 response, so this was latent, not live — but `--url` mode can point at any server.
+  Fixed: extracted into `scripts/latency/stage-breakdown.ts`'s `buildStageBreakdown`, which only
+  ever reads a successful run's samples. That is now a structural guarantee, not a behavioral
+  coincidence. New tests prove a failed run's timing data is excluded even when present.
+- (major) This changelog's sentences ran well past CLAUDE.md's ASD-STE100 length limit. Fixed:
+  this whole entry, rewritten short and active-voice.
+- (major) The cleanup delete-by-ID in `--url` mode trusted `DATABASE_URL` to be the SAME
+  database the target server itself used, with no check. Against a real deployed target that is
+  not a safe assumption — a stale local `DATABASE_URL` and a real remote `applicationId` could
+  collide and delete an unrelated row. Fixed: cleanup now only deletes when the target host is a
+  loopback address (`isLoopbackHostname`, `scripts/latency/target-info.ts`). Every other `--url`
+  target skips the delete and records why.
+- (major) `audit/requirements/REPORT.md`'s TH-R2 paragraph had the same sentence-length issue.
+  Fixed the same way.
+- (major) `buildPipelineScope`'s detailed pipeline description was stated with full confidence
+  even for an arbitrary `--url` target this script never confirms is running this exact commit.
+  Fixed: added an explicit caveat to the `http` boundary's own text, matching the `model`
+  field's existing honesty pattern. Kept the detailed description itself, unlike CodeRabbit's
+  own suggested code change (removing it). It is still real, useful context for this harness's
+  actual intended use: measuring this repo's own deployment.
+- (minor) `--url` accepted any URL scheme `new URL()` parses, including non-HTTP ones. A typo
+  would surface as a confusing `fetch` error partway through a run, not an immediate CLI error.
+  Fixed: `args.ts` now requires `http:` or `https:`.
+- (major) `runOnceHttp` had no timeout on its `fetch` call or its `response.json()` read — the
+  same "no deadline, can hang forever" defect class TRO-519 had just fixed server-side,
+  reintroduced client-side. Fixed: one shared `AbortSignal.timeout(30_000)` bounds both,
+  extracted into `scripts/latency/http-error.ts`'s `describeHttpError` for a clear message and a
+  dedicated, fast unit test.
+
+**Local CodeRabbit review, round 2 (9 findings, 8 fixed, 1 dismissed).** Ran after round 1's
+fixes landed — the gate's review step re-reviews the whole branch every run, so a new round can
+find real, different issues (lessons.md rule 31).
+
+- (minor) `--url` accepted a value with a real path, query string, or fragment. `measure.ts`
+  builds the actual request with `new URL("/api/verify", url)` — a leading slash there REPLACES
+  the whole path, so a `--url` with its own path component would have that path silently
+  dropped, hitting the wrong endpoint with no error. Fixed: `args.ts` now requires a bare
+  origin.
+- (major) `--url` accepted embedded credentials (`http://user:pass@host`). `fetch` already
+  rejects a request URL carrying a non-empty username or password, so this was reachable only as
+  a confusing mid-run `fetch` error. Fixed: `args.ts` now rejects it at parse time with a clear,
+  specific message.
+- (major) The stage-breakdown accumulation and the cleanup-eligibility check both trusted
+  `dbCleanupEligible` from round 1's own loopback check alone. That check is real, but not
+  sufficient. This repo's own factory workflow runs several worktree-scoped Postgres databases
+  on ONE localhost Postgres server. A loopback `--url` target and a stale, differently-scoped
+  `DATABASE_URL` can coexist on one machine. That is the exact cross-database collision round 1
+  set out to prevent — just relabeled from "remote" to "local but wrong". Fixed: added
+  `--cleanup-db`, an explicit operator opt-in. Cleanup now needs BOTH the flag AND a loopback
+  target. CodeRabbit's own suggested fix removed the loopback check entirely; this PR kept it as
+  a second, independent safety check instead, since the flag alone still trusts one signal.
+- (minor) The already-committed fake-server-validation artifact's `pipelineScope` field said
+  "Haiku extraction (claude-haiku-4-5, real API call)" unconditionally, even in http mode —
+  directly contradicting that SAME artifact's own `model` field, which correctly said this
+  script never confirms a real call happened. Fixed: the Haiku clause is now boundary-specific.
+  In-process states it as fact (this script itself made the call). Http states this script never
+  observes it. Re-ran the fake-server validation after the fix and re-committed the artifact;
+  the contradiction no longer exists in either field.
+- (minor) `isLoopbackHostname` only recognized the literal `127.0.0.1`, not the full
+  `127.0.0.0/8` loopback range (RFC 5735) — `127.0.0.2` and `127.255.255.255` are just as much
+  "this machine". Fixed: matches any valid IPv4 address in that block.
+- (minor) `describeHttpError`'s `String(cause)` fallback was not itself guaranteed safe. An
+  `Object.create(null)` value has no `toString` anywhere in its (empty) prototype chain.
+  `String()` on it throws a real `TypeError` — confirmed directly in the new test, not assumed.
+  Fixed: wrapped in its own `try`/`catch` with a fixed fallback message.
+- (minor) `DUR_PARAM_PATTERN`'s two `"?` markers were independently optional, so an UNMATCHED
+  quote (`dur="123.4`, opening only) still matched and produced a number. Fixed: two mutually
+  exclusive branches — fully unquoted, or fully quoted with a matching close — replace the two
+  independent optionals.
+- (major) The changelog entry still had several sentences over CLAUDE.md's ASD-STE100 length
+  limit, mostly semicolon-chained multi-fact sentences. Fixed the worst offenders: split into
+  short sentences, and converted the per-stage validation numbers into a list (STE100's own
+  recommended fix for a sequence of 3+ items). Some sentences naming a file path plus a number
+  plus a reason still run a little long. This entry does not chase the limit to the letter at
+  the cost of dropping a fact, per this project's own writing-discipline skill.
+- (dismissed) `audit/requirements/REPORT.md`'s TH-R2 paragraph was flagged again for the same
+  sentence-length issue round 1 already fixed. Checked directly, sentence by sentence, by word
+  count: every real sentence in that paragraph is at or under 27 words, and the one apparent
+  27-word outlier is a quoted statutory-style fragment a splitter miscounts as one sentence with
+  the sentence before it. No further split would remove a real violation — it would only
+  fragment single facts. Dismissed as already-addressed, not a new issue.
+
+**Local CodeRabbit review, round 3 (5 findings, 4 fixed, 1 dismissed).**
+
+- (minor) `splitOutsideQuotes` did not honor a backslash-escaped quote inside a quoted span (RFC
+  7230's own `quoted-pair`, e.g. `desc="a \" b, c"`). An escaped quote would have closed the
+  quoted span early, letting the comma right after it wrongly split the entry. Fixed: a
+  backslash inside a quoted span now consumes the next character literally, without toggling
+  quote state. New test covers the exact shape.
+- (minor) This changelog's own `--note=...` example command used a literal `...` in place of the
+  real note text — not copy-pasteable, and not what the validation run actually used. Fixed:
+  replaced with the artifact's own real `validationNote` text, verbatim, confirmed to still be
+  valid, runnable bash (the backslash-newline continuations stay inside one double-quoted
+  string).
+- (minor) `cleanupSkippedReason`'s own doc comment described only some of the three conditions
+  that set it. Fixed: names all three — no `DATABASE_URL`, `DATABASE_URL` set but `--cleanup-db`
+  not passed, or `--cleanup-db` passed but the host is not loopback.
+- (major) The pool-close closure narrowed the outer `let pool` inside a ternary — correct today,
+  by TypeScript's own control-flow analysis, but fragile: a later refactor inserting an `await`
+  between the check and the closure could silently break that narrowing. Fixed: captured `pool`
+  into its own fresh `const` first, so the non-null guarantee no longer depends on the ternary's
+  specific shape.
+- (dismissed) A finding asked this ticket's own review-ledger entry for round 1's REPORT.md fix
+  to be corrected, since that paragraph's SAME edit also corrected 4232 ms to 3690 ms — a fact
+  change, not just style. The ledger is append-only; an old line cannot be edited. Checked the
+  history directly: the 4232 → 3690 correction landed in an earlier, separate commit, before
+  round 1's review ever ran. Round 1's own fix, in isolation, really did change no fact — it
+  only shortened sentences of an already-corrected paragraph. The ledger summary is accurate for
+  what that specific commit did. Recorded a new, clarifying ledger entry alongside the original
+  rather than editing it, so a future reader sees the full sequence.
+
+**Local CodeRabbit review, round 4 (1 finding, 1 fixed).** This entry's own item 4, above,
+said `--url` mode parses the `Server-Timing` header and builds `stageBreakdownMs` — true, but
+incomplete. Both modes do: `route.ts` attaches the header to any 200 response, and `main`
+builds `stageBreakdownMs` from whichever mode's `runResults` ran, unconditionally. `measure.ts`'s
+own code comment already said so correctly; this entry's prose did not. Fixed: reworded item 4
+above to name both modes.
+
+**How to run it.** `pnpm latency:check` runs the in-process mode, unchanged — real billed API
+calls. `pnpm latency:check -- --url=<origin> [--runs=N] [--out=path] [--note=text]
+[--cleanup-db]` runs the real-HTTP mode — `ANTHROPIC_API_KEY` not required, `DATABASE_URL`
+optional (`--cleanup-db` additionally needed, alongside a loopback target, for this script to
+delete the rows it created). Source
+`.factory-env` first in a factory worktree, either way. Run `pnpm db:migrate` once before either
+mode if the worktree database is unmigrated.
+
+**Rollback.** Revert this commit. `scripts/latency/results/single-label-verify.json` — the real,
+committed, in-process TH-R2 evidence file — is untouched by this PR. Only the new
+`single-label-verify-fake-server-validation.json`, and the new (previously nonexistent)
+`single-label-verify-url-mode.json` default path, are affected. Neither is quoted anywhere as a
+TH-R2 number. `route.ts`'s `Server-Timing` header is additive — a new response header, no
+existing field changed. Reverting it costs nothing else.
+
+## TRO-516 — Golden-set corpus calibration (2026-08-12)
+
+Advances TH-R12, TH-R17. Diagnosis: `docs/diagnostics/2026-08-12-verdict-miss-triage.md`. That
+report found 11 cases missing their expected verdict. Five misses were corpus-scope. TRO-538
+split `routerVerdict` from `cascadeVerdict`. TRO-535 swept `OCR_CONFIDENCE_FLOOR` from 60 to
+50. Both landed first. They unblock this ticket's C4, C6, and C7. This entry covers
+corrections C1 through C8, in order.
+
+**C1/C2 — case-26 and case-25, corrected together.** Both cases change one thing from a clean
+label: the font. Case-25 sets `brandName` in Dancing Script. Case-26 sets `classType` in
+UnifrakturMaguntia. Neither case carried a `notes` field. Neither cited a design document. The
+old `expected` block predicted `REVIEW` / `LOW_MODEL_CONFIDENCE`. Two independent live runs
+score the affected field `MATCH`, with no confidence drop. Evidence: `eval-report.json`,
+measured 2026-08-12T22:15:52.776Z; `benchmark-report.json`, measured 2026-08-12T22:30:58.027Z.
+
+Changed, for each case:
+
+- `labelVerdict` to `PASS`.
+- `reviewReason` removed — absent, matching every other `PASS` case.
+- The affected field's verdict to `MATCH`.
+- Its reason text restated as the measured result.
+- `description` dropped its own falsified clause: "hard for a model to read confidently." It
+  no longer contradicts the corrected `reason` text next to it.
+
+Re-checked live, this ticket: case-25 `labelVerdictCorrect: true` ($0.004675). case-26
+`labelVerdictCorrect: true` ($0.004795).
+
+**C3 — case-21, pixels strengthened, expectation unchanged.** The old transform
+(`modulate({ brightness: 0.32 })`) only darkened the front region. It never degraded glyph
+edges. So a real model still read the label perfectly (diagnosis, section 3D).
+
+Precedent: case-20 added a blur, so the image becomes genuinely unreadable instead of the note
+being restated to fit a weak image. `applyLowLight` (`scripts/golden/degrade.ts`) gains two
+new optional parameters:
+
+- `contrastFactor` pulls the region's pixel values toward mid-gray (128), before the existing
+  exposure scale runs. This simulates a sensor's noise floor crushing shadow and highlight
+  detail. It is not just a proportionally darker copy of the same crisp edges.
+- `noiseAmplitude` adds a deterministic grain field. It is seeded with a fixed `mulberry32`
+  generator, never `Math.random()`. It composites with the `"overlay"` blend mode, whose no-op
+  point sits at exactly mid-gray. So `amplitude` alone controls how far the grain pushes a
+  pixel.
+
+Case-21's manifest entry chains this strengthened `low-light` step with an existing `blur`
+step, sigma 1.6. This is the same two-step pattern case-20 already uses.
+
+Both new parameters default off: `contrastFactor: 1`, `noiseAmplitude: 0`. So every existing
+caller stays byte-identical — case-22's own `low-light` degradation, and every pre-existing
+test. Verified: a full `pnpm golden:build` (all 32 cases) touches only the `case-21` image
+(`git diff --stat golden-set/images/` confirms it).
+
+Measured, real pixel statistics on the committed image, front region, grayscale, before this
+ticket's edit and after:
+
+| Statistic | Before | After |
+|---|---|---|
+| Contrast ratio (darkest 5% vs lightest 5% of pixels) | 2.32:1 | 1.35:1 |
+| Max horizontal gradient (one step vs spread over pixels) | 73 | 37 |
+| Region standard deviation | 15.06 | 13.16 |
+
+The "before" numbers reproduce the diagnosis's own independently-measured values exactly:
+2.32:1 contrast ratio, gradient 73. This confirms the measurement method matches the one the
+diagnosis used.
+
+The image genuinely degrades now. A lower max gradient means an edge spreads over several
+pixels instead of one. The compressed, noisier range is a real dynamic-range change, not only
+a darker copy.
+
+Case-21's own `expected` block is UNCHANGED: `labelVerdict`, `reviewReason`, every field
+verdict. C3 is a pixel correction, not a corpus-expectation edit.
+
+Live re-check (`pnpm eval:check -- --live --case=case-21-low-light-front-label`, $0.004685):
+still scores `PASS` (`labelVerdictCorrect: false`). Extractor confidence stays 0.99 on both
+affected fields; `image_quality.confidence` reads 0.95.
+
+This is an honest result, not a partial fix. The diagnosis's own finding S6 says
+`LOW_IMAGE_QUALITY`'s confidence-driven branch fired zero times across the full 32-case
+corpus. The reason: it depends entirely on the model's own self-reported confidence. This run
+confirms that confidence stays high even against a measurably degraded image. S6 is a
+separate, already-documented code defect. It is not in this ticket's C1-C8 scope.
+
+A stronger variant was tried and reverted. Real spend: $0.014706, one extra live call.
+Params: `brightnessFactor` 0.55, `contrastFactor` 0.3, `noiseAmplitude` 38, blur sigma 2.4.
+
+It did flip the label verdict to `REVIEW` — but for the wrong reason, and at a real cost.
+`applyBlur` blurs the WHOLE image, not one region. The stronger blur also degraded the
+`government_warning` block. That breaks case-21's own "back label reads fine" premise.
+Measured: all 5 field-level verdicts came back wrong on that run. Not just the two
+front-label fields the case is designed to test.
+
+Reverted to the modest values above. They keep `government_warning` correct, confirmed by the
+targeted run above.
+
+**C4 — case-23 / case-24, reviewReason corrected to the measured mechanism.** TRO-535 swept
+`OCR_CONFIDENCE_FLOOR` from 60 to 50, already merged 2026-08-12.
+
+Confirmed in the post-sweep artifacts before editing anything: `eval-report.json` (measured
+2026-08-12T22:15:52.776Z) records both cases' `routerVerdict.warningChannel: "dual"`. The
+second, OCR channel now participates. The old floor discarded it. Both cases'
+`routerVerdict.actualReviewReason` already reads `WARNING_MISMATCH`, not the manifest's old
+`LOW_IMAGE_QUALITY`.
+
+Changed, for each case:
+
+- `expected.reviewReason` from `LOW_IMAGE_QUALITY` to `WARNING_MISMATCH`.
+- The `governmentWarning` field's reason text. It named "extraction confidence is low," the
+  mechanism the floor sweep replaced.
+- The `notes` field. It now records TRO-469/LH-021's original prediction on the record, next
+  to this ticket's correction of it, rather than deleting the original claim.
+
+Re-checked live, this ticket: case-23 router stage `labelVerdictCorrect: true`,
+`reviewReasonCorrect: true` (`WARNING_MISMATCH`). Cost: haiku $0.004695 plus resolver
+$0.009938. case-24 the same: haiku $0.004740 plus resolver $0.010146.
+
+**Observed, not this ticket's job to fix:** on both cases, the cascade end state
+(post-resolver) flips back to an incorrect `PASS`. `resolverOutcome` reads `"resolved"` on
+both. This is not new. TRO-538's own CHANGES.md entry already names case-23 and case-24. The
+resolver flips both from a correct router `REVIEW` to an incorrect `PASS` — a pre-existing
+pattern, not new here.
+
+**C5 — case-24 duplicates case-23's print size. Owner decision, not taken.** Both render
+`TINY_WARNING_FONT_SIZE_PX = 9` on the same canvas (`scripts/golden/render.ts:227`, `:249`,
+`:252`). No change made here. Reported to Troy in this ticket's final message, per the
+ticket's own instruction not to decide it.
+
+**C6/C7 — case-28 and case-29. Measured; no corpus edit.** Read before editing, per the
+orchestrator's scope ruling. `eval-report.json` and `benchmark-report.json` agree, both
+measured 2026-08-12T22:30:58.027Z or later. The cascade end state (post-resolver) resolves
+both cases to `FAIL`, matching the manifest's expectation exactly as written.
+
+- case-28: `cascadeVerdict.actualLabelVerdict: "FAIL"`, correct. `class_type` resolves
+  `RESOLVED_MISMATCH`, in both artifacts.
+- case-29: `cascadeVerdict.actualLabelVerdict: "FAIL"`, correct. `brand_name` resolves
+  `RESOLVED_MISMATCH`, in both artifacts.
+
+The router stage alone still reads `REVIEW` / `AMBIGUOUS_BRAND` on both cases, unchanged,
+matching the original diagnosis. The resolver is what completes the correct `FAIL`.
+
+Per the orchestrator's ruling, this is the "expectations correct as written" branch. No
+manifest edit, no rubric change. `KNOWN_VECTOR_GAPS` stays empty. case-29 keeps its `V8` tag
+as that vector's only carrier.
+
+**C8 — case-17. Not touched.** Per the orchestrator's scope ruling. Not even the optional
+opacity / `bandHeight` strengthening the diagnosis floated. case-17's variance is TRO-543's
+measured story now.
+
+**Code fix found by this ticket's own tests.** `applyDegradation`'s `"low-light"` dispatch
+case, `scripts/golden/degrade.ts`, built its `applyLowLight` params object by hand. It
+forwarded only `region` and `brightnessFactor`.
+
+A new test caught the gap before any live run. A manifest entry naming `contrastFactor` /
+`noiseAmplitude` built byte-identical to one without them. Fixed by forwarding both new keys.
+
+`src/lib/golden-set/loader.ts`'s `DEGRADATION_PARAM_SHAPE` also gained the two new optional
+keys for `"low-light"`. Without it, the loader's own closed-schema check rejects case-21's
+manifest entry outright.
+
+**Tests.** `scripts/golden/degrade.test.ts` gains 9 new cases for `contrastFactor` /
+`noiseAmplitude`. They cover byte-identical defaults, directional pixel checks, range
+rejection, and determinism. One more case proves the dispatcher forwards the new params — red
+without the dispatcher fix above.
+
+`scripts/golden/images.test.ts` and `scripts/eval/warning-golden-cases.test.ts` are updated to
+match the new manifest content they pin. That is case-21's `degradations` array, and
+case-23/24's `WARNING_MISMATCH`. Neither test is weakened; both still assert one exact value,
+now the corrected one.
+
+`pnpm test`: 1741/1741 pass. `pnpm typecheck`, `pnpm lint`: clean. `pnpm golden:verify`: PASS,
+32 cases checked. Vector coverage is unchanged: `KNOWN_VECTOR_GAPS` still empty, V4 and V8
+keep their existing carriers.
+
+**The `verified` flag.** Every edited case keeps `verified: false`: `case-21`, `case-23`,
+`case-24`, `case-25`, `case-26`. This ticket is a machine edit. `golden-set/README.md:81-85`
+reserves `verified: true` for a human sign-off. Troy: these five need review.
+
+**Measured, full-corpus, real, live run — the closing evidence.** Models: `claude-haiku-4-5` /
+`claude-sonnet-5`. Command: `pnpm eval:check -- --live --full`. Measured
+2026-08-13T01:47:56.655Z, 32/32 cases scored, 0 failures, $0.27957.
+
+| Metric | Before this ticket (TRO-538 baseline) | After this ticket |
+|---|---|---|
+| Extraction accuracy | 96.3% (154/160) | 96.3% (154/160) |
+| Router-verdict accuracy | 75.0% (24/32) | **81.3% (26/32)** |
+| Cascade-verdict accuracy | 68.8% (22/32) | **81.3% (26/32)** |
+| Review-reason accuracy | 35.7% (5/14) | 58.3% (7/12) |
+
+Extraction accuracy is unchanged, as expected. This ticket edits expectations and pixels, not
+the extractor.
+
+`baseline.json` is promoted from this exact report, not from a second live run. It uses the
+same field selection `check.ts`'s own `--update-baseline` branch writes: `ticket`,
+`measuredAt`, `manifestVersion`, `manifestContentHash`, `caseIds`, `summary`. The
+already-committed `eval-report.json` this run just produced carries every field a promotion
+needs. Re-spending roughly $0.28 to reproduce an identical report would not make the number
+more honest, only more expensive. `pnpm eval:check` (cheap mode) now passes against this
+baseline.
+
+**Attribution — checked case by case, not assumed.** Router-verdict accuracy's full +2 gain
+(24 to 26) is this ticket's own doing.
+
+The pre-ticket router-wrong set, read from `git show HEAD:scripts/eval/results/eval-report.json`,
+is exactly these 8 cases: `case-17`, `case-19`, `case-21`, `case-22`, `case-25`, `case-26`,
+`case-28`, `case-29`. This run's router-wrong set is that same 8, minus `case-25` and
+`case-26` — the two cases C1/C2 fix. Nothing else moved.
+
+Cascade-verdict accuracy's +4 gain (22 to 26) splits two ways. The first +2 is the same two
+cases: case-25/26 never escalate, so router-correct means cascade-correct too. The second +2
+is `case-16` and `case-19` — neither one this ticket edited.
+
+Both flipped from cascade-wrong to cascade-correct for the same reason: their resolver call
+returned a different outcome this run. `case-16`: `resolved` in the pre-ticket run,
+`needs-human` here. `case-19`: `needs-human` in the pre-ticket run, `resolved` here. This is
+ordinary resolver-call variance on an untouched case — the same kind of run-to-run model
+variance TRO-543 measures directly on case-17.
+
+**Derived, not claimed as this ticket's fix:** the cascade-accuracy headline number overstates
+what C1 through C8 changed, by 2 of 32 cases. The router-accuracy number does not.
+
+**Total measured spend, this ticket: $0.33795, all real `claude-haiku-4-5` /
+`claude-sonnet-5` API calls.**
+
+| Run | Cost |
+|---|---|
+| case-25, targeted `--live --case=<id>` | $0.004675 |
+| case-26, targeted `--live --case=<id>` | $0.004795 |
+| case-23, targeted `--live --case=<id>` | $0.014633 |
+| case-24, targeted `--live --case=<id>` | $0.014886 |
+| case-21, modest params (kept) | $0.004685 |
+| case-21, stronger-variant experiment (reverted, kept for the record) | $0.014706 |
+| Full-corpus `--live --full` (the closing evidence) | $0.27957 |
+| **Total** | **$0.33795** |
+
+**Not verified by this ticket.** Whether Troy wants case-21's genuinely-degraded pixels to
+also close S6 — confidence-based `LOW_IMAGE_QUALITY` routing has no deterministic signal. S6
+is a separate, already-diagnosed defect this ticket does not fix.
+
+Whether the cascade-level resolver regression warrants a resolver-prompt change. TRO-538 first
+raised this as an open question: a correct router `REVIEW` flipped to an incorrect `PASS`.
+
+TRO-538's own run named four cases: case-16, case-18, case-23, case-24. This run reproduces
+three of the four — case-18, case-23, case-24. case-16 did not reproduce this time. Per the
+Attribution note above, that is itself a small piece of evidence: the regression is real, but
+not always the same size. This ticket answers nothing further about it.
+
+**How to run it.** `pnpm golden:verify` — schema and vector-coverage check. `pnpm test` — unit
+suite, including the new `degrade.ts` regression tests. `pnpm eval:check -- --live
+--case=<id>` for a single-case re-check, cents each. `pnpm eval:check -- --live --full
+--update-baseline` to re-measure and re-promote the whole corpus for real, roughly $0.28.
+
+**Rollback.** `git revert` this ticket's commit(s). The `case-21` image reverts with the
+manifest change. `pnpm golden:build` after the revert regenerates it to match.
+
+`scripts/eval/results/eval-report.json` and `scripts/eval/baseline.json` need a fresh `--live
+--full --update-baseline` run to re-establish the pre-ticket numbers. Both are working
+artifacts, committed for evidence, not source. That is the same rollback shape TRO-535's own
+entry above uses.
+
+## TRO-543 — LH-038 · Measure verdict variance (2026-08-12)
+
+Advances TH-R10 (stretch), TH-R17, TH-R19. This entry is Part 1 only: a free measurement, plus
+tooling. Part 2, the real paid sweep, needs Troy's go-ahead. It ships as a follow-up ticket.
+
+**The finding.** Case-17 (`case-17-glare-front-label`) returned three REVIEW verdicts and two
+PASS verdicts across five committed runs. The router code never changed between them. The image
+never changed either. Every run used `claude-haiku-4-5` at `temperature: 0`. CP-1 already names
+this setting's real limit: "`temperature: 0` has never guaranteed identical output" (`cp1:302`).
+TH-R10 names case-17 as the imperfect-image stretch case. Its own instability is the finding.
+
+**Observed** (git archaeology only — zero API cost). Five committed runs carry case-17's verdict.
+
+| measuredAt | Source | case-17 verdict | Label verdict correct |
+|---|---|---|---|
+| 2026-08-12T04:39:34.853Z | `eval-report.json` @ `1ccf44b` | REVIEW / AMBIGUOUS_BRAND | yes |
+| 2026-08-12T05:16:55.005Z | `eval-report.json` @ `62cdf1b` | PASS / null | no |
+| 2026-08-12T05:23:34.689Z | `benchmark-report.json` @ HEAD, cascade arm | REVIEW / AMBIGUOUS_BRAND | yes |
+| 2026-08-12T12:59:28.746Z | `eval-report.json` @ `a6140ff` | REVIEW / AMBIGUOUS_BRAND | yes |
+| 2026-08-12T13:26:45.488Z | `eval-report.json` @ HEAD | PASS / null | no |
+
+Every run expects REVIEW / LOW_IMAGE_QUALITY.
+
+**The rest of the corpus holds steady.** 29 case IDs appear in all five runs. The manifest itself
+grew from 29 to 32 cases inside this window. `16a65fd` (TRO-515) and `9b11baf` (TRO-469) each
+added cases. No existing image changed. Aggregate accuracy is not comparable across the window
+for that reason — only the 29 shared cases are. This entry compares those 29 cases only.
+
+28 of 29 shared cases (N=29) return the identical verdict and headline reason across all five
+runs (K=5). **Case-17 is the one exception: 3 REVIEW, 2 PASS** — the split the table above shows.
+
+This is real call-to-call model variance. It is not a harness bug — the code path held steady
+and the image held steady. `CHANGES.md:699-702` named the phenomenon on this one case first.
+`CHANGES.md:1518-1521` measured the same effect as an aggregate spread. Two same-corpus runs
+produced 62.1% (18/29, `62cdf1b`'s run) and 65.5% (19/29, the benchmark cascade arm's run) — a
+3.4-point swing. This entry verifies both figures directly against their own committed artifacts
+above. This entry adds the number those two did not yet have: the retrospective, whole-corpus
+stability rate. **28/29 stable (96.6%), N=29, K=5.**
+
+**New tooling: `scripts/eval/variance.ts`, run with `pnpm eval:variance`.** It reuses
+`runOneCase` (`cascade-runner.ts`) — no second cascade path (TH-R19). It reuses `parseEvalArgs`
+and `resolveCaseIds` (`args.ts`). It adds one new flag, `--repeats=<k>`:
+
+1. Default: 5 repeats.
+2. Hard cap: `MAX_REPEATS = 10`, checked separately from `MAX_CASES` — cases and repeats are
+   different axes, capped apart on purpose.
+3. `pnpm eval:variance` alone, with no `--live`, makes no live call. It reads back the last
+   committed report and prints its summary, or says plainly that none exists yet.
+
+For each case, the new `scripts/eval/variance-analysis.ts` module records every repeat's verdict
+and headline reason, the modal verdict, and a stability rate (modal count / repeats run). It also
+records the accuracy spread: the lowest and highest label-verdict accuracy across the repeats.
+Both computations are pure functions, unit-tested against synthetic fixtures — one fixture
+reproduces case-17's own 3/2 split directly.
+
+The artifact writer (`scripts/eval/results/variance-report.json`) follows `EvalReport`'s own
+discipline: real measured cost, an explicit `measuredAt`, exact model IDs, every case ID the
+sweep ran. It also writes `manifestContentHash` via `scripts/eval/manifest-hash.ts`, the same
+call shape `check.ts` uses. That utility landed on `main` after this entry's first draft; the
+orchestrator's merge pass wired it in and removed the `null`-plus-TODO placeholder that stood
+here. The merge pass also updated `runOneCase` calls to TRO-518's two-argument signature.
+
+**Proven mechanically, at the smallest real scale — not the real sweep.** This command ran once:
+
+```bash
+pnpm eval:variance -- --live --case=case-01-clean-match-spirits --repeats=1
+```
+
+This made one real Haiku call. Case-01 is a clean PASS case. Nothing escalates. The measured
+result: corpus stability 100.0% (1/1), accuracy spread 100.0%-100.0%, cost **$0.0046, measured**.
+The report writer worked end to end. The trivial report is not committed to the repo. A 1-case
+report reading "100% stable" sits badly next to the real 28/29 figure above. It would invite
+exactly the misreading this entry exists to prevent.
+
+**The real N x K sweep does not run in this ticket.** It needs Troy's go-ahead — a named approval
+gate this ticket's own acceptance criteria set. Every cost figure below is **derived**, not
+measured: no sweep at this scale has run yet. Each figure comes from the 13:26 HEAD run's own
+measured per-call costs:
+
+1. 32 Haiku calls, mean $0.004668.
+2. 13 resolver calls, mean $0.010969.
+3. 13 of 32 cases escalated — a 40.6% rate.
+
+| Sweep | No escalation | Every run escalates | At the 13:26 run's own rate |
+|---|---|---|---|
+| 8 cases x 5 repeats (40 cascade runs) | ~$0.19 | ~$0.63 | — |
+| 32 cases x 3 repeats (96 cascade runs) | ~$0.45 | ~$1.50 | ~$0.88 |
+
+**How to run it.** `pnpm eval:variance` alone reads the last committed report, or says plainly
+that none exists yet — no live call. `pnpm eval:variance -- --live --case=case-01-clean-match-spirits
+--repeats=1` is the smallest real check: one case, one repeat. **Do not run `--live` without
+`--case=<id>` and `--repeats=1`** until Troy confirms the go-ahead above. A wider invocation
+spends real money at N x K scale.
+
+**Rollback.** `git revert` this ticket's commits. No schema change. No committed data file. No
+`docs/approach.md` entry exists yet to revert. `package.json`'s new `eval:variance` script and
+the three new `scripts/eval/variance*.ts` files disappear with the revert. The revert also
+undoes this ticket's edits to `args.ts`, `report-validation.ts`, and their tests.
+
+**Not done here, on purpose.**
+- No fix for the variance. CP-1 already names it as a property of the model, not a defect this
+  ticket owns. No retry. No lower temperature. No self-consistency vote.
+- No golden-set expectation changed. TRO-516's own finding C8 already shows case-17's pixels
+  support the manifest note. A variance figure explains the flip. It does not license a corpus
+  edit.
+- No entry in `docs/approach.md`. That file does not exist yet — TRO-485 creates it. This
+  finding belongs there once it does.
+
+## TRO-544 — LH-039 · Report batch throughput, local number (2026-08-12)
+
+**What this builds.** PRD §3.8 promises this: "batch reports items/minute and per-item
+averages." Nothing computed that number before this ticket. Two pure functions do now:
+`computeBatchThroughput` and `computeAutoVerifiedShare`
+(`src/lib/utils/batch-throughput.ts`). Both read columns `batch_jobs` already has:
+`totalCount`, `startedAt`, `completedAt`, `autoVerifiedCount`, `processedCount`. No schema
+change.
+
+The batch progress screen (`BatchProgressSummary.tsx`) shows two new tiles. **Items per
+minute** shows the batch's real wall-clock rate. A sub-note gives the per-item average.
+**Auto-verified share** shows CP-1 §4.5 step 3's own figure: "the share of labels finished
+without a resolver call." Both numbers travel the same path every other batch stat already
+uses. `get-batch-progress.ts` computes them. The `/api/batch/:id` route serializes them. The
+component renders them. Neither is a number the UI invents on its own.
+
+Items per minute is a DIFFERENT number from the existing "Average time per label" tile. That
+tile averages one label's own extraction time. It cannot see the worker pool running five
+labels at once. Items per minute can. This run's own numbers show why both matter. The
+per-label average reads 3.71s. The whole-batch rate reads 1.19s per item. Concurrency moves
+faster than any one label's own time suggests.
+
+**A real 32-item batch ran, start to finish, on a local dev workstation.** `pnpm
+batch:fixture` builds a CSV + image zip from the full golden set. A new harness, `pnpm
+batch:throughput` (`scripts/batch-throughput/measure.ts`), runs the real thing. It submits
+that fixture through the real running app (`pnpm dev`). A real worker process (`pnpm worker`)
+processes it. Both are the same two HTTP routes the upload screen calls. The harness then
+polls the batch's progress endpoint. It waits for a real status change until the batch
+finishes. Batch 124 processed 32 items. These figures are cross-checked against a direct
+read of the `batch_jobs` row:
+
+| Figure | Value | N |
+|---|---|---|
+| Items per minute | 50.48 | 32 |
+| Per-item average, whole batch | 1.19s | 32 |
+| Auto-verified share | 56.3% (18 of 32) | 32 |
+| Disposition | 18 auto-verified (11 pass, 7 fail) · 5 resolved by Sonnet · 9 needs a person · 0 failed | 32 |
+| Escalation cap | 8 of 8 Sonnet calls — the cap (`ceil(0.25×32)`) was hit | 32 |
+| Derived cost | $0.2371 | 32 |
+
+**Host: local dev workstation, not deployed.** Apple M4 Pro, 14 CPU, Darwin arm64, Node
+v23.2.0. Worker concurrency: 5 extract, 2 resolve, 1 single-label resolve. These are the
+unchanged `scripts/batch-worker/run.ts` defaults. Models: `claude-haiku-4-5` (extractor),
+`claude-sonnet-5` (resolver). Full artifact:
+`scripts/batch-throughput/results/local-batch-run.json`.
+
+**The escalation cap was hit.** CP-3 §6.1 caps Sonnet calls at `ceil(0.25 * totalCount)`. For
+32 items, that cap is 8. This run made exactly 8 Sonnet call attempts, then stopped. The
+remaining REVIEW-bound labels went straight to `needsHumanCount`, with no Sonnet call
+(`resolverSkipReason: "ESCALATION_CAP_EXCEEDED"`). A batch whose escalation demand stays
+below the cap makes fewer Sonnet calls, so it spends less on Sonnet, not more. It also
+shows a different `resolvedBySonnetCount`/`needsHumanCount` split: nothing is cap-skipped
+to a human.
+
+**Cost is derived, not measured.** The batch worker records no per-call token usage. That
+seam exists only in the eval harness. The $0.2371 total multiplies each call count by the
+eval harness's own measured mean per-call cost. This run counted 32 Haiku attempts and 8
+Sonnet calls. The two counts come from different sources. The Sonnet count is
+`batch_jobs.sonnet_call_count`, a real reserved-before-the-call counter. The Haiku count
+sums `batch_queue_items.attempts` for this batch's own EXTRACT items. That sum is an upper
+bound, not a certainty. `attempts` increments at claim time, before the real API call
+happens. A retried call counts once per attempt either way. Haiku averages $0.004668 per
+call. The resolver averages $0.010969 per call. Both means come from
+`scripts/eval/results/eval-report.json`, measured 2026-08-12T13:26:45.488Z. `pnpm
+batch:throughput` reads that file fresh on every run. This figure moves if a newer eval run
+changes the means.
+
+**Verdict correctness is a separate, already-tracked concern.** The golden set's ground truth
+expects 8 PASS / 10 FAIL / 14 REVIEW for these 32 cases. This run produced 11 PASS / 7 FAIL /
+14 REVIEW. The REVIEW count matches exactly. The PASS/FAIL split does not — the same reason
+already documented in `docs/diagnostics/2026-08-12-verdict-miss-triage.md` (21/32 measured
+verdict accuracy). This ticket reports throughput on whatever the cascade actually decides. It
+does not change what the cascade decides.
+
+**Not measured: deployed throughput.** This run predates TRO-518's storage fix and ran
+against a local instance only. At measurement time, `local-file-storage.ts` wrote each
+uploaded image to the saving process's own disk. A deployed batch run would therefore have
+failed on every image. TRO-518 has since landed and moved that storage to Postgres; this branch
+carries it. Deployed throughput is still not measured. No claim about it appears anywhere
+in this entry, the code, or the artifact.
+
+**How to run it.** Source `.factory-env` in every terminal first (or keep `.env.local`
+present in a plain checkout). `pnpm batch:fixture` once. Then, in three terminals: `pnpm
+dev`, `pnpm worker`, `pnpm batch:throughput`. Output lands at
+`scripts/batch-throughput/results/local-batch-run.json`. This costs real money — about
+$0.15-0.30 for the full 32-case fixture, at the eval harness's measured per-call rates.
+
+**Regression tests.** `src/lib/utils/batch-throughput.test.ts` covers both null-input states
+and both `RangeError` paths. It also covers exact arithmetic on known inputs. One case proves
+an impossible `(1, 0)` pair throws, instead of silently reading as "not measured yet" (a local
+review finding). `src/lib/utils/format.test.ts` gained `formatPercent` coverage.
+`get-batch-progress.test.ts` and the `/api/batch/:id` route test each gained real-database
+cases. Those cases prove `throughput` and `autoVerifiedShare` compute correctly from a live
+`batch_jobs` row. They also prove both fields serialize correctly over the wire.
+`BatchProgressSummary.test.tsx` gained six cases
+for the two new tiles. One is a regression case: a genuine 0% share must render as "0.0%,"
+never as "Not measured yet." A naive truthy check on the fraction would get this wrong.
+`scripts/batch-throughput/args.test.ts` and `cost.test.ts` cover the harness's own pure
+CLI-parsing and cost-derivation logic, including its own new boundary checks.
+
+**Confirmed in a real browser, not just a component test.** `/batch/124` loaded in a real
+headless Chromium session against the running app. Every new tile rendered with its real
+value. "AUTO-VERIFIED SHARE 56.3%" appeared. So did "ITEMS PER MINUTE 50.48" with its "1.19s
+per label" sub-note. Both sat in the same stat-tile grid as the five existing tiles.
+
+**Local CodeRabbit review triage, three rounds, 15 findings total.** Fourteen were fixed.
+One was skipped, with a documented reason below. The INITIAL triage stopped after round 3.
+Each round found smaller issues than the round before, and the gate passed clean twice in a
+row. Rounds 4 and beyond, described after the round list, ran later, during the
+orchestrator's own merge-and-gate pass.
+
+Round 1, four findings, all fixed or skipped:
+- `computeAutoVerifiedShare` checked `processedCount <= 0` before validating
+  `autoVerifiedCount`'s own bound. An impossible `(1, 0)` pair read as unmeasured instead of
+  throwing. Fixed: the checks now run in the other order.
+- This entry's own prose ran over ASD-STE100's 25-word sentence cap in several places. Fixed:
+  every long sentence split into shorter ones.
+- Skipped: reading worker concurrency live from the worker process itself.
+  `scripts/batch-worker/run.ts` has no HTTP server or IPC channel today. Building one only to
+  report a diagnostic field would be new production surface, not a fix to an existing gap.
+  The limitation is already stated plainly, in the type and in the artifact's own `notes`
+  field.
+
+Round 2, seven findings, all fixed:
+- The harness's poll loop bounded each request's own fetch timeout to the time left in
+  `--max-wait-ms`, but not the sleep BETWEEN polls. Fixed: the sleep is now bounded the same
+  way.
+- `--poll-interval-ms`/`--max-wait-ms` accepted any integer, including one large enough to
+  overflow `setTimeout`'s 32-bit delay and silently fire almost immediately. Fixed: both now
+  reject a value above that ceiling.
+- `cost.ts`'s `meanCost`/`deriveBatchCostUsd` accepted negative or non-finite inputs without
+  complaint. Fixed: both now throw `RangeError` on a bad value.
+- The harness assumed one real Haiku call per label (`totalCount`). A retried extraction
+  makes a second real call that assumption would miss. Fixed: the harness now sums
+  `batch_queue_items.attempts` for this batch's own EXTRACT items instead. This run's own
+  number does not change — a direct query confirmed zero retries occurred. The harness is
+  now correct for a future run that does retry.
+- `measure.ts` created its database pool without checking `DATABASE_URL` first, risking a
+  confusing raw `pg` error. Fixed: it now checks and throws a clear message first, matching
+  `scripts/eval/check.ts`'s own established pattern.
+- This entry's own lead-in to the results table was a sentence fragment, with no verb. Fixed:
+  it now reads as two complete sentences.
+- Two more sentences elsewhere in this entry ran over the 25-word cap. Fixed: both split.
+
+Round 3, four findings, all fixed:
+- `deriveBatchCostUsd`'s round-2 validation used a bare `< 0` check on the call counts. `NaN`
+  is never `< 0`, so a `NaN` call count still slipped through and produced a `NaN` total.
+  Fixed: both counts now go through `Number.isSafeInteger` first.
+- `measure.ts` validated `DATABASE_URL` and the eval-report artifact only after a real batch
+  had already run and spent real money. Fixed: both checks now run first, before `pnpm dev`
+  even gets a health-check request.
+- The harness described `haikuCallCount` (an attempts sum) as the real call count. It can
+  overcount. `attempts` increments the moment an item is claimed — before the real Haiku
+  call happens. A claim that fails reading or resizing the image still counts as one attempt,
+  even with zero real calls made. Fixed: every doc comment, the artifact's own `notes` field,
+  and this entry now call it an upper bound, not a certainty.
+- This entry's own cost paragraph did not say WHERE the Haiku and Sonnet call counts each
+  came from. Fixed: it now names both sources and the upper-bound caveat above.
+
+Round 4 ran after the `origin/main` merge, by the orchestrator's own gate run. Three
+findings: this section's total said 19 findings where the rounds themselves sum to 15
+(fixed above); the run artifact's `notes` still called `haikuCallCount` a real call count
+despite round 3's own caveat (fixed — the note now says OBSERVED for Sonnet, UPPER BOUND
+for Haiku); and one false positive that read the scorecard's historical fail row as an
+unresolved failure (dismissed — the row records a stale worktree database, fixed by
+applying migration 0004, and the gate now passes).
+
+Round 5 ran on the orchestrator's next gate pass, after the round-4 fixes. Twelve findings.
+Eleven were fixed: the "Not measured" paragraph above no longer claims TRO-518 is unlanded;
+the `measure.ts` header, `args.ts`, and `types.ts` doc comments now use short, single-claim
+sentences; `cost.ts` and its test now call `haikuCallCount` an upper bound on real calls;
+`readWorkerConcurrency` now rejects a non-positive-integer override instead of recording
+`NaN`, and labels each value's origin (override vs. run.ts default) accurately, in the
+generated notes too; the artifact's own concurrency note now says CONFIGURED ASSUMPTION,
+because this run set no override; and the completed-batch fixtures in
+`get-batch-progress.test.ts` and `BatchProgressSummary.test.tsx` now carry counts a real
+completed batch would have. The twelfth was half-accepted: the auto-verified-share fixtures
+keep their RUNNING status, because `get-batch-progress.ts` serves that share mid-run — the
+state is reachable, so only the throughput fixture needed the completed shape.
+
+Round 6 found four issues, all fixed. The biggest: round 5 made `readWorkerConcurrency`
+throw on a bad override, but the call ran only after the batch had spent real money — it
+now runs in the fail-fast preflight, before any request. The rest: this section's "stopped
+after round 3" now says INITIAL triage; the cost paragraph above got its own STE split; and
+"same sourced shell" became "both terminals sourced the same environment configuration,"
+which is what actually happens.
+
+Round 7 found five issues. Four were fixed: the escalation-cap example inverted the cost
+direction (under-cap batches spend LESS on Sonnet); the `measure.ts` header over-promised
+exactly one Haiku call per item; `cost.ts`'s file header still said "real call counts"; and
+both cost functions now throw on a non-finite RESULT, because `JSON.stringify(Infinity)`
+writes `null` into the artifact — a silent "no cost." Two regression tests cover the new
+guards. One was dismissed: a request to re-bullet these triage paragraphs — the sentences
+are already single-claim, and reformatting bookkeeping changes no reported fact. The triage
+stops when a round changes no shipped behavior and no factual claim; this round's
+follow-ups will be judged by that rule.
+
+Round 8 still found substance, so it did not stop the triage. Six fixed: the harness now
+proves the database answers `SELECT 1` before any spend-inducing request; the post-run
+cross-check now requires status and both timestamps to match, so a same-ID row in a
+mispointed database cannot pass on counts alone; logged and persisted URLs are stripped of
+userinfo and query strings; this "How to run it" now names the `source .factory-env`
+prerequisite; a cost-test title stopped calling the Haiku figure a real call count; and the
+scorecard's first fail row now names its cause (stale worktree database) in the row itself.
+Two dismissed: a repeat of the re-bullet request (same reason as round 7), and a request to
+replace the scorecard's one approximate timestamp — no measured value exists for it, and
+inventing one is banned.
+
+Round 9: two fixed, two dismissed. Fixed: the generated haiku note now says the attempts
+sum is the observed quantity and the call count is only bounded; the DATABASE_URL log mask
+now parses with `new URL` and clears username, password, search, and hash, instead of a
+regex. Dismissed: a third re-bullet request (stop rule), and a false positive that read a
+UTC timestamp as future-dated. Review triage for this entry ends here unless a later round
+changes shipped behavior or a factual claim.
+
+Round 10 met that bar once: `postForm` returned an unchecked cast, so a malformed 200 body
+could drive the whole run. It now takes a required validator, and both call sites check
+named invariants (`batchJobId` positive, counts non-negative safe integers). Also fixed:
+one overlong sentence in the deployment-history note. Dismissed: a fourth re-bullet
+request, same stop rule.
+
+Round 11 met the bar once more, then ended: poll responses — the values the artifact
+persists — still crossed an unchecked cast. `validateProgressResponse` now checks the
+status enum, every counter, both timestamps, throughput, and the share on every poll. A
+fifth re-bullet request was dismissed under the same stop rule.
+
+Post-merge follow-up (same ticket, own gated branch): a reviewer rebuttal correctly showed
+`connectionTimeoutMillis` bounds only connection establishment, so both harness pools now
+also carry `query_timeout` via a shared `pool-config.ts`, with a red-first test. The
+canonical `src/lib/db` pool also lacks `query_timeout`; that is a long-lived app pool where
+a global deadline is a real behavior decision — left to TRO-508 on the record.
+
+Round 12: four fixed. The cost docs no longer claim the estimate cannot understate — the
+bound covers the call count, not the dollars, because the means are historical. The
+artifact's `deployment` field is now derived from the real target host, never hard-coded.
+The progress validator now requires `autoVerifiedCount <= processedCount <= totalCount`.
+One sentence above was split. The validator's requested standalone tests were not added:
+`measure.ts` spends money at import by design, so its internals are not importable.
+
+**Do NOT.** No column was added to `batch_jobs` — every input already existed. No claim was
+extrapolated past this run's real 32 items to TH-R4's 200-300 label reference.
+
+**Rollback.** Revert this ticket's commits. `throughput` and `autoVerifiedShare` are additive
+response fields. Nothing before this ticket reads or depends on them. Removing them touches no
+other ticket's code.
 
 ## TRO-518 — Batch image storage now survives the web/worker split (2026-08-12)
 
@@ -4535,13 +5469,30 @@ spirits label, every field matching, no glare/rotation/degradation — the reali
 | min | 3459 ms |
 | max | 5277 ms |
 
+**Correction (TRO-539, 2026-08-12).** The table above is the FIRST run's own real numbers. It
+is not the number in the committed artifact today. A second run the same day, commit `5a16263`
+("re-measure TH-R2 after Wave 1/2 changes"), overwrote
+`scripts/latency/results/single-label-verify.json`. That run recorded different numbers: p50
+3690 ms, p95 4339 ms, mean 3766 ms, min 3418 ms, max 4662 ms, over 20 runs (all `REVIEW` /
+`LOW_MODEL_CONFIDENCE`, same as below). This entry never recorded that second run — a real gap.
+The 2026-08-12 requirements audit found it first (`audit/requirements/gaps.md:11`); this
+correction confirms it. Read the table above, and the prose below it, as a record of the FIRST
+run, not as today's artifact. Both runs measure the SAME wrong pipeline. Both predate commit
+`c5e49f8` (TRO-514), which wired the warning comparator into the live route about an hour after
+the LATER of the two runs. **Do not quote 4232 ms as this project's TH-R2 figure.** It is not
+even the number the committed file holds anymore. Neither number reflects the pipeline that
+ships today. TH-R2 stays PARTIAL (`audit/requirements/REPORT.md`) until a real measurement of
+the shipping pipeline exists. See this file's own TRO-539 entry, at the top of this file, for
+what that still needs and who it is blocked on.
+
 Machine: Apple M4 Pro, macOS (darwin/arm64), Node v23.2.0, local development machine — not
 Render's deployed infrastructure, and not the same network path a real evaluator's browser
 would use. Model: `claude-haiku-4-5`. Ran sequentially, one call at a time, same local network,
 2026-08-11 afternoon.
 
 **Reading the number against the two PRD targets.** TH-R2's own acceptance bar is "about 5
-seconds," PRD §3.8's ~5s p50. This measurement meets it: 4232 ms p50 is under 5000 ms. PRD
+seconds," PRD §3.8's ~5s p50. This measurement (4232 ms p50 — the FIRST run; see the TRO-539
+correction above, and do not quote this figure elsewhere) meets that bar: under 5000 ms. PRD
 §3.8's stage table also names a more optimistic internal sub-target: "~3s p50 · ≤5s p95" for
 the fast path. The measured p50 runs about 1.2s over that internal figure. The measured p95
 (4763 ms) still clears the ≤5s p95 ceiling. One run of 20 — the max, 5277 ms — landed just

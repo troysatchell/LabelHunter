@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDuration } from "./format";
+import { formatDuration, formatPercent } from "./format";
 
 describe("formatDuration", () => {
   it("renders sub-second durations in milliseconds", () => {
@@ -42,5 +42,29 @@ describe("formatDuration", () => {
     expect(() => formatDuration(-1)).toThrow(RangeError);
     expect(() => formatDuration(Number.NaN)).toThrow(RangeError);
     expect(() => formatDuration(Number.POSITIVE_INFINITY)).toThrow(RangeError);
+  });
+});
+
+describe("formatPercent", () => {
+  it("renders a fraction as a percentage with one decimal place", () => {
+    expect(formatPercent(0.72)).toBe("72.0%");
+    expect(formatPercent(0.5)).toBe("50.0%");
+  });
+
+  it("renders the boundary values", () => {
+    expect(formatPercent(0)).toBe("0.0%");
+    expect(formatPercent(1)).toBe("100.0%");
+  });
+
+  it("rounds to one decimal place rather than truncating", () => {
+    // 18/25 = 0.72 exactly; 23/32 = 0.71875 -> rounds to 71.9%.
+    expect(formatPercent(23 / 32)).toBe("71.9%");
+  });
+
+  it("rejects a value outside 0..1 or a non-finite input", () => {
+    expect(() => formatPercent(-0.1)).toThrow(RangeError);
+    expect(() => formatPercent(1.1)).toThrow(RangeError);
+    expect(() => formatPercent(Number.NaN)).toThrow(RangeError);
+    expect(() => formatPercent(Number.POSITIVE_INFINITY)).toThrow(RangeError);
   });
 });

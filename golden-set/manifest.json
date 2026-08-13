@@ -513,7 +513,7 @@
           }
         }
       },
-      "notes": "A more severe caps defect than case-08: every word is capitalized, not just the prefix. Both must FAIL the same way. CP-2 §9.2 finding 2 (docs/checkpoints/cp2-warning-subsystem.md): the failure is capitalization, not wording — with case folded this body is a genuine exact match (distance 0), so only the caps check catches it. Fixed by TRO-469 / LH-021; the prior reason text said 'the wording must match the statute exactly', which implied a wording failure this case does not have.",
+      "notes": "A more severe caps defect than case-08: every word is capitalized, not just the prefix. Both must FAIL the same way. CP-2 \u00a79.2 finding 2 (docs/checkpoints/cp2-warning-subsystem.md): the failure is capitalization, not wording \u2014 with case folded this body is a genuine exact match (distance 0), so only the caps check catches it. Fixed by TRO-469 / LH-021; the prior reason text said 'the wording must match the statute exactly', which implied a wording failure this case does not have.",
       "vectors": [
         "V2"
       ],
@@ -1221,9 +1221,13 @@
           }
         }
       },
-      "notes": "Photo condition: front label underexposed; back label (ABV, net contents, warning) evenly lit and legible.",
+      "notes": "Photo condition: front label underexposed; back label (ABV, net contents, warning) evenly lit and legible. TRO-516 (2026-08-12, correction C3): the original transform (modulate brightness only) darkened without degrading glyph edges, so a real model read it perfectly (docs/diagnostics/2026-08-12-verdict-miss-triage.md, section 3D). Strengthened per the case-20 precedent (CHANGES.md, TRO-497 entry): dynamic-range compression toward mid-gray plus deterministic sensor noise (scripts/golden/degrade.ts, applyLowLight) and a small blur, so the pixels now support this case's note instead of only restating it.",
       "degradations": [
-        { "type": "low-light", "params": { "region": "front", "brightnessFactor": 0.32 } }
+        {
+          "type": "low-light",
+          "params": { "region": "front", "brightnessFactor": 0.6, "contrastFactor": 0.45, "noiseAmplitude": 22 }
+        },
+        { "type": "blur", "params": { "sigma": 1.6 } }
       ],
       "vectors": [],
       "provenance": "rendered+degraded",
@@ -1318,7 +1322,7 @@
       },
       "expected": {
         "labelVerdict": "REVIEW",
-        "reviewReason": "LOW_IMAGE_QUALITY",
+        "reviewReason": "WARNING_MISMATCH",
         "fields": {
           "brandName": {
             "verdict": "MATCH",
@@ -1338,11 +1342,11 @@
           },
           "governmentWarning": {
             "verdict": "NEEDS_REVIEW",
-            "reason": "Warning text is legible but printed near the minimum legal size; extraction confidence is low."
+            "reason": "Warning text is legible but printed near the minimum legal size. The OCR channel disagrees with the extracted text, so a reviewer must confirm the exact wording."
           }
         }
       },
-      "notes": "Photo itself is clean and well-lit \u2014 the defect is print size, not capture quality. CP-2 \u00a79.2 finding 1 (docs/checkpoints/cp2-warning-subsystem.md): WarningComparatorResult can only return LOW_IMAGE_QUALITY, WARNING_MISMATCH, or MISSING_REQUIRED_FIELD, never LOW_MODEL_CONFIDENCE, so tiny print reaching this comparator by definition routes on LOW_IMAGE_QUALITY \u2014 tiny print is an image-resolution problem, and that is the honest name for it. Fixed by TRO-469 / LH-021; the prior expected.reviewReason (LOW_MODEL_CONFIDENCE) was a value this field can never actually carry.",
+      "notes": "Photo itself is clean and well-lit \u2014 the defect is print size, not capture quality. CP-2 \u00a79.2 finding 1 (docs/checkpoints/cp2-warning-subsystem.md): WarningComparatorResult can only return LOW_IMAGE_QUALITY, WARNING_MISMATCH, or MISSING_REQUIRED_FIELD, never LOW_MODEL_CONFIDENCE. Fixed by TRO-469 / LH-021; the prior expected.reviewReason (LOW_MODEL_CONFIDENCE) was a value this field can never actually carry. TRO-469 predicted LOW_IMAGE_QUALITY as the replacement value, reasoning tiny print reaching this comparator would route there by default. TRO-535 (2026-08-12) swept OCR_CONFIDENCE_FLOOR from 60 to 50 and let the OCR channel's real reading reach the reconciler. Measured, live (eval-report.json, measuredAt 2026-08-12T22:15:52.776Z): the OCR channel now reads this print at distance 47 from the statute, the two channels disagree, and the comparator returns WARNING_MISMATCH \u2014 one of the same three legal values CP-2 \u00a79.2 finding 1 already named, just not the one TRO-469 predicted. TRO-516 (correction C4) corrects expected.reviewReason to match this measured result.",
       "vectors": [
         "V4"
       ],
@@ -1378,7 +1382,7 @@
       },
       "expected": {
         "labelVerdict": "REVIEW",
-        "reviewReason": "LOW_IMAGE_QUALITY",
+        "reviewReason": "WARNING_MISMATCH",
         "fields": {
           "brandName": {
             "verdict": "MATCH",
@@ -1398,11 +1402,11 @@
           },
           "governmentWarning": {
             "verdict": "NEEDS_REVIEW",
-            "reason": "Bottle is a 50 mL miniature; the warning text is legible but very small, and extraction confidence is low."
+            "reason": "Bottle is a 50 mL miniature; the warning text is legible but very small. The OCR channel disagrees with the extracted text, so a reviewer must confirm the exact wording."
           }
         }
       },
-      "notes": "CP-2 §9.2 finding 1 (docs/checkpoints/cp2-warning-subsystem.md): same correction as case-23 — WarningComparatorResult cannot return LOW_MODEL_CONFIDENCE, so this routes on LOW_IMAGE_QUALITY. Fixed by TRO-469 / LH-021.",
+      "notes": "CP-2 \u00a79.2 finding 1 (docs/checkpoints/cp2-warning-subsystem.md): same correction as case-23 \u2014 WarningComparatorResult cannot return LOW_MODEL_CONFIDENCE. Fixed by TRO-469 / LH-021, which predicted LOW_IMAGE_QUALITY as the replacement value. TRO-535 (2026-08-12) swept OCR_CONFIDENCE_FLOOR from 60 to 50; measured, live (eval-report.json, measuredAt 2026-08-12T22:15:52.776Z), the OCR channel now reads this print at distance 42 from the statute and the two channels disagree. TRO-516 (correction C4) corrects expected.reviewReason to the measured WARNING_MISMATCH.",
       "vectors": [
         "V4"
       ],
@@ -1411,7 +1415,7 @@
     },
     {
       "caseId": "case-25-odd-typography-script-brand",
-      "description": "Brand name is set in an ornate script font that is hard for a model to read confidently.",
+      "description": "Brand name is set in an ornate script font.",
       "category": "odd-typography",
       "beverageType": "wine",
       "imagePath": "golden-set/images/case-25-odd-typography-script-brand.jpg",
@@ -1436,12 +1440,11 @@
         "governmentWarningPrefixAllCaps": true
       },
       "expected": {
-        "labelVerdict": "REVIEW",
-        "reviewReason": "LOW_MODEL_CONFIDENCE",
+        "labelVerdict": "PASS",
         "fields": {
           "brandName": {
-            "verdict": "NEEDS_REVIEW",
-            "reason": "Brand name is set in an ornate script font; extraction confidence is low."
+            "verdict": "MATCH",
+            "reason": "Label brand matches the application exactly; the ornate script font does not lower extraction confidence."
           },
           "classType": {
             "verdict": "MATCH",
@@ -1461,13 +1464,14 @@
           }
         }
       },
+      "notes": "TRO-516 (2026-08-12): expected REVIEW/LOW_MODEL_CONFIDENCE until this correction. Two live runs (eval-report.json, benchmark-report.json) both scored brandName MATCH with no confidence drop \u2014 the prior expected block was an unfalsified prediction, not a measured result (docs/diagnostics/2026-08-12-verdict-miss-triage.md \u00a73D, correction C2).",
       "vectors": [],
       "provenance": "rendered+degraded",
       "verified": false
     },
     {
       "caseId": "case-26-odd-typography-blackletter-class-type",
-      "description": "Class/type is set in a decorative blackletter font that is hard for a model to read confidently.",
+      "description": "Class/type is set in a decorative blackletter font.",
       "category": "odd-typography",
       "beverageType": "spirits",
       "imagePath": "golden-set/images/case-26-odd-typography-blackletter-class-type.jpg",
@@ -1493,16 +1497,15 @@
         "governmentWarningPrefixAllCaps": true
       },
       "expected": {
-        "labelVerdict": "REVIEW",
-        "reviewReason": "LOW_MODEL_CONFIDENCE",
+        "labelVerdict": "PASS",
         "fields": {
           "brandName": {
             "verdict": "MATCH",
             "reason": "Label brand matches the application exactly."
           },
           "classType": {
-            "verdict": "NEEDS_REVIEW",
-            "reason": "Class/type is set in a decorative blackletter font; extraction confidence is low."
+            "verdict": "MATCH",
+            "reason": "Label class/type matches the application exactly; the decorative blackletter font does not lower extraction confidence."
           },
           "abv": {
             "verdict": "MATCH",
@@ -1518,6 +1521,7 @@
           }
         }
       },
+      "notes": "TRO-516 (2026-08-12): expected REVIEW/LOW_MODEL_CONFIDENCE until this correction. Two live runs (eval-report.json, benchmark-report.json) both scored classType MATCH with no confidence drop \u2014 the prior expected block was an unfalsified prediction, not a measured result (docs/diagnostics/2026-08-12-verdict-miss-triage.md \u00a73D, correction C1).",
       "vectors": [],
       "provenance": "rendered+degraded",
       "verified": false

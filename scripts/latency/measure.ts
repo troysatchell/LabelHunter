@@ -1,6 +1,6 @@
 /**
  * Latency harness for the single-label verify flow (TRO-471 / LH-031,
- * TH-R2, PRD §3.8, §6).
+ * extended by TRO-539 / LH-034, TH-R2, PRD §3.8, §6).
  *
  * Run: `pnpm latency:check` (optionally `-- --runs=20 --case=<caseId>`).
  * **This costs real money.** Each run is one real, live `claude-haiku-4-5`
@@ -29,6 +29,40 @@
  * guarantee the database ends up byte-for-byte as it started (sequence
  * counters still advance either way).
  *
+ * **`--url=<origin>` mode (TRO-539).** Passing `--url` switches this
+ * script from the in-process call above to a real multipart `fetch` POST
+ * to `${url}/api/verify` — a genuine HTTP round-trip, over a real network
+ * path, through whatever server is actually listening at `url`. This is
+ * how the deployed-instance, Render `starter`-plan measurement TH-R2 also
+ * needs will eventually run (blocked on Troy provisioning that
+ * environment — see CHANGES.md's TRO-539 entry); it is also how this
+ * ticket's own zero-cost validation runs, pointed at a LOCAL app whose
+ * `ANTHROPIC_BASE_URL` targets `scripts/e2e/fake-anthropic-server.ts`
+ * instead of the real Anthropic API. `ANTHROPIC_API_KEY` is NOT required
+ * in this mode — the TARGET server holds its own key, not this script.
+ * `DATABASE_URL` becomes OPTIONAL, and cleanup against it needs TWO
+ * explicit signals even when it is set: the operator's own `--cleanup-db`
+ * flag, AND a LOOPBACK target (`localhost`/`127.0.0.1/8`/`::1` —
+ * `isLoopbackHostname`, `target-info.ts`). A real deployed target's own
+ * database has no reliable relationship to whatever `DATABASE_URL` happens
+ * to be set in the operator's shell, and deleting by `applicationId`
+ * against the WRONG database risks a cross-database ID collision — a
+ * loopback hostname ALONE is not enough proof of "same database", since
+ * this repo's own factory workflow runs several worktree-scoped databases
+ * on one localhost Postgres server. Cleanup is skipped whenever either
+ * signal is missing, and that fact — and why — is recorded in
+ * `cleanupSkippedReason`, never silently dropped. Every real
+ * network request in this mode (`runOnceHttp`) is bounded by one shared
+ * `HTTP_REQUEST_TIMEOUT_MS` deadline covering both the request and the
+ * body read — the same "no request hangs this script forever" discipline
+ * TRO-519 already established server-side for the OCR channel. The
+ * percentile math, exit-code logic, and artifact shape below are shared
+ * between both modes — only how one "run" is produced differs
+ * (`runOnceInProcess` vs `runOnceHttp`). See `target-info.ts` for how the
+ * artifact's own `pipelineScope` and `target` fields are derived fresh
+ * from which mode actually ran, never hard-coded (TRO-539's "provenance
+ * trap" fix).
+ *
  * **What is NOT in this measurement, and why.** The Sonnet resolver
  * (LH-014, `src/server/resolver/`) has merged to `main`, but `route.ts`
  * never calls it — confirmed with `git diff`, not assumed: `route.ts` is
@@ -46,7 +80,21 @@
  * run whose label has a warning, concurrently with the Haiku call, not
  * after it (CP-2 §4.4). A number this script reports after TRO-514
  * includes that work; a number recorded before TRO-514 landed does not —
- * the two are not directly comparable.
+ * the two are not directly comparable. Since TRO-519, the OCR channel
+ * itself is bounded by a 2000ms deadline (`OCR_TIMEOUT_MS`,
+ * `src/server/warning/ocr.ts`) — a hung OCR worker degrades to `null`
+ * instead of hanging this request (and this script's timer) forever.
+ *
+ * **Per-stage breakdown (TRO-539).** Every successful run's response
+ * carries a `Server-Timing` header (`src/app/api/verify/server-timing.ts`)
+ * with one entry per PRD §3.8 stage. The in-process mode gets this from
+ * the same `Response` object `handleVerifyRequest` returns; `--url` mode
+ * reads it off the real HTTP response — either way, `route.ts` attaches
+ * the header the same way, so both modes' reports carry a `stageBreakdownMs`
+ * (`stage-breakdown.ts`, reusing `summarizeLatencies`) whenever at least one
+ * run succeeded. Only a SUCCESSFUL run's samples ever count toward it — a
+ * failed or malformed-body run's own duration is never a real per-stage
+ * sample, whatever a response might otherwise claim.
  *
  * **Failure handling.** A run that throws, or that the route answers with a
  * non-200 status, is recorded in the raw log with its own duration and
@@ -67,6 +115,7 @@ import * as schema from "../../src/lib/db/schema";
 import { loadGoldenSetManifest } from "../../src/lib/golden-set/loader";
 import type { GoldenSetCase } from "../../src/lib/golden-set/types";
 import { handleVerifyRequest, type VerifyRouteDeps } from "../../src/app/api/verify/route";
+import { parseServerTimingHeader, SERVER_TIMING_STAGES, type ServerTimingStage, type StageTimingsMs } from "../../src/app/api/verify/server-timing";
 import { extractLabel, HAIKU_EXTRACTOR_MODEL } from "../../src/server/extractor";
 import { preprocessImage } from "../../src/server/preprocessing";
 import { productionComparators } from "../../src/server/comparators";
@@ -75,11 +124,22 @@ import { compareGovernmentWarningFromImage } from "../../src/server/warning";
 import { parseArgs } from "./args";
 import { cleanupScratchDirAndPool } from "./cleanup";
 import { computeExitCode } from "./exit-status";
+import { describeHttpError } from "./http-error";
 import { summarizeLatencies, type LatencySummary } from "./percentile";
 import { parseVerifySuccessBody } from "./response";
+import { buildStageBreakdown } from "./stage-breakdown";
+import { buildPipelineScope, buildTargetInfo, isLoopbackHostname, type MeasurementBoundary, type TargetInfo } from "./target-info";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const RESULTS_PATH = path.resolve(REPO_ROOT, "scripts/latency/results/single-label-verify.json");
+/** Default output path for `--url` mode when `--out` is not given —
+ * deliberately NOT `RESULTS_PATH`. `RESULTS_PATH` is the committed,
+ * canonical evidence file for the real in-process billed measurement;
+ * `--url` mode (a different measurement boundary, and — for a fake-model
+ * or local validation run — not a TH-R2 number at all) must never
+ * silently overwrite it just because someone forgot `--out=`. */
+const DEFAULT_HTTP_RESULTS_PATH = path.resolve(REPO_ROOT, "scripts/latency/results/single-label-verify-url-mode.json");
+const RENDER_YAML_PATH = path.resolve(REPO_ROOT, "render.yaml");
 
 const EXTENSION_TO_MEDIA_TYPE: Record<string, string> = {
   jpg: "image/jpeg",
@@ -108,8 +168,10 @@ function mediaTypeForImagePath(imagePath: string): string {
 
 /** Builds the same `FormData` shape `VerifyForm` (the real UI) sends,
  * using the golden-set case's own application-side fields — matching
- * `route.test.ts`'s `buildFormData` pattern. */
-function buildRequest(imageBytes: Buffer, imagePath: string, mediaType: string, caseSpec: GoldenSetCase): Request {
+ * `route.test.ts`'s `buildFormData` pattern. Shared by both run modes:
+ * `buildRequest` (below, in-process) wraps it in a `Request`; `runOnceHttp`
+ * passes it straight to `fetch` as the real request body. */
+function buildFormData(imageBytes: Buffer, imagePath: string, mediaType: string, caseSpec: GoldenSetCase): FormData {
   const fd = new FormData();
   const file = new File([imageBytes as unknown as BlobPart], path.basename(imagePath), { type: mediaType });
   fd.set("image", file);
@@ -121,6 +183,11 @@ function buildRequest(imageBytes: Buffer, imagePath: string, mediaType: string, 
   }
   fd.set("netContentsValue", String(caseSpec.application.netContentsValue));
   fd.set("netContentsUnit", caseSpec.application.netContentsUnit);
+  return fd;
+}
+
+function buildRequest(imageBytes: Buffer, imagePath: string, mediaType: string, caseSpec: GoldenSetCase): Request {
+  const fd = buildFormData(imageBytes, imagePath, mediaType, caseSpec);
   return new Request("http://localhost/api/verify", { method: "POST", body: fd });
 }
 
@@ -133,6 +200,12 @@ interface RunResult {
   headlineReason?: string | null;
   applicationId?: number;
   error?: string;
+  /** Per-stage breakdown parsed off this run's own `Server-Timing`
+   * response header (TRO-539). `undefined` when the response carried no
+   * such header (any in-process run before this ticket's own change would
+   * have had none; a `--url` run against an older deployment might not
+   * either) — never fabricated from the total. */
+  serverTimingMs?: Partial<StageTimingsMs>;
 }
 
 /** One `applications` row this script created but failed to delete
@@ -143,7 +216,7 @@ interface CleanupFailure {
   error: string;
 }
 
-async function runOnce(
+async function runOnceInProcess(
   index: number,
   imageBytes: Buffer,
   imagePath: string,
@@ -167,13 +240,15 @@ async function runOnce(
     // pays. Also rounded to the nearest millisecond — sub-ms precision is
     // noise at the multi-second, network-bound scale this harness measures.
     const durationMs = Math.round(performance.now() - start);
+    const serverTimingHeader = response.headers.get("server-timing");
+    const serverTimingMs = serverTimingHeader ? parseServerTimingHeader(serverTimingHeader) : undefined;
     const body: unknown = await response.json().catch(() => null);
     if (response.status !== 200) {
       const message =
         body && typeof body === "object" && "error" in body
           ? JSON.stringify((body as { error: unknown }).error)
           : `HTTP ${response.status}`;
-      return { index, durationMs, ok: false, httpStatus: response.status, error: message };
+      return { index, durationMs, ok: false, httpStatus: response.status, error: message, serverTimingMs };
     }
     // `route.ts`'s own type system guarantees this shape on every real 200
     // response today, but a bare cast would still trust an untyped runtime
@@ -199,6 +274,7 @@ async function runOnce(
         ok: false,
         httpStatus: response.status,
         error: "measure.ts: 200 response body did not match the expected VerifySuccessBody shape",
+        serverTimingMs,
       };
     }
     return {
@@ -209,6 +285,7 @@ async function runOnce(
       labelVerdict: success.labelVerdict,
       headlineReason: success.headlineReason,
       applicationId: success.applicationId,
+      serverTimingMs,
     };
   } catch (cause) {
     const durationMs = Math.round(performance.now() - start);
@@ -222,6 +299,119 @@ async function runOnce(
   }
 }
 
+/**
+ * Caps `runOnceHttp`'s whole request — the network round-trip AND the body
+ * read — behind one shared deadline (lessons.md rule 23; CodeRabbit local
+ * review round 1, major). Generous relative to PRD §3.8's own worst-case
+ * ~5s p95 fast-path target: this bounds a genuinely hung or unreachable
+ * target, not a slow-but-working one. `--url` mode must not reintroduce
+ * the exact "no deadline, can hang forever" defect class TRO-519 just
+ * fixed server-side (`OCR_TIMEOUT_MS`, `src/server/warning/ocr.ts`) —
+ * this time on the client side of the same request.
+ */
+const HTTP_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * TRO-539's `--url` mode: a real multipart POST over the network to
+ * `verifyUrl`, instead of the in-process `handleVerifyRequest` call above.
+ */
+async function runOnceHttp(
+  index: number,
+  imageBytes: Buffer,
+  imagePath: string,
+  mediaType: string,
+  caseSpec: GoldenSetCase,
+  verifyUrl: string,
+): Promise<RunResult> {
+  const formData = buildFormData(imageBytes, imagePath, mediaType, caseSpec);
+  const start = performance.now();
+  // ONE signal, reused for both awaits below (fetch AND response.json()) —
+  // the Fetch spec ties body-stream consumption to the same fetch
+  // controller the signal governs, so aborting after headers arrive but
+  // while the body is still streaming correctly rejects response.json()
+  // too, not just the initial connect.
+  const signal = AbortSignal.timeout(HTTP_REQUEST_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(verifyUrl, { method: "POST", body: formData, signal });
+  } catch (cause) {
+    const durationMs = Math.round(performance.now() - start);
+    return {
+      index,
+      durationMs,
+      ok: false,
+      httpStatus: 0,
+      error: describeHttpError(cause, signal.aborted, HTTP_REQUEST_TIMEOUT_MS),
+    };
+  }
+
+  // UNLIKE runOnceInProcess above, the clock here stops AFTER the body is
+  // fully received, not before. `fetch`'s own promise resolves as soon as
+  // response HEADERS arrive — the body may still be streaming in. A real
+  // client waiting on this route has its answer only once the full body
+  // has actually arrived over the wire, so `response.json()` below is part
+  // of what this mode measures, not this harness's own bookkeeping (this
+  // file's module comment explains why the in-process mode draws that line
+  // differently: there, the equivalent parse is genuinely already-done
+  // local bookkeeping, because `NextResponse.json(...)` serializes eagerly
+  // before `handleVerifyRequest` ever returns).
+  let body: unknown = null;
+  try {
+    body = await response.json();
+  } catch (cause) {
+    // Two different reasons this catch can fire, told apart by the SAME
+    // shared signal: the deadline fired mid body-read (a real failure —
+    // return it as one below, not silently degrade to a fabricated
+    // "malformed body" 200), or the body just was not valid JSON on a
+    // fully-received response (the pre-existing, intentional degrade to
+    // `body = null`, which parseVerifySuccessBody below turns into a clear
+    // "did not match the expected shape" error).
+    if (signal.aborted) {
+      const durationMs = Math.round(performance.now() - start);
+      return {
+        index,
+        durationMs,
+        ok: false,
+        httpStatus: 0,
+        error: describeHttpError(cause, true, HTTP_REQUEST_TIMEOUT_MS),
+      };
+    }
+    body = null;
+  }
+  const durationMs = Math.round(performance.now() - start);
+  const serverTimingHeader = response.headers.get("server-timing");
+  const serverTimingMs = serverTimingHeader ? parseServerTimingHeader(serverTimingHeader) : undefined;
+
+  if (response.status !== 200) {
+    const message =
+      body && typeof body === "object" && "error" in body
+        ? JSON.stringify((body as { error: unknown }).error)
+        : `HTTP ${response.status}`;
+    return { index, durationMs, ok: false, httpStatus: response.status, error: message, serverTimingMs };
+  }
+  const success = parseVerifySuccessBody(body);
+  if (!success) {
+    return {
+      index,
+      durationMs,
+      ok: false,
+      httpStatus: response.status,
+      error: "measure.ts: 200 response body did not match the expected VerifySuccessBody shape",
+      serverTimingMs,
+    };
+  }
+  return {
+    index,
+    durationMs,
+    ok: true,
+    httpStatus: 200,
+    labelVerdict: success.labelVerdict,
+    headlineReason: success.headlineReason,
+    applicationId: success.applicationId,
+    serverTimingMs,
+  };
+}
+
 interface MachineInfo {
   platform: string;
   arch: string;
@@ -230,6 +420,12 @@ interface MachineInfo {
   nodeVersion: string;
 }
 
+/** The machine this SCRIPT ran on — always this machine, in both modes.
+ * In `--url` mode this is NOT necessarily the machine that did the
+ * measured work (that's whatever's listening at the target URL); it still
+ * matters, because it is the machine and network path the wall-clock timer
+ * itself ran on. `target` (`TargetInfo`, below) records the other half:
+ * what was actually being measured. */
 function readMachineInfo(): MachineInfo {
   const cpus = os.cpus();
   return {
@@ -241,10 +437,37 @@ function readMachineInfo(): MachineInfo {
   };
 }
 
+/** `null` when `render.yaml` could not be read — `target-info.ts`'s
+ * `buildTargetInfo` degrades its `renderPlan` field to `null` in that
+ * case rather than throwing; a missing or unreadable `render.yaml` should
+ * never crash a latency measurement run over one optional artifact
+ * field. */
+function readRenderYamlTextOrNull(): string | null {
+  try {
+    return readFileSync(RENDER_YAML_PATH, "utf8");
+  } catch {
+    return null;
+  }
+}
+
 interface HarnessReport {
   ticket: string;
   measuredAt: string;
+  /** In-process mode: `HAIKU_EXTRACTOR_MODEL` — this script calls
+   * `extractLabel` directly, so the model IS a fact this script observed,
+   * not an assumption. `--url` mode: this script never sees which model
+   * the target actually calls (that is entirely the target server's own
+   * choice) — the string below says so explicitly rather than repeating
+   * `HAIKU_EXTRACTOR_MODEL` as if this script had confirmed it (TRO-539:
+   * the same "claims carry provenance" discipline the `pipelineScope`
+   * fix applies elsewhere in this file). */
   model: string;
+  /** Non-null only when this run was invoked with `--note=<text>`
+   * (TRO-539) — a run whose numbers are not a real TH-R2 measurement (a
+   * fake-model or otherwise non-representative run) states that fact
+   * here, inside the artifact itself, not only in a filename or a
+   * changelog entry. */
+  validationNote: string | null;
   goldenSetCase: {
     caseId: string;
     category: string;
@@ -252,12 +475,26 @@ interface HarnessReport {
     imagePath: string;
   };
   pipelineScope: string;
+  /** What this run's own request(s) actually crossed, and where they
+   * landed (TRO-539). Derived fresh every run from the real `--url` value
+   * (or its absence) and `render.yaml`'s own current text — see
+   * `target-info.ts`'s header comment for the provenance-trap this
+   * replaces. */
+  target: TargetInfo;
   machine: MachineInfo;
   requestedRuns: number;
   successfulRuns: number;
   failedRuns: number;
   verdictCounts: Record<string, number>;
   summaryMs: LatencySummary | null;
+  /** Per-PRD-§3.8-stage latency summary, built from every successful run's
+   * own `Server-Timing` response header (TRO-539). `null` when no run
+   * produced a parseable header at all (every in-process run before this
+   * ticket; a `--url` run against a deployment that predates this
+   * ticket's Server-Timing header). A stage present in some runs' headers
+   * but not others is still summarized from however many samples it has —
+   * `summarizeLatencies` requires at least one. */
+  stageBreakdownMs: Partial<Record<ServerTimingStage, LatencySummary>> | null;
   budget: {
     p50TargetMs: number;
     source: string;
@@ -273,6 +510,20 @@ interface HarnessReport {
    * latency numbers above are wrong — it means housekeeping left rows
    * behind in the worktree's own disposable database. */
   cleanupFailures: CleanupFailure[];
+  /** Non-null only when this run had at least one successful
+   * `applicationId` to clean up but did not attempt it (TRO-539 — only
+   * reachable in `--url` mode; in-process mode requires `DATABASE_URL` up
+   * front, so this is always `null` there). One of THREE distinct reasons,
+   * named in the message itself: `DATABASE_URL` was not set at all; it was
+   * set but `--cleanup-db` was not passed; or `--cleanup-db` was passed but
+   * the target host is not a loopback address (round 2 of TRO-539's own
+   * local review: a loopback host alone is not sufficient proof
+   * `DATABASE_URL` is the target's own database — see `dbCleanupEligible`'s
+   * own comment in `main`). Distinct from `cleanupFailures`: a failure
+   * means cleanup was attempted and did not work; this means cleanup was
+   * never attempted at all — not a failure, but not silently
+   * indistinguishable from "fully cleaned up" either. */
+  cleanupSkippedReason: string | null;
   /** `null` on a clean removal of the scratch image directory. The error
    * message on a failure — same "housekeeping, not a measurement problem"
    * meaning as `cleanupFailures`. */
@@ -284,16 +535,45 @@ interface HarnessReport {
 }
 
 async function main(): Promise<void> {
-  const { runs, caseId } = parseArgs(process.argv.slice(2));
+  const { runs, caseId, url, outPath, note, cleanupDb } = parseArgs(process.argv.slice(2));
+  const boundary: MeasurementBoundary = url !== undefined ? "http" : "in-process";
+  // `new URL("/api/verify", url)` — not string concatenation — so a
+  // `--url` value with or without a trailing slash both resolve to the
+  // same, correct endpoint (args.ts validates `url` parses as an absolute
+  // URL, so this constructor call cannot throw on a value that already
+  // passed that check).
+  const verifyUrl = url !== undefined ? new URL("/api/verify", url).toString() : null;
+  const target = buildTargetInfo(url ?? null, readRenderYamlTextOrNull());
+  // TRO-539, CodeRabbit local review round 1 (major), refined in round 2: a
+  // --url run's own DATABASE_URL might point at a database that has
+  // NOTHING to do with the target server — e.g. a developer's shell still
+  // has last session's local DATABASE_URL exported while --url now points
+  // at a real deployed instance. Deleting `result.applicationId` in that
+  // case risks a cross-database ID COLLISION: some unrelated row in the
+  // WRONG database that happens to share the same numeric id. Round 1
+  // gated this on `isLoopbackHostname` alone; round 2 found that
+  // insufficient on its own — this repo's own factory workflow (CLAUDE.md's
+  // "DATABASE_URL discipline") routinely runs SEVERAL worktree-scoped
+  // Postgres databases on the SAME localhost Postgres server, so a
+  // loopback target and a stale, differently-scoped DATABASE_URL can
+  // coexist on one machine. Cleanup now needs BOTH signals: the operator's
+  // own explicit `--cleanup-db` flag (they are asserting, not this script
+  // inferring, that DATABASE_URL matches the target) AND a loopback target
+  // (defense in depth against fat-fingering the flag against a real
+  // deployed URL). Every other case skips the delete and records why
+  // (`cleanupSkippedReason` below), never guesses.
+  const dbCleanupEligible =
+    boundary === "in-process" || (url !== undefined && cleanupDb === true && isLoopbackHostname(new URL(url).hostname));
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (boundary === "in-process" && !process.env.ANTHROPIC_API_KEY) {
     throw new Error(
       "measure.ts: ANTHROPIC_API_KEY is not set. source .factory-env in a factory worktree, " +
-        "or set it in .env.local before running pnpm latency:check.",
+        "or set it in .env.local before running pnpm latency:check. (Not required for --url " +
+        "mode — the target server holds its own key, not this script.)",
     );
   }
   const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
+  if (boundary === "in-process" && !connectionString) {
     throw new Error(
       "measure.ts: DATABASE_URL is not set. source .factory-env in a factory worktree, " +
         "or set it in .env.local before running pnpm latency:check.",
@@ -306,42 +586,82 @@ async function main(): Promise<void> {
   const imageBytes = readFileSync(path.resolve(REPO_ROOT, imagePath));
 
   console.log(`measure.ts: ${runs} run(s) against case "${caseId}" (${caseSpec.category}, ${caseSpec.beverageType})`);
-  console.log(`measure.ts: model ${HAIKU_EXTRACTOR_MODEL} — each run is one real, live API call.`);
+  if (boundary === "in-process") {
+    console.log(`measure.ts: boundary=in-process, model ${HAIKU_EXTRACTOR_MODEL} — each run is one real, live API call.`);
+  } else {
+    console.log(
+      `measure.ts: boundary=http, target=${verifyUrl} — whether this costs real money depends ` +
+        `entirely on what is actually listening there (a real deployment vs. a fake-model ` +
+        `validation server).`,
+    );
+  }
 
-  const pool = new Pool({
-    connectionString,
-    // Same two safeguards as src/lib/db/index.ts's shared pool, and for the
-    // same reason: pg's own default `connectionTimeoutMillis` is 0 (no
-    // timeout), so an unreachable database would hang this script forever
-    // instead of failing fast, and an idle client that loses its connection
-    // emits an unhandled "error" event with no listener registered — Node
-    // treats that as fatal and crashes the process outright, which would be
-    // a real risk over a 20-plus-run session that runs for a minute or more.
-    connectionTimeoutMillis: 10_000,
-  });
-  pool.on("error", (err) => {
-    console.error("measure.ts: unexpected error on idle Postgres client", err);
-  });
-  const db = drizzle(pool, { schema });
+  // Connects a database pool whenever a connection string is available —
+  // required up front for in-process mode (already thrown above if
+  // missing), optional and best-effort for --url mode (used only for
+  // cleanup there; see the module comment).
+  let pool: Pool | null = null;
+  let db: VerifyRouteDeps["db"] | null = null;
+  if (connectionString) {
+    pool = new Pool({
+      connectionString,
+      // Same two safeguards as src/lib/db/index.ts's shared pool, and for the
+      // same reason: pg's own default `connectionTimeoutMillis` is 0 (no
+      // timeout), so an unreachable database would hang this script forever
+      // instead of failing fast, and an idle client that loses its connection
+      // emits an unhandled "error" event with no listener registered — Node
+      // treats that as fatal and crashes the process outright, which would be
+      // a real risk over a 20-plus-run session that runs for a minute or more.
+      connectionTimeoutMillis: 10_000,
+    });
+    pool.on("error", (err) => {
+      console.error("measure.ts: unexpected error on idle Postgres client", err);
+    });
+    db = drizzle(pool, { schema });
+  }
 
-  const deps: VerifyRouteDeps = {
-    db,
-    preprocessImage,
-    extractLabel,
-    compareGovernmentWarning: compareGovernmentWarningFromImage,
-    // TRO-518: writes through the SAME `db` connection this script already
-    // opened for its own queries, not a scratch directory.
-    saveLabelImage: (bytes, originalFilename) => saveLabelImage(bytes, originalFilename, { db }),
-    comparators: productionComparators,
-  };
+  // One request-runner closure per mode, built once, called once per loop
+  // iteration below — keeps the run loop, cleanup, and report-building
+  // code identical for both modes (ticket TRO-539: "preserving the
+  // existing percentile math, exit-status logic, cleanup, and artifact
+  // shape"). Explicit thrown invariants below, not a `!` assertion —
+  // standing rule 13 — even though both are unreachable in practice: the
+  // guard clauses above already require DATABASE_URL before in-process
+  // mode reaches here, and `verifyUrl` is only ever null when `url` is
+  // undefined, which is exactly when `boundary` is "in-process".
+  let requestRunner: (index: number) => Promise<RunResult>;
+  if (boundary === "in-process") {
+    if (!db) {
+      throw new Error("measure.ts: internal invariant violated — in-process mode reached with no database connection");
+    }
+    const inProcessDb = db;
+    const inProcessDeps: VerifyRouteDeps = {
+      db: inProcessDb,
+      preprocessImage,
+      extractLabel,
+      compareGovernmentWarning: compareGovernmentWarningFromImage,
+      // TRO-518: writes through the SAME `db` connection this script already
+      // opened for its own queries, not a scratch directory.
+      saveLabelImage: (bytes, originalFilename) => saveLabelImage(bytes, originalFilename, { db: inProcessDb }),
+      comparators: productionComparators,
+    };
+    requestRunner = (i) => runOnceInProcess(i, imageBytes, imagePath, mediaType, caseSpec, inProcessDeps);
+  } else {
+    if (verifyUrl === null) {
+      throw new Error("measure.ts: internal invariant violated — http mode reached with no target URL");
+    }
+    const targetUrl = verifyUrl;
+    requestRunner = (i) => runOnceHttp(i, imageBytes, imagePath, mediaType, caseSpec, targetUrl);
+  }
 
   const runResults: RunResult[] = [];
   const cleanupFailures: CleanupFailure[] = [];
+  const cleanupSkippedApplicationIds: number[] = [];
   let scratchDirCleanupError: string | null = null;
   let closePoolError: string | null = null;
   try {
     for (let i = 1; i <= runs; i++) {
-      const result = await runOnce(i, imageBytes, imagePath, mediaType, caseSpec, deps);
+      const result = await requestRunner(i);
       runResults.push(result);
       if (result.ok) {
         console.log(`  run ${i}/${runs}: ${result.durationMs.toFixed(0)}ms — verdict ${result.labelVerdict}${result.headlineReason ? ` (${result.headlineReason})` : ""}`);
@@ -349,12 +669,16 @@ async function main(): Promise<void> {
         console.log(`  run ${i}/${runs}: ${result.durationMs.toFixed(0)}ms — FAILED: ${result.error}`);
       }
       if (result.applicationId !== undefined) {
-        try {
-          await db.delete(schema.applications).where(eq(schema.applications.id, result.applicationId));
-        } catch (cleanupError) {
-          const message = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
-          console.warn(`  run ${i}/${runs}: cleanup of application ${result.applicationId} failed: ${message}`);
-          cleanupFailures.push({ applicationId: result.applicationId, error: message });
+        if (db && dbCleanupEligible) {
+          try {
+            await db.delete(schema.applications).where(eq(schema.applications.id, result.applicationId));
+          } catch (cleanupError) {
+            const message = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+            console.warn(`  run ${i}/${runs}: cleanup of application ${result.applicationId} failed: ${message}`);
+            cleanupFailures.push({ applicationId: result.applicationId, error: message });
+          }
+        } else {
+          cleanupSkippedApplicationIds.push(result.applicationId);
         }
       }
     }
@@ -373,10 +697,18 @@ async function main(): Promise<void> {
     // longer be non-null; left in place rather than removed from either
     // interface, which is a bigger change than this ticket's storage-
     // adapter scope.
-    ({ scratchDirCleanupError, closePoolError } = await cleanupScratchDirAndPool(
-      async () => {},
-      () => pool.end(),
-    ));
+    //
+    // TRO-539: `pool` is `null` when no `DATABASE_URL` was available at
+    // all (only reachable in `--url` mode) — nothing to close in that
+    // case. Narrowed into its own `const` (CodeRabbit local review round
+    // 3, major) rather than relying on the ternary's own closure narrowing
+    // of the outer `let pool` — correct either way today, but this makes
+    // the non-null guarantee explicit and immune to a future refactor
+    // (e.g. an `await` inserted between the check and this closure's own
+    // definition) silently invalidating it.
+    const poolToClose = pool;
+    const closePool = poolToClose ? () => poolToClose.end() : async () => {};
+    ({ scratchDirCleanupError, closePoolError } = await cleanupScratchDirAndPool(async () => {}, closePool));
     if (scratchDirCleanupError) {
       console.warn(`measure.ts: unexpected error during cleanup: ${scratchDirCleanupError}`);
     }
@@ -394,30 +726,65 @@ async function main(): Promise<void> {
 
   const summaryMs = successful.length > 0 ? summarizeLatencies(successful.map((r) => r.durationMs)) : null;
 
+  // stage-breakdown.ts's own job, not inlined here: only a SUCCESSFUL run's
+  // samples ever count (CodeRabbit local review round 1, major) — see that
+  // module's header comment for why this must be structural, not just true
+  // by route.ts's current behavior.
+  const stageBreakdownMs = buildStageBreakdown(runResults);
+
+  const cleanupSkippedReason: string | null = (() => {
+    if (cleanupSkippedApplicationIds.length === 0) return null;
+    const ids = cleanupSkippedApplicationIds.join(", ");
+    const count = cleanupSkippedApplicationIds.length;
+    if (!db) {
+      return (
+        `DATABASE_URL not set — ${count} application row(s) left uncleaned on the target's own ` +
+        `database: ${ids}.`
+      );
+    }
+    if (cleanupDb !== true) {
+      return (
+        `--cleanup-db not passed — this script never infers that DATABASE_URL is the SAME ` +
+        `database the --url target itself uses (round 2 of TRO-539's own local review found a ` +
+        `loopback hostname alone is not enough proof, since this repo's own factory workflow ` +
+        `runs several worktree-scoped databases on one localhost Postgres server). Pass ` +
+        `--cleanup-db to opt in once you have confirmed it yourself. ${count} application ` +
+        `row(s) left uncleaned: ${ids}.`
+      );
+    }
+    return (
+      `--url target host is not localhost/127.0.0.1/::1 — --cleanup-db was passed, but this ` +
+      `script still refuses a non-loopback target as a second, independent safety check. ` +
+      `${count} application row(s) left uncleaned: ${ids}. Clean these up directly on the ` +
+      `target's own database if needed.`
+    );
+  })();
+
   const report: HarnessReport = {
-    ticket: "TRO-471 / LH-031",
+    ticket: "TRO-471 / LH-031 (extended by TRO-539 / LH-034: --url mode, Server-Timing breakdown, target provenance)",
     measuredAt: new Date().toISOString(),
-    model: HAIKU_EXTRACTOR_MODEL,
+    model:
+      boundary === "in-process"
+        ? HAIKU_EXTRACTOR_MODEL
+        : `not observed by this script -- the target server (${target.host ?? "unknown host"}) makes its ` +
+          `own model choice; this repo's own code names ${HAIKU_EXTRACTOR_MODEL}, but --url mode never ` +
+          `confirms the target is actually running it`,
+    validationNote: note ?? null,
     goldenSetCase: {
       caseId: caseSpec.caseId,
       category: caseSpec.category,
       beverageType: caseSpec.beverageType,
       imagePath: caseSpec.imagePath,
     },
-    pipelineScope:
-      "Preprocess (sharp) -> Haiku extraction (claude-haiku-4-5, real API call) -> " +
-      "deterministic Validation Router -> DB writes, via handleVerifyRequest in-process " +
-      "(not a real HTTP round-trip). No OCR/warning-subsystem comparator (LH-020 not merged " +
-      "-- warningResult is always null). LH-014's Sonnet resolver has merged to main, but " +
-      "route.ts never calls it inline -- every run below is the fast path only; Sonnet " +
-      "resolution, when it happens, runs asynchronously off the review queue, never inside " +
-      "this request (TH-R19).",
+    pipelineScope: buildPipelineScope(target.boundary),
+    target,
     machine: readMachineInfo(),
     requestedRuns: runs,
     successfulRuns: successful.length,
     failedRuns: failed.length,
     verdictCounts,
     summaryMs,
+    stageBreakdownMs,
     budget: {
       p50TargetMs: 5000,
       source: "TH-R2 / PRD §3.8: ~5s p50 wall-clock, single-label verify, realistic image.",
@@ -428,13 +795,15 @@ async function main(): Promise<void> {
         "not the TH-R2 acceptance figure itself.",
     },
     cleanupFailures,
+    cleanupSkippedReason,
     scratchDirCleanupError,
     closePoolError,
     runs: runResults,
   };
 
-  mkdirSync(path.dirname(RESULTS_PATH), { recursive: true });
-  writeFileSync(RESULTS_PATH, JSON.stringify(report, null, 2) + "\n");
+  const resultsPath = outPath !== undefined ? path.resolve(REPO_ROOT, outPath) : boundary === "http" ? DEFAULT_HTTP_RESULTS_PATH : RESULTS_PATH;
+  mkdirSync(path.dirname(resultsPath), { recursive: true });
+  writeFileSync(resultsPath, JSON.stringify(report, null, 2) + "\n");
 
   console.log("");
   console.log(`measure.ts: ${successful.length}/${runs} run(s) succeeded, ${failed.length} failed.`);
@@ -447,13 +816,26 @@ async function main(): Promise<void> {
     console.log("measure.ts: no successful runs -- cannot compute p50/p95.");
   }
   console.log(`measure.ts: verdict counts: ${JSON.stringify(verdictCounts)}`);
-  console.log(`measure.ts: wrote ${RESULTS_PATH}`);
+  console.log(
+    `measure.ts: target — boundary=${target.boundary} host=${target.host ?? "n/a"} ` +
+      `renderPlan=${target.renderPlan ?? "n/a"}`,
+  );
+  if (stageBreakdownMs) {
+    for (const stage of SERVER_TIMING_STAGES) {
+      const s = stageBreakdownMs[stage];
+      if (s) console.log(`measure.ts: stage ${stage}: p50=${s.p50.toFixed(1)}ms p95=${s.p95.toFixed(1)}ms (n=${s.count})`);
+    }
+  }
+  console.log(`measure.ts: wrote ${resultsPath}`);
   if (cleanupFailures.length > 0) {
     console.warn(
       `measure.ts: ${cleanupFailures.length} application row(s) could not be cleaned up — ` +
         `left behind in the worktree database: ${cleanupFailures.map((f) => f.applicationId).join(", ")}. ` +
         `The latency numbers above are still valid; this is a housekeeping failure, not a measurement one.`,
     );
+  }
+  if (cleanupSkippedReason) {
+    console.warn(`measure.ts: ${cleanupSkippedReason} The latency numbers above are still valid.`);
   }
   if (scratchDirCleanupError) {
     console.warn(

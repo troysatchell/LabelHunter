@@ -207,6 +207,89 @@ describe("applyLowLight", () => {
       applyLowLight(base, { region: "nowhere", brightnessFactor: 0.3 }),
     ).rejects.toThrow(RangeError);
   });
+
+  describe("contrastFactor and noiseAmplitude (TRO-516 correction C3)", () => {
+    // case-21's own diagnosis (docs/diagnostics/2026-08-12-verdict-miss-triage.md
+    // section 3D): a pure brightness scale darkens a region without
+    // degrading its glyph edges — a real model still reads it perfectly.
+    // These two params exist so a caller can compress dynamic range toward
+    // mid-gray and add sensor grain, not just darken.
+
+    it("omitting both params leaves case-22's own call byte-identical to before this change", async () => {
+      const base = await makeSyntheticLabel();
+      const withoutNewParams = await applyLowLight(base, { region: "warning", brightnessFactor: 0.3 });
+      const withExplicitDefaults = await applyLowLight(base, {
+        region: "warning",
+        brightnessFactor: 0.3,
+        contrastFactor: 1,
+        noiseAmplitude: 0,
+      });
+      expect(withExplicitDefaults.equals(withoutNewParams)).toBe(true);
+    });
+
+    it("contrastFactor below 1 pulls dark ink toward mid-gray, on top of the brightness scale", async () => {
+      const base = await makeSyntheticLabel();
+      const brightnessOnly = await applyLowLight(base, { region: "warning", brightnessFactor: 0.3 });
+      const withContrast = await applyLowLight(base, {
+        region: "warning",
+        brightnessFactor: 0.3,
+        contrastFactor: 0.4,
+      });
+
+      const brightnessOnlyMean = await meanBrightness(brightnessOnly, LABEL_REGIONS.warning);
+      const withContrastMean = await meanBrightness(withContrast, LABEL_REGIONS.warning);
+      // The region is mostly dark ink over white; pulling toward MID_GRAY
+      // (128) before the exposure scale lifts a region this dark.
+      expect(withContrastMean).toBeGreaterThan(brightnessOnlyMean);
+
+      // Untouched region stays untouched, same guarantee as brightnessFactor alone.
+      const brandBefore = await meanBrightness(base, LABEL_REGIONS.brand);
+      const brandAfter = await meanBrightness(withContrast, LABEL_REGIONS.brand);
+      expect(brandAfter).toBeCloseTo(brandBefore, 3);
+    });
+
+    it("rejects contrastFactor outside (0, 1]", async () => {
+      const base = await makeSyntheticLabel();
+      await expect(
+        applyLowLight(base, { region: "warning", brightnessFactor: 0.3, contrastFactor: 0 }),
+      ).rejects.toThrow(RangeError);
+      await expect(
+        applyLowLight(base, { region: "warning", brightnessFactor: 0.3, contrastFactor: 1.5 }),
+      ).rejects.toThrow(RangeError);
+    });
+
+    it("noiseAmplitude above 0 raises the targeted region's pixel variance", async () => {
+      const base = await makeSyntheticLabel();
+      const clean = await applyLowLight(base, { region: "warning", brightnessFactor: 0.6 });
+      const grainy = await applyLowLight(base, {
+        region: "warning",
+        brightnessFactor: 0.6,
+        noiseAmplitude: 24,
+      });
+
+      const cleanStats = await sharp(await sharp(clean).extract(toExtract(LABEL_REGIONS.warning)).toBuffer()).stats();
+      const grainyStats = await sharp(await sharp(grainy).extract(toExtract(LABEL_REGIONS.warning)).toBuffer()).stats();
+      expect(grainyStats.channels[0].stdev).toBeGreaterThan(cleanStats.channels[0].stdev);
+    });
+
+    it("rejects noiseAmplitude outside [0, 128]", async () => {
+      const base = await makeSyntheticLabel();
+      await expect(
+        applyLowLight(base, { region: "warning", brightnessFactor: 0.3, noiseAmplitude: -1 }),
+      ).rejects.toThrow(RangeError);
+      await expect(
+        applyLowLight(base, { region: "warning", brightnessFactor: 0.3, noiseAmplitude: 200 }),
+      ).rejects.toThrow(RangeError);
+    });
+
+    it("produces byte-identical output for the same input and params — noise is deterministic, never Math.random()", async () => {
+      const base = await makeSyntheticLabel();
+      const params = { region: "warning", brightnessFactor: 0.6, contrastFactor: 0.45, noiseAmplitude: 22 };
+      const first = await applyLowLight(base, params);
+      const second = await applyLowLight(base, params);
+      expect(first.equals(second)).toBe(true);
+    });
+  });
 });
 
 describe("applyDegradation dispatcher", () => {
@@ -235,6 +318,56 @@ describe("applyDegradation dispatcher", () => {
     expect(dimmed.length).toBeGreaterThan(0);
   });
 
+  it("forwards low-light's contrastFactor and noiseAmplitude through the dispatcher, not just brightnessFactor", async () => {
+    // Red without the fix: applyDegradation's "low-light" case built its
+    // applyLowLight params object by hand and silently dropped any key
+    // besides region/brightnessFactor, so a manifest entry with
+    // contrastFactor/noiseAmplitude (case-21, TRO-516 correction C3) would
+    // build byte-identical to one without them.
+    const base = await makeSyntheticLabel();
+    const brightnessOnly = await applyDegradation(base, {
+      type: "low-light",
+      params: { region: "warning", brightnessFactor: 0.6 },
+    });
+    const withExtraParams = await applyDegradation(base, {
+      type: "low-light",
+      params: { region: "warning", brightnessFactor: 0.6, contrastFactor: 0.45, noiseAmplitude: 22 },
+    });
+    expect(withExtraParams.equals(brightnessOnly)).toBe(false);
+
+    // Not just "different" — exactly what a direct applyLowLight call with
+    // the identical params produces. A dispatcher bug that forwarded the
+    // wrong value, or swapped contrastFactor and noiseAmplitude, would
+    // still satisfy the not-equal check above while failing this one.
+    const direct = await applyLowLight(base, {
+      region: "warning",
+      brightnessFactor: 0.6,
+      contrastFactor: 0.45,
+      noiseAmplitude: 22,
+    });
+    expect(withExtraParams.equals(direct)).toBe(true);
+  });
+
+  it("forwards contrastFactor alone through the dispatcher (isolated from noiseAmplitude)", async () => {
+    const base = await makeSyntheticLabel();
+    const viaDispatcher = await applyDegradation(base, {
+      type: "low-light",
+      params: { region: "warning", brightnessFactor: 0.6, contrastFactor: 0.4 },
+    });
+    const direct = await applyLowLight(base, { region: "warning", brightnessFactor: 0.6, contrastFactor: 0.4 });
+    expect(viaDispatcher.equals(direct)).toBe(true);
+  });
+
+  it("forwards noiseAmplitude alone through the dispatcher (isolated from contrastFactor)", async () => {
+    const base = await makeSyntheticLabel();
+    const viaDispatcher = await applyDegradation(base, {
+      type: "low-light",
+      params: { region: "warning", brightnessFactor: 0.6, noiseAmplitude: 20 },
+    });
+    const direct = await applyLowLight(base, { region: "warning", brightnessFactor: 0.6, noiseAmplitude: 20 });
+    expect(viaDispatcher.equals(direct)).toBe(true);
+  });
+
   it("throws for an unrecognized degradation type", async () => {
     const base = await makeSyntheticLabel();
     // @ts-expect-error -- intentionally invalid type for the red-first test
@@ -256,6 +389,14 @@ describe("applyDegradation dispatcher", () => {
       { type: "perspective", params: { shear: 0.15 } },
       { type: "glare", params: { region: "brand", angleDegrees: 25, opacity: 0.85 } },
       { type: "low-light", params: { region: "warning", brightnessFactor: 0.3 } },
+      // TRO-516 correction C3 — case-21's own degradations entry, exercised
+      // through the dispatcher (not just a direct applyLowLight call), so a
+      // future edit to the "low-light" case in applyDegradation's switch
+      // cannot silently stop forwarding contrastFactor/noiseAmplitude again.
+      {
+        type: "low-light",
+        params: { region: "front", brightnessFactor: 0.6, contrastFactor: 0.45, noiseAmplitude: 22 },
+      },
     ];
 
     for (const degradation of cases) {

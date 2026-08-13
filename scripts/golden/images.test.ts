@@ -112,9 +112,13 @@ describe("golden-set degradations recorded on the manifest (design doc §3)", ()
     ]);
   });
 
-  it("records case-21's low light on the front-label region", () => {
+  it("records case-21's strengthened low light (TRO-516 correction C3) plus a small blur", () => {
     expect(degradationsOf("case-21-low-light-front-label")).toEqual([
-      { type: "low-light", params: { region: "front", brightnessFactor: 0.32 } },
+      {
+        type: "low-light",
+        params: { region: "front", brightnessFactor: 0.6, contrastFactor: 0.45, noiseAmplitude: 22 },
+      },
+      { type: "blur", params: { sigma: 1.6 } },
     ]);
   });
 

@@ -89,8 +89,10 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     paragraph doesn't get counted by `review-ledger.mjs report`.
 22. **A hardened `pg.Pool` doesn't protect a second `new Pool(...)` created elsewhere.** Reuse
     the existing hardened client from `src/lib/db`. If a script genuinely needs its own
-    short-lived pool, copy both settings (the error listener, `connectionTimeoutMillis`), not
-    just the constructor call.
+    short-lived pool, copy every hardened setting — the error listener,
+    `connectionTimeoutMillis`, and `query_timeout` — not just the constructor call.
+    `connectionTimeoutMillis` bounds only connection establishment; an established query
+    needs `query_timeout` or it can hang forever (TRO-544 post-merge finding).
 23. **An `AbortController` timeout must stay live through the whole request, including the body
     read** — `clearTimeout` in the `finally` after `fetch()` resolves, before `.json()` runs,
     leaves a hanging body parse with no timeout at all. Scope one timer across every `await` in
@@ -148,6 +150,13 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     than re-litigating the distinction from scratch: does the skip hide a real bug/gap (banned),
     or does it drop only a test-only mechanism with no legitimate real-world counterpart
     (not banned, but still narrow it and say so in `CHANGES.md`)?
+
+31. **The gate's review step re-reviews the whole branch every run, including the previous
+    round's own triage prose — findings regenerate forever, so triage runs to a stop rule,
+    not to zero.** After a round whose findings change no shipped behavior and no factual
+    claim, record every disposition and stop; do not fix-iterate prose, and do not re-run
+    the gate just to re-review. (TRO-544: 13 rounds, 45 findings; real substance ended at
+    round 12, and the last round was seven comment-shortening requests against stable files.)
 
 ## Mechanized (no longer prompt-dependent)
 

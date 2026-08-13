@@ -266,15 +266,26 @@ export function parseUnifiedDiff(diffText: string): ParsedDiffFile[] {
  * (`isBoringPath`) or every changed line is blank/comment-only. A binary
  * file is never boring — there is no line content to inspect, so this
  * refuses to guess rather than risk hiding a real change.
+ *
+ * Zero changed lines (a pure rename, for instance) is boring BY DESIGN —
+ * stated explicitly here, not left as an implicit vacuous-true from
+ * `.every()` on an empty array: nothing changed, so there is nothing to
+ * review.
  */
 export function isFileChangeBoring(file: ParsedDiffFile): boolean {
   if (file.binary) return false;
   if (isBoringPath(file.path)) return true;
+  if (file.changedLines.length === 0) return true;
   return file.changedLines.every(isCommentOrBlankLine);
 }
 
-/** Vacuously true for zero changed files — nothing changed, so there is nothing to review. */
+/**
+ * Zero changed files is boring BY DESIGN, stated explicitly — nothing
+ * changed, so there is nothing to review. Not left as an implicit
+ * vacuous-true from `.every()` on an empty array.
+ */
 export function isDiffBoring(files: ParsedDiffFile[]): boolean {
+  if (files.length === 0) return true;
   return files.every(isFileChangeBoring);
 }
 

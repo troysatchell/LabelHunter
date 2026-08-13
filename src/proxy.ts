@@ -34,8 +34,20 @@
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { hasValidAccessCode } from "./server/auth/access-code";
+import { sanitizeRedirectPath } from "./lib/utils/safe-redirect-path";
 
 const EXEMPT_PATHS = new Set<string>(["/api/health", "/access-code", "/api/access-code"]);
+
+/** Strips a trailing slash before matching `EXEMPT_PATHS` (TRO-565 finding
+ * 4) — `/api/health/` must exempt the same as `/api/health`. Render's own
+ * health check always requests the exact path this repo's `render.yaml`
+ * names, so this is a defensive normalization, not a response to a
+ * measured outage. The root path "/" is left alone: stripping its own
+ * trailing slash would turn it into the empty string. */
+function withoutTrailingSlash(pathname: string): string {
+  if (pathname.length > 1 && pathname.endsWith("/")) return pathname.slice(0, -1);
+  return pathname;
+}
 
 /** ASD-STE100 / Zinsser copy (CLAUDE.md) — shown to a non-browser caller
  * (an evaluator script, an API test) that omitted the credential. Names
@@ -46,7 +58,7 @@ const ACCESS_CODE_REQUIRED_API_MESSAGE =
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
-  if (EXEMPT_PATHS.has(pathname)) {
+  if (EXEMPT_PATHS.has(withoutTrailingSlash(pathname))) {
     return NextResponse.next();
   }
 
@@ -59,7 +71,12 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   }
 
   const redirectUrl = new URL("/access-code", request.url);
-  const next = `${pathname}${request.nextUrl.search}`;
+  // TRO-565 finding 1: sanitize the SAME way AccessCodeForm.tsx does before
+  // this value is ever put into the query string. `pathname` cannot
+  // literally carry a scheme, but it CAN start with "//" (a client can
+  // request `GET //evil.com/steal`), which a browser later resolves as
+  // protocol-relative — see this ticket's own proxy.test.ts case.
+  const next = sanitizeRedirectPath(`${pathname}${request.nextUrl.search}`);
   if (next !== "/") {
     redirectUrl.searchParams.set("next", next);
   }

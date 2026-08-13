@@ -19,21 +19,41 @@ function requestFrom(ip: string | null): Request {
 }
 
 describe("getClientIp", () => {
-  it("reads the first address from x-forwarded-for", () => {
+  it("reads the address from x-forwarded-for when it carries a single hop", () => {
     expect(getClientIp(requestFrom("203.0.113.5"))).toBe("203.0.113.5");
   });
 
-  it("takes only the client's own address when the header lists proxy hops", () => {
-    // Render/most proxies append hops: "client, proxy1, proxy2".
-    expect(getClientIp(requestFrom("203.0.113.5, 10.0.0.1, 10.0.0.2"))).toBe("203.0.113.5");
+  it("takes the RIGHTMOST hop, not the leftmost, when the header lists proxy hops (TRO-565 finding 2)", () => {
+    // A well-formed proxy APPENDS the peer it directly observed; it never
+    // rewrites what came before. So the rightmost entry is the one hop
+    // this server's own upstream put there — the only one a caller cannot
+    // set by hand. Render/most proxies append hops: "client, proxy1,
+    // proxy2" — this repo does not independently trust "client" here; see
+    // this file's own header comment for the full reasoning and the
+    // Render-specific research notes.
+    expect(getClientIp(requestFrom("203.0.113.5, 10.0.0.1, 10.0.0.2"))).toBe("10.0.0.2");
   });
 
   it("trims incidental whitespace around the address", () => {
-    expect(getClientIp(requestFrom("  203.0.113.5  , 10.0.0.1"))).toBe("203.0.113.5");
+    expect(getClientIp(requestFrom("10.0.0.1  ,  203.0.113.5  "))).toBe("203.0.113.5");
+  });
+
+  it("ignores a trailing empty segment (a header ending in a stray comma)", () => {
+    expect(getClientIp(requestFrom("203.0.113.5, 10.0.0.1,"))).toBe("10.0.0.1");
   });
 
   it("falls back to a stable placeholder when the header is absent — never throws", () => {
     expect(getClientIp(requestFrom(null))).toBe("unknown");
+  });
+});
+
+describe("getClientIp — a forged leading hop does not change the key (TRO-565 finding 2)", () => {
+  it("returns the SAME address no matter what an attacker puts before the trusted hop", () => {
+    const trustedHop = "203.0.113.9";
+    expect(getClientIp(requestFrom(`1.2.3.4, ${trustedHop}`))).toBe(trustedHop);
+    expect(getClientIp(requestFrom(`9.9.9.9, ${trustedHop}`))).toBe(trustedHop);
+    expect(getClientIp(requestFrom(`255.255.255.255, ${trustedHop}`))).toBe(trustedHop);
+    expect(getClientIp(requestFrom(`not-even-an-ip, ${trustedHop}`))).toBe(trustedHop);
   });
 });
 
@@ -62,12 +82,23 @@ describe("checkRateLimitPair", () => {
   });
 
   it("does not let one IP's rejection consume the shared global budget", () => {
-    const { ip, global } = pair(1, 100);
+    // A global limit of 2, not 100 (TRO-567 finding 4): the ORIGINAL 100
+    // left this assertion true whether or not a rejected attempt touched
+    // the global counter — three global.check() calls (A's admitted
+    // request, A's rejected retry, B's request) can never push a count of
+    // 3 over a limit of 100 either way, so the test could not actually
+    // catch the bug it was written to catch. 2 is exact: A's admitted
+    // request consumes the global budget's SECOND-TO-LAST slot below the
+    // limit... see the exact arithmetic in the comments below.
+    const { ip, global } = pair(1, 2);
     const requestA = requestFrom("203.0.113.5");
-    checkRateLimitPair(requestA, ip, global); // consumes A's IP budget
+    checkRateLimitPair(requestA, ip, global); // consumes A's IP budget AND 1 of 2 global slots
     checkRateLimitPair(requestA, ip, global); // rejected on IP check — should NOT touch global
     // A different IP should still see the global counter as if A's second,
-    // rejected attempt never happened.
+    // rejected attempt never happened: 1 of 2 global slots used, 1 left.
+    // If the rejected attempt above HAD wrongly consumed a global slot,
+    // this request would be the third global.check() against a limit of
+    // 2, and would be rejected.
     const requestB = requestFrom("198.51.100.9");
     const resultB = checkRateLimitPair(requestB, ip, global);
     expect(resultB.allowed).toBe(true);
@@ -85,5 +116,21 @@ describe("checkRateLimitPair", () => {
     const { ip, global } = pair(1, 100);
     expect(checkRateLimitPair(requestFrom("203.0.113.1"), ip, global).allowed).toBe(true);
     expect(checkRateLimitPair(requestFrom("203.0.113.2"), ip, global).allowed).toBe(true);
+  });
+
+  it("a rotated, attacker-controlled leading hop does not mint a fresh bucket (TRO-565 finding 2)", () => {
+    // The exact exploit finding 2 describes: a caller who can set
+    // x-forwarded-for rotates its value, hoping each request lands in a
+    // brand-new per-IP bucket. All three requests below share the same
+    // trailing (trusted) hop, so a per-IP limit of 1 must admit only the
+    // first.
+    const { ip, global } = pair(1, 100);
+    const trustedHop = "203.0.113.9";
+    const first = checkRateLimitPair(requestFrom(`1.2.3.4, ${trustedHop}`), ip, global);
+    const second = checkRateLimitPair(requestFrom(`9.9.9.9, ${trustedHop}`), ip, global);
+    const third = checkRateLimitPair(requestFrom(`255.255.255.255, ${trustedHop}`), ip, global);
+    expect(first.allowed).toBe(true);
+    expect(second.allowed).toBe(false);
+    expect(third.allowed).toBe(false);
   });
 });

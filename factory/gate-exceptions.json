@@ -78,6 +78,30 @@
       "approver": "Troy",
       "date": "2026-08-13",
       "pr": "https://github.com/troysatchell/LabelHunter/pull/60"
+    },
+    {
+      "ticket": "TRO-484",
+      "gate": "regression-test",
+      "reason": "LH-063 README: docs-only submission deliverable, no production code to write a red-first case against. Every other gate green (typecheck, lint, build, tests, eval-not-regressed, defect-gate). Troy confirmed directly in-session ('merge it g6 is good').",
+      "approver": "Troy",
+      "date": "2026-08-13",
+      "pr": "https://github.com/troysatchell/LabelHunter/pull/66"
+    },
+    {
+      "ticket": "TRO-485",
+      "gate": "regression-test",
+      "reason": "LH-064 approach.md: docs-only submission deliverable, no production code to write a red-first case against. Every other gate green. Troy confirmed directly in-session, same ruling as TRO-484 ('merge it g6 is good').",
+      "approver": "Troy",
+      "date": "2026-08-13",
+      "pr": "https://github.com/troysatchell/LabelHunter/pull/68"
+    },
+    {
+      "ticket": "TRO-483",
+      "gate": "regression-test",
+      "reason": "LH-062 seeded demo deployment: docs/evidence-only submission deliverable (a committed batch-run artifact plus a CHANGES.md entry), no production code to write a red-first case against. Every other gate green. Troy confirmed directly in-session, same ruling as TRO-484 ('merge it g6 is good').",
+      "approver": "Troy",
+      "date": "2026-08-13",
+      "pr": "https://github.com/troysatchell/LabelHunter/pull/73"
     }
   ]
 }

@@ -145,6 +145,35 @@ describe("applyFieldOverrides — rule 2 exemption for beverage_type (TRO-502)",
     expect(applyFieldOverrides(field({ value: "spirits", evidence: "" }), "exempt").rejected).toBe(true);
     expect(applyFieldOverrides(field({ value: "spirits", confidence: Number.NaN }), "exempt").rejected).toBe(true);
   });
+
+  it("rejects an exempt field whose evidence carries no label text — spaces only (TRO-502)", () => {
+    // Rule 1 is the ONLY evidence check left on an exempt field, so its
+    // "non-empty" test has to mean what CP-1 §3.2 rule 2 says evidence is:
+    // "the text on the label". A run of spaces is not label text. For every
+    // other field rule 2 catches this; for beverage_type nothing does.
+    const outcome = applyFieldOverrides(field({ value: "spirits", evidence: "   " }), "exempt");
+    expect(outcome.rejected).toBe(true);
+    expect(outcome.violation).toBe("evidence_missing");
+    expect(outcome.value).toBeNull();
+  });
+
+  it("rejects an exempt field whose evidence holds only zero-width characters (TRO-502)", () => {
+    // U+200B ZERO WIDTH SPACE is not JavaScript whitespace, so `trim()`
+    // leaves it standing and a length check passes. It prints nothing, so it
+    // cannot be text copied from a label.
+    const outcome = applyFieldOverrides(field({ value: "spirits", evidence: "​​" }), "exempt");
+    expect(outcome.rejected).toBe(true);
+    expect(outcome.violation).toBe("evidence_missing");
+  });
+
+  it("accepts an exempt field whose evidence is padded label text", () => {
+    const outcome = applyFieldOverrides(
+      field({ value: "spirits", evidence: "  Kentucky Straight Bourbon Whiskey  " }),
+      "exempt",
+    );
+    expect(outcome.rejected).toBe(false);
+    expect(outcome.value).toBe("spirits");
+  });
 });
 
 describe("applyFieldOverrides — rule 3: confidence must be a real number in [0, 1]", () => {
@@ -189,6 +218,12 @@ describe("applyGovernmentWarningOverrides — field-shape-aware rejection payloa
     expect(outcome.rejected).toBe(false);
     expect(outcome.present).toBe(false);
     expect(outcome.transcription).toBeNull();
+  });
+
+  it("rejects a non-null transcription whose evidence carries no label text (TRO-502)", () => {
+    const outcome = applyGovernmentWarningOverrides(warning({ evidence: "   " }));
+    expect(outcome.rejected).toBe(true);
+    expect(outcome.violation).toBe("evidence_missing");
   });
 
   it("rejects a non-null transcription with empty evidence", () => {

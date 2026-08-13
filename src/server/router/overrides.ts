@@ -52,6 +52,32 @@ export interface FieldOverrideOutcome {
   confidence: number;
 }
 
+/**
+ * Matches one character that a label can actually print: not whitespace, not
+ * a format character (`\p{Cf}`, which includes U+200B ZERO WIDTH SPACE and
+ * U+200E LEFT-TO-RIGHT MARK), and not a control character (`\p{Cc}`).
+ */
+const PRINTABLE_LABEL_CHARACTER = /[^\s\p{Cf}\p{Cc}]/u;
+
+/**
+ * The real invariant behind CP-1 §4.4 rule 1. The doc says `evidence` "must
+ * be non-empty whenever `value` is non-null", and §3.2 rule 2 defines
+ * evidence as "the text on the label, copied character for character". A
+ * string of spaces or zero-width characters satisfies `length > 0` and is
+ * still not label text, so a length check does not enforce the rule the doc
+ * states.
+ *
+ * This matters most for `beverage_type`. Rule 2 is exempt there (see
+ * `EvidenceSupportKind`), which leaves rule 1 as the ONLY evidence check on
+ * that field — and beverage_type's value can block the whole label through
+ * CP-1 §5.3's free cross-check. Every other field reaches rule 2, which
+ * rejects blank evidence on its own. `String.prototype.trim` is not enough:
+ * U+200B is not JavaScript whitespace, so `trim` leaves it standing.
+ */
+function hasLabelText(evidence: string): boolean {
+  return PRINTABLE_LABEL_CHARACTER.test(evidence);
+}
+
 function numbersClose(a: number, b: number | null, epsilon = 0.01): boolean {
   return b !== null && Math.abs(a - b) <= epsilon;
 }
@@ -131,7 +157,7 @@ export function applyFieldOverrides(field: ExtractedField, supportKind: Evidence
   if (!isValidConfidence(field.confidence)) {
     return { rejected: true, violation: "confidence_invalid", value: null, evidence: field.evidence, confidence: 0 };
   }
-  if (field.value !== null && field.evidence.length === 0) {
+  if (field.value !== null && !hasLabelText(field.evidence)) {
     return {
       rejected: true,
       violation: "evidence_missing",
@@ -179,7 +205,7 @@ export function applyGovernmentWarningOverrides(
       confidence: 0,
     };
   }
-  if (warning.transcription !== null && warning.evidence.length === 0) {
+  if (warning.transcription !== null && !hasLabelText(warning.evidence)) {
     return {
       rejected: true,
       violation: "evidence_missing",

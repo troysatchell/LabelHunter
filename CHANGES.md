@@ -4,6 +4,218 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-561 — Urgent: band the eval baseline, name three distinct G8 failure classes (2026-08-13)
+
+Advances TH-R17, TH-R19. Restores an honestly-green CI `verify` step. Blocks TRO-486's sweep and
+every submission accuracy figure.
+
+**The bug.** `scripts/eval/baseline.json` pinned the accuracy floor to one historical run's exact
+number. TRO-543 measured a real 3.2-point call-to-call spread on unchanged code against unchanged
+images. The committed baseline sat at 81.3%, the top of that spread. Two of three honest re-runs
+of unchanged code failed the gate. PR #63 merged main under a Troy-approved G8 exception because
+of this.
+
+**The fix — a band, not a point.** `scripts/eval/baseline.json` is now a K-repeat band
+(`EvalBaseline`, `scripts/eval/types.ts`). It records:
+
+- K, and each repeat's own extraction accuracy and cascade-verdict accuracy.
+- The resulting `[min, max]` band for each metric.
+- Every case's own observed verdict set.
+- Model IDs, and real measured per-call and total cost.
+- `establishedAt`, the code commit SHA, and the golden-set corpus identity —
+  `manifestContentHash` plus the commit that last touched `golden-set/`.
+
+The gate floor is the band's own measured minimum. `check.ts` prints each banded metric's own line
+in variance-aware language, pass or fail: "78.1% is within the measured 78.1%-81.3% band" or "74.0%
+is BELOW the measured 78.1%-81.3% band."
+
+Bands exactly two headline rates: extraction accuracy and cascade-verdict accuracy — the two named
+in the original bug report. `routerVerdictAccuracy` and `reviewReasonAccuracy` stay in every report
+and print on every run. Neither is banded or gated. `cascadeVerdictAccuracy` is already documented
+(TRO-538 / LH-033) as the cascade's real end state — the number to trust. `routerVerdictAccuracy` is
+an earlier, diagnostic-only stage. `reviewReasonAccuracy` scores a small REVIEW-only subset. This
+matches `baseline-compare.ts`'s own pre-existing rule: report per-field breakdowns and
+`warningSegmentation` as diagnostic detail, but never gate on them.
+
+**Three distinct problem classes**, never conflated into one undifferentiated list
+(`scripts/eval/baseline-compare.ts`'s `ComparisonProblemClass`):
+
+1. `accuracy-below-band` — a headline rate fell below its own measured floor. A real regression.
+2. `stale-baseline` — the current run's manifest hash (or version) disagrees with the baseline's.
+   The corpus moved since the band was measured. The fix is the re-baseline protocol, not a
+   regression hunt.
+3. `coverage-mismatch` — the current run's case set does not cover every case the band was measured
+   over. The fix is `--live --full`, not a regression hunt.
+
+**Cheap-mode decision for `stale-baseline`.** Cheap mode (`pnpm eval:check`, no flags) runs on every
+push, on every ticket's gate, whether or not that push touched `golden-set/`. A `stale-baseline`-only
+result (no accuracy or coverage problem) prints a loud warning and still exits 0 in cheap mode —
+never silent, never blocking. `accuracy-below-band` or `coverage-mismatch`, in either mode, still
+fails. Live mode fails on `stale-baseline` too. An operator who just spent real money on a `--live`
+sweep should stop. Re-baseline before trusting a comparison against a moved corpus.
+
+Without this split, any PR merging after an unrelated corpus edit would fail CI for a reason it did
+not cause. That is the exact "gate cries wolf" failure this ticket exists to fix — relocated onto a
+new axis, not removed.
+
+**The re-baseline protocol — standing, not one-time.** There is no "final" golden set to wait for.
+`scripts/eval/variance.ts`'s new `--establish-baseline` flag extends the existing `eval:variance`
+sweep — it does not add a second cascade path:
+
+```
+pnpm eval:variance -- --live --full --repeats=3 --establish-baseline
+```
+
+On a clean sweep this does three things, all from the same sweep — no second paid live call:
+
+1. Archives the current `baseline.json` under `scripts/eval/baseline-archive/` (never deleting
+   measured history — TRO-539's own precedent).
+2. Writes the new band baseline.
+3. Refreshes `scripts/eval/results/eval-report.json` from the same sweep's own repeat 1.
+
+Every future ticket that changes `golden-set/` content — adds a case, edits ground truth, merges or
+removes a case — runs this protocol as part of its own work. It commits the new band, with its own
+measured SHA, alongside its change. The `stale-baseline` problem class is the routine detector that
+enforces this: a corpus edit lands with no re-baseline, `manifestContentHash` stops matching, and
+`pnpm eval:check` says so by name.
+
+`check.ts`'s own `--update-baseline` no longer writes `baseline.json` — a single `--live` run has no
+K and no spread to band from. It now errors and points at the protocol above.
+
+**The one authorized live sweep.** `pnpm eval:variance -- --live --full --repeats=3
+--establish-baseline`, run against the merged 36-case corpus (golden-set commit `0e6e3e1`, TRO-529's
+five photographed cases included) at code commit `e4ac31e`.
+
+| Metric | Value |
+| -- | -- |
+| K | 3 |
+| N | 36 cases |
+| Failures | 0 |
+| Extraction accuracy band | 87.2%-87.8% (spread 0.56 pt) |
+| Cascade-verdict accuracy band | 80.6%-83.3% (spread 2.78 pt) |
+| Corpus stability | 97.2% (35/36 cases returned the same verdict every repeat) |
+| Measured cost | **$1.2036** total (mean Haiku call $0.0047, mean Sonnet call $0.0140) |
+
+`case-19-rotation-mild-correctable` is the one unstable case: REVIEW once, then PASS twice — the
+same kind of real call-to-call variance TRO-543 first measured on case-17.
+
+**Cost accounting — an earlier attempt was killed by my own tooling, not by the cascade.** The first
+attempt at this sweep ran in this agent's foreground shell, capped at a 10-minute timeout. The
+golden set had grown to 36 cases: 108 real cascade calls. The sweep did not finish inside 10
+minutes. The tool killed it mid-run, after 68 case-repeats (through `case-23`), before any artifact
+was written.
+
+That real API spend is not recoverable. Summing every printed `haiku $` line from that run's
+captured log gives **$0.3172**. This is a lower bound: it counts Haiku only. The log format for
+this script does not print resolver cost per line, and this run may have escalated at least one
+REVIEW case to the resolver.
+
+The second attempt ran the sweep as a detached background process. This agent polled it with
+repeated short foreground checks — never a background-and-stop wait — until it completed cleanly at
+the $1.2036 measured above. **Total real spend across both attempts: approximately $1.52.**
+
+This is not a cascade failure, and it is not a reason to distrust the resulting band. It is a
+process-management mistake in how this ticket's own agent ran the first attempt. This entry reports
+it in full rather than folding it quietly into the final number.
+
+**The invariant: this ticket's own changes do not alter cascade behavior.** The brief requires proof
+that this PR's diff touches measurement and comparison tooling only. That proof makes the sweep
+above a valid main-state baseline. The check: `git diff 350f21f..8024626 --stat -- src/` — the
+commit range covering every file this ticket's own commit touched, before the corpus-only merge.
+It returns nothing. Zero files under `src/`.
+
+The full file list this ticket's own commit touched: `.github/workflows/ci.yml` (a comment) and
+fourteen files under `scripts/eval/`. Every `src/` change visible in this branch's final diff came
+from merging `origin/main` — TRO-529's own gated, already-merged golden-set work — not from this
+ticket.
+
+**G6 — red before the comparison rewrite, green after.** `scripts/eval/baseline-compare.test.ts`
+(the rewritten regression suite) run against the pre-TRO-561 `scripts/eval/baseline-compare.ts`
+(`git show 350f21f:scripts/eval/baseline-compare.ts`, swapped in temporarily, then restored — never
+committed):
+
+```text
+ Test Files  1 failed (1)
+      Tests  20 failed (20)
+```
+
+Every failure was `TypeError: Cannot read properties of undefined (reading 'extractionAccuracy')`
+(the old function reads `baseline.summary`, which a band baseline no longer has) or
+`formatBandLine is not a function` / `hasProblemClass is not a function` (neither existed yet) — the
+right reason, not an import error or a typo.
+
+Green, run against this ticket's rewritten `baseline-compare.ts`:
+
+```text
+ Test Files  1 passed (1)
+      Tests  20 passed (20)
+```
+
+**The three failure classes, demonstrated with real CLI output.** Each demonstration ran
+`pnpm eval:check` (cheap mode, zero cost) against a scratch copy of the real, sweep-produced
+`eval-report.json`, perturbed in memory and never committed; the real file was restored
+byte-identical after each run (`diff` confirmed).
+
+A run at the band floor passes (the real committed state — extraction accuracy sits at exactly
+repeat 1's own measured rate, cascade-verdict accuracy too):
+
+```text
+check.ts: extraction accuracy 87.2% is within the measured 87.2%-87.8% band (K=3).
+check.ts: cascade-verdict accuracy 80.6% is within the measured 80.6%-83.3% band (K=3).
+check.ts: PASS — both banded rates are at or above the committed baseline band's floor, manifest and coverage match.
+```
+
+A run clearly below the band fails, classified `accuracy-below-band` (cascade-verdict accuracy
+forced to 55.6%):
+
+```text
+check.ts: cascade-verdict accuracy 55.6% is BELOW the measured 80.6%-83.3% band (K=3).
+check.ts: FAIL — 1 problem(s) vs the committed baseline band:
+  - [accuracy-below-band] cascade-verdict accuracy 55.6% is BELOW the measured 80.6%-83.3% band (K=3).
+```
+
+A hash-mismatched baseline reports `stale-baseline`, not a regression, and does not block cheap mode
+(`manifestContentHash` forced to a bogus value, everything else untouched):
+
+```text
+check.ts: WARNING — 1 stale-baseline problem(s), NOT blocking cheap mode (see this file's module comment):
+  - [stale-baseline] manifest content changed: current run's manifest hash "deadbeef-not-the-real-hash" does not match the baseline band's "fa3dbcfb60a6ecbd6c2de4ec837c54c72b87e909865ee9429946ac79cc5e0784" — golden-set/manifest.json's content moved since the band was measured, even if manifestVersion did not. Run the re-baseline protocol: pnpm eval:variance -- --live --full --repeats=3 --establish-baseline.
+```
+
+Exit code: 0. A coverage gap reports as its own class (`case-39` dropped from the current run's
+`caseIds` and `cases`):
+
+```text
+check.ts: FAIL — 1 problem(s) vs the committed baseline band:
+  - [coverage-mismatch] coverage mismatch: current run did not include 1 case(s) the baseline band was measured over (case-39-rotation-real-photo-coppola-wraparound) — run --live --full to cover the whole golden set before comparing.
+```
+
+**Gate verdict.** `pnpm eval:check` (cheap mode, the same command CI's "Eval harness not regressed"
+step and gate G8 both run, unconditionally, on every push):
+
+```text
+check.ts: extraction accuracy 87.2% is within the measured 87.2%-87.8% band (K=3).
+check.ts: cascade-verdict accuracy 80.6% is within the measured 80.6%-83.3% band (K=3).
+check.ts: PASS — both banded rates are at or above the committed baseline band's floor, manifest and coverage match.
+```
+
+Full `scripts/factory/gate.sh` result and CodeRabbit review status recorded in a follow-up entry
+once both complete — see this file's next TRO-561 entry, if one exists, or the PR body.
+
+**Timestamp discipline.** `establishedAt`/`measuredAt` are ISO strings. This code generates each one
+once, in-process, via `new Date().toISOString()`, and copies it through verbatim (`baseline-band.ts`,
+`check.ts`). No code or test in this ticket round-trips a timestamp through Postgres or re-parses it
+into a `Date` for an equality check. That means no exposure to the bug the parallel session hit:
+Postgres `timestamptz` keeps microseconds, but a JS `Date` truncates to milliseconds, so a
+round-tripped equality check can silently fail.
+
+**Do NOT, honored.** No number was lowered to pass. G8 was not disabled or weakened. It is stricter
+in one direction: a real regression on either banded metric still fails both modes. It is more
+honest in the other: a corpus move alone no longer masquerades as a regression. No measured history
+was deleted — the old baseline lives on in `scripts/eval/baseline-archive/`. The variance itself was
+not "fixed"; TRO-543's finding stands. This ticket only changed how the gate reads it. `golden-set/`
+content was not touched by this ticket's own commits.
+
 ## TRO-553 / TRO-560 — gate trust: G6 exception path, honest stale-review reporting (2026-08-13)
 
 Both tickets share one root cause: the gate reported states it could not back with evidence.

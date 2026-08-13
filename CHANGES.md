@@ -4,6 +4,64 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-557 — worktree.sh stamps the provisioning session; refuses cross-session reuse (2026-08-13)
+
+**The bug.** Two orchestrator sessions provisioned TRO-546 within 60 seconds of each other.
+`worktree.sh` keyed worktree reuse on the ticket slug alone. The second run printed one
+easily-missed line, "worktree already exists, reusing it." It kept the first session's branch
+checkout. It also dropped the first session's database. The first session still had that
+database open. Both sessions then worked in the same worktree at once. Reconstructing ownership
+afterward took a three-message exchange. The evidence came from `stat` and `git reflog`.
+
+**The fix.** Every successful `worktree.sh` run now writes an ownership stamp, `.factory-owner`.
+The stamp records the caller's session id, its pid, its host, an ISO timestamp, and the branch.
+A worktree reuse compares the caller's session id against the stamp first.
+
+- **Same session.** The script behaves the same as before. It reuses the worktree and resets
+  the database.
+- **Different session, or no readable stamp.** The script refuses. It exits with status 2. It
+  states the consequence in plain words: "Re-provisioning resets a database another session may
+  be using." It prints the stamp too, so a human does not need to reconstruct ownership from
+  disk state.
+- **`--steal`.** The script reassigns the stamp to the caller and proceeds. Use this flag only
+  for a deliberate takeover.
+
+**Session identity.** No caller is guaranteed to have a single "session id." This fix uses
+`$CLAUDE_CODE_SESSION_ID`. The Claude Code CLI sets this variable for the life of one session.
+Every subshell that session spawns inherits it. It stays the same across repeated invocations
+from that session. `$$` does not: it is a fresh process id on every single call.
+`FACTORY_SESSION_ID` overrides it explicitly. Use it for a caller outside Claude Code that wants
+a stable identity of its own, or for a test. A caller with neither variable set gets a value
+that never matches itself on retry. Every reuse then needs `--steal`. That is a real usability
+cost for a caller outside Claude Code. It is not a safety hole. An unidentifiable caller
+defaults to refusal. It never gets silent trust of a stranger's database.
+
+**Known limitation.** An orchestrator session can restart as a new Claude Code process. That
+process gets a new session id. It then sees its own prior worktrees as owned by someone else.
+It needs `--steal` to continue them. This ticket did not measure the fix against two real,
+concurrent Claude Code processes. It set `$CLAUDE_CODE_SESSION_ID` to two different values
+instead. Those values stood in for two sessions. That is the exact variable a real second
+session would present. The substitution exercises the real mechanism. It does not mock the
+mechanism away.
+
+**Confirmed.** `scripts/factory/worktree-owner.test.ts` runs the real script against a
+disposable git repo and a disposable database. Both live on the same Postgres server this
+worktree's own `DATABASE_URL` already points at. The test provisions the worktree under one
+session id. It writes a marker table. It then attempts reuse under a different session id. It
+checks for exit code 2. It checks that the marker table still exists, untouched. The test then
+confirms two more behaviors. A same-session retry still resets the database. This reset is
+pre-existing behavior, and this ticket must not remove it. `--steal` proceeds and reassigns the
+stamp to the new session. Confirmed the test fails for the right reason first. Against the
+pre-fix script, the test fails because no `.factory-owner` file exists yet.
+
+**How to run it.** Run `pnpm test -- scripts/factory/worktree-owner.test.ts`. It needs no setup
+beyond the worktree's own `.factory-env`. That means the same `DATABASE_URL` and reachable
+Postgres container every other factory test already needs.
+
+**Rollback.** `git revert` this commit. `worktree.sh` goes back to keying reuse on the ticket
+slug alone. It stops writing `.factory-owner`. Any leftover stamp file elsewhere is inert and
+already gitignored.
+
 ## TRO-568 — The latency harness could not reach the gated deployment (2026-08-13)
 
 **The bug.** `scripts/latency/measure.ts`'s `--url` path built its POST as

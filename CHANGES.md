@@ -791,37 +791,6 @@ in that same entry. Both corrected in place, not left stale two sections away:
 
 ```bash
 source .factory-env
-pnpm db:migrate                              # applies 0005, 0006 and 0007
-pnpm test                                    # full unit suite
-npx vitest run src/server/resolver/reservation.test.ts   # the double-pay regression
-npx vitest run src/server/review-queue                   # paging and resolver status
-npx vitest run scripts/e2e/cleanup.test.ts               # the E2E cleanup
-pnpm test:e2e                                # global setup clears earlier runs first
-```
-
-**Rollback.** Revert this PR's commits. The three migrations are additive to the resolver's own
-behavior. `resolver_reserved_until` becomes an unread column. `created_at` can stay at
-millisecond precision, because no code depends on the finer value. The index can stay on both
-keys, because a two-key index still serves a `created_at`-only query. To undo them anyway, run
-these three statements:
-
-```sql
-ALTER TABLE review_queue DROP COLUMN resolver_reserved_until;
-ALTER TABLE review_queue ALTER COLUMN created_at TYPE timestamptz;
-DROP INDEX review_queue_unresolved_idx;
-CREATE INDEX review_queue_unresolved_idx ON review_queue USING btree (created_at)
-  WHERE disposition IS NULL;
-```
-
-Then delete the 0005, 0006 and 0007 entries from `drizzle/migrations/meta/_journal.json`.
-
-**Not measured.** No latency, throughput, or cost figure for the model path is claimed here. The
-reservation's 120-second lease and the waiter's 500 ms poll interval are bounds. They were chosen
-against the resolver client's 60-second timeout, not measured against a real slow call. The
-paging query's plan IS measured, at 20,000 rows, in this worktree's database — `list.ts` carries
-the plans and says what each run showed. This table's real production row count is not measured,
-because this project has never run at production scale.
-
 pnpm db:migrate                       # once, if this worktree is not already current
 pnpm test:e2e                          # fakes the Anthropic API — 12/12 pass, ~13s warm
 E2E_LIVE=1 pnpm exec playwright test --list   # confirms the fake-only file drops out — no spend
@@ -1431,6 +1400,7 @@ of them returns the golden set to its pre-TRO-527 state.
   carries no `provenance` field, and no `GoldenSetProvenance` value for a real-photograph case
   exists yet (that's LH-024's job). Cannot validate against a type that does not exist yet;
   the current throw already gives a clear, specific error.
+
 ## TRO-547 — BatchProgressBrowser poll test asserted a value a correct poll overwrites (2026-08-12)
 
 **What changed.** One line of test data in `src/app/_components/BatchProgressBrowser.test.tsx`.

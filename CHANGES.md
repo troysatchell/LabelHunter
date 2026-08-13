@@ -86,6 +86,84 @@ left at milliseconds — no code depends on the finer value. To undo them anyway
 120-second lease and the waiter's 500 ms poll interval are bounds chosen against the resolver
 client's 60-second timeout, not measurements of a real slow call. The paging query's plan on a
 large table is not measured either — `list.ts`'s own comment says so.
+## TRO-516 — C5 execution: merge case-24 into case-23 (2026-08-13)
+
+**Troy's ruling (TRO-516 comment, 2026-08-13):** merge case-24 into case-23. Both cases print
+the government warning at the same 9px size, on the same canvas. The pair samples one print
+size twice. The freed corpus slot goes to a genuinely different sample later. This entry is
+the queued follow-up TRO-541's own CHANGES.md entry names (`CHANGES.md:116`).
+
+**What changed.**
+- `golden-set/manifest.json`: removed the `case-24-tiny-warning-text-miniature-bottle` entry.
+  `case-23-tiny-warning-text-standard-bottle`'s `notes` field now records the merge, plus
+  case-24's own measured numbers (OCR distance 42, confidence 56 — case-23 measured 47 and
+  58), for provenance.
+- `golden-set/images/case-24-tiny-warning-text-miniature-bottle.jpg`: deleted. Git history
+  still holds it.
+- The golden set now holds 31 cases, not 32. `pnpm golden:verify`: "Checked 31 golden-set
+  case(s). PASS: golden set is consistent."
+
+**Tests.**
+- `src/lib/golden-set/loader.test.ts`: new test asserts case-24 is absent from the manifest
+  and case-23 carries the merge note. Red on pre-merge `main` (case-24 present); green after
+  the manifest edit.
+- `scripts/golden/images.test.ts`: dropped case-24 from the render-time-only degradation
+  check. That check's `?? []` fallback for a missing case ID would have let a removed case
+  pass silently, proving nothing — a live case must carry the assertion, not an absent one.
+- `scripts/eval/warning-golden-cases.test.ts`: the case-23/case-24 describe block now covers
+  case-23 alone. Both cases tested the identical reconciler branch — dual-channel, OCR
+  confidence above the 50 floor and below the old 60 floor — at two magic-number confidence
+  values (58 and 56) with byte-identical garbled OCR text. case-23 alone still exercises that
+  branch. No test intent lost.
+- `scripts/golden/render.ts`: removed case-24's now-dead `CASE_STYLE_OVERRIDES` entry.
+
+**Reference sweep.** Grepped the whole repo for `case-24` and for the corpus count `32`.
+
+Updated — living prose or code that describes the corpus as it stands today:
+`golden-set/README.md` (image count and total size, V10 coverage note, category-count
+breakdown), `scripts/eval/args.ts` (`DEFAULT_SAMPLE_CASE_IDS` and `MAX_CASES` doc comments).
+
+Left untouched — dated record of a past measured state, not a claim about today's corpus:
+`CHANGES.md`'s own earlier entries, `docs/diagnostics/2026-08-12-verdict-miss-triage.md`,
+`docs/diagnostics/2026-08-12-fix-tickets.md`, `docs/checkpoints/cp2-warning-subsystem.md`,
+`docs/handoffs/2026-08-12-*.md`, `audit/requirements/*`, `factory/tickets.md`,
+`factory/review-findings.jsonl`, `docs/reference-photo-provenance.md`,
+`scripts/golden/batchFixture.ts`'s printed caveat, `scripts/eval/manifest-hash.ts`'s comment,
+`src/server/warning/reconcile.ts`'s OCR-floor comment, and `src/server/warning/reconcile.test.ts`
+(its two `it` blocks pass literal, historically-measured confidence numbers directly — they
+never load the manifest, so case-24's removal cannot break them, and the numbers stay true as
+a record of what was measured).
+
+Left untouched — committed measurement artifacts; they predate this merge and cover the
+pre-merge 32-case corpus (TRO-556 tracks drift detection): `scripts/eval/results/eval-report.json`,
+`scripts/eval/baseline.json`, `scripts/eval/results/benchmark-report.json`,
+`scripts/eval/results/ocr-floor-sweep.json`, `scripts/batch-throughput/results/local-batch-run.json`.
+
+Left untouched — a non-pinning upper bound, still true at 31 ≤ 32; tightening it would only
+need loosening again once LH-023 adds cases back:
+`src/lib/golden-set/loader.test.ts`'s `expect(result.cases.length).toBeLessThanOrEqual(32)`.
+
+**Rubric-coverage consequence.** This merge takes vector V4 (warning in a notably smaller
+font, `audit/rubric.md:106`) from two cases to one. case-23 is now V4's only instance.
+Single-case coverage is already the norm for V6, V7, V8, and V9. V4 now matches that pattern.
+
+The two cases duplicated print size: both printed the warning at 9px. They differed on
+bottle size. case-23 used a standard bottle. case-24 used a 50 mL miniature. Read V4 as font
+size relative to the label, and the miniature bottle was the more demanding instance.
+
+Per `docs/diagnostics/2026-08-12-verdict-miss-triage.md:11`, both V4 cases currently miss
+their expected verdict. V4 is provable today by exactly one case, and that case currently
+fails.
+
+If the corpus chain (LH-023/LH-024) later judges V4's coverage too thin, the freed slot can
+host a redesigned miniature-bottle V4 case. That decision rides with Troy's corpus rulings,
+not this entry.
+
+**Not this ticket's job.** Setting `verified: true` on case-21/23/25/26 (case-24's own flag
+goes away with the case) stays Troy's, per `golden-set/README.md:81-85` — only a human sets it.
+
+**Roll back.** `git revert` this commit. The deleted image restores from git history in the
+same revert.
 
 ## TRO-543 — LH-038 · Measure verdict variance, Part 2: the authorized sweep (2026-08-13)
 

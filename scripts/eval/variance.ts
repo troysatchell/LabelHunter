@@ -56,7 +56,8 @@ import path from "node:path";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../../src/lib/db/schema";
-import { loadGoldenSetManifest } from "../../src/lib/golden-set/loader";
+import { DEFAULT_MANIFEST_PATH, loadGoldenSetManifest } from "../../src/lib/golden-set/loader";
+import { hashManifestFile } from "./manifest-hash";
 import { HAIKU_EXTRACTOR_MODEL } from "../../src/server/extractor";
 import { SONNET_RESOLVER_MODEL } from "../../src/server/resolver";
 import { cleanupScratchDirAndPool } from "../latency/cleanup";
@@ -268,11 +269,10 @@ async function runLive(args: VarianceCliArgs): Promise<void> {
     haikuModel: HAIKU_EXTRACTOR_MODEL,
     sonnetModel: SONNET_RESOLVER_MODEL,
     manifestVersion: manifest.version,
-    // TODO(TRO-538 / LH-033): scripts/eval/manifest-hash.ts does not exist
-    // on this branch yet — see this field's own doc comment in
-    // variance-analysis.ts. Wire hashManifestFile(DEFAULT_MANIFEST_PATH) in
-    // here once it lands on main.
-    manifestContentHash: null,
+    // manifest-hash.ts landed on main (TRO-538/535 wave) and arrived here
+    // with the origin/main merge — the TODO that stood here is resolved.
+    // Same call shape as check.ts's own report assembly.
+    manifestContentHash: hashManifestFile(DEFAULT_MANIFEST_PATH),
     commitSha: currentCommitSha(),
     requestedFull: args.full,
     caseIds,

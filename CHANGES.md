@@ -61,9 +61,10 @@ reproduces case-17's own 3/2 split directly.
 
 The artifact writer (`scripts/eval/results/variance-report.json`) follows `EvalReport`'s own
 discipline: real measured cost, an explicit `measuredAt`, exact model IDs, every case ID the
-sweep ran. TRO-538 / LH-033 adds a manifest content-hash field to `EvalReport`. That work sits in
-a sibling worktree, not yet on `main`. This report carries `manifestContentHash: null` with a
-TODO, not a blocker.
+sweep ran. It also writes `manifestContentHash` via `scripts/eval/manifest-hash.ts`, the same
+call shape `check.ts` uses. That utility landed on `main` after this entry's first draft; the
+orchestrator's merge pass wired it in and removed the `null`-plus-TODO placeholder that stood
+here. The merge pass also updated `runOneCase` calls to TRO-518's two-argument signature.
 
 **Proven mechanically, at the smallest real scale — not the real sweep.** This command ran once:
 

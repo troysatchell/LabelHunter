@@ -249,7 +249,7 @@ export function validateVarianceReport(parsed: unknown, filePath: string): Varia
   }
   if (!isStringArray(candidate.caseIds)) problems.push('"caseIds" must be an array of strings');
   if (!isVarianceReportSummary(candidate.summary)) {
-    problems.push('"summary" must carry a valid caseCount/nominalRepeats/stableCaseRate/accuracySpread');
+    problems.push('"summary" must carry a valid caseCount/nominalRepeats/stableCaseRate/accuracySpread/incompleteCaseCount/perCase');
   }
   if (!Array.isArray(candidate.runs)) problems.push('"runs" must be an array');
   if (!Array.isArray(candidate.failures)) problems.push('"failures" must be an array');

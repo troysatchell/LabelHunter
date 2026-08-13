@@ -448,6 +448,19 @@ export const reviewQueue = pgTable(
     // batch-originated row; set at insert time by the single-label verify
     // route for every REVIEW-verdict row it files.
     resolverInput: jsonb("resolver_input"),
+    // TRO-506/TRO-512 (CP-3 §3.3, §12 open question 2). The resolver's
+    // atomic reservation: the instant one caller's exclusive right to call
+    // Sonnet for this verification runs out. Set by
+    // `../../server/resolver/reservation.ts` BEFORE the model call, cleared
+    // when a resolution lands or when the call fails.
+    //
+    // A dedicated column, not a second use of `claimToken`/`leaseExpiresAt`
+    // above: those belong to the single-label resolve worker's claim
+    // (TRO-511), which is still holding them while it calls
+    // `resolveEscalatedLabel`. Writing them here would replace that
+    // worker's own live claim token and turn its retry and failure writes
+    // into silent no-ops.
+    resolverReservedUntil: timestamp("resolver_reserved_until", { withTimezone: true }),
     claimedBy: text("claimed_by"),
     claimToken: uuid("claim_token"),
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
@@ -463,7 +476,28 @@ export const reviewQueue = pgTable(
     lastError: text("last_error"),
     disposition: reviewDispositionEnum("disposition"),
     disposedAt: timestamp("disposed_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true })
+    // Millisecond precision, unlike every other timestamp in this schema
+    // (TRO-507). This column is the review queue's paging sort key, and a
+    // page cursor is built from the JavaScript `Date` the driver hands
+    // back — which carries milliseconds and nothing finer. Postgres's own
+    // default microsecond precision made a cursor unable to name one exact
+    // position: the truncated cursor compared as "before" the very row it
+    // came from, so the next page served that row again, forever. Observed
+    // as a repeating page in `src/app/api/review-queue/route.test.ts`.
+    // Storing exactly what a cursor can carry removes the mismatch instead
+    // of papering over it in the query.
+    //
+    // Re-verified in the local review round 6, because "is this migration
+    // needed at all" is the cheapest thing to get wrong. Method: revert
+    // this worktree's column to the default microsecond precision, run
+    // `npx vitest run src/server/review-queue src/app/api/review-queue`,
+    // then restore it. Reverted, that route test failed, and it failed with
+    // the exact repeat: one queue id came back on page after page, and the
+    // walk never reached the next row. Restored, all 56 tests passed. The
+    // migration stands. The only way to drop it is to make the cursor carry
+    // microseconds, which means teaching the driver to hand this column
+    // back as text instead of a `Date`.
+    createdAt: timestamp("created_at", { withTimezone: true, precision: 3 })
       .notNull()
       .defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -480,8 +514,17 @@ export const reviewQueue = pgTable(
     index("review_queue_reason_idx").on(table.reason),
     // The review-queue UI's default view is "what's still unresolved" —
     // a partial index keeps that scan cheap as the table grows.
+    //
+    // Both keys, `createdAt` then `id`, since migration 0007 (TRO-507).
+    // The list query's keyset page boundary is a row comparison on the
+    // PAIR, `(created_at, id) > (cursor_created_at, cursor_id)`, and its
+    // `ORDER BY` uses the same pair. A `createdAt`-only index served the
+    // pair with the leading column alone, and Postgres re-checked the
+    // whole comparison as a filter and then sorted (measured, see
+    // `../../server/review-queue/list.ts`). Both keys let the index answer
+    // the boundary and the order together.
     index("review_queue_unresolved_idx")
-      .on(table.createdAt)
+      .on(table.createdAt, table.id)
       .where(sql`${table.disposition} IS NULL`),
     // TRO-511's own claim query's WHERE clause, almost verbatim — mirrors
     // `batch_queue_items_claim_idx`'s reasoning (CP-3 §2.2): keeps the scan

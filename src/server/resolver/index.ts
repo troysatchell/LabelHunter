@@ -18,23 +18,25 @@
  * agent-facing 5-second promise is verdict-or-flag (PRD §3.8); resolution
  * runs after and separately.
  *
- * **INSERT vs UPDATE (TRO-511).** `findExistingReviewQueueEntry` now
- * answers one of three states, not just "found or not" — see its own doc
- * comment in `queue.ts`. A `"pending"` result means the caller (today, only
- * `app/api/verify/route.ts`) already pre-filed a bare row at verify time,
- * before this function ever ran, so a human sees "needs review" immediately
- * instead of waiting on Sonnet. This function fills THAT row in with
- * `updateReviewQueueEntryResolution` rather than inserting a second one.
- * The batch path never produces a `"pending"` row (nothing writes a bare
- * `review_queue` row for a batch-originated escalation — CP-3 §2.3), so
- * this branch is unreachable from batch code; its own behavior (insert
- * fresh, throw on a genuine unique-constraint race, recovered by
- * `resolve-worker.ts`'s `readReviewQueueOutcome`) is unchanged.
+ * **Reserve, then call, then fill in (TRO-506 / TRO-512, CP-3 §3.3).** The
+ * first thing this function does for a verification is take an atomic
+ * reservation (`reservation.ts`) — one `INSERT ... ON CONFLICT` statement
+ * Postgres serializes. Exactly one caller wins it and calls Sonnet; every
+ * other caller either reuses a resolution that already exists or waits for
+ * the winner's. Two workers can no longer both pay for the same escalation.
+ * The reservation replaced the old check-then-insert pre-check, which read
+ * "no row yet" for both callers and let both of them buy a Sonnet call.
+ *
+ * The reservation also absorbed TRO-511's INSERT-vs-UPDATE fork: the row
+ * always exists once this caller owns the reservation, whether the verify
+ * route pre-filed it or this reservation created it, so the write after the
+ * model call is always `updateReviewQueueEntryResolution`.
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { buildResolverRequestParams } from "./request";
 import { parseResolverResponse } from "./response";
-import { findExistingReviewQueueEntry, insertReviewQueueEntry, updateReviewQueueEntryResolution, type ResolverDb } from "./queue";
+import { findExistingReviewQueueEntry, updateReviewQueueEntryResolution, type ResolverDb } from "./queue";
+import { readReviewQueueReservation, releaseReviewQueueReservation, reserveReviewQueueEntry, RESERVATION_LEASE_SECONDS } from "./reservation";
 import type { ResolverInput, ResolverResult } from "./types";
 
 /**
@@ -69,6 +71,45 @@ export function getDefaultResolverClient(): Anthropic {
   return defaultClient;
 }
 
+/**
+ * How long a caller that lost the reservation waits for the winner's
+ * resolution before it gives up, in milliseconds. Equal to the reservation
+ * lease (`RESERVATION_LEASE_SECONDS`): a waiter never gives up while the
+ * reservation that blocked it could still be live, and never waits past the
+ * point where it could take the reservation over itself.
+ */
+const DEFAULT_RESERVATION_WAIT_MS = RESERVATION_LEASE_SECONDS * 1000;
+
+/**
+ * How often a waiting caller re-reads the reservation, in milliseconds. One
+ * cheap indexed read per poll (`readReviewQueueReservation`), on a unique
+ * index. 500 ms is a bound on how stale a waiter's answer can be, not a
+ * measured figure.
+ */
+const DEFAULT_RESERVATION_POLL_INTERVAL_MS = 500;
+
+/**
+ * A caller waited out its whole budget and the reservation holder never
+ * produced a resolution. Its own class, not a bare `Error`, so a worker can
+ * tell "the model failed" apart from "someone else is still working on
+ * this" and react differently — the timeout is observable, not silent.
+ */
+export class ResolverReservationTimeoutError extends Error {
+  readonly verificationId: number;
+  readonly waitedMs: number;
+
+  constructor(verificationId: number, waitedMs: number) {
+    super(
+      `resolveEscalatedLabel: another caller has held the review_queue reservation for verification ${verificationId} ` +
+        `for ${waitedMs} ms without producing a resolution. This caller never called Sonnet (TRO-506 — two callers must ` +
+        "never pay for one escalation).",
+    );
+    this.name = "ResolverReservationTimeoutError";
+    this.verificationId = verificationId;
+    this.waitedMs = waitedMs;
+  }
+}
+
 export class ResolverNotEscalatedError extends Error {
   constructor(labelVerdict: string) {
     super(
@@ -88,6 +129,20 @@ export interface ResolveEscalatedLabelOptions {
    * Inject a test database (this worktree's own, via `.factory-env`) or a
    * mock in tests. */
   db?: ResolverDb;
+  /** How long to wait for another caller's in-flight resolution before
+   * throwing `ResolverReservationTimeoutError`. Defaults to
+   * `DEFAULT_RESERVATION_WAIT_MS`. */
+  reservationWaitMs?: number;
+  /** How often to re-read another caller's reservation while waiting.
+   * Defaults to `DEFAULT_RESERVATION_POLL_INTERVAL_MS`. */
+  reservationPollIntervalMs?: number;
+  /** How long this caller's own reservation holds off other callers.
+   * Defaults to `RESERVATION_LEASE_SECONDS`. */
+  reservationLeaseSeconds?: number;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -115,53 +170,102 @@ export async function resolveEscalatedLabel(
     throw new Error("resolveEscalatedLabel: router result has labelVerdict REVIEW but no headlineReason.");
   }
 
-  // A duplicate call for one verification (a caller retry, two workers
-  // racing) must not pay for a second Sonnet call just to fail on the
-  // review_queue unique constraint at insert time — check first (queue.ts's
-  // `findExistingReviewQueueEntry` doc comment has the full reasoning).
-  const existing = await findExistingReviewQueueEntry(input.verificationId, options.db);
-  if (existing.kind === "resolved") {
-    return { ...existing.resolverOutput, reviewQueueId: existing.id };
+  const waitMs = options.reservationWaitMs ?? DEFAULT_RESERVATION_WAIT_MS;
+  const pollIntervalMs = options.reservationPollIntervalMs ?? DEFAULT_RESERVATION_POLL_INTERVAL_MS;
+  // Standing rule 13: validate at the boundary. A non-positive poll
+  // interval would spin the loop below on the database with no pause.
+  if (!Number.isFinite(waitMs) || waitMs < 0) {
+    throw new RangeError(`resolveEscalatedLabel: reservationWaitMs must be a finite number of 0 or more, got ${waitMs}.`);
+  }
+  if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) {
+    throw new RangeError(`resolveEscalatedLabel: reservationPollIntervalMs must be a finite number greater than 0, got ${pollIntervalMs}.`);
+  }
+
+  // Reserve BEFORE the model call (TRO-506 / TRO-512, CP-3 §3.3). One
+  // caller wins; the rest reuse or wait. Nobody buys a second Sonnet call.
+  const deadline = Date.now() + waitMs;
+  let reservedId: number;
+  let reservedUntil: Date;
+  for (;;) {
+    const reservation = await reserveReviewQueueEntry(
+      { verificationId: input.verificationId, reason: headlineReason, leaseSeconds: options.reservationLeaseSeconds },
+      options.db,
+    );
+    if (reservation.kind === "resolved") {
+      // Another caller already finished this verification. Reuse its
+      // result — the free, correct no-op an at-least-once retry deserves.
+      return { ...reservation.resolverOutput, reviewQueueId: reservation.id };
+    }
+    if (reservation.kind === "reserved") {
+      reservedId = reservation.id;
+      // Keep the lease we won. Releasing requires it back, so a call that
+      // outlives its lease cannot clear whoever took the row over.
+      reservedUntil = reservation.reservedUntil;
+      break;
+    }
+
+    // Another caller holds a live reservation and is calling Sonnet now.
+    // Wait for its result. The wait is bounded, and the bound is
+    // observable: it throws a named error, never returns a guess.
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      throw new ResolverReservationTimeoutError(input.verificationId, waitMs);
+    }
+    await sleep(Math.min(pollIntervalMs, remainingMs));
+    const state = await readReviewQueueReservation(input.verificationId, options.db);
+    if (state.kind === "resolved") {
+      return { ...state.resolverOutput, reviewQueueId: state.id };
+    }
+    // "free" (the holder released or its lease expired) and "held" both
+    // loop: the next reservation attempt either wins the row or reports
+    // the holder again.
   }
 
   const client = options.client ?? getDefaultResolverClient();
   const params = buildResolverRequestParams(input);
-  const message = await client.messages.create(params);
-  const resolution = parseResolverResponse(message, input.flaggedFields);
 
-  if (existing.kind === "pending") {
-    // TRO-511 — see this file's header comment. Fill in the pre-existing
-    // bare row rather than inserting a second one.
-    const updated = await updateReviewQueueEntryResolution({ id: existing.id, resolverOutput: resolution }, options.db);
-    if (updated) {
-      return { ...resolution, reviewQueueId: updated.id };
+  let resolution;
+  try {
+    const message = await client.messages.create(params);
+    resolution = parseResolverResponse(message, input.flaggedFields);
+  } catch (cause) {
+    // This caller owns a reservation it will never fill. Release it, so a
+    // retry can take it immediately instead of waiting out the whole lease
+    // behind a holder that has already failed. A release failure must not
+    // replace the real error, and must not disappear either (standing rule
+    // 24) — it is logged, and the model error still propagates.
+    try {
+      const released = await releaseReviewQueueReservation(reservedId, reservedUntil, options.db);
+      if (!released) {
+        // Normal, not an error: our lease expired and another caller took
+        // the row over while this call was still running. Leaving its
+        // reservation intact is the correct outcome.
+        console.warn(`Did not release review_queue row ${reservedId}: the reservation is no longer this caller's to release.`);
+      }
+    } catch (releaseError) {
+      console.error(`Could not release the review_queue reservation for row ${reservedId} after a failed resolver call`, releaseError);
     }
-    // Lost a TRO-506-shaped race: another caller's update landed between
-    // our pre-flight check and this one (the narrow lease-expiry window
-    // CP-3 §3.3 names for the analogous batch-path race). The Sonnet call
-    // above already happened — that money is spent either way — but the
-    // WRITE lost, so re-read the winner's row rather than erroring
-    // (queue.ts's `updateReviewQueueEntryResolution` doc comment).
-    const after = await findExistingReviewQueueEntry(input.verificationId, options.db);
-    if (after.kind !== "resolved") {
-      throw new Error(
-        `resolveEscalatedLabel: lost the update race for review_queue row ${existing.id} (verification ` +
-          `${input.verificationId}), but no resolved row was found on re-read (got "${after.kind}").`,
-      );
-    }
-    return { ...after.resolverOutput, reviewQueueId: after.id };
+    throw cause;
   }
 
-  const { id: reviewQueueId } = await insertReviewQueueEntry(
-    {
-      verificationId: input.verificationId,
-      reason: headlineReason,
-      resolverOutput: resolution,
-    },
-    options.db,
-  );
+  const updated = await updateReviewQueueEntryResolution({ id: reservedId, resolverOutput: resolution }, options.db);
+  if (updated) {
+    return { ...resolution, reviewQueueId: updated.id };
+  }
 
-  return { ...resolution, reviewQueueId };
+  // Lost the write race: this caller's reservation expired mid-call and
+  // another caller both took it over and finished first. The Sonnet call
+  // above is already paid for either way, but the WRITE lost, so re-read
+  // the winner's row rather than erroring (queue.ts's
+  // `updateReviewQueueEntryResolution` doc comment).
+  const after = await findExistingReviewQueueEntry(input.verificationId, options.db);
+  if (after.kind !== "resolved") {
+    throw new Error(
+      `resolveEscalatedLabel: lost the update race for review_queue row ${reservedId} (verification ` +
+        `${input.verificationId}), but no resolved row was found on re-read (got "${after.kind}").`,
+    );
+  }
+  return { ...after.resolverOutput, reviewQueueId: after.id };
 }
 
 export { SONNET_RESOLVER_MODEL, buildResolverRequestParams } from "./request";
@@ -183,6 +287,13 @@ export {
 } from "./response";
 export { toJudgedFieldResultRow } from "./field-result";
 export { findExistingReviewQueueEntry, insertReviewQueueEntry, insertSkippedReviewQueueEntry, updateReviewQueueEntryResolution } from "./queue";
+export {
+  RESERVATION_LEASE_SECONDS,
+  readReviewQueueReservation,
+  releaseReviewQueueReservation,
+  reserveReviewQueueEntry,
+} from "./reservation";
+export type { ReserveReviewQueueEntryParams, ReviewQueueReservation, ReviewQueueReservationState } from "./reservation";
 export type {
   ExistingReviewQueueEntry,
   InsertReviewQueueEntryParams,

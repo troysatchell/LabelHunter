@@ -6,6 +6,7 @@
 import { BEVERAGE_TYPES, LABEL_VERDICTS, REVIEW_DISPOSITIONS, REVIEW_REASONS, type ReviewDisposition } from "../../lib/db/enums";
 import {
   REVIEW_QUEUE_ERROR_KINDS,
+  REVIEW_QUEUE_RESOLVER_STATUSES,
   type RecordDispositionConflictResponse,
   type RecordDispositionResponse,
   type ReviewQueueErrorKind,
@@ -41,6 +42,9 @@ export interface ReviewQueueRequestOptions {
   timeoutMs?: number;
   /** Injected in tests; defaults to the global `fetch`. */
   fetchImpl?: typeof fetch;
+  /** A `nextCursor` from an earlier page (TRO-507). Read requests only —
+   * `submitDisposition` ignores it. */
+  after?: string;
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -92,6 +96,8 @@ function isReviewQueueListItemWire(item: unknown): item is ReviewQueueListItemWi
     typeof row.reason === "string" &&
     (REVIEW_REASONS as readonly string[]).includes(row.reason) &&
     typeof row.reasonText === "string" &&
+    typeof row.resolverStatus === "string" &&
+    (REVIEW_QUEUE_RESOLVER_STATUSES as readonly string[]).includes(row.resolverStatus) &&
     typeof row.brandName === "string" &&
     typeof row.classType === "string" &&
     typeof row.beverageType === "string" &&
@@ -104,8 +110,25 @@ function isReviewQueueListItemWire(item: unknown): item is ReviewQueueListItemWi
 
 function isReviewQueueListResponse(payload: unknown): payload is ReviewQueueListResponse {
   if (typeof payload !== "object" || payload === null) return false;
-  const items = (payload as Partial<ReviewQueueListResponse>).items;
-  return Array.isArray(items) && items.every(isReviewQueueListItemWire);
+  const body = payload as Partial<ReviewQueueListResponse>;
+  // `nextCursor` must be present and either a non-empty string or null.
+  // `undefined` is not the same fact as `null` here: `null` means "this is
+  // the end of the queue", and a missing field would let a client show a
+  // partial page as if it were the whole queue (TRO-507).
+  const cursorIsValid = body.nextCursor === null || (typeof body.nextCursor === "string" && body.nextCursor.length > 0);
+  if (!cursorIsValid || !Array.isArray(body.items)) return false;
+  // An empty page is a real answer, not a suspicious one: the queue is
+  // empty, or a page ended exactly on its boundary. There is no item to
+  // check, so the page is valid — said here rather than left to
+  // `.every()`'s vacuous truth to imply.
+  //
+  // An empty page must still end the queue. `list.ts` builds `nextCursor`
+  // from the last item of the page it just returned, so "no items" and
+  // "more items follow" cannot both be true. A body claiming both would
+  // leave the browser clicking "Load more" against a list that never grows
+  // (CodeRabbit finding, local review round 6).
+  if (body.items.length === 0) return body.nextCursor === null;
+  return body.items.every(isReviewQueueListItemWire);
 }
 
 function isRecordDispositionResponse(payload: unknown): payload is RecordDispositionResponse {
@@ -136,19 +159,21 @@ function defaultFetch(): typeof fetch {
   return globalThis.fetch.bind(globalThis);
 }
 
-/** Reads every unresolved review-queue item, oldest first (PRD §5). Rejects
- * with `ReviewQueueClientError` on every failure mode TH-R20 names —
- * network failure, a non-2xx response, or a response this client cannot
- * even parse. */
-export async function fetchReviewQueue(options: ReviewQueueRequestOptions = {}): Promise<ReviewQueueListItemWire[]> {
+/** Reads one page of unresolved review-queue items, oldest first (PRD §5).
+ * Pass `after` — a `nextCursor` from an earlier page — to read the next
+ * page (TRO-507). Rejects with `ReviewQueueClientError` on every failure
+ * mode TH-R20 names — network failure, a non-2xx response, or a response
+ * this client cannot even parse. */
+export async function fetchReviewQueue(options: ReviewQueueRequestOptions = {}): Promise<ReviewQueueListResponse> {
   const fetchImpl = options.fetchImpl ?? defaultFetch();
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const path = options.after ? `/api/review-queue?after=${encodeURIComponent(options.after)}` : "/api/review-queue";
 
   let response: Response;
   try {
-    response = await fetchImpl("/api/review-queue", { signal: controller.signal });
+    response = await fetchImpl(path, { signal: controller.signal });
   } catch {
     clearTimeout(timeoutId);
     if (controller.signal.aborted) {
@@ -183,7 +208,7 @@ export async function fetchReviewQueue(options: ReviewQueueRequestOptions = {}):
   if (!isReviewQueueListResponse(payload)) {
     throw new ReviewQueueClientError("SERVICE", "LabelHunter received an unexpected response. Try again.");
   }
-  return payload.items;
+  return payload;
 }
 
 /** Records one human decision on one review-queue item (PRD §5:

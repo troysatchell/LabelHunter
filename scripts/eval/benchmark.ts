@@ -74,17 +74,22 @@ const SONNET_ONLY_PLACEHOLDER_REASON: ReviewReason = "LOW_MODEL_CONFIDENCE";
  * Sonnet-only arm creates no such row (there is no router pass, so there
  * is nothing for `handleVerifyRequest` to have run). This benchmark has no
  * use for that persisted row — it reads `resolution.outcome`/`.fields`
- * directly off the return value — so faking the two calls
- * `resolveEscalatedLabel` actually makes (`findExistingReviewQueueEntry`'s
- * `db.query.reviewQueue.findFirst`, `insertReviewQueueEntry`'s
- * `db.insert(reviewQueue).values(...).returning(...)`) avoids inventing
- * placeholder `applications`/`labelImages`/`verifications` rows just to
- * satisfy a foreign key this benchmark does not need.
+ * directly off the return value — so faking the calls
+ * `resolveEscalatedLabel` actually makes avoids inventing placeholder
+ * `applications`/`labelImages`/`verifications` rows just to satisfy a
+ * foreign key this benchmark does not need.
+ *
+ * TRO-506/TRO-512: those calls are now the reservation
+ * (`db.execute`, always won here — this arm has no competing caller), the
+ * resolution write (`db.update(...).set(...).where(...).returning(...)`),
+ * and `findExistingReviewQueueEntry`'s own `db.query.reviewQueue.findFirst`.
  */
 function buildFakeResolverDb(): ResolverDb {
   return {
     query: { reviewQueue: { findFirst: async () => undefined } },
+    execute: async () => ({ rows: [{ id: -1 }] }),
     insert: () => ({ values: () => ({ returning: async () => [{ id: -1 }] }) }),
+    update: () => ({ set: () => ({ where: () => ({ returning: async () => [{ id: -1 }] }) }) }),
   } as unknown as ResolverDb;
 }
 

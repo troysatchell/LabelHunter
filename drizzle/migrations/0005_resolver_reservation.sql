@@ -1,0 +1,1 @@
+ALTER TABLE "review_queue" ADD COLUMN "resolver_reserved_until" timestamp with time zone;

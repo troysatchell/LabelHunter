@@ -13,17 +13,58 @@ const SAMPLE_ITEM: ReviewQueueListItemWire = {
   beverageType: "spirits",
   labelVerdict: "REVIEW",
   createdAt: "2026-08-11T12:00:00.000Z",
+  resolverStatus: "waiting",
 };
 
 describe("fetchReviewQueue — the happy path", () => {
-  it("gets /api/review-queue and returns the items array", async () => {
+  it("gets /api/review-queue and returns one page", async () => {
     const fetchImpl = vi.fn(async (url: string | URL | Request) => {
       expect(url).toBe("/api/review-queue");
-      return new Response(JSON.stringify({ items: [SAMPLE_ITEM] }), { status: 200 });
+      return new Response(JSON.stringify({ items: [SAMPLE_ITEM], nextCursor: null }), { status: 200 });
     });
 
-    const items = await fetchReviewQueue({ fetchImpl });
-    expect(items).toEqual([SAMPLE_ITEM]);
+    const page = await fetchReviewQueue({ fetchImpl });
+    expect(page.items).toEqual([SAMPLE_ITEM]);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it("asks for the next page when given a cursor, and carries the cursor back (TRO-507)", async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      expect(url).toBe("/api/review-queue?after=cursor%2Fone");
+      return new Response(JSON.stringify({ items: [SAMPLE_ITEM], nextCursor: "cursor/two" }), { status: 200 });
+    });
+
+    const page = await fetchReviewQueue({ fetchImpl, after: "cursor/one" });
+    expect(page.nextCursor).toBe("cursor/two");
+  });
+
+  it("rejects a 200 body with no nextCursor at all — a missing cursor is not the same fact as null", async () => {
+    // Without this check, a client would read a partial page as the whole
+    // queue: exactly the failure TRO-507 exists to end.
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ items: [SAMPLE_ITEM] }), { status: 200 }));
+    await expect(fetchReviewQueue({ fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
+  });
+
+  it("rejects a 200 body with no items but a cursor that promises more (TRO-507)", async () => {
+    // `list.ts` builds `nextCursor` from the last item of the page it just
+    // returned, so "no items" and "more items follow" cannot both be true.
+    // A body claiming both would loop the browser forever on a page that
+    // never grows (CodeRabbit finding, local review round 6).
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ items: [], nextCursor: "cursor/two" }), { status: 200 }));
+    await expect(fetchReviewQueue({ fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
+  });
+
+  it("accepts an empty page that ends the queue", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }));
+    const page = await fetchReviewQueue({ fetchImpl });
+    expect(page.items).toEqual([]);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it("rejects a 200 body whose item carries an unknown resolver status (TRO-512)", async () => {
+    const malformed = { ...SAMPLE_ITEM, resolverStatus: "NOT_A_REAL_STATUS" };
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ items: [malformed], nextCursor: null }), { status: 200 }));
+    await expect(fetchReviewQueue({ fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
   });
 });
 
@@ -51,7 +92,7 @@ describe("fetchReviewQueue — designed error states", () => {
     // next to a malformed one (a bad enum value here) passed through
     // whole. Every entry must now individually match ReviewQueueListItemWire.
     const malformed = { ...SAMPLE_ITEM, reason: "NOT_A_REAL_REASON" };
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ items: [SAMPLE_ITEM, malformed] }), { status: 200 }));
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ items: [SAMPLE_ITEM, malformed], nextCursor: null }), { status: 200 }));
     await expect(fetchReviewQueue({ fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
   });
 
@@ -59,7 +100,7 @@ describe("fetchReviewQueue — designed error states", () => {
     // `typeof === "string"` alone let server drift through; formatTimestampUTC
     // (`new Date(value)`) would have silently rendered "Invalid Date UTC".
     const badTimestamp = { ...SAMPLE_ITEM, createdAt: "not-a-date" };
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ items: [badTimestamp] }), { status: 200 }));
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ items: [badTimestamp], nextCursor: null }), { status: 200 }));
     await expect(fetchReviewQueue({ fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
   });
 
@@ -69,7 +110,7 @@ describe("fetchReviewQueue — designed error states", () => {
     // merely-parseable value here would hide real client/server drift
     // instead of catching it.
     const nonCanonical = { ...SAMPLE_ITEM, createdAt: "2026-08-11" };
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ items: [nonCanonical] }), { status: 200 }));
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ items: [nonCanonical], nextCursor: null }), { status: 200 }));
     await expect(fetchReviewQueue({ fetchImpl })).rejects.toMatchObject({ kind: "SERVICE" });
   });
 

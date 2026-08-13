@@ -4,6 +4,224 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-570 — first-time-user walkthrough and accessibility assessment (2026-08-13)
+
+**What this is.** TH-R3's bar is a named person, not a lint rule: "something my mother could
+figure out — she's 73 and just learned to video call her grandkids last year... Half our team
+is over 50." No automated suite substitutes for a human walking every screen cold. TRO-480 (LH-
+054, 2026-08-12) did this once; three surfaces have shipped since and were never walked:
+the access-code screen (TRO-482), review-queue paging (TRO-507), and two new error states.
+Accessibility had never been assessed at all — Troy's own words on the ticket: "this is
+important for our accessibility." No code changed. This ticket adds no test — it changes no behavior. The acceptance evidence is
+this record itself: its screenshots and its measurements.
+
+**Ran against:** commit `33fbcf3` (this worktree, byte-identical to `origin/main` at the time of
+the walkthrough — `git diff origin/main` returns 0 files), `pnpm dev` on this worktree's own
+Postgres, real Chromium via Playwright (already a project dependency, same tool TRO-480 used).
+axe-core 4.10.2 (Deque's own WCAG rule engine) was injected client-side for each page. It is not
+a project dependency: fetched once to a scratch path, never installed into `node_modules` or
+`package.json`. This record's own screenshots and computed values are the evidence, not the
+tool's presence in the repo.
+
+### Screen-by-screen walkthrough
+
+**Access-code (`/access-code`) — walked for the first time.** Landing at `/` with no cookie
+307s here, matching the deployed behavior TH-R16 already confirmed. One `<h1>`, one field, one
+button, no distractions. A wrong code shows a specific, on-page `role="alert"` panel ("That code
+did not work. Check it and try again.") — never a bare 401. The **Continue** button disables
+client-side on an empty field. An empty submission is impossible by construction, not just
+handled after the fact. A correct code redirects to `/` and sets the long-lived cookie
+(`ACCESS_CODE_COOKIE_MAX_AGE_SECONDS`, 30 days) — a first-time user authenticates once, not on
+every visit. The rate limiter (`ACCESS_CODE_IP_LIMIT`, TRO-565/567) is real and was hit live
+during this walkthrough's own repeated test runs; its message names the exact wait ("Wait 10
+minutes and try again") rather than a bare 429 — a good design, confirmed by tripping it by
+accident.
+
+**Verify (`/`).** Empty state matches TRO-480's prior description; still true today. Validation
+error (every required field filled, photo left empty): `role="alert"` panel, "Add a label photo
+before you verify.", **no network call fired** — confirmed by listening for `/api/verify`
+requests during the attempt, none occurred. Oversized file (21.0 MB, over the 20 MB cap):
+"This file is 21.0 MB. The limit is 20.0 MB. Choose a smaller image." Unreadable image (a real
+JPEG truncated to half its bytes — same technique `route.test.ts` uses): "LabelHunter cannot
+open this file. It may be damaged. Take a new photo and try again." Both IMAGE-kind errors
+return before Haiku is ever called, matching `docs/error-states.md`'s own claim.
+
+**One real, live submission — golden-set case-01, a genuine PASS.** Filled every field from
+`golden-set/manifest.json`'s own case-01 application values, uploaded the real image, watched
+the actual request. Loading state: button text and the persistent `aria-live="polite"` region
+both read "Checking the label…", simultaneously — confirmed via `getComputedStyle`/DOM read
+during the live request, not inferred. **Observed: `POST /api/verify` returned 200 in 3.4–3.9 s**
+across three real runs (dev server log timing, cross-checked against the browser-side elapsed
+clock) — comfortably under TH-R2's 5 s budget on this one measurement, though this is a dev-mode
+timing on a warm cascade, not the deployed-instance TH-R2 figure another ticket owns. Result
+rendered inline (not a navigation) with a real PASS banner and all five checklist rows
+(`✓ Match.`), plus a permalink ("See the label photo and full comparison") to `/verify/:id`.
+
+**Verify detail (`/verify/:id`) — PASS, REVIEW, FAIL (seeded ids 1/2/3).** Each detail row
+carries **both** an icon (✓/⚠/✗) **and** a text label ("Match."/"Needs review."/"Does not
+match.") next to the color — confirmed by reading the DOM, not assumed from the CSS class name
+alone, so the verdict is never conveyed by color alone (checked explicitly per this ticket's own
+instruction). REVIEW's banner text names the exact reason ("Needs review — A reviewer must check
+the alcohol content against the label.") — rule 26's specificity standard, still holding. A
+not-found id (`/verify/999999`) returns a plain "LabelHunter could not find a verification with
+that ID" message with one link back, not a raw 404.
+
+**Review queue (`/review-queue`) — paging walked live for the first time.** Seeded state is one
+item; paging needs more than 100 to exercise at all, so this worktree's own isolated database
+(never the shared `labelhunter_dev`, never touched after this walkthrough — the worktree was
+re-provisioned before the gate ran, wiping this synthetic data) was given 120 additional
+synthetic unresolved rows via direct SQL, purely to drive the UI into its paging state. With 121
+unresolved items: initial load shows exactly 100, with "You are seeing the 100 oldest items.
+More items are waiting." Clicking **Load more** — activated by keyboard alone (`Tab` to focus,
+`Enter` to press, no mouse) — loads the remaining 21; the "more items waiting" message correctly
+disappears once everything is loaded. TRO-507's fix works, end to end, operable without a mouse.
+
+**Review queue detail (`/review-queue/1`).** Seeded with a real resolver output: "Sonnet's
+suggestion" box present, with its own reasoning text, alongside the two largest, most prominent
+controls on the page (Approve/Reject) — matches TRO-480's prior finding, still true.
+
+**Batch (`/batch`).** Upload form: three file inputs (manifest CSV, images, or a zip),
+**Preview batch** the one filled control. A real preview (two real golden-set images + a hand-
+built CSV manifest, no live model call — `/api/batch/preview` never calls Anthropic, confirmed
+by reading the route) returned "2 of 2 rows ready to process."
+
+**Batch progress — the in-flight PROCESSING state, walked live for the first time.** TRO-480
+only ever saw a seeded, already-`COMPLETED` batch. To see the real mid-flight state at zero
+cost, this walkthrough started a real 3-item batch against the real queue and worker pipeline.
+The worker's own `ANTHROPIC_BASE_URL` pointed at `scripts/e2e/fake-anthropic-server.ts` — the
+same zero-cost stand-in the project's own E2E suite already uses. Rule 30 covers this exact
+case: a fake-external-service test hook with no live equivalent by design is not what the
+"weaken a test" rule bans. Everything else in the pipeline — the queue, the worker claim/lease
+cycle, the progress endpoint, the stats grid, the results table — is real.
+
+**Observed live:** "In progress. 0 of 3 labels processed." The stat grid showed zeros, with
+honest "Not measured yet" placeholders for rate and timing stats until the batch actually
+finished. This UI never fabricates a number early — matching `CLAUDE.md`'s own rule, at the
+UI-copy level too. Once finished: "Finished. 3 of 3 labels processed.", with real computed stats
+(90.45 items/minute, 487 ms average per label). Those two numbers are meaningless as a
+production latency figure, since the fake server responds near-instantly — but they are real
+evidence that the stats pipeline itself computes and renders correctly. The results table shows
+one row per label, each carrying an icon and text per field, matching the single-label
+checklist's own vocabulary.
+
+**Not representative.** The fake server returns one canned extraction for every image,
+regardless of the photo's real content. So cases 2 and 3's per-field verdicts do not reflect
+what is actually on those two labels. This is an artifact of the zero-cost technique, not a
+product defect, and not evidence about extraction accuracy.
+
+**Batch results (`/batch/1`, seeded, `COMPLETED`).** Re-confirmed TRO-480's own finding at a
+400 px viewport: `document.body.scrollWidth === window.innerWidth` (400 === 400) — the results
+table still scrolls inside its own container, the page itself still never scrolls horizontally.
+
+**Error states — two never walked before.** `docs/error-states.md` documents two SERVICE-kind
+failure copies that were never triggered live. **State 3 (client-side network failure):**
+intercepted the browser's own `fetch` to `/api/verify` and forced it to fail before leaving the
+browser (`page.route(...).abort('failed')`, a standard Playwright technique, not a code change)
+— real panel: "Something went wrong. LabelHunter could not reach the server. Check your
+connection and try again." **State 4 (server-side unreachable endpoint, TH-R7's exact
+scenario):** restarted this worktree's dev server once with `ANTHROPIC_BASE_URL` pointed at an
+unused local port (nothing listening — a real `ECONNREFUSED`, not a mock), submitted a real
+request, restarted back to the real API afterward — real panel: "Something went wrong.
+LabelHunter could not reach the verification service. Try again." The two messages are
+genuinely distinct in the running app, not merely distinct in the docs, and both are real
+observations, not inferred from the source.
+
+### Accessibility assessment (never performed before this ticket)
+
+**Automated: axe-core (Deque's WCAG 2.x rule engine, full default ruleset — WCAG 2.0/2.1 A/AA
+plus best-practice rules), run against every screen this walkthrough visited, light and dark
+mode: 24 scans, `0` violations total.** Access-code (3 states), verify (empty, validation error,
+oversized-file error, unreadable-image error, live PASS result), verify detail ×3, review queue
+list, review queue detail, batch upload, batch preview, batch results — each scanned once in
+light mode and the load-bearing screens again in dark mode (verify empty, all three detail
+verdicts, review queue, batch upload, batch results). Zero violations across this many real DOM
+states is meaningful evidence, not merely the absence of an obvious failure. But axe is a
+scanner — it cannot judge whether alt text is meaningful, or whether a reading order makes
+sense. The manual checks below cover what a scanner cannot.
+
+**Keyboard-only traversal.** Tabbed through every screen with the keyboard alone (`Tab` in,
+`Enter` to activate) — no mouse. Every screen's first `Tab` from page load lands on the one
+useful control (the access-code field, the file input, the review-queue's Load-more button when
+present) — nothing to skip past, so the absence of a "skip to content" link is not a gap here.
+Every stop shows a solid, visible focus ring (`outline: solid 3px rgb(36, 145, 255)`,
+`globals.css`'s own `:focus-visible` rule) — confirmed by reading `getComputedStyle` at each
+stop, not by eye. The review-queue's **Load more** control (TRO-507, never checked for keyboard
+operability before this ticket) works by keyboard alone, confirmed above.
+
+**Screen-reader structure.** Every one of the eight real routes walked (`/`, `/verify/:id`,
+`/review-queue`, `/review-queue/:id`, `/batch`, `/batch/:id`, plus the access-code and not-found
+states) has **exactly one `<h1>`** and **exactly one `<main>` landmark** — checked
+programmatically across all eight, not sampled. **Zero `<img>` elements anywhere in the app lack
+an `alt` attribute.** Every error panel — access-code's wrong-code state, every VALIDATION/IMAGE/
+SERVICE panel on the verify screen — uses `role="alert"`. Assistive tech announces it without
+the user having to go find it. This is the *same* `ErrorPanel` component (and the same pattern
+in `AccessCodeForm`) across every failure mode this walkthrough triggered, not reimplemented
+per state. The beverage-type control is a real `<fieldset><legend>Beverage type</legend>` radio
+group, not three unlabeled radios.
+
+**Color contrast — measured with the WCAG 2.x relative-luminance formula from real
+`getComputedStyle` readings, not estimated.** Re-checked TRO-480's own dark-mode primary-button
+fix (`#3468ad` background, white text): **5.63:1**, exactly its originally-measured value —
+confirmed still holding, not regressed, ten screens and one ticket later. Extended the same
+measurement to the three verdict banners in dark mode, never previously measured: PASS
+**5.76:1**, REVIEW **8.85:1**, FAIL **7.04:1** — all comfortably clear of WCAG AA's 4.5:1 floor
+for normal text.
+
+**Verdict conveyed by more than color, checked explicitly per this ticket's own instruction.**
+Every checklist/detail row and every batch-results table cell pairs its color with an icon
+(✓/⚠/✗) and a text label. Confirmed by reading the DOM for icon presence alongside the color
+class on every row this walkthrough visited, not assumed from one example.
+
+**What did not pass, or was not checked.** Nothing failed. This walkthrough did not test a real
+screen-reader (VoiceOver/NVDA) reading the app aloud. The accessibility-tree structure and
+`role`/landmark checks above are a real, if partial, substitute. A literal screen-reader pass is
+a heavier session; the clean structural result did not require it for this ticket's scope, but
+it is worth naming as a gap rather than silently skipping. Zoom-to-400% reflow (WCAG 1.4.10) was
+not checked either. Neither is a defect found — both are simply not yet measured.
+
+### Findings
+
+**No new defect tickets filed.** This walkthrough found no accessibility violation, no broken
+keyboard path, no color-only verdict, no un-labeled control, and no regression in TRO-480's
+prior fixes. That is a real result, not a shortcut — every check above ran against the live app,
+not the JSX. The one UI-copy observation worth naming for the record, not a ticket: the batch
+progress screen's "Not measured yet" placeholders for rate/timing stats, shown honestly until a
+batch finishes rather than a fabricated early number — an existing, good pattern, confirmed
+still in place.
+
+### Claim provenance
+
+**Observed** (live Chromium via Playwright, this worktree's own `pnpm dev` and Postgres,
+screenshots and `getComputedStyle`/DOM reads for every quoted string and number above): every
+screen state described, all `role="alert"` panel text, the 3.4–3.9 s live-submission timings,
+the keyboard focus-ring values, the axe-core violation counts, the heading/landmark/alt-text
+counts, all four contrast ratios (computed from real `getComputedStyle` color values via the
+WCAG formula), the review-queue paging counts (100 → 121) and their keyboard operability, the
+live batch's mid-flight and finished states.
+**Derived:** none of the contrast ratios are estimated — each is a direct computation from an
+observed color pair.
+**Not verified:** a live screen-reader pass (VoiceOver/NVDA); 400% zoom reflow; whether the
+3.4–3.9 s live-submission timing holds on the deployed Render instance (this ran against local
+dev only — TH-R2's own deployed-instance re-measurement is a separate, already-owned ticket).
+
+### How to run it / verify
+
+```bash
+source .factory-env
+pnpm dev   # PORT=$APP_PORT
+```
+Visit `/access-code`, `/`, `/verify/1`, `/verify/2`, `/verify/3`, `/review-queue`,
+`/review-queue/1`, `/batch`, `/batch/1` — light and dark. To see live paging, insert more than
+100 unresolved `review_queue` rows in this worktree's own database. To see a live batch
+mid-flight at zero cost: `FAKE_MODEL_PORT=3897 pnpm e2e:fake-model`, then
+`ANTHROPIC_BASE_URL=http://localhost:3897 pnpm worker` in a second shell, then start a batch
+from `/batch`.
+
+### Rollback
+
+Nothing to roll back — no application code changed. This entry and the screenshots referenced
+in it are the deliverable.
+
 ## TRO-483 — LH-062: seeded demo deployment (2026-08-13)
 
 **What changed.** This ticket submits the full 36-case golden set as one real batch job. The

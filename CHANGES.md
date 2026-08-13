@@ -148,6 +148,27 @@ All review-queue server tests pass. All component tests pass. `pnpm typecheck` i
 review-queue e2e spec now asserts the image is visible on the real RSC page against a live
 database — the same assertion `verify.spec.ts` makes on the verification-detail page.
 
+## TRO-579 — case-33 (not-bold ground truth) + the re-baseline it owes (2026-08-13)
+
+**Landed as its own ticket, not TRO-532.** The case-33 addition and its variance-sweep
+consequence below happened after PR #83 (TRO-532) already merged — Troy asked the TRO-532
+agent directly to add the case while reviewing its progress live. Since #83 was closed by the
+time this work was ready, it could not join that PR. TRO-579 carries it instead; the prose
+below is unchanged from the agent's own original entry except this note and the "Confirmed"
+section, which now reports the sweep's real, measured result instead of stating it as owed.
+
+**The re-baseline, run and confirmed.** `pnpm eval:variance -- --live --full --repeats=3
+--establish-baseline`, 37 cases × 3 repeats, **$1.1921 measured** (Troy's authorization,
+2026-08-13, given directly to the orchestrator). 0 script-level failures. Corpus stability
+97.3% (36 of 37 cases returned the same verdict every repeat). Cascade-verdict accuracy band
+81.1%-83.8%. `case-33-not-bold-warning-prefix` itself: PASS/MATCH, stable across all 3 repeats
+— the new case behaves exactly as its `expected` field says, on every run. New baseline
+committed with full provenance: manifest hash `7b1c3bb1...`, golden-set commit `9787ff9`, code
+commit `267a62f`. The superseded baseline is archived, never deleted
+(`scripts/eval/baseline-archive/`). `variance-report-artifact.test.ts` — the test this
+addition broke — now passes: confirmed directly, `pnpm vitest run
+scripts/eval/variance-report-artifact.test.ts`, 2/2.
+
 ## TRO-532 — LH-025 · Stroke-width bold advisory check (2026-08-13)
 
 Advances TH-R9. CP-2 §7.2 named a technique for bold detection and did not try it: binarize
@@ -205,10 +226,50 @@ the CURRENT corpus, live, in this ticket's own test suite: every clean rendered 
 `governmentWarningPrefixBold: true` in the golden set measures `bold`. This CHANGES.md entry
 states the discrepancy rather than papering over it — standing rule 2.
 
+**A real golden-set case added, mid-ticket, on Troy's own instruction.** TRO-527's own
+CHANGES.md entry already named the gap: "None of these 32 cases tests a bold violation; that
+is LH-023's job (case-33, case-34)." Troy, reviewing this ticket's own progress live, noticed
+the same gap directly — every one of the 30 warning-bearing cases TRO-527 backfilled carries
+`governmentWarningPrefixBold: true`, so nothing in the corpus could prove the `not-bold` branch
+against a real, rendered image. His instruction: create one. `golden-set/manifest.json` gains
+`case-33-not-bold-warning-prefix` — same wording, same capitalization, same canonical text as
+case-01, `governmentWarningPrefixBold: false` and `governmentWarningBodyBold: false` its only
+difference. `expected` stays `PASS`/`MATCH` throughout: nothing in the router reads either bold
+field yet (TRO-533's own job), so this case cannot fail a verdict today no matter how its
+ground truth reads — a real, corpus-backed demonstration of CP-2 §7.2's "advisory, never a
+verdict input" boundary, not just an assertion in a comment. Rendered via the existing
+`pnpm golden:build` pipeline (LH-022/TRO-527's own prefix/body font-weight split), unmodified
+by this ticket. Verified: rebuilding with the manifest otherwise unchanged reproduced all 36
+existing images byte-identical; only the new case-33 image was written. `measureBoldSignal`
+against it, live: `not-bold`, ratio 1.278, both sides measuring exactly at the 3px floor.
+
+This reserves the `case-33` slot TRO-527's own note anticipated. It does NOT do LH-023's actual
+job — a real bold-violation ROUTER check (wiring this ground truth into a verdict) is still
+LH-023's, deliberately not built here.
+
+**A consequence this addition has, not fixed in this ticket.**
+`scripts/eval/variance-report-artifact.test.ts` deliberately couples to a COMMITTED, live,
+paid, full-corpus × 3-repeat sweep artifact (`scripts/eval/results/variance-report.json`,
+TRO-543 Part 2, re-baselined by TRO-561) and derives its expected case count from the manifest
+at test-run time — by design, so a corpus change can never silently go unnoticed there. Adding
+case-33 grew the corpus from 36 to 37, so that committed artifact now covers one fewer case
+than the live manifest and the test fails, correctly. Regenerating it means an authorized,
+live `pnpm eval:variance -- --live --full --repeats=3` sweep — real API cost (roughly $1.25 at
+this corpus size, extrapolated from the $0.3961 single-pass full-corpus figure TRO-561's own
+entry records), and `variance.ts`'s own header comment states this sweep is "gated on Troy's
+go-ahead," the same posture TRO-543 Part 2 and TRO-561 both needed their own dedicated
+authorization for. This ticket did not run that sweep unilaterally — Troy authorized it
+directly to the orchestrator, and TRO-579's own section above reports the real, measured
+result. `loader.test.ts`'s own corpus-size sanity bound (20-36) is updated to 20-37 here,
+since that bound is deliberately, explicitly maintained per addition (its own comment says
+so) — a mechanical update, not a weakening. `variance-report-artifact.test.ts` was red until
+the sweep ran; see TRO-579 above for the resolution, not stated here as still outstanding.
+
 **How to run it.** `pnpm vitest run src/server/warning/bold-detect.test.ts`. No live API call,
 no database. `measureBoldSignal` is pure pixel math (`sharp`) with no external dependency.
+`golden:build` (already run once, committed) needs Playwright, not a live model call.
 
-**Confirmed.** 54 tests, `pnpm vitest run src/server/warning/bold-detect.test.ts`, all pass.
+**Confirmed.** 55 tests, `pnpm vitest run src/server/warning/bold-detect.test.ts`, all pass.
 Coverage:
 
 - `otsuThreshold` and `classifyBoldSignal`: pure unit tests on synthetic numbers.
@@ -225,6 +286,9 @@ Coverage:
 - Every clean (non-degraded), warning-bearing, `governmentWarningPrefixBold: true` case in the
   golden-set manifest: `bold`, via a data-driven test over the real manifest (not a hardcoded
   case list).
+- case-33-not-bold-warning-prefix (added mid-ticket, see above): `not-bold`, ratio 1.278 — the
+  first real, rendered, non-synthetic proof of the `not-bold` branch, alongside the direct
+  `classifyBoldSignal` unit test and the controlled synthetic image.
 - case-23 (9px print — case-24's own vector, since TRO-516 C5 merged case-24 into case-23
   before this ticket started): `uncertain`, floor reason. The ticket's own required acceptance
   case.
@@ -238,15 +302,17 @@ Coverage:
   the separate ranges-overlap check instead, so the guard is not the only thing protecting
   it. Only two of the three curved photos depend on this specific guard.
 
-**Not yet verified.** No golden-set case exists with `governmentWarningPrefixBold: false` for
-a present warning — TRO-527's own CHANGES.md entry names this gap (LH-023's case-33/case-34,
-not yet landed). The `not-bold` signal is proven directly against `classifyBoldSignal`, the
-pure decision function, and against a controlled synthetic image; it has no real-photo or
-real-corpus example to prove itself against yet. This ticket states the gap; it does not
-fabricate a case to close it.
+**Not yet verified.** The live, paid, full-corpus × 3-repeat variance-sweep re-baseline
+(`scripts/eval/results/variance-report.json`) named above — gated on Troy's explicit
+go-ahead, not run by this ticket. No real photograph shows a confirmed `not-bold` reading:
+the five real reference photographs all predate case-33 and are either `bold` (case-35) or
+`uncertain` (the rest); a real photograph of an actual non-bold-prefix label was never in
+scope here.
 
-**How to roll it back.** Delete `src/server/warning/bold-detect.ts` and
-`src/server/warning/bold-detect.test.ts`. Nothing else in the tree imports either file — this
+**How to roll it back.** Delete `src/server/warning/bold-detect.ts`,
+`src/server/warning/bold-detect.test.ts`, `golden-set/images/case-33-not-bold-warning-prefix.jpg`,
+and the `case-33-not-bold-warning-prefix` entry in `golden-set/manifest.json`. Revert
+`loader.test.ts`'s corpus-size bound to 36. Nothing else in the tree imports either new file — this
 ticket wires the signal into no schema, router, comparator, UI, or eval-harness code.
 
 ## TRO-572 — worktree.sh: a per-ticket lock serializes truly concurrent invocations (2026-08-13)

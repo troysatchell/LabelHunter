@@ -37,6 +37,8 @@ function validCase(overrides: Partial<GoldenSetCase> = {}): GoldenSetCase {
       governmentWarningPresent: true,
       governmentWarningText: "GOVERNMENT WARNING: (1) ...",
       governmentWarningPrefixAllCaps: true,
+      governmentWarningPrefixBold: true,
+      governmentWarningBodyBold: false,
     },
     expected: {
       labelVerdict: "PASS",

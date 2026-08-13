@@ -448,6 +448,19 @@ export const reviewQueue = pgTable(
     // batch-originated row; set at insert time by the single-label verify
     // route for every REVIEW-verdict row it files.
     resolverInput: jsonb("resolver_input"),
+    // TRO-506/TRO-512 (CP-3 §3.3, §12 open question 2). The resolver's
+    // atomic reservation: the instant one caller's exclusive right to call
+    // Sonnet for this verification runs out. Set by
+    // `../../server/resolver/reservation.ts` BEFORE the model call, cleared
+    // when a resolution lands or when the call fails.
+    //
+    // A dedicated column, not a second use of `claimToken`/`leaseExpiresAt`
+    // above: those belong to the single-label resolve worker's claim
+    // (TRO-511), which is still holding them while it calls
+    // `resolveEscalatedLabel`. Writing them here would replace that
+    // worker's own live claim token and turn its retry and failure writes
+    // into silent no-ops.
+    resolverReservedUntil: timestamp("resolver_reserved_until", { withTimezone: true }),
     claimedBy: text("claimed_by"),
     claimToken: uuid("claim_token"),
     claimedAt: timestamp("claimed_at", { withTimezone: true }),

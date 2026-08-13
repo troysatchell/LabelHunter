@@ -145,6 +145,12 @@ function runWorktreeSh(fx: Fixture, pg: PgTarget, sessionId: string, extraArgs: 
     cwd: fx.repoDir,
     env,
     encoding: "utf8",
+    // spawnSync blocks the whole worker thread synchronously. The test's own
+    // 60s `it(...)` timeout cannot save it: that mechanism relies on the
+    // event loop running, and a hang here freezes the event loop itself.
+    // This bound is what actually stops a stuck worktree.sh. (CodeRabbit,
+    // this PR.)
+    timeout: 45_000,
   });
 }
 
@@ -215,17 +221,20 @@ async function withFixture(fn: (fx: Fixture, pg: PgTarget) => Promise<void>): Pr
   const pgConn = requirePgTargetFromEnv();
   const pg: PgTarget = { ...pgConn, container: discoverPgContainer(pgConn.port) };
   const fx = makeFixture();
-  let primaryError: unknown;
+  // A boolean, not a truthiness check on the caught value: `throw undefined`
+  // or `throw 0` would read as "no body failure" and let a cleanup failure
+  // mask the real one. (CodeRabbit, this PR.)
+  let bodyFailed = false;
   try {
     await fn(fx, pg);
   } catch (err) {
-    primaryError = err;
+    bodyFailed = true;
     throw err;
   } finally {
     try {
       await cleanupFixture(fx, pg);
     } catch (cleanupErr) {
-      if (primaryError) {
+      if (bodyFailed) {
         console.error("TRO-557 fixture cleanup ALSO failed after a test failure:", cleanupErr);
       } else {
         throw cleanupErr;

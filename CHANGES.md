@@ -57,7 +57,7 @@ script, it failed because no `.factory-owner` file existed yet.
 A second test case covers a stamp file that exists but has no `FACTORY_OWNER_SESSION` line. See
 the CodeRabbit triage note below for what that case caught.
 
-**CodeRabbit review triage, 2 rounds, 5 findings, all fixed.**
+**CodeRabbit review triage, 3 rounds, 7 findings, all fixed.**
 
 Round 1:
 - `scripts/factory/worktree.sh` (major): the stamp-read pipeline, `grep | cut`, could abort the
@@ -65,27 +65,38 @@ Round 1:
   `FACTORY_OWNER_SESSION` line made `grep` exit 1. `cut` still exited 0 on the empty input.
   `pipefail` keeps `grep`'s non-zero status instead. `set -e` then killed the script before it
   reached the refusal path. A legacy or corrupted stamp crashed provisioning outright, instead
-  of refusing it cleanly. Fixed with `|| true` on the substitution. Added a regression case: a
-  stamp file missing that one field. That case first failed for the right reason too — exit 1,
-  not 2, against the pre-fix code.
+  of refusing it cleanly. The fix adds `|| true` to the substitution. The test adds a
+  regression case: a stamp file missing that one field. That case first failed for the right
+  reason too — exit 1, not 2, against the pre-fix code.
 - `scripts/factory/worktree-owner.test.ts` (minor): `uniqueTicket()` built its fixture ticket id
   from `Date.now()` and `process.pid`. Two runners can share a pid within the same millisecond.
-  A shared ticket id would then race two test runs onto the same fixture database. Switched to
-  `crypto.randomUUID()`.
+  A shared ticket id would then race two test runs onto the same fixture database. The test now
+  uses `crypto.randomUUID()`.
 
 Round 2:
 - `scripts/factory/worktree-owner.test.ts` (minor): `cleanupFixture` only logged a cleanup
   failure. A cleanup-only failure — the worktree, the database, or the temp directory did not
-  go away — then passed the test silently. Added `withFixture`, a wrapper every test case now
-  runs through. It fails the test on a cleanup-only failure. It still only logs a cleanup
-  failure that happens after the test body itself already failed. That earlier failure is the
-  one that must reach the report.
+  go away — then passed the test silently. The test adds `withFixture`, a wrapper every test
+  case now runs through. It fails the test on a cleanup-only failure. It still only logs a
+  cleanup failure that happens after the test body itself already failed. That earlier failure
+  is the one that must reach the report.
 - `scripts/factory/worktree.sh` (minor): the argument-parsing loop accepted any unrecognized
   `--flag` as a silent no-op, and any positional argument past the third as silently ignored.
   A typo like `--steel` shifted into `BASE_REF` instead of failing loudly. Both cases now exit
   2 with the usage line.
 - `CHANGES.md` (minor): two sentences read "Confirmed the test fails..." with no explicit
-  subject. Reworded to name the subject directly.
+  subject. This entry now names the subject directly, in those two sentences and throughout.
+
+Round 3:
+- `scripts/factory/worktree-owner.test.ts` (minor): `withFixture`'s new cleanup-propagation
+  code read `if (primaryError)`, a truthiness check. A falsy thrown value (`throw undefined`,
+  `throw 0`) would misread as "no failure," and let a cleanup failure mask the real one. The
+  test now tracks a `bodyFailed` boolean instead.
+- `scripts/factory/worktree-owner.test.ts` (major): `runWorktreeSh`'s `spawnSync` call set no
+  `timeout`. `spawnSync` blocks the whole worker thread. A hung `worktree.sh` process could not
+  be caught by the test's own 60-second `it(...)` limit — that limit relies on the event loop
+  running, and a synchronous hang freezes the event loop itself. The test now passes its own
+  `timeout: 45_000` to `spawnSync`.
 
 **How to run it.** Run `pnpm test -- scripts/factory/worktree-owner.test.ts`. It needs no setup
 beyond the worktree's own `.factory-env`. That means the same `DATABASE_URL` and reachable

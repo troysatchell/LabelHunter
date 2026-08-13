@@ -338,6 +338,12 @@ persists — still crossed an unchecked cast. `validateProgressResponse` now che
 status enum, every counter, both timestamps, throughput, and the share on every poll. A
 fifth re-bullet request was dismissed under the same stop rule.
 
+Post-merge follow-up (same ticket, own gated branch): a reviewer rebuttal correctly showed
+`connectionTimeoutMillis` bounds only connection establishment, so both harness pools now
+also carry `query_timeout` via a shared `pool-config.ts`, with a red-first test. The
+canonical `src/lib/db` pool also lacks `query_timeout`; that is a long-lived app pool where
+a global deadline is a real behavior decision — left to TRO-508 on the record.
+
 Round 12: four fixed. The cost docs no longer claim the estimate cannot understate — the
 bound covers the call count, not the dollars, because the means are historical. The
 artifact's `deployment` field is now derived from the real target host, never hard-coded.

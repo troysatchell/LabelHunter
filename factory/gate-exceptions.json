@@ -102,6 +102,14 @@
       "approver": "Troy",
       "date": "2026-08-13",
       "pr": "https://github.com/troysatchell/LabelHunter/pull/73"
+    },
+    {
+      "ticket": "TRO-570",
+      "gate": "regression-test",
+      "reason": "First-time-user UI walkthrough and accessibility assessment (TH-R3, TH-R20): docs-only submission deliverable (a CHANGES.md entry), no production code to write a red-first case against. Every other gate green (typecheck, lint, build, tests, eval-not-regressed, defect-gate, scope=1 file). Troy approved directly in-session, same ruling as TRO-483/484/485.",
+      "approver": "Troy",
+      "date": "2026-08-13",
+      "pr": "https://github.com/troysatchell/LabelHunter/pull/74"
     }
   ]
 }

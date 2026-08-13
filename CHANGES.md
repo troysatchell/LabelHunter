@@ -85,6 +85,42 @@ database after the run.
 **How to roll back.** Revert this commit. `daily_spend` keeps accumulating from whatever ran
 before the revert; no migration, no schema change.
 
+## TRO-575 — the review detail shows the label image (2026-08-13)
+
+**The gap.** The review-item page showed per-field text evidence with no label image. A
+reviewer deciding approve/reject could not see the artwork they were ruling on. TH-R1 names
+that artwork as the object of review: "an agent pulls up an application, looks at the label
+artwork, and checks." The omission was a deliberate deferral (`get-item.ts`'s old file
+comment): the image-serving route belonged to a then-unmerged sibling ticket. That ticket
+(LH-016/TRO-466) merged days ago, so the justification was stale. Troy asked for the image
+directly: surfacing it "is a massive quality of life benefit."
+
+**The fix.**
+1. `getReviewQueueItem` now loads the `labelImages` row with one added select — the same
+   recipe `get-verification-detail.ts` already uses. `ReviewQueueItemDetail` gains a
+   `labelImage` field: url, width, height, original filename. The review page reads over
+   RSC, so no API route changed.
+2. `ReviewItemDetail` renders the image beside the field comparison. The arrangement copies
+   `DetailView` on purpose — both screens now teach one layout: artwork on one side, field
+   verdicts on the other. The plain-`<img>` decision and the persisted width/height (browser
+   reserves space before the bytes arrive; no layout shift) carry over verbatim.
+3. Layout CSS (`.review-item__layout`, `.review-item__image`) uses the same literal values
+   as the detail view's. TRO-578 will tokenize both; this ticket does not start that.
+4. Each field row now speaks its verdict to screen readers (a `visually-hidden` span with
+   `DetailView`'s exact words). Before, the verdict icon was `aria-hidden` and the state
+   was only a border color. An adversarial review lens caught the parity miss.
+
+**Rollback.** Revert the PR. The review page returns to text-only evidence.
+
+**Confirmed.** Red first, for the right reason, in both layers:
+- `get-item.test.ts`: `labelImage` came back `undefined` before the select, exact shape after.
+- `ReviewItemDetail.test.tsx`: no `img` role before the change; src/width/height asserted after.
+All review-queue server tests pass. All component tests pass. `pnpm typecheck` is clean. The
+review-queue e2e spec now asserts the image is visible on the real RSC page against a live
+database — the same assertion `verify.spec.ts` makes on the verification-detail page.
+
+## TRO-532 — LH-025 · Stroke-width bold advisory check (2026-08-13)
+
 Advances TH-R9. CP-2 §7.2 named a technique for bold detection and did not try it: binarize
 the crop, measure stroke width by morphological erosion, and compare the `GOVERNMENT
 WARNING:` prefix's stroke width to the body's at matched cap height. A prior investigation

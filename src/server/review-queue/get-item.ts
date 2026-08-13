@@ -1,22 +1,20 @@
 /**
  * Reads one review-queue item's full review/detail data (TRO-476, PRD §5,
  * TH-R22): the reason, every field's extracted-vs-application comparison,
- * and the Sonnet resolver's suggestion when one exists. Read-only and
- * DB-backed, same posture as `list.ts` — see that file's comment on why
- * this is not the same module as `src/server/verification-detail`
- * (LH-016/TRO-466, still an open PR, not merged as of this ticket).
+ * the Sonnet resolver's suggestion when one exists, and the label image
+ * the verification ran against. Read-only and DB-backed, same posture as
+ * `list.ts` — see that file's comment on why this is not the same module
+ * as `src/server/verification-detail`.
  *
- * Does NOT show the label image. PRD §5's review-queue line ("needs-human
- * items with reason; approve/reject records disposition") does not ask for
- * one, and the route that serves image bytes
- * (`src/app/api/label-images/[labelImageId]/route.ts`) is also LH-016's,
- * also unmerged — building it here would duplicate a sibling ticket's
- * still-open work. Flagged in this ticket's report, not silently worked
- * around.
+ * The label image was originally omitted here because the byte-serving
+ * route was a sibling ticket's then-unmerged work (LH-016/TRO-466). That
+ * ticket landed; TRO-575 added the image, because the artwork is the
+ * object the reviewer is ruling on (TH-R1: "looks at the label artwork,
+ * and checks").
  */
 import { eq } from "drizzle-orm";
 import type { db as defaultDb } from "../../lib/db";
-import { applications, fieldResults, reviewQueue, verifications } from "../../lib/db/schema";
+import { applications, fieldResults, labelImages, reviewQueue, verifications } from "../../lib/db/schema";
 import { FIELD_NAMES, type FieldName } from "../../lib/db/enums";
 import { buildFieldReasonText } from "../router/reason-text";
 import { FIELD_NAME_LABELS, type GetReviewQueueItemResult, type ResolverSuggestedField, type ReviewQueueFieldDetail } from "./types";
@@ -123,12 +121,15 @@ export async function getReviewQueueItem(db: typeof defaultDb, id: number): Prom
   const [applicationRow] = verificationRow
     ? await db.select().from(applications).where(eq(applications.id, verificationRow.applicationId))
     : [];
+  const [labelImageRow] = verificationRow
+    ? await db.select().from(labelImages).where(eq(labelImages.id, verificationRow.labelImageId))
+    : [];
 
-  // Defensive, not expected: every FK above is NOT NULL with ON DELETE
-  // CASCADE (schema.ts) — a review-queue row pointing at a missing
-  // verification or application means the schema's own cascade rules were
-  // bypassed, not a normal user state.
-  if (!verificationRow || !applicationRow) return { found: false };
+  // Defensive, not expected. Every FK above is NOT NULL with ON DELETE
+  // CASCADE (schema.ts). A queue row pointing at a missing verification,
+  // application, or label image means those rules were bypassed. That is
+  // a corrupt row, not a normal user state. Report "not found".
+  if (!verificationRow || !applicationRow || !labelImageRow) return { found: false };
 
   const fieldRows = await db.select().from(fieldResults).where(eq(fieldResults.verificationId, verificationRow.id));
   const fieldRowByName = new Map(fieldRows.map((row) => [row.fieldName, row]));
@@ -178,6 +179,12 @@ export async function getReviewQueueItem(db: typeof defaultDb, id: number): Prom
       disposedAt: queueRow.disposedAt,
       resolverNote: extractResolverNote(queueRow.resolverOutput),
       resolverFields: summarizeResolverOutput(queueRow.resolverOutput),
+      labelImage: {
+        url: `/api/label-images/${labelImageRow.id}`,
+        width: labelImageRow.widthPx,
+        height: labelImageRow.heightPx,
+        originalFilename: labelImageRow.originalFilename,
+      },
       fields,
     },
   };

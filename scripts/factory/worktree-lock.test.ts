@@ -399,33 +399,33 @@ describe("worktree.sh concurrency lock (TRO-572)", () => {
   );
 
   it(
-    "two waiters racing to break the same stale lock never both reset the database at once",
+    "three waiters racing to break the same stale lock never let two hold it at once",
     () =>
       withFixture(async (fx, pg) => {
-        // Regression for the TOCTOU CodeRabbit found in round 1: a naive
-        // read-then-`rm -rf` let a SECOND waiter delete a lock a THIRD,
-        // live invocation had already re-acquired between the first
-        // waiter's read and its removal, letting two processes believe
-        // they each held the lock alone. Both racers below see the exact
-        // same stale, dead-pid lock at once.
+        // Regression across all three review rounds: round 1's naive
+        // read-then-`rm -rf` let a second waiter delete a lock a THIRD,
+        // live invocation had already re-acquired since the first waiter's
+        // read. Round 2's capture-then-restore fix closed that hole but
+        // opened a narrower one -- a waiter inspecting a captured lock
+        // (even one it was about to restore) left LOCK_DIR briefly absent,
+        // and a fourth contender's `mkdir` could win that gap. Three
+        // contenders racing one stale lock exercises exactly the fan-out
+        // where these showed up; the reap-mutex design (round 3) never
+        // vacates LOCK_DIR during inspection at all, so there is no gap
+        // left to win regardless of how many waiters pile on.
         mkdirSync(fx.lockDir);
         writeFileSync(join(fx.lockDir, "owner"), `PID=${deadPid()}\nHOST=${hostname()}\n`);
 
-        const first = spawnWorktreeSh(fx, pg, "test-session-stale-race");
-        const firstExit = waitForExit(first);
-        const second = spawnWorktreeSh(fx, pg, "test-session-stale-race");
-        const secondExit = waitForExit(second);
-        const firstErr = collectText(first.stderr);
-        const secondErr = collectText(second.stderr);
+        const children = [0, 1, 2].map(() => spawnWorktreeSh(fx, pg, "test-session-stale-race"));
+        const exits = children.map((c) => waitForExit(c));
+        const errs = children.map((c) => collectText(c.stderr));
 
-        const [codeA, codeB] = await Promise.all([firstExit, secondExit]);
-        expect(codeA, `first stderr: ${firstErr.get()}`).toBe(0);
-        expect(codeB, `second stderr: ${secondErr.get()}`).toBe(0);
+        const codes = await Promise.all(exits);
+        codes.forEach((code, i) => expect(code, `invocation ${i} stderr: ${errs[i].get()}`).toBe(0));
 
         const result = await queryDb(pg, fx.dbName, "SELECT 1 AS ok");
         expect(result.rows).toEqual([{ ok: 1 }]);
-        expect(firstErr.get(), "first invocation").not.toMatch(/^ERROR:/m);
-        expect(secondErr.get(), "second invocation").not.toMatch(/^ERROR:/m);
+        errs.forEach((err, i) => expect(err.get(), `invocation ${i}`).not.toMatch(/^ERROR:/m));
       }),
     60_000,
   );

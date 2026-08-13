@@ -132,21 +132,9 @@ fi
 # Exactly one concurrent invocation can create LOCK_DIR; every other one
 # waits, or breaks a lock left behind by a crashed same-host holder.
 LOCK_DIR="${WT_PATH}.lock"
+REAP_LOCK="${LOCK_DIR}.reaping"
 LOCK_POLLS=0
 LOCK_MAX_POLLS=300 # ~60s at 0.2s/poll
-
-# Reads HOST=/PID= out of an owner file at the given path (a lock dir or a
-# captured copy of one) without trusting it further than that -- same
-# boundary-validation discipline as the `.factory-owner` reader below
-# (lessons.md #13).
-read_lock_owner() {
-  LOCK_OWNER_HOST=""
-  LOCK_OWNER_PID=""
-  if [ -f "$1/owner" ]; then
-    LOCK_OWNER_HOST="$(sed -n 's/^HOST=//p' "$1/owner" 2>/dev/null || true)"
-    LOCK_OWNER_PID="$(sed -n 's/^PID=//p' "$1/owner" 2>/dev/null || true)"
-  fi
-}
 
 # `ps -p`, not `kill -0`: `kill -0` fails for two different reasons -- ESRCH
 # (no such process, genuinely dead) and EPERM (the process exists but this
@@ -174,41 +162,44 @@ while ! mkdir "$LOCK_DIR" 2>/dev/null; do
     exit 2
   fi
 
-  # Cheap, NON-destructive pre-check: only even attempt to capture a lock
-  # that already looks stale in place. A live lock is never renamed here.
-  # An earlier version of this fix captured (renamed away) EVERY lock it
-  # encountered just to inspect it, live or not -- and a rename, even one
-  # immediately undone, leaves LOCK_DIR briefly absent. A THIRD invocation's
-  # `mkdir` could win that gap out from under the true holder, who is still
-  # actively running its critical section the whole time (CodeRabbit,
-  # TRO-572 review round 2 -- critical). Gating on a non-destructive
-  # pre-check means a live lock's owner data is read, found alive, and
-  # never touched at all.
-  read_lock_owner "$LOCK_DIR"
-  if [ "$LOCK_OWNER_HOST" = "$(hostname)" ] && [ -n "$LOCK_OWNER_PID" ] && ! pid_is_alive "$LOCK_OWNER_PID"; then
-    # Looks stale. `mv` on the same filesystem is atomic: at most one
-    # waiter's `mv` can rename a given LOCK_DIR away at a time, so only one
-    # waiter ever gets to evaluate (and possibly discard) any single lock
-    # instance. The pre-check above is itself racy -- the lock could change
-    # between that read and this `mv` -- so CONFIRM staleness again on the
-    # captured copy before deleting anything; trust only what this waiter
-    # now exclusively owns, never the shared path.
-    CAPTURE_DIR="${LOCK_DIR}.break.$$"
-    if mv "$LOCK_DIR" "$CAPTURE_DIR" 2>/dev/null; then
-      read_lock_owner "$CAPTURE_DIR"
-      if [ "$LOCK_OWNER_HOST" = "$(hostname)" ] && [ -n "$LOCK_OWNER_PID" ] && ! pid_is_alive "$LOCK_OWNER_PID"; then
-        echo "  lock:      breaking a stale lock from dead pid ${LOCK_OWNER_PID} on this host" >&2
-        rm -rf "$CAPTURE_DIR"
-        continue
-      fi
-      # The confirm disagreed with the pre-check: the lock changed under
-      # this waiter (a new live holder grabbed it since the pre-check read).
-      # Put it back exactly as found. If some other waiter already grabbed
-      # the now-free path in the meantime, that is a normal, harmless
-      # hand-off -- this capture is simply discarded instead of restored.
-      if ! mv "$CAPTURE_DIR" "$LOCK_DIR" 2>/dev/null; then
-        rm -rf "$CAPTURE_DIR"
-      fi
+  # Stale-lock recovery, gated by its OWN mutex (REAP_LOCK). Two earlier
+  # versions of this fix inspected LOCK_DIR by moving it aside first (a
+  # capture-then-confirm-then-restore dance). Both left a real window: while
+  # one waiter held the lock's content OUTSIDE the LOCK_DIR path -- even
+  # briefly, even to put it straight back -- LOCK_DIR did not exist, and a
+  # DIFFERENT invocation's `mkdir` could win that gap. That let two
+  # processes each believe they held the lock alone (CodeRabbit, TRO-572
+  # review rounds 1 and 2, both critical).
+  #
+  # This version never moves LOCK_DIR at all. `mkdir "$REAP_LOCK"` lets
+  # AT MOST ONE waiter at a time even attempt to inspect-and-maybe-remove
+  # the stale lock; every other waiter that fails to grab REAP_LOCK just
+  # skips straight to the wait/retry path below, touching nothing. While
+  # this waiter holds REAP_LOCK, nothing else can start its own inspection,
+  # and LOCK_DIR still exists at its normal path the whole time (nobody
+  # else's `mkdir` can succeed against an existing directory) -- so
+  # read-then-remove is safe here, with no capture, confirm, or restore
+  # step needed. REAP_LOCK itself is held only for a few local filesystem
+  # calls, not for the ticket's whole critical section, so it gets no
+  # stale-recovery of its own: a crash inside that narrow window is
+  # vastly less likely than one during `pnpm install`/`db:migrate`, and the
+  # 60s timeout below is the backstop either way.
+  if mkdir "$REAP_LOCK" 2>/dev/null; then
+    STALE_HOST=""
+    STALE_PID=""
+    if [ -f "${LOCK_DIR}/owner" ]; then
+      STALE_HOST="$(sed -n 's/^HOST=//p' "${LOCK_DIR}/owner" 2>/dev/null || true)"
+      STALE_PID="$(sed -n 's/^PID=//p' "${LOCK_DIR}/owner" 2>/dev/null || true)"
+    fi
+    BROKE_STALE_LOCK=0
+    if [ "$STALE_HOST" = "$(hostname)" ] && [ -n "$STALE_PID" ] && ! pid_is_alive "$STALE_PID"; then
+      echo "  lock:      breaking a stale lock from dead pid ${STALE_PID} on this host" >&2
+      rm -rf "$LOCK_DIR"
+      BROKE_STALE_LOCK=1
+    fi
+    rm -rf "$REAP_LOCK"
+    if [ "$BROKE_STALE_LOCK" -eq 1 ]; then
+      continue
     fi
   fi
 

@@ -476,7 +476,17 @@ export const reviewQueue = pgTable(
     lastError: text("last_error"),
     disposition: reviewDispositionEnum("disposition"),
     disposedAt: timestamp("disposed_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true })
+    // Millisecond precision, unlike every other timestamp in this schema
+    // (TRO-507). This column is the review queue's paging sort key, and a
+    // page cursor is built from the JavaScript `Date` the driver hands
+    // back — which carries milliseconds and nothing finer. Postgres's own
+    // default microsecond precision made a cursor unable to name one exact
+    // position: the truncated cursor compared as "before" the very row it
+    // came from, so the next page served that row again, forever. Observed
+    // as a repeating page in `src/app/api/review-queue/route.test.ts`.
+    // Storing exactly what a cursor can carry removes the mismatch instead
+    // of papering over it in the query.
+    createdAt: timestamp("created_at", { withTimezone: true, precision: 3 })
       .notNull()
       .defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })

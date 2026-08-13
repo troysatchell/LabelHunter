@@ -5,10 +5,13 @@
  * same one-file-per-feature-package convention `src/server/router/index.ts`
  * and `src/server/resolver/types.ts` already use.
  */
-export { listUnresolvedReviewQueue } from "./list";
+export { listUnresolvedReviewQueue, MAX_LIST_LIMIT } from "./list";
 export { getReviewQueueItem } from "./get-item";
 export { recordDisposition } from "./record-disposition";
-export { FIELD_NAME_LABELS } from "./types";
+export { decodeReviewQueueCursor, encodeReviewQueueCursor, ReviewQueueCursorError } from "./cursor";
+export type { ReviewQueueCursor } from "./cursor";
+export type { ListUnresolvedReviewQueueOptions } from "./list";
+export { FIELD_NAME_LABELS, REVIEW_QUEUE_RESOLVER_STATUSES } from "./types";
 export type {
   GetReviewQueueItemResult,
   RecordDispositionOutcome,
@@ -16,4 +19,6 @@ export type {
   ReviewQueueFieldDetail,
   ReviewQueueItemDetail,
   ReviewQueueListItem,
+  ReviewQueueListPage,
+  ReviewQueueResolverStatus,
 } from "./types";

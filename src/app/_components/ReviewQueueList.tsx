@@ -7,11 +7,28 @@
  */
 import Link from "next/link";
 import { formatTimestampUTC } from "../_lib/format-timestamp";
-import type { ReviewQueueListItemWire } from "../api/review-queue/types";
+import type { ReviewQueueListItemWire, ReviewQueueResolverStatus } from "../api/review-queue/types";
 
 export interface ReviewQueueListProps {
   items: ReviewQueueListItemWire[];
 }
+
+/**
+ * One plain sentence per resolver state (TRO-512, CP-3 §3.3).
+ *
+ * The resolver's reservation creates a row before Sonnet answers, so a row
+ * with no suggestion can mean three different things. Each gets its own
+ * sentence, because a reviewer's next action differs: wait a moment, read
+ * the label unaided, or open the item and read the suggestion. Naming the
+ * state is the same discipline standing rule 12 already applies to a
+ * verdict — never show a bare state the reader has to interpret.
+ */
+const RESOLVER_STATUS_TEXT: Record<ReviewQueueResolverStatus, string> = {
+  suggested: "LabelHunter has a suggestion for this item.",
+  checking: "LabelHunter is checking this item now. Refresh in a moment.",
+  skipped: "LabelHunter did not check this item. Read the label yourself.",
+  waiting: "LabelHunter has not checked this item yet.",
+};
 
 export function ReviewQueueList({ items }: ReviewQueueListProps) {
   if (items.length === 0) {
@@ -28,6 +45,9 @@ export function ReviewQueueList({ items }: ReviewQueueListProps) {
           </p>
           <p className="review-queue-row__waiting">
             Waiting since <time dateTime={item.createdAt}>{formatTimestampUTC(item.createdAt)}</time>
+          </p>
+          <p className="review-queue-row__resolver" data-resolver-status={item.resolverStatus}>
+            {RESOLVER_STATUS_TEXT[item.resolverStatus]}
           </p>
           {/* Every row's link otherwise shares the name "Review this item" —
               a screen-reader user listing the page's links has no way to

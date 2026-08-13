@@ -35,6 +35,11 @@
  * distinction is what keeps their post-rotation width/height assertions
  * unchanged (see `deskew.test.ts`'s equivalent fixture for the direct
  * proof).
+ *
+ * Every candidate is cropped back to a fixed size after rotating, and the
+ * sweep itself runs with bounded concurrency — see
+ * `rowInkVarianceAtAngle`'s and `MAX_CONCURRENT_ANGLE_PASSES`'s own
+ * comments for why.
  */
 import sharp from "sharp";
 import type { Metadata as SharpMetadata } from "sharp";
@@ -79,6 +84,15 @@ const ANGLE_STEP_DEG = 1;
  */
 const MIN_PEAK_VARIANCE = 1e-6;
 
+/**
+ * How many candidate-angle `sharp` passes run at once. Each pass is cheap
+ * on its own (a small, already-downscaled image), but an unbounded
+ * `Promise.all` across the whole sweep fires every candidate at the same
+ * moment — harmless for one request, needless concurrent libvips load
+ * once several uploads are in flight together. Proposed, not measured.
+ */
+const MAX_CONCURRENT_ANGLE_PASSES = 8;
+
 /** Population variance of a numeric array. Assumes `values` is non-empty
  * — every caller in this file only ever passes one row-ink-fraction
  * array per candidate angle, which always has at least one row. */
@@ -88,15 +102,58 @@ function variance(values: readonly number[]): number {
 }
 
 /**
+ * Runs `fn` over `items` with at most `limit` calls in flight at once,
+ * preserving input order in the result. A fixed-size pool of workers each
+ * pulls the next unclaimed index, rather than chunking `items` into
+ * fixed-size batches — a pool keeps every slot busy even when individual
+ * calls take different amounts of time; batching would let the whole
+ * batch wait on its single slowest member.
+ */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      results[index] = await fn(items[index]);
+    }
+  }
+  const workerCount = Math.min(limit, items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
+/**
  * Row-ink-projection variance for one candidate rotation angle. Rotates
  * the (already downscaled) analysis image by `angleDeg` using the same
  * `sharp().rotate()` call `pipeline.ts` uses for the real correction pass
  * — so the sweep measures the exact operation it is choosing an angle
- * for — then counts the ink fraction of every row of the rotated result.
+ * for — then crops back to `targetWidth`/`targetHeight` (`analysisImage`'s
+ * own size) before counting ink.
+ *
+ * That crop matters: `.rotate()` expands its canvas by an amount that
+ * grows with `|angleDeg|`, so without it, every candidate would measure a
+ * different-sized image — a bigger canvas at a bigger angle, with more
+ * white padding along the rotated corners. Row-ink variance would then
+ * grow with canvas size as a side effect of that padding, not of any real
+ * text signal, which the local-peak check in `estimateSkewAngleDeg` could
+ * mistake for one. Cropping every candidate back to the same fixed size
+ * keeps the comparison on the same basis.
  */
-async function rowInkVarianceAtAngle(analysisImage: Buffer, angleDeg: number): Promise<number> {
+async function rowInkVarianceAtAngle(
+  analysisImage: Buffer,
+  angleDeg: number,
+  targetWidth: number,
+  targetHeight: number,
+): Promise<number> {
   const { data, info } = await sharp(analysisImage)
     .rotate(angleDeg, { background: "#ffffff" })
+    .resize(targetWidth, targetHeight, { fit: "cover", position: "centre" })
     .greyscale()
     .raw()
     .toBuffer({ resolveWithObject: true });
@@ -133,21 +190,36 @@ export async function estimateSkewAngleDeg(image: Buffer): Promise<number> {
   if (!metadata.width || !metadata.height) return 0;
 
   let analysisImage: Buffer;
+  let analysisWidth: number;
+  let analysisHeight: number;
   try {
     const scale = ANALYSIS_WIDTH_PX / metadata.width;
-    const analysisHeight = Math.max(1, Math.round(metadata.height * scale));
-    analysisImage = await sharp(image).resize(ANALYSIS_WIDTH_PX, analysisHeight, { fit: "fill" }).toBuffer();
+    analysisWidth = ANALYSIS_WIDTH_PX;
+    analysisHeight = Math.max(1, Math.round(metadata.height * scale));
+    analysisImage = await sharp(image).resize(analysisWidth, analysisHeight, { fit: "fill" }).toBuffer();
   } catch {
     return 0;
   }
 
+  // The sweep runs one extra step past each configured limit — evaluated
+  // only as a comparison neighbor for the boundary candidates
+  // (-MAX_DESKEW_ANGLE_DEG / +MAX_DESKEW_ANGLE_DEG), never itself
+  // returnable (the selection loop below skips any candidate outside the
+  // configured range). Without that extra step, a real tilt sitting
+  // exactly at the configured limit could never win the "beats both
+  // neighbors" check — there would be no candidate past it to compare
+  // against.
   const angles: number[] = [];
-  for (let a = -MAX_DESKEW_ANGLE_DEG; a <= MAX_DESKEW_ANGLE_DEG; a += ANGLE_STEP_DEG) {
+  for (
+    let a = -MAX_DESKEW_ANGLE_DEG - ANGLE_STEP_DEG;
+    a <= MAX_DESKEW_ANGLE_DEG + ANGLE_STEP_DEG;
+    a += ANGLE_STEP_DEG
+  ) {
     angles.push(a);
   }
 
-  const variances = await Promise.all(
-    angles.map((angleDeg) => rowInkVarianceAtAngle(analysisImage, angleDeg)),
+  const variances = await mapWithConcurrency(angles, MAX_CONCURRENT_ANGLE_PASSES, (angleDeg) =>
+    rowInkVarianceAtAngle(analysisImage, angleDeg, analysisWidth, analysisHeight),
   );
 
   // A candidate counts as the answer only when it beats BOTH immediate
@@ -156,6 +228,8 @@ export async function estimateSkewAngleDeg(image: Buffer): Promise<number> {
   let bestIndex = -1;
   let bestVariance = MIN_PEAK_VARIANCE;
   for (let i = 1; i < angles.length - 1; i++) {
+    const angleDeg = angles[i];
+    if (angleDeg < -MAX_DESKEW_ANGLE_DEG || angleDeg > MAX_DESKEW_ANGLE_DEG) continue;
     const v = variances[i];
     if (v > variances[i - 1] && v > variances[i + 1] && v > bestVariance) {
       bestVariance = v;

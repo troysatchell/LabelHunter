@@ -66,6 +66,19 @@ describe("estimateSkewAngleDeg", () => {
     expect(Math.abs(estimate - -15)).toBeLessThanOrEqual(2);
   });
 
+  it("recovers a tilt sitting exactly at MAX_DESKEW_ANGLE_DEG (the sweep boundary)", async () => {
+    // A real peak at the configured limit has no candidate beyond it to
+    // compare against unless the sweep itself reaches one step past the
+    // limit — the boundary case the local-peak check would otherwise
+    // silently drop (CodeRabbit finding, this ticket's own review round).
+    const upright = await buildUprightParagraph();
+    const tilted = await sharp(upright).rotate(20, { background: "#ffffff" }).jpeg({ quality: 92 }).toBuffer();
+
+    const estimate = await estimateSkewAngleDeg(tilted);
+
+    expect(Math.abs(estimate - -20)).toBeLessThanOrEqual(2);
+  });
+
   it("returns 0 on a flat, single-colour JPEG (no text, no ink runs at any angle)", async () => {
     const flat = await makeFlatJpeg(1000, 800);
     const estimate = await estimateSkewAngleDeg(flat);

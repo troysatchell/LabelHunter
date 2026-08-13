@@ -6,6 +6,18 @@ export type RuleScope = "changeset" | "repo";
 export type Severity = "fail" | "advisory";
 export type RuleStatus = "pass" | "fail" | "advisory" | "error" | "skipped";
 
+/**
+ * One historical ledger row a rule declares itself calibrated against.
+ *
+ * The review ledger has no stable row id. A corpus entry names a row by
+ * ticket, file, and a distinctive substring of its summary instead.
+ */
+export interface ReplayCorpusEntry {
+  ticket: string;
+  file: string;
+  summaryIncludes: string;
+}
+
 export interface RuleMeta {
   id: string;
   version: number;
@@ -17,8 +29,8 @@ export interface RuleMeta {
   /** Commit at which the rule became blocking. Null before activation. */
   activatedAt: string | null;
   pinExpiresAfterMainCommits: number;
-  /** Ledger row identifiers this rule is calibrated against. */
-  replayCorpus: string[];
+  /** Ledger rows this rule is calibrated against. Select by row, not category. */
+  replayCorpus: ReplayCorpusEntry[];
 }
 
 export interface Finding {

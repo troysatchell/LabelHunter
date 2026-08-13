@@ -15,7 +15,22 @@ const meta: RuleMeta = {
   registries: [],
   activatedAt: null,
   pinExpiresAfterMainCommits: 25,
-  replayCorpus: [],
+  // Two rows were checked and dropped: TRO-474 (resolver-snapshot.ts) and
+  // TRO-511 (claim.ts) both guard an empty array with a plain .length
+  // check. Neither commit ever calls .every, .some, or .reduce. This rule
+  // cannot see a .length guard, so those rows test a different mechanism.
+  replayCorpus: [
+    {
+      ticket: "TRO-464",
+      file: "src/server/resolver/response.ts",
+      summaryIncludes: "deriveResolvedFields returned",
+    },
+    {
+      ticket: "TRO-464",
+      file: "src/server/resolver/queue.ts",
+      summaryIncludes: "isResolverResolution accepted a stored row with fields: []",
+    },
+  ],
 };
 
 /** True when the receiver cannot be empty. */

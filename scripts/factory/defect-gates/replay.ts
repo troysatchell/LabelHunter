@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileAtRef } from "./baseline";
-import type { Rule } from "./types";
+import type { ReplayCorpusEntry, Rule } from "./types";
 
 export interface LedgerRow {
   ticket: string;
@@ -55,6 +55,54 @@ export function resolveFixCommit(repoRoot: string, row: LedgerRow): string | nul
   return null;
 }
 
+/**
+ * Lists every commit that touched this row's file and names its ticket in
+ * its own message, oldest first.
+ *
+ * A single "most recent match" guess often lands on the wrong commit — a
+ * merge commit whose parent predates the whole PR, or a later bookkeeping
+ * commit dated after the real fix. This lists every candidate instead, so
+ * `replayRule` can test the rule against each pre-fix snapshot in turn. It
+ * does not need to know which one was the real fix.
+ */
+export function resolveFixCandidates(repoRoot: string, row: LedgerRow): string[] {
+  const result = git(repoRoot, [
+    "log",
+    "--format=%H",
+    "--reverse",
+    "--grep",
+    row.ticket,
+    "--",
+    row.file,
+  ]);
+  if (result.status !== 0 || !result.stdout) return [];
+  return result.stdout.split("\n").filter(Boolean);
+}
+
+/**
+ * Selects the ledger rows a rule declares itself calibrated against.
+ *
+ * A corpus entry names one row by ticket, file, and a distinctive summary
+ * substring — the ledger has no stable row id. Throws when an entry
+ * matches no row, so a stale entry cannot silently shrink the corpus.
+ */
+export function selectCorpusRows(rows: LedgerRow[], corpus: ReplayCorpusEntry[]): LedgerRow[] {
+  return corpus.map((entry) => {
+    const match = rows.find(
+      (row) =>
+        row.ticket === entry.ticket &&
+        row.file === entry.file &&
+        row.summary.includes(entry.summaryIncludes),
+    );
+    if (!match) {
+      throw new Error(
+        `replayCorpus entry not found in ledger: ${entry.ticket} ${entry.file} "${entry.summaryIncludes}"`,
+      );
+    }
+    return match;
+  });
+}
+
 export function summariseReplay(outcomes: ReplayOutcome[]): ReplayReport {
   const resolvable = outcomes.filter((o) => o.resolved).length;
   const hits = outcomes.filter((o) => o.resolved && o.hit).length;
@@ -70,6 +118,13 @@ export function summariseReplay(outcomes: ReplayOutcome[]): ReplayReport {
 /**
  * Runs a rule against the tree as it stood BEFORE each fix, and records
  * whether the rule would have caught it.
+ *
+ * A row may have several candidate fixing commits (see
+ * `resolveFixCandidates`). The row counts as a hit when the rule fires at
+ * ANY candidate's pre-fix snapshot — the real question is whether the rule
+ * would have caught the defect at some point while it was still present,
+ * not which commit history later assigned as "the" fix. A row is
+ * unresolvable only when no candidate's parent even contains the file.
  */
 export function replayRule(
   repoRoot: string,
@@ -79,19 +134,27 @@ export function replayRule(
   outcomes: ReplayOutcome[];
   report: ReplayReport;
 } {
+  const withSource = rule as unknown as {
+    checkSource?: (f: string, t: string, c: unknown) => unknown[];
+  };
   const outcomes: ReplayOutcome[] = rows.map((row) => {
-    const fix = resolveFixCommit(repoRoot, row);
-    if (!fix) return { ticket: row.ticket, resolved: false, hit: false };
-    const before = `${fix}^1`;
-    const text = fileAtRef(repoRoot, before, row.file);
-    if (text === null) return { ticket: row.ticket, resolved: false, hit: false };
-    const withSource = rule as unknown as {
-      checkSource?: (f: string, t: string, c: unknown) => unknown[];
-    };
-    const found = withSource.checkSource
-      ? withSource.checkSource(row.file, text, { files: [], repoRoot, registries: {} })
-      : [];
-    return { ticket: row.ticket, resolved: true, hit: found.length > 0 };
+    const candidates = resolveFixCandidates(repoRoot, row);
+    let resolved = false;
+    let hit = false;
+    for (const fix of candidates) {
+      const before = `${fix}^1`;
+      const text = fileAtRef(repoRoot, before, row.file);
+      if (text === null) continue;
+      resolved = true;
+      const found = withSource.checkSource
+        ? withSource.checkSource(row.file, text, { files: [], repoRoot, registries: {} })
+        : [];
+      if (found.length > 0) {
+        hit = true;
+        break;
+      }
+    }
+    return { ticket: row.ticket, resolved, hit };
   });
   return { outcomes, report: summariseReplay(outcomes) };
 }

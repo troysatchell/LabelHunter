@@ -77,9 +77,13 @@ if (cmd === 'record') {
     category: flag('category', true),
     file: flag('file') ?? null,
     disposition: flag('disposition') ?? 'fixed',
-    summary: flag('summary') ?? '',
+    summary: flag('summary', true).trim(),
     ts: flag('ts') ?? null,
   };
+  if (!row.summary) {
+    console.error('review-ledger: --summary must not be blank');
+    process.exit(2);
+  }
   mkdirSync(dirname(LEDGER), { recursive: true });
   appendFileSync(LEDGER, JSON.stringify(row) + '\n');
   console.error(`review-ledger: recorded ${row.category} (${row.severity}) for ${row.ticket}`);

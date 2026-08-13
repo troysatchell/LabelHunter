@@ -8,12 +8,12 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
 **The gap.** TRO-557 refuses a worktree reuse from a DIFFERENT session. It checks a
 `.factory-owner` stamp for that. The stamp is written late — after the database reset and the
-port claim. Two invocations for the SAME ticket landing at once (one session calling twice, or
-two `--steal` calls together) could both pass that check before either wrote the stamp. Both
-would then race `DROP DATABASE ... WITH (FORCE)` / `CREATE DATABASE`. Both would `cd` into the
-same worktree and run `pnpm install` and `pnpm db:migrate` at the same time. TRO-557's own
-review triage named this gap. It scoped the gap out on purpose: cross-session refusal, not
-intra-session mutual exclusion.
+port claim. Two invocations for the SAME ticket can land at once. One session might call twice.
+Two `--steal` calls might land together. Either way, both could pass the ownership check before
+one wrote the stamp. Both would then race `DROP DATABASE ... WITH (FORCE)` / `CREATE DATABASE`.
+Both would `cd` into the same worktree and run `pnpm install` and `pnpm db:migrate` at once.
+TRO-557's own review triage named this gap. It scoped the gap out on purpose: cross-session
+refusal, not intra-session mutual exclusion.
 
 **The fix.** `worktree.sh` now takes a per-ticket lock around the whole provision/reuse
 critical section (worktree add or reuse, database reset, port claim, dependency install and

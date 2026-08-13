@@ -135,20 +135,44 @@ LOCK_DIR="${WT_PATH}.lock"
 LOCK_POLLS=0
 LOCK_MAX_POLLS=300 # ~60s at 0.2s/poll
 while ! mkdir "$LOCK_DIR" 2>/dev/null; do
-  # Stale-lock recovery: a lock directory a crashed invocation left behind,
-  # on THIS host, whose pid no longer exists, would otherwise block forever.
+  # Stale-lock recovery, race-safe. A naive read-then-rm here has a real
+  # TOCTOU hole: waiter B reads the owner file, sees a dead same-host pid,
+  # and is about to `rm -rf` -- but between B's read and B's `rm -rf`, the
+  # lock could legitimately change (the crashed holder's slot gets broken
+  # and re-acquired by a THIRD invocation, now live). B's unconditional
+  # `rm -rf` would then delete a lock a live process actually holds, and
+  # both B and that live process would believe they hold the lock alone
+  # (CodeRabbit, TRO-572 review round 1).
+  #
+  # `mv` on the same filesystem is atomic: at most one waiter's `mv` can
+  # rename LOCK_DIR away at a time. Capture it FIRST, before reading or
+  # deciding anything -- whatever this waiter inspects afterward is a
+  # private copy nothing else can concurrently mutate or re-grab, so only
+  # one waiter ever evaluates (and possibly discards) any single lock
+  # instance. A losing `mv` (source already gone -- another waiter beat
+  # this one to it, or the holder released normally) just falls through to
+  # the wait/retry path below.
+  CAPTURE_DIR="${LOCK_DIR}.break.$$"
+  if mv "$LOCK_DIR" "$CAPTURE_DIR" 2>/dev/null; then
+    LOCK_HOST="$(sed -n 's/^HOST=//p' "${CAPTURE_DIR}/owner" 2>/dev/null || true)"
+    LOCK_PID="$(sed -n 's/^PID=//p' "${CAPTURE_DIR}/owner" 2>/dev/null || true)"
+    if [ "$LOCK_HOST" = "$(hostname)" ] && [ -n "$LOCK_PID" ] && ! kill -0 "$LOCK_PID" 2>/dev/null; then
+      echo "  lock:      breaking a stale lock from dead pid ${LOCK_PID} on this host" >&2
+      rm -rf "$CAPTURE_DIR"
+      continue
+    fi
+    # Not actually stale (or unreadable): this waiter's capture caught a
+    # live holder's lock by unlucky timing. Put it back exactly as found.
+    # If some other waiter already grabbed the now-free path in the
+    # meantime, that is a normal, harmless hand-off -- this capture is
+    # simply discarded instead of restored.
+    if ! mv "$CAPTURE_DIR" "$LOCK_DIR" 2>/dev/null; then
+      rm -rf "$CAPTURE_DIR"
+    fi
+  fi
   # There is no reliable way to check a pid's liveness on a different host,
   # so a lock stamped from elsewhere always waits out its holder (or needs a
   # human to remove it) instead of being auto-broken.
-  if [ -f "${LOCK_DIR}/owner" ]; then
-    LOCK_HOST="$(sed -n 's/^HOST=//p' "${LOCK_DIR}/owner" 2>/dev/null || true)"
-    LOCK_PID="$(sed -n 's/^PID=//p' "${LOCK_DIR}/owner" 2>/dev/null || true)"
-    if [ "$LOCK_HOST" = "$(hostname)" ] && [ -n "$LOCK_PID" ] && ! kill -0 "$LOCK_PID" 2>/dev/null; then
-      echo "  lock:      breaking a stale lock from dead pid ${LOCK_PID} on this host" >&2
-      rm -rf "$LOCK_DIR"
-      continue
-    fi
-  fi
   if [ "$LOCK_POLLS" -eq 0 ]; then
     echo "  lock:      another invocation is provisioning ${TICKET} -- waiting..." >&2
   fi

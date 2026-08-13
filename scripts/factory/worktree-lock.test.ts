@@ -177,9 +177,26 @@ function waitForMatch(getBuf: () => string, pattern: RegExp, timeoutMs: number):
   });
 }
 
-function waitForExit(child: ReturnType<typeof spawn>): Promise<number | null> {
+/** Registers the `exit` listener with `.once` up front -- callers must call
+ * this immediately after `spawn`, before anything else, so there is no gap
+ * where a fast-exiting child's event could fire unobserved. Bounded by
+ * `timeoutMs`: a child that never exits is killed rather than left to hang
+ * the test (and, via the fixture's own cleanup, leak a background process). */
+function waitForExit(child: ReturnType<typeof spawn>, timeoutMs = 40_000): Promise<number | null> {
   return new Promise((resolve) => {
-    child.on("exit", (code) => resolve(code));
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill("SIGKILL");
+      resolve(null);
+    }, timeoutMs);
+    child.once("exit", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(code);
+    });
   });
 }
 
@@ -273,6 +290,10 @@ describe("worktree.sh concurrency lock (TRO-572)", () => {
         writeFileSync(join(fx.lockDir, "owner"), `PID=${process.pid}\nHOST=${hostname()}\n`);
 
         const child = spawnWorktreeSh(fx, pg, "test-session-lock-a");
+        // Registered immediately, before anything else -- a fast-exiting
+        // child's `exit` event must never fire unobserved (CodeRabbit,
+        // TRO-572 review round 1).
+        const exitPromise = waitForExit(child);
         const stderr = collectText(child.stderr);
         const stdout = collectText(child.stdout);
 
@@ -283,13 +304,7 @@ describe("worktree.sh concurrency lock (TRO-572)", () => {
         // Release the simulated lock -- the real release path.
         rmSync(fx.lockDir, { recursive: true, force: true });
 
-        const code = await new Promise<number | null>((resolve) => {
-          const timer = setTimeout(() => resolve(null), 40_000);
-          child.on("exit", (c) => {
-            clearTimeout(timer);
-            resolve(c);
-          });
-        });
+        const code = await exitPromise;
         expect(code, `stdout: ${stdout.get()}\nstderr: ${stderr.get()}`).toBe(0);
 
         // It actually finished provisioning, not just exited early.
@@ -331,11 +346,13 @@ describe("worktree.sh concurrency lock (TRO-572)", () => {
         // side would see "database ... already exists" or the final
         // database could be left half-created.
         const first = spawnWorktreeSh(fx, pg, "test-session-concurrent");
+        const firstExit = waitForExit(first); // registered immediately -- see waitForExit's own comment
         const second = spawnWorktreeSh(fx, pg, "test-session-concurrent");
+        const secondExit = waitForExit(second);
         const firstErr = collectText(first.stderr);
         const secondErr = collectText(second.stderr);
 
-        const [codeA, codeB] = await Promise.all([waitForExit(first), waitForExit(second)]);
+        const [codeA, codeB] = await Promise.all([firstExit, secondExit]);
         expect(codeA, `first stderr: ${firstErr.get()}`).toBe(0);
         expect(codeB, `second stderr: ${secondErr.get()}`).toBe(0);
 
@@ -359,6 +376,38 @@ describe("worktree.sh concurrency lock (TRO-572)", () => {
           /another invocation is provisioning/.test(s),
         ).length;
         expect(waitedCount).toBeLessThanOrEqual(1);
+      }),
+    60_000,
+  );
+
+  it(
+    "two waiters racing to break the same stale lock never both reset the database at once",
+    () =>
+      withFixture(async (fx, pg) => {
+        // Regression for the TOCTOU CodeRabbit found in round 1: a naive
+        // read-then-`rm -rf` let a SECOND waiter delete a lock a THIRD,
+        // live invocation had already re-acquired between the first
+        // waiter's read and its removal, letting two processes believe
+        // they each held the lock alone. Both racers below see the exact
+        // same stale, dead-pid lock at once.
+        mkdirSync(fx.lockDir);
+        writeFileSync(join(fx.lockDir, "owner"), `PID=999999\nHOST=${hostname()}\n`);
+
+        const first = spawnWorktreeSh(fx, pg, "test-session-stale-race");
+        const firstExit = waitForExit(first);
+        const second = spawnWorktreeSh(fx, pg, "test-session-stale-race");
+        const secondExit = waitForExit(second);
+        const firstErr = collectText(first.stderr);
+        const secondErr = collectText(second.stderr);
+
+        const [codeA, codeB] = await Promise.all([firstExit, secondExit]);
+        expect(codeA, `first stderr: ${firstErr.get()}`).toBe(0);
+        expect(codeB, `second stderr: ${secondErr.get()}`).toBe(0);
+
+        const result = await queryDb(pg, fx.dbName, "SELECT 1 AS ok");
+        expect(result.rows).toEqual([{ ok: 1 }]);
+        expect(firstErr.get(), "first invocation").not.toMatch(/^ERROR:/m);
+        expect(secondErr.get(), "second invocation").not.toMatch(/^ERROR:/m);
       }),
     60_000,
   );

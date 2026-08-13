@@ -58,6 +58,24 @@ services:
         # Included anyway so an operator can run golden-set scripts from a
         # Render shell if that is ever wanted. Leaving it blank in the
         # dashboard does not affect anything the deployed app serves.
+      # TRO-482 / LH-061, PRD §8: the shared access-code gate. sync: false,
+      # same as ANTHROPIC_API_KEY above — Render prompts Troy for the real
+      # value in the dashboard; it is never written here (CLAUDE.md: "No
+      # secrets in the repo"). This is the web service only: src/proxy.ts
+      # is Next.js middleware, which only runs in front of this service's
+      # own HTTP routes — the worker serves no HTTP traffic and reads no
+      # cookie or header, so it has no use for this value.
+      - key: ACCESS_CODE
+        sync: false
+      # TRO-482 / LH-061, PRD §8: the daily spend budget guard's default,
+      # in US dollars — src/server/budget/daily-budget.ts's own header
+      # comment has the reasoning. A literal value, not sync: false: this
+      # is a tunable number, not a secret (same category as
+      # BATCH_WORKER_CONCURRENCY on the worker service below) — an
+      # operator can edit it in the Render dashboard with no redeploy and
+      # no code change.
+      - key: DAILY_BUDGET_USD
+        value: "5.00"
 
   - type: worker
     name: labelhunter-worker

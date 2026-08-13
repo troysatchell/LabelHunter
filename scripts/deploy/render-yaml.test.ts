@@ -20,6 +20,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { load as loadYaml } from "js-yaml";
 import { describe, expect, it } from "vitest";
+import { DEFAULT_DAILY_BUDGET_USD } from "../../src/server/budget/daily-budget";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const RENDER_YAML_PATH = `${REPO_ROOT}render.yaml`;
@@ -166,6 +167,22 @@ describe("render.yaml — web service", () => {
     expect(envVar?.fromDatabase?.property).toBe("connectionString");
     expect(envVar?.value).toBeUndefined();
   });
+
+  it("declares ACCESS_CODE as sync: false — TRO-482 / LH-061, PRD §8's shared access-code gate", () => {
+    const envVar = (web.envVars ?? []).find((v) => v.key === "ACCESS_CODE");
+    expect(envVar?.sync).toBe(false);
+    expect(envVar?.value).toBeUndefined();
+  });
+
+  it("sets DAILY_BUDGET_USD to the same default src/server/budget/daily-budget.ts documents", () => {
+    // A REAL cross-check against DEFAULT_DAILY_BUDGET_USD, not a second
+    // hardcoded "5.00" that could quietly drift from the code's own
+    // constant — same spirit as this file's requireScript()/health-route
+    // checks: verify against the real thing, not an assumption of it.
+    const envVar = (web.envVars ?? []).find((v) => v.key === "DAILY_BUDGET_USD");
+    expect(envVar?.value).toBeDefined();
+    expect(Number(envVar?.value)).toBe(DEFAULT_DAILY_BUDGET_USD);
+  });
 });
 
 describe("render.yaml — worker service", () => {
@@ -223,6 +240,10 @@ describe("render.yaml — never hardcodes a secret", () => {
     "BATCH_WORKER_CONCURRENCY",
     "BATCH_RESOLVE_WORKER_CONCURRENCY",
     "BATCH_WORKER_SHUTDOWN_TIMEOUT_MS",
+    // TRO-482 / LH-061: a dollar figure, not a secret — see
+    // src/server/budget/daily-budget.ts for the reasoning behind the
+    // default and render.yaml's own comment on this entry.
+    "DAILY_BUDGET_USD",
   ]);
 
   it("marks every non-database, non-tuning env var as sync: false with no literal value", () => {

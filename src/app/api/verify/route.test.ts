@@ -4,15 +4,21 @@ import { eq, inArray } from "drizzle-orm";
 import sharp from "sharp";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { db } from "../../../lib/db";
-import { applications, fieldResults, labelImages, reviewQueue, verifications } from "../../../lib/db/schema";
-import { extractLabel } from "../../../server/extractor";
+import { applications, dailySpend, fieldResults, labelImages, reviewQueue, verifications } from "../../../lib/db/schema";
+import { extractLabel, getDefaultExtractorClient } from "../../../server/extractor";
 import { makeMockMessage, WELL_FORMED_EXTRACTION_BODY } from "../../../server/extractor/test-support";
 import { MAX_UPLOAD_BYTES, preprocessImage } from "../../../server/preprocessing";
 import { productionComparators } from "../../../server/comparators";
 import type { WarningComparatorResult } from "../../../server/router";
 import type { CompareGovernmentWarningFromImageInput } from "../../../server/warning";
 import { deleteLabelImageBlobsWhere, saveLabelImage } from "../../../server/storage/db-image-storage";
-import { handleVerifyRequest, type VerifyRouteDeps } from "./route";
+import { BUDGET_EXHAUSTED_MESSAGE, getTodaySpendUsd, recordSpendUsd } from "../../../server/budget/daily-budget";
+import { createFixedWindowLimiter } from "../../../server/rate-limit/fixed-window";
+import { checkRateLimitPair } from "../../../server/rate-limit/instances";
+import { defaultDeps, handleVerifyRequest, POST as verifyPOST, type VerifyRouteDeps } from "./route";
+import { POST as batchStartPOST } from "../batch/start/route";
+import type { BatchStartErrorResponse } from "../batch/start/types";
+import { BATCH_START_IP_LIMIT, VERIFY_IP_LIMIT } from "../../../server/rate-limit/instances";
 import { parseServerTimingHeader, SERVER_TIMING_STAGES } from "./server-timing";
 import type { VerifyErrorResponse, VerifySuccessResponse } from "./types";
 
@@ -616,5 +622,331 @@ describe("POST /api/verify — government warning wiring (TRO-514, TH-R9)", () =
     expect(capturedInput!.originalImage.equals(originalMarker)).toBe(true);
     expect(capturedHaikuVariant).toBeDefined();
     expect(capturedInput!.originalImage.equals(capturedHaikuVariant!)).toBe(false);
+  });
+});
+
+// TRO-482 / LH-061, PRD §8 — key protection. `checkRateLimit`/`checkBudget`/
+// `recordSpend` are all OPTIONAL on `VerifyRouteDeps` with an always-allow
+// fallback inside `handleVerifyRequest` itself — every test ABOVE this
+// point predates this ticket and needed zero changes to keep passing
+// (confirmed: this file's pre-existing 20 cases pass unmodified). The
+// blocks below are new coverage for the gate itself.
+describe("POST /api/verify — rate limit gate (TRO-482)", () => {
+  it("rejects with a friendly message and never calls the model when checkRateLimit says no", async () => {
+    let extractCalled = false;
+    const deps = makeDeps({
+      checkRateLimit: () => ({
+        allowed: false,
+        message: "LabelHunter is getting more requests than it can handle right now. Wait 30 seconds and try again.",
+      }),
+      extractLabel: async (...args) => {
+        extractCalled = true;
+        return extractLabel(...args);
+      },
+    });
+    const response = await post(await buildFormData(), deps);
+
+    expect(response.status).toBe(429);
+    const body = (await response.json()) as VerifyErrorResponse;
+    expect(body.error.kind).toBe("RATE_LIMITED");
+    expect(body.error.message.toLowerCase()).toMatch(/wait|moment|again/);
+    expect(body.error.message).not.toMatch(/\b429\b/);
+    expect(extractCalled).toBe(false);
+  });
+
+  it("proves the Nth+1 request within a real window is rejected — the real production limiter, not just a stub", async () => {
+    // limit: 2 — real createFixedWindowLimiter/checkRateLimitPair, the same
+    // production code `../../../server/rate-limit/instances.ts` wires by
+    // default, just with a small limit so the test does not need 20+ calls.
+    const ipLimiter = createFixedWindowLimiter({ limit: 2, windowMs: 60_000 });
+    const globalLimiter = createFixedWindowLimiter({ limit: 1000, windowMs: 60_000 });
+    const checkRateLimit = (request: Request) => checkRateLimitPair(request, ipLimiter, globalLimiter);
+
+    const first = await post(await buildFormData(), makeDeps({ checkRateLimit, anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY) }));
+    expect(first.status).toBe(200);
+    createdApplicationIds.push(((await first.json()) as VerifySuccessResponse).applicationId);
+
+    const second = await post(await buildFormData(), makeDeps({ checkRateLimit, anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY) }));
+    expect(second.status).toBe(200);
+    createdApplicationIds.push(((await second.json()) as VerifySuccessResponse).applicationId);
+
+    let thirdCalled = false;
+    const third = await post(
+      await buildFormData(),
+      makeDeps({
+        checkRateLimit,
+        extractLabel: async (...args) => {
+          thirdCalled = true;
+          return extractLabel(...args);
+        },
+      }),
+    );
+    expect(third.status).toBe(429);
+    const thirdBody = (await third.json()) as VerifyErrorResponse;
+    expect(thirdBody.error.kind).toBe("RATE_LIMITED");
+    expect(thirdCalled).toBe(false);
+  });
+});
+
+describe("POST /api/verify — daily budget gate (TRO-482)", () => {
+  it("rejects with a friendly message and never calls the model when the budget is exhausted", async () => {
+    let extractCalled = false;
+    const deps = makeDeps({
+      checkBudget: async () => ({ exhausted: true, spentUsd: 5, budgetUsd: 5 }),
+      extractLabel: async (...args) => {
+        extractCalled = true;
+        return extractLabel(...args);
+      },
+    });
+    const response = await post(await buildFormData(), deps);
+
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as VerifyErrorResponse;
+    expect(body.error.kind).toBe("BUDGET_EXHAUSTED");
+    expect(body.error.message).toBe(BUDGET_EXHAUSTED_MESSAGE);
+    expect(body.error.message).not.toMatch(/\b503\b/);
+    expect(extractCalled).toBe(false);
+  });
+
+  it("still allows the request through when the budget is NOT exhausted", async () => {
+    const deps = makeDeps({
+      checkBudget: async () => ({ exhausted: false, spentUsd: 0.5, budgetUsd: 5 }),
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+    });
+    const response = await post(await buildFormData(), deps);
+    expect(response.status).toBe(200);
+    createdApplicationIds.push(((await response.json()) as VerifySuccessResponse).applicationId);
+  });
+});
+
+describe("POST /api/verify — real spend recording (TRO-482)", () => {
+  // Pinned to a date nothing else in the suite ever uses. `daily_spend` is
+  // a shared, date-keyed table (schema.ts) — daily-budget.test.ts's own
+  // DB-integration tests read/write "today"'s row directly, and
+  // vitest.config.ts's maxWorkers: 4 means a DIFFERENT test file can run
+  // concurrently with this one. Sharing "today" between files would be a
+  // real, if rare, cross-file race (one file's afterEach deleting the row
+  // mid-read of another's); a private, far-future date makes this
+  // describe block's own row impossible for any other test to touch.
+  const ISOLATED_DAY = "2099-01-01";
+  const ISOLATED_NOW = new Date(`${ISOLATED_DAY}T00:00:00Z`);
+
+  afterEach(async () => {
+    await db.delete(dailySpend).where(eq(dailySpend.spendDate, ISOLATED_DAY));
+  });
+
+  it("records the REAL, measured cost of a successful Haiku call into the daily ledger", async () => {
+    const deps = makeDeps({
+      // makeMockMessage's own usage: 100 input tokens, 50 output tokens.
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      recordSpend: (usd) => recordSpendUsd(usd, db, ISOLATED_NOW),
+    });
+    const response = await post(await buildFormData(), deps);
+    expect(response.status).toBe(200);
+    createdApplicationIds.push(((await response.json()) as VerifySuccessResponse).applicationId);
+
+    const spent = await getTodaySpendUsd(db, ISOLATED_NOW);
+    // HAIKU_4_5_PRICING (scripts/eval/usage.ts): $1/MTok in, $5/MTok out.
+    // 100 * (1/1_000_000) + 50 * (5/1_000_000) = 0.00035 — the SAME real
+    // formula the eval harness uses, not a re-derived approximation.
+    expect(spent).toBeCloseTo(0.00035, 6);
+  });
+
+  it("records nothing when the Haiku call itself fails — there is no real cost to record", async () => {
+    const deps = makeDeps({
+      anthropicClient: fakeAnthropicClient(async () => {
+        throw new APIConnectionError({ message: "network down" });
+      }),
+      recordSpend: (usd) => recordSpendUsd(usd, db, ISOLATED_NOW),
+    });
+    const response = await post(await buildFormData(), deps);
+    expect(response.status).toBe(503);
+
+    const spent = await getTodaySpendUsd(db, ISOLATED_NOW);
+    expect(spent).toBe(0);
+  });
+});
+
+/**
+ * The production wiring itself (TRO-482, merge review round 1).
+ *
+ * Every other test in this file injects its own `deps`, so every other
+ * test would still pass if `defaultDeps` silently lost a guard binding.
+ * The route's guards are optional fields with an allow-by-default
+ * fallback, so a lost binding does not throw — it serves the request and
+ * calls Haiku. That is a fail-open shape, and this block is the only
+ * thing that catches it.
+ *
+ * These tests call the real exported `POST`, with no `deps` argument, so
+ * they exercise the same `defaultDeps` object production uses. They make
+ * no model call: both guards run before the route reads the request body,
+ * so a body-less request is enough.
+ *
+ * Each test uses its own `x-forwarded-for` value. The per-IP limiter keys
+ * on that header (`getClientIp`), so no test can consume another's budget
+ * and the block is order-independent.
+ */
+describe("POST /api/verify — the default (production) wiring is really bound", () => {
+  function bareRequest(ip: string): Request {
+    return new Request("http://localhost/api/verify", { method: "POST", headers: { "x-forwarded-for": ip } });
+  }
+
+  it("enforces the REAL per-IP rate limit through POST — fails if defaultDeps loses checkRateLimit", async () => {
+    const ip = "203.0.113.10";
+    const statuses: number[] = [];
+    // One more than the real limit. Every earlier call is allowed by the
+    // limiter and then fails body parsing with a 400, which is the proof
+    // the guard let it through rather than the proof of anything else.
+    for (let i = 0; i < VERIFY_IP_LIMIT + 1; i += 1) {
+      statuses.push((await verifyPOST(bareRequest(ip))).status);
+    }
+
+    expect(statuses.filter((s) => s === 429)).toHaveLength(1);
+    expect(statuses[VERIFY_IP_LIMIT]).toBe(429);
+
+    const rejected = await verifyPOST(bareRequest(ip));
+    expect(rejected.status).toBe(429);
+    const body = (await rejected.json()) as VerifyErrorResponse;
+    expect(body.error.kind).toBe("RATE_LIMITED");
+    expect(body.error.message).not.toBe("");
+  });
+
+  it("records REAL spend into daily_spend through the production wiring — fails if defaultDeps loses anthropicClient", async () => {
+    // The test the merge review asked for, and the one that would have
+    // caught the original bug. Before `defaultDeps` bound
+    // `anthropicClient`, this route wrapped `undefined` for usage capture,
+    // `takeLastUsage()` always answered null, `recordSpend` never ran, and
+    // `daily_spend` stayed empty forever — so the budget guard read 0 and
+    // could never trip. A test that injects its own recorder proves
+    // nothing about that; it has to be THIS object.
+    //
+    // So this runs the real exported `defaultDeps`, spread rather than
+    // rebuilt, with exactly one field replaced: the warning comparator,
+    // whose real implementation runs OCR. That is not the wiring under
+    // test here, and skipping it keeps this test fast. `anthropicClient`,
+    // `checkBudget` and `recordSpend` are all the production bindings.
+    //
+    // No network call happens: the spy below intercepts the shared
+    // client's own `messages.create`, which is the same object
+    // `defaultDeps.anthropicClient` resolves to.
+    const ISOLATED_DAY = "2099-06-03";
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date(`${ISOLATED_DAY}T12:00:00Z`));
+    const createSpy = vi
+      .spyOn(getDefaultExtractorClient().messages, "create")
+      // makeMockMessage's own usage: 100 input tokens, 50 output tokens.
+      .mockResolvedValue(makeMockMessage(JSON.stringify(WELL_FORMED_EXTRACTION_BODY)) as never);
+    try {
+      await db.delete(dailySpend).where(eq(dailySpend.spendDate, ISOLATED_DAY));
+
+      const request = new Request("http://localhost/api/verify", {
+        method: "POST",
+        body: await buildFormData(),
+        headers: { "x-forwarded-for": "203.0.113.30" },
+      });
+      const response = await handleVerifyRequest(request, {
+        ...defaultDeps,
+        compareGovernmentWarning: warningNeedsReviewStub,
+      });
+
+      expect(response.status).toBe(200);
+      createdApplicationIds.push(((await response.json()) as VerifySuccessResponse).applicationId);
+      expect(createSpy).toHaveBeenCalledTimes(1);
+
+      const rows = await db
+        .select({ totalUsd: dailySpend.totalUsd })
+        .from(dailySpend)
+        .where(eq(dailySpend.spendDate, ISOLATED_DAY));
+
+      // The row must EXIST and carry a real, non-zero cost. Before the
+      // fix there was no row at all.
+      expect(rows).toHaveLength(1);
+      expect(rows[0].totalUsd).toBeGreaterThan(0);
+      // HAIKU_4_5_PRICING (scripts/eval/usage.ts): $1/MTok in, $5/MTok
+      // out. 100 * (1/1_000_000) + 50 * (5/1_000_000) = 0.00035.
+      expect(rows[0].totalUsd).toBeCloseTo(0.00035, 6);
+    } finally {
+      createSpy.mockRestore();
+      await db.delete(dailySpend).where(eq(dailySpend.spendDate, ISOLATED_DAY));
+      vi.useRealTimers();
+    }
+  });
+
+  it("enforces the REAL daily budget through POST — fails if defaultDeps loses checkBudget", async () => {
+    // The default `checkBudget` reads "today" from its own `new Date()`,
+    // so this test moves the clock to the same private, far-future date
+    // the spend-recording block above uses. That keeps the row this test
+    // writes out of the way of daily-budget.test.ts, which reads and
+    // writes the real today's row in a concurrent worker.
+    const ISOLATED_DAY = "2099-06-01";
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date(`${ISOLATED_DAY}T12:00:00Z`));
+    try {
+      await db.delete(dailySpend).where(eq(dailySpend.spendDate, ISOLATED_DAY));
+      // Far above any DAILY_BUDGET_USD this deployment would configure,
+      // and the largest value `numeric(12, 6)` accepts — the column must
+      // round to an absolute value below 10^6 (schema.ts).
+      await db.insert(dailySpend).values({ spendDate: ISOLATED_DAY, totalUsd: 999_999 });
+
+      const response = await verifyPOST(bareRequest("203.0.113.11"));
+
+      expect(response.status).toBe(503);
+      const body = (await response.json()) as VerifyErrorResponse;
+      expect(body.error.kind).toBe("BUDGET_EXHAUSTED");
+      expect(body.error.message).toBe(BUDGET_EXHAUSTED_MESSAGE);
+    } finally {
+      await db.delete(dailySpend).where(eq(dailySpend.spendDate, ISOLATED_DAY));
+      vi.useRealTimers();
+    }
+  });
+});
+
+/**
+ * The same wiring question for `POST /api/batch/start` (TRO-482, merge
+ * review round 1). That route builds its guard options inline in its own
+ * `POST`, so this is the only test that reads that object.
+ */
+describe("POST /api/batch/start — the default (production) wiring is really bound", () => {
+  it("enforces the REAL per-IP rate limit through POST — fails if POST loses checkRateLimit", async () => {
+    const ip = "203.0.113.20";
+    const bare = () =>
+      new Request("http://localhost/api/batch/start", { method: "POST", headers: { "x-forwarded-for": ip } });
+    const statuses: number[] = [];
+    for (let i = 0; i < BATCH_START_IP_LIMIT + 1; i += 1) {
+      statuses.push((await batchStartPOST(bare())).status);
+    }
+
+    expect(statuses.filter((s) => s === 429)).toHaveLength(1);
+    expect(statuses[BATCH_START_IP_LIMIT]).toBe(429);
+
+    const rejected = await batchStartPOST(bare());
+    expect(rejected.status).toBe(429);
+    const body = (await rejected.json()) as BatchStartErrorResponse;
+    expect(body.error.kind).toBe("RATE_LIMITED");
+    expect(body.error.message).not.toBe("");
+  });
+
+  it("enforces the REAL daily budget through POST — fails if POST loses checkBudget", async () => {
+    // Same clock-move and private-date reasoning as the verify budget
+    // test above. A date of its own, so the two tests cannot collide.
+    const ISOLATED_DAY = "2099-06-02";
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date(`${ISOLATED_DAY}T12:00:00Z`));
+    try {
+      await db.delete(dailySpend).where(eq(dailySpend.spendDate, ISOLATED_DAY));
+      await db.insert(dailySpend).values({ spendDate: ISOLATED_DAY, totalUsd: 999_999 });
+
+      const response = await batchStartPOST(
+        new Request("http://localhost/api/batch/start", { method: "POST", headers: { "x-forwarded-for": "203.0.113.21" } }),
+      );
+
+      expect(response.status).toBe(503);
+      const body = (await response.json()) as BatchStartErrorResponse;
+      expect(body.error.kind).toBe("BUDGET_EXHAUSTED");
+      expect(body.error.message).toBe(BUDGET_EXHAUSTED_MESSAGE);
+    } finally {
+      await db.delete(dailySpend).where(eq(dailySpend.spendDate, ISOLATED_DAY));
+      vi.useRealTimers();
+    }
   });
 });

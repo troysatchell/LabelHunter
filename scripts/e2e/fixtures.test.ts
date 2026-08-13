@@ -7,6 +7,7 @@
  * they get the same red-first regression coverage as any other production
  * module, not just an assumption.
  */
+import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { MANIFEST_COLUMNS } from "../../src/server/batch/types";
 import { MAX_UPLOAD_BYTES } from "../../src/server/preprocessing/constants";
@@ -46,13 +47,22 @@ describe("buildFailureTriggerImage", () => {
 
 describe("buildCorruptImage", () => {
   it("keeps a real JPEG header but truncates the pixel data", async () => {
-    const full = await buildCorruptImage();
-    expect(full[0]).toBe(0xff);
-    expect(full[1]).toBe(0xd8);
-    // A truncated file must actually be shorter than a complete one this
-    // same builder would produce at full length — otherwise this is not
-    // testing what it claims to.
-    expect(full.length).toBeGreaterThan(0);
+    const truncated = await buildCorruptImage();
+    expect(truncated[0]).toBe(0xff);
+    expect(truncated[1]).toBe(0xd8);
+    expect(truncated.length).toBeGreaterThan(0);
+
+    // A hardcoded length constant goes stale the moment the fixture
+    // changes; a real complete encode, built the same way
+    // buildCorruptImage builds its own image, stays a true baseline. The
+    // truncated file must be shorter than this complete encode of the
+    // SAME image — not just non-empty (CodeRabbit finding, TRO-525).
+    const complete = await sharp({
+      create: { width: 400, height: 300, channels: 3, background: { r: 210, g: 210, b: 210 } },
+    })
+      .jpeg()
+      .toBuffer();
+    expect(truncated.length).toBeLessThan(complete.length);
   });
 });
 
@@ -95,8 +105,24 @@ describe("buildManifestCsv", () => {
 
   it("honors an override header, for a malformed-CSV test that needs a missing column", () => {
     const csv = buildManifestCsv([row], ["brand_name", "class_type"]);
-    const [headerLine] = csv.split("\n");
+    const [headerLine, dataLine] = csv.trim().split("\n");
     expect(headerLine).toBe("brand_name,class_type");
+    // The data row must map cells over the SAME column sequence as the
+    // header, not always MANIFEST_COLUMNS — otherwise row width and
+    // column order silently drift from what the header promises
+    // (CodeRabbit finding, TRO-526).
+    expect(dataLine).toBe("Old Tom Distillery,Straight Bourbon Whiskey");
+  });
+
+  it("maps row cells to a reordered overrideHeader, not the default MANIFEST_COLUMNS order", () => {
+    const csv = buildManifestCsv([row], ["image_filename", "brand_name"]);
+    const [headerLine, dataLine] = csv.trim().split("\n");
+    expect(headerLine).toBe("image_filename,brand_name");
+    expect(dataLine).toBe("bottle.jpg,Old Tom Distillery");
+  });
+
+  it("throws when overrideHeader names a column that is not a real ManifestColumn", () => {
+    expect(() => buildManifestCsv([row], ["brand_name", "not_a_real_column"])).toThrow(/not_a_real_column/);
   });
 
   it("quotes a cell containing a bare carriage return, not only a newline", () => {

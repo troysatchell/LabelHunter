@@ -18,7 +18,7 @@
  * faked — is sound, not a guess.
  */
 import { expect, test } from "@playwright/test";
-import { buildCorruptImage, buildFailureTriggerImage, buildOversizedFile, readDefaultGoldenImage, uniqueTag } from "../scripts/e2e/fixtures";
+import { buildCorruptImage, buildOversizedFile, readDefaultGoldenImage, uniqueTag } from "../scripts/e2e/fixtures";
 import { WELL_FORMED_EXTRACTION_BODY } from "../src/server/extractor/test-support";
 import { E2E_LIVE, errorPanel, fillVerifyForm, jpegFile, submitVerifyFormAndWait } from "./helpers";
 
@@ -131,51 +131,10 @@ test.describe("Verify — designed error states (TH-R20)", () => {
     await expect(alert).toContainText(/20(\.0)? ?MB/i);
   });
 
-  test("an API failure shows the SERVICE error state with a retry affordance that actually recovers", async ({ page }) => {
-    // This test exercises the fake model server's own failure-injection
-    // trigger — a deliberately tiny image, matched by decoded byte length
-    // (fake-anthropic-server.ts). That mechanism has no live equivalent:
-    // the real Anthropic API does not fail on demand for a small image,
-    // so there is nothing for E2E_LIVE=1 to prove here, and running this
-    // unmodified against the real API would foreseeably fail for a reason
-    // that has nothing to do with a real bug (CodeRabbit finding, TRO-479
-    // local review round 2). The retry affordance itself is still fully
-    // exercised in the default (fake) mode, which is also what the gate
-    // runs.
-    test.skip(E2E_LIVE, "the fake server's failure-injection trigger has no live-API equivalent");
-
-    await page.goto("/");
-
-    const brandName = uniqueTag("verify-retry");
-    await fillVerifyForm(page, {
-      image: jpegFile("trigger.jpg", await buildFailureTriggerImage()),
-      beverageType: "spirits",
-      brandName,
-      classType: "Straight Bourbon Whiskey",
-      alcoholContentPercent: 45,
-      netContentsValue: 750,
-      netContentsUnit: "mL",
-    });
-    await submitVerifyFormAndWait(page);
-
-    const alert = errorPanel(page);
-    await expect(alert).toBeVisible();
-    await expect(alert).toContainText(/could not reach|took too long|try again|went wrong/i);
-
-    const retryButton = page.getByRole("button", { name: "Try again" });
-    await expect(retryButton).toBeVisible();
-
-    // Prove the affordance genuinely recovers, not merely that a button
-    // exists: swap in a real, working photo — "Try again" re-reads
-    // whatever the file input currently holds (VerifyForm.tsx's own
-    // `runSubmit`) — then retry.
-    await page.getByLabel("Label photo").setInputFiles([jpegFile("case-01-clean-match-spirits.jpg", readDefaultGoldenImage())]);
-    await retryButton.click();
-
-    await expect(page.getByTestId("label-verdict-banner")).toBeVisible({ timeout: 20_000 });
-    await expect(errorPanel(page)).toHaveCount(0);
-    await expect(page.getByTestId("checklist-row-brand_name")).toBeVisible();
-  });
+  // The "API failure -> retry affordance" case lives in its own file,
+  // e2e/verify-fake-only.spec.ts, not here (TRO-521). See that file's
+  // header comment for why, and lessons.md rule 30 for why dropping this
+  // one scenario under E2E_LIVE is not a coverage gap.
 });
 
 test.describe("Verify — helper correctness", () => {

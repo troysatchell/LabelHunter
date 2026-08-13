@@ -97,7 +97,14 @@ export function makeRouterResult(overrides: Partial<LabelRouterResult> = {}): La
       reviewReason: "WARNING_MISMATCH",
     },
   ];
-  return { labelVerdict: "REVIEW", headlineReason: "WARNING_MISMATCH", fields: rows, ...overrides };
+  return {
+    labelVerdict: "REVIEW",
+    headlineReason: "WARNING_MISMATCH",
+    fields: rows,
+    lowImageQualityTrigger: null,
+    imageQualityIssues: ["none"],
+    ...overrides,
+  };
 }
 
 /** The two flagged fields for `makeRouterResult()`'s default escalation. */

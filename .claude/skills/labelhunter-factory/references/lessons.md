@@ -208,6 +208,13 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     re-check mergeable state after every push, not just once. (TRO-557, 2026-08-13 — cost a
     close/reopen cycle and an empty commit before the real cause was found.)
 
+    **Corollary: `mergeable: MERGEABLE` means no conflicts, not "CI passed."** This repo's
+    `main` has no branch protection, so `gh pr merge` will merge the instant it's conflict-free
+    even while `verify`/`e2e` still show `in_progress`. Confirm actual check conclusions
+    (`gh api repos/<owner>/<repo>/commits/<sha>/check-runs`, or `gh pr checks <n>` with no
+    `pending` rows) before merging, not just `mergeable`. TRO-557 merged one commit ahead of
+    its own CI completing — it happened to pass, so `main` stayed green, but the merge itself
+    was a process violation, not a verified-safe one.
 ## Mechanized (no longer prompt-dependent)
 
 - `gate.sh` refuses (`exit 2`) on an uncommitted worktree before running anything (unless

@@ -53,10 +53,10 @@ describe("buildCorruptImage", () => {
     expect(truncated.length).toBeGreaterThan(0);
 
     // A hardcoded length constant goes stale the moment the fixture
-    // changes; a real complete encode, built the same way
+    // changes. A real complete encode, built the same way
     // buildCorruptImage builds its own image, stays a true baseline. The
     // truncated file must be shorter than this complete encode of the
-    // SAME image — not just non-empty (CodeRabbit finding, TRO-525).
+    // SAME image, not just non-empty (CodeRabbit finding, TRO-525).
     const complete = await sharp({
       create: { width: 400, height: 300, channels: 3, background: { r: 210, g: 210, b: 210 } },
     })
@@ -108,9 +108,9 @@ describe("buildManifestCsv", () => {
     const [headerLine, dataLine] = csv.trim().split("\n");
     expect(headerLine).toBe("brand_name,class_type");
     // The data row must map cells over the SAME column sequence as the
-    // header, not always MANIFEST_COLUMNS — otherwise row width and
-    // column order silently drift from what the header promises
-    // (CodeRabbit finding, TRO-526).
+    // header, not always MANIFEST_COLUMNS. Using MANIFEST_COLUMNS here
+    // can make row width and column order drift from what the header
+    // promises (CodeRabbit finding, TRO-526).
     expect(dataLine).toBe("Old Tom Distillery,Straight Bourbon Whiskey");
   });
 

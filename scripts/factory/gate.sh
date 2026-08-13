@@ -110,6 +110,23 @@ else
   exit 2
 fi
 
+# TRO-553: factory/gate-exceptions.json is likewise materialized from
+# BASE_REF, never read from the ticket branch. This is the mechanical half
+# of "agents must not be able to self-approve" — the doc comment inside the
+# file states the rule, but only reading from BASE_REF actually ENFORCES
+# it: a ticket branch that adds its own "approved" entry to its own working
+# copy has zero effect on its own G6 check, the same guarantee the
+# quarantine baseline gives against self-whitelisting. UNLIKE quarantine,
+# there is deliberately no working-tree fallback here — an absent baseline
+# reads as zero exceptions (the safe default), never as "trust the branch's
+# own copy". A brand-new exception takes effect once the commit that adds
+# it has landed on BASE_REF, which means it went through ITS OWN prior
+# review, not this ticket's.
+GATE_EXCEPTIONS="${OUT_DIR}/gate-exceptions-base.json"
+if ! git show "${BASE_REF}:factory/gate-exceptions.json" > "$GATE_EXCEPTIONS" 2>/dev/null; then
+  echo '{"version":1,"exceptions":[]}' > "$GATE_EXCEPTIONS"
+fi
+
 RESULTS=()          # "id|status|detail"
 OVERALL=pass
 
@@ -119,9 +136,47 @@ record() {           # record <id> <status> <detail>
   [ "$2" = fail ] && icon="FAIL"
   [ "$2" = skip ] && icon="skip"
   [ "$2" = warn ] && icon="warn"
+  [ "$2" = pass-with-exception ] && icon="ok*"
   printf '  [%s] %-22s %s\n' "$icon" "$1" "$3"
   [ "$2" = fail ] && OVERALL=fail
   return 0
+}
+
+# TRO-553: the human-approved exception path. Shared by every gate that
+# offers one (G6, G8, and any future one) — a SECOND copy of this template
+# per call site is exactly the "two independent templates for one string"
+# drift finding #9 already caught once in this file; one shared function
+# instead. Consults factory/gate-exceptions.json, materialized from
+# BASE_REF above (never the ticket branch's own working copy — see that
+# block's comment for why). Records "pass-with-exception" and returns 0 if
+# an approved record matches; otherwise records <result_id> as "fail" with
+# <fallback_detail> (byte-identical to what that gate has always said) and
+# returns 1.
+check_gate_exception() {   # check_gate_exception <result_id> <gate_id> <fallback_detail>
+  local result_id="$1" gate_id="$2" fallback_detail="$3"
+  local exc_out exc_state exc_note exc_err
+  exc_out="$(pnpm exec tsx scripts/factory/gate-exceptions.ts check \
+      --ticket "${TICKET}" --gate "${gate_id}" --file "${GATE_EXCEPTIONS}" \
+      2>"$OUT_DIR/gate-exceptions-${gate_id}.err")"
+  exc_state="$(node -e '
+    try { const d = JSON.parse(process.argv[1]); process.stdout.write(d.state || ""); } catch {}
+  ' "${exc_out:-}" 2>/dev/null)"
+  if [ "$exc_state" = "approved" ]; then
+    exc_note="$(node -e '
+      try { const d = JSON.parse(process.argv[1]); process.stdout.write(d.note || ""); } catch {}
+    ' "${exc_out:-}" 2>/dev/null)"
+    record "$result_id" pass-with-exception "${exc_note:-pass-with-exception (note unavailable — see .factory/gate-exceptions-${gate_id}.err)}"
+    return 0
+  elif [ "$exc_state" = "error" ]; then
+    exc_err="$(node -e '
+      try { const d = JSON.parse(process.argv[1]); process.stdout.write(d.error || ""); } catch {}
+    ' "${exc_out:-}" 2>/dev/null)"
+    record "$result_id" fail "${fallback_detail}, AND factory/gate-exceptions.json could not be read: ${exc_err:-see .factory/gate-exceptions-${gate_id}.err}"
+    return 1
+  else
+    record "$result_id" fail "${fallback_detail}"
+    return 1
+  fi
 }
 
 echo "=== factory gate: ${TICKET} (base ${BASE_REF}) ==="
@@ -253,12 +308,22 @@ fi
 # "A test file was touched" is too weak. Require at least one ADDED case, and
 # remember: the case must live where vitest actually executes it — an e2e-only
 # spec satisfies this grep while never running (the brief carries this rule).
+#
+# TRO-553: this premise — every ticket changes production code — is false for
+# a docs-only ticket and a test-repair ticket with no red-first case to write.
+# Absent an added case, consult factory/gate-exceptions.json (check_gate_exception,
+# defined above) before failing. An ordinary production ticket has no matching
+# record, so this falls straight to the same fail text G6 has always produced —
+# byte for byte unchanged (scripts/factory/gate-exceptions.test.ts proves the
+# resolver side; this is the one caller both G6 and G8 share). A record only
+# ever helps a ticket; it can never turn a real pass into a failure.
 ADDED_CASES=$(git diff "${BASE_REF}"...HEAD -- '*.test.ts' '*.test.tsx' 2>/dev/null \
               | grep -cE '^\+[[:space:]]*(it|test)(\.[a-z]+)?\(') || ADDED_CASES=0
 if [ "${ADDED_CASES:-0}" -gt 0 ]; then
   record regression-test pass "${ADDED_CASES} test case(s) added"
 else
-  record regression-test fail "no new test case added — every ticket ships a red-first regression test"
+  check_gate_exception regression-test regression-test \
+      "no new test case added — every ticket ships a red-first regression test"
 fi
 
 # --- G7: CHANGES.md entry ---------------------------------------------------
@@ -284,11 +349,19 @@ fi
 # --- G8: eval harness not regressed (TH-R17/TH-R19) -------------------------
 # Real once ticket LH-EVAL lands a `pnpm eval:check` comparing accuracy against
 # the committed baseline. Until then: skip WITH the reason, never a vacuous pass.
+#
+# TRO-553: the same exception path G6 uses (check_gate_exception, defined
+# above) — this is the second call site, proving the mechanism is generic
+# over the gate id rather than hardcoded to G6. TRO-542 is the live instance
+# (factory/gate-exceptions.json): the committed accuracy baseline sits at
+# the top of TRO-543's measured variance band, so an honest run of unchanged
+# code can fail this comparison on variance alone.
 if node -e 'const p=require("./package.json"); process.exit(p.scripts && p.scripts["eval:check"] ? 0 : 1)' 2>/dev/null; then
   if pnpm eval:check > "$OUT_DIR/eval-check.log" 2>&1; then
     record eval-not-regressed pass "accuracy >= committed baseline"
   else
-    record eval-not-regressed fail "eval harness regressed — see .factory/eval-check.log"
+    check_gate_exception eval-not-regressed eval-not-regressed \
+        "eval harness regressed — see .factory/eval-check.log"
   fi
 else
   record eval-not-regressed skip "no eval:check script yet (lands with the eval-harness ticket)"
@@ -363,37 +436,34 @@ else
 fi
 
 # --- G10: review capture (advisory — pass/warn/skip only, NEVER fail) --------
+# TRO-560: the capture, retry, and stale-vs-fresh decision now live in
+# scripts/factory/review-capture.ts (unit-tested) — this block only invokes
+# it and records what it reports. Two defects that block fixed there: (1) an
+# rc!=0 fallback to a previous run's findings now names the SHA it was
+# captured at and says plainly when the current diff has NOT been reviewed,
+# instead of reading like a fresh pass; (2) the failed attempt's full
+# stdout/stderr/exit code is always kept in .factory/coderabbit-capture.json
+# — the CLI reports its error as a JSON line on STDOUT, not stderr, so the
+# old code's ".factory/coderabbit.err" pointer was reliably empty on exactly
+# the run it mattered most for (TRO-508, 2026-08-13 comment).
 if [ "$SKIP_REVIEW" = 1 ]; then
   record review skip "disabled for this run"
 elif ! command -v coderabbit >/dev/null 2>&1; then
   record review skip "CLI not installed — PR-level review is the authoritative channel"
 else
-  # Ship lessons baked in: timeout (the CLI hangs under concurrent load), and
-  # capture to a temp file so an error stub never destroys completed findings.
-  CR_TIMEOUT="${CR_TIMEOUT:-360}"
-  if command -v timeout >/dev/null 2>&1; then CR_RUNNER=(timeout --foreground -k 10 "${CR_TIMEOUT}")
-  elif command -v gtimeout >/dev/null 2>&1; then CR_RUNNER=(gtimeout --foreground -k 10 "${CR_TIMEOUT}")
-  else CR_RUNNER=(); fi
-  CR_TMP="$OUT_DIR/coderabbit.next.json"; : > "$CR_TMP"
-  if [ ${#CR_RUNNER[@]} -eq 0 ]; then
-    coderabbit review --agent --base "${BASE_REF}" > "$CR_TMP" 2>"$OUT_DIR/coderabbit.err"; CR_RC=$?
+  CR_JSON="$(pnpm exec tsx scripts/factory/review-capture.ts \
+      --base "${BASE_REF}" --out-dir "${OUT_DIR}" 2>"$OUT_DIR/review-capture.stderr.log")"
+  CR_TS_RC=$?
+  if [ "$CR_TS_RC" -ne 0 ]; then
+    record review warn "review-capture.ts itself failed (rc=${CR_TS_RC}) — see .factory/review-capture.stderr.log"
   else
-    "${CR_RUNNER[@]}" coderabbit review --agent --base "${BASE_REF}" > "$CR_TMP" 2>"$OUT_DIR/coderabbit.err"; CR_RC=$?
-  fi
-  cr_findings() { grep -c '"type"[[:space:]]*:[[:space:]]*"finding"' "$1" 2>/dev/null || true; }
-  CR_NEW_N="$(cr_findings "$CR_TMP")"; CR_NEW_N="${CR_NEW_N:-0}"
-  CR_OLD_N=0
-  [ -f "$OUT_DIR/coderabbit.json" ] && { CR_OLD_N="$(cr_findings "$OUT_DIR/coderabbit.json")"; CR_OLD_N="${CR_OLD_N:-0}"; }
-  if [ "$CR_RC" -eq 0 ] && [ "$CR_NEW_N" -gt 0 ]; then
-    mv "$CR_TMP" "$OUT_DIR/coderabbit.json"
-    record review pass "${CR_NEW_N} finding(s) captured — triage required"
-  elif [ "$CR_OLD_N" -gt 0 ]; then
-    rm -f "$CR_TMP"
-    record review warn "run incomplete (rc=${CR_RC}) — KEPT ${CR_OLD_N} finding(s) from an earlier run"
-  else
-    mv "$CR_TMP" "$OUT_DIR/coderabbit.json"
-    if [ "$CR_RC" -eq 0 ]; then record review pass "review completed with no findings"
-    else record review warn "review did not complete (rc=${CR_RC}) — see .factory/coderabbit.err"; fi
+    CR_STATUS="$(node -e '
+      try { const d = JSON.parse(process.argv[1]); process.stdout.write(d.status || ""); } catch {}
+    ' "${CR_JSON:-}" 2>/dev/null)"
+    CR_DETAIL="$(node -e '
+      try { const d = JSON.parse(process.argv[1]); process.stdout.write(d.detail || ""); } catch {}
+    ' "${CR_JSON:-}" 2>/dev/null)"
+    record review "${CR_STATUS:-warn}" "${CR_DETAIL:-review-capture produced no parseable result}"
   fi
 fi
 

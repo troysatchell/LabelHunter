@@ -184,6 +184,20 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     "final corpus" exists; the band always names which corpus it measured. (TRO-561,
     2026-08-13 — ended a six-exception day.)
 
+33. **Orchestrator housekeeping — a lessons.md rule, a factory tooling guard, a scorecard
+    row — may land directly on main. Anything a ticket produces, including a docs-only
+    deliverable, goes through worktree → gate → PR → CI → triage.** A session almost pushed
+    TRO-486's audit artifacts straight to main, reasoning by analogy to this same day's
+    direct-to-main housekeeping commits (`c6c9dab`, `876a295`, `3b6dfeb`). A peer caught it
+    before the push. A docs-only branch that trips gate check G6 uses the
+    `gate-exceptions.json` path, not a direct push. (Peer session, 2026-08-13.)
+
+34. **When CodeRabbit rate-limits — the account-wide capacity constraint, not a spending
+    cap — CI green is enough to proceed.** Retry the local review capture once or twice per
+    the standing protocol, but do not block a merge on a persistent rate limit once CI's own
+    checks (`verify`, `e2e`) are green. Troy's explicit ruling, given mid-rate-limit across
+    three concurrent sessions on one day. (2026-08-13.)
+
 ## Mechanized (no longer prompt-dependent)
 
 - `gate.sh` refuses (`exit 2`) on an uncommitted worktree before running anything (unless

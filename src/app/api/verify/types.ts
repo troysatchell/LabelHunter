@@ -65,8 +65,13 @@ export interface VerifySuccessResponse {
  * `src/app/_components/ErrorPanel.tsx`. The array is the source of truth;
  * the type is derived from it — `src/app/_lib/verify-client.ts` uses the
  * array at runtime to check a `kind` value from an HTTP response actually
- * belongs to this set before trusting it. */
-export const VERIFY_ERROR_KINDS = ["VALIDATION", "IMAGE", "EXTRACTION", "SERVICE"] as const;
+ * belongs to this set before trusting it.
+ *
+ * `RATE_LIMITED` and `BUDGET_EXHAUSTED` (TRO-482 / LH-061, PRD §8) are the
+ * key-protection guard's own two rejection states — a fixed-window rate
+ * limit and the daily spend budget respectively. Both are checked BEFORE
+ * the Haiku call, never after (`route.ts`'s own header comment). */
+export const VERIFY_ERROR_KINDS = ["VALIDATION", "IMAGE", "EXTRACTION", "SERVICE", "RATE_LIMITED", "BUDGET_EXHAUSTED"] as const;
 export type VerifyErrorKind = (typeof VERIFY_ERROR_KINDS)[number];
 
 export interface VerifyErrorResponse {

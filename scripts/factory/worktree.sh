@@ -57,7 +57,7 @@ if ! docker ps --format '{{.Names}}' | grep -qx "$PG_CONTAINER"; then
   echo "Start it with:" >&2
   echo "  docker run -d --name ${PG_CONTAINER} -e POSTGRES_DB=labelhunter_dev \\" >&2
   echo "    -e POSTGRES_USER=${PG_USER} -e POSTGRES_PASSWORD=${PG_PASSWORD} \\" >&2
-  echo "    -p ${PG_PORT}:5432 postgres:16-alpine" >&2
+  echo "    -p 127.0.0.1:${PG_PORT}:5432 postgres:16-alpine" >&2
   exit 1
 fi
 

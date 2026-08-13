@@ -16,6 +16,15 @@
  * would not. No network call: the HTML is fully inline, with no remote
  * fonts or images.
  *
+ * BOLD PREFIX (TRO-527 / LH-022). 27 CFR 16.22(a)(2) requires the
+ * "GOVERNMENT WARNING:" prefix to print bold and forbids the rest of the
+ * statement from printing bold. `buildWarningHtml` splits a case's warning
+ * text at the FIRST colon and renders the prefix and body as two separate
+ * `<span>`s, each driven by that case's own `governmentWarningPrefixBold` /
+ * `governmentWarningBodyBold` ground truth — so the exact-text guarantee
+ * above now carries a real weight signal too, not a fixed one every case
+ * shared before this ticket.
+ *
  * FONTS (TRO-505). Every font below is embedded, not a system-font name.
  * `FONT_FACES_CSS` reads real font files from three pinned npm packages —
  * `@fontsource/inter`, `@fontsource/dancing-script`,
@@ -260,6 +269,75 @@ const CASE_STYLE_OVERRIDES: Record<string, StyleOverride> = {
   },
 };
 
+/**
+ * The two font weights a government warning span can print at. `700`
+ * matches `.brand`'s existing bold weight; `400` matches Inter's regular
+ * weight, already embedded in `FONT_FACES_CSS` — no new font file needed.
+ */
+const BOLD_FONT_WEIGHT = 700;
+const REGULAR_FONT_WEIGHT = 400;
+
+/**
+ * Splits a government warning at the FIRST colon into the bold-eligible
+ * prefix (through and including the colon, e.g. `"GOVERNMENT WARNING:"`)
+ * and the body that follows (TRO-527 / LH-022). `prefix + body`
+ * reconstructs `text` byte for byte — `render.test.ts` proves this for
+ * every case with a warning. Throws if `text` carries no colon at all: the
+ * statutory warning always has one, so a case whose text lacks one is a
+ * data error, not a shape this function should paper over (CLAUDE.md rule
+ * 13 — validate the real invariant explicitly).
+ */
+function splitGovernmentWarning(text: string): { prefix: string; body: string } {
+  const colonIndex = text.indexOf(":");
+  if (colonIndex === -1) {
+    throw new RangeError(
+      `render: government warning text has no colon to split the bold prefix from the body: ${JSON.stringify(text)}`,
+    );
+  }
+  return {
+    prefix: text.slice(0, colonIndex + 1),
+    body: text.slice(colonIndex + 1),
+  };
+}
+
+/**
+ * Maps a case's recorded bold ground truth to a concrete CSS font-weight.
+ * Throws on `"unknown"` — this renderer draws real pixels, and no pixel
+ * means "we don't know if this is bold." `"unknown"` exists for LH-024's
+ * hand-transcribed real-photo cases, which never route through this
+ * renderer (a different `GoldenSetProvenance`, per that ticket).
+ */
+function warningSpanFontWeight(bold: boolean | "unknown"): number {
+  if (bold === "unknown") {
+    throw new RangeError(
+      'render: cannot render a government warning span with bold state "unknown" — ' +
+        "reserved for real-photograph cases (LH-024) that never render through this pipeline",
+    );
+  }
+  return bold ? BOLD_FONT_WEIGHT : REGULAR_FONT_WEIGHT;
+}
+
+/**
+ * Builds the government warning's inner HTML: two separately-weighted
+ * spans so a case's `governmentWarningPrefixBold` / `governmentWarningBodyBold`
+ * ground truth actually shows up in the rendered pixels (TRO-527 / LH-022;
+ * 27 CFR 16.22(a)(2) requires the prefix bold and forbids the body from
+ * being bold — docs/checkpoints/cp2-warning-subsystem.md §7.2). Empty
+ * string when the warning is absent, same as before this split existed.
+ */
+function buildWarningHtml(label: RenderableCase["label"]): string {
+  if (!label.governmentWarningPresent) {
+    return "";
+  }
+  const { prefix, body } = splitGovernmentWarning(label.governmentWarningText);
+  const prefixWeight = warningSpanFontWeight(label.governmentWarningPrefixBold);
+  const bodyWeight = warningSpanFontWeight(label.governmentWarningBodyBold);
+  return (
+    `<span class="warningPrefix" style="font-weight: ${prefixWeight};">${escapeHtml(prefix)}</span>` +
+    `<span class="warningBody" style="font-weight: ${bodyWeight};">${escapeHtml(body)}</span>`
+  );
+}
+
 function styleFor(caseId: string): Required<StyleOverride> {
   const override = CASE_STYLE_OVERRIDES[caseId] ?? {};
   return {
@@ -287,9 +365,7 @@ export function buildLabelHtml(renderCase: RenderableCase): string {
     ? `<div class="line">${escapeHtml(label.abvText)}</div>`
     : "";
   const netContentsLine = `<div class="line">${escapeHtml(label.netContentsText)}</div>`;
-  const warningHtml = label.governmentWarningPresent
-    ? escapeHtml(label.governmentWarningText)
-    : "";
+  const warningHtml = buildWarningHtml(label);
 
   return `<!doctype html>
 <html>

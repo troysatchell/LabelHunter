@@ -106,7 +106,11 @@ export interface BatchThroughputRunReport {
    * (CLAUDE.md non-negotiable: never quote a local-workstation rate as a
    * deployed one). Literal string, not a free-text field, so a reader
    * cannot mistake this for a value that varies run to run. */
-  readonly deployment: "local dev workstation, not deployed";
+  /** What this run actually targeted, derived from the base URL's host —
+   * never a hard-coded label, so a `--base-url` run against a deployed
+   * instance cannot record a false "local" provenance (review finding,
+   * local review round 12). */
+  readonly deployment: string;
   readonly baseUrl: string;
   readonly haikuModel: string;
   readonly sonnetModel: string;

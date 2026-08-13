@@ -233,6 +233,13 @@ function validateProgressResponse(payload: unknown): BatchProgressResponse {
   const p = payload as Partial<BatchProgressResponse>;
   const isoOrNull = (v: unknown): boolean => v === null || (typeof v === "string" && !Number.isNaN(Date.parse(v)));
   const counts = [p.totalCount, p.processedCount, p.autoVerifiedCount, p.passCount, p.failCount, p.resolvedBySonnetCount, p.needsHumanCount, p.failedCount];
+  // Cross-field coherence, not just per-field shape (review finding,
+  // local review round 12): auto-verified items are processed items, and
+  // processed items are batch items.
+  const countOrderOk =
+    counts.every(isNonNegativeSafeInteger) &&
+    (p.autoVerifiedCount as number) <= (p.processedCount as number) &&
+    (p.processedCount as number) <= (p.totalCount as number);
   const throughputOk =
     p.throughput === null ||
     (typeof p.throughput === "object" &&
@@ -244,7 +251,7 @@ function validateProgressResponse(payload: unknown): BatchProgressResponse {
   const shareOk = p.autoVerifiedShare === null || (typeof p.autoVerifiedShare === "number" && p.autoVerifiedShare >= 0 && p.autoVerifiedShare <= 1);
   const ok =
     (BATCH_JOB_STATUSES as readonly string[]).includes(p.status as string) &&
-    counts.every(isNonNegativeSafeInteger) &&
+    countOrderOk &&
     isoOrNull(p.startedAt) &&
     isoOrNull(p.completedAt) &&
     throughputOk &&
@@ -522,7 +529,12 @@ async function main(): Promise<void> {
   const report: BatchThroughputRunReport = {
     ticket: "TRO-544 / LH-039",
     measuredAt: runStartedAt,
-    deployment: "local dev workstation, not deployed",
+    // Derived from the real target, never hard-coded — a --base-url run
+    // against a deployed instance must not record a false "local"
+    // provenance (review finding, local review round 12).
+    deployment: ["localhost", "127.0.0.1", "[::1]", "::1"].includes(new URL(args.baseUrl).hostname)
+      ? "local dev workstation, not deployed"
+      : `remote target ${sanitizeUrlForRecord(args.baseUrl)} — deployment character not verified by this script`,
     baseUrl: sanitizeUrlForRecord(args.baseUrl),
     haikuModel: HAIKU_EXTRACTOR_MODEL,
     sonnetModel: SONNET_RESOLVER_MODEL,

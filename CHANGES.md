@@ -96,8 +96,9 @@ and both `RangeError` paths. It also covers exact arithmetic on known inputs. On
 an impossible `(1, 0)` pair throws, instead of silently reading as "not measured yet" (a local
 review finding). `src/lib/utils/format.test.ts` gained `formatPercent` coverage.
 `get-batch-progress.test.ts` and the `/api/batch/:id` route test each gained real-database
-cases. Both prove `throughput`/`autoVerifiedShare` compute correctly from a live `batch_jobs`
-row and serialize correctly over the wire. `BatchProgressSummary.test.tsx` gained six cases
+cases. Those cases prove `throughput` and `autoVerifiedShare` compute correctly from a live
+`batch_jobs` row. They also prove both fields serialize correctly over the wire.
+`BatchProgressSummary.test.tsx` gained six cases
 for the two new tiles. One is a regression case: a genuine 0% share must render as "0.0%,"
 never as "Not measured yet." A naive truthy check on the fraction would get this wrong.
 `scripts/batch-throughput/args.test.ts` and `cost.test.ts` cover the harness's own pure
@@ -228,6 +229,13 @@ Round 11 met the bar once more, then ended: poll responses — the values the ar
 persists — still crossed an unchecked cast. `validateProgressResponse` now checks the
 status enum, every counter, both timestamps, throughput, and the share on every poll. A
 fifth re-bullet request was dismissed under the same stop rule.
+
+Round 12: four fixed. The cost docs no longer claim the estimate cannot understate — the
+bound covers the call count, not the dollars, because the means are historical. The
+artifact's `deployment` field is now derived from the real target host, never hard-coded.
+The progress validator now requires `autoVerifiedCount <= processedCount <= totalCount`.
+One sentence above was split. The validator's requested standalone tests were not added:
+`measure.ts` spends money at import by design, so its internals are not importable.
 
 **Do NOT.** No column was added to `batch_jobs` — every input already existed. No claim was
 extrapolated past this run's real 32 items to TH-R4's 200-300 label reference.

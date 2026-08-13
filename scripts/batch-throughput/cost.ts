@@ -12,8 +12,10 @@
  * UPPER BOUND from this run's own `batch_queue_items.attempts`. The
  * means are real prior measurements from
  * `scripts/eval/results/eval-report.json`. Only the multiplication is
- * new, so the estimate can overstate the Haiku side and cannot
- * understate it.
+ * new. The bound is on the CALL COUNT only: the count side cannot
+ * understate. The dollar figure still can — the means are historical,
+ * so a run whose real per-call cost ran above them can cost more than
+ * this estimate says.
  */
 
 /** Arithmetic mean of a list of real, measured per-call costs. Throws on
@@ -54,8 +56,10 @@ export interface DeriveBatchCostParams {
  * count. It sums extraction claim ATTEMPTS (`measure.ts`'s own
  * computation). A retry adds one attempt. An attempt that fails before
  * its request — an unreadable or unresizable image — also adds one, with
- * zero real calls made. The derived total can therefore overstate the
- * Haiku side; it cannot understate it. `sonnetCallCount` is a real call
+ * zero real calls made. The COUNT therefore cannot understate real
+ * calls. The dollar total still can understate real spend: each count
+ * multiplies a HISTORICAL mean, and a run whose real per-call cost ran
+ * above that mean costs more than the estimate. `sonnetCallCount` is a real call
  * count: `batch_jobs.sonnet_call_count` counts first attempts and
  * retries alike (`escalation-cap.ts`'s own doc comment).
  *

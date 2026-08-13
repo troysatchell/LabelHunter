@@ -116,7 +116,13 @@ function isReviewQueueListResponse(payload: unknown): payload is ReviewQueueList
   // the end of the queue", and a missing field would let a client show a
   // partial page as if it were the whole queue (TRO-507).
   const cursorIsValid = body.nextCursor === null || (typeof body.nextCursor === "string" && body.nextCursor.length > 0);
-  return Array.isArray(body.items) && body.items.every(isReviewQueueListItemWire) && cursorIsValid;
+  if (!cursorIsValid || !Array.isArray(body.items)) return false;
+  // An empty page is a real answer, not a suspicious one: the queue is
+  // empty, or a page ended exactly on its boundary. There is no item to
+  // check, so the page is valid — said here rather than left to
+  // `.every()`'s vacuous truth to imply.
+  if (body.items.length === 0) return true;
+  return body.items.every(isReviewQueueListItemWire);
 }
 
 function isRecordDispositionResponse(payload: unknown): payload is RecordDispositionResponse {

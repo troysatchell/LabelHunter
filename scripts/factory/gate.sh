@@ -119,6 +119,7 @@ record() {           # record <id> <status> <detail>
   [ "$2" = fail ] && icon="FAIL"
   [ "$2" = skip ] && icon="skip"
   [ "$2" = warn ] && icon="warn"
+  [ "$2" = pass-with-exception ] && icon="ok*"
   printf '  [%s] %-22s %s\n' "$icon" "$1" "$3"
   [ "$2" = fail ] && OVERALL=fail
   return 0
@@ -253,12 +254,38 @@ fi
 # "A test file was touched" is too weak. Require at least one ADDED case, and
 # remember: the case must live where vitest actually executes it — an e2e-only
 # spec satisfies this grep while never running (the brief carries this rule).
+#
+# TRO-553: this premise — every ticket changes production code — is false for
+# a docs-only ticket and a test-repair ticket with no red-first case to write.
+# Absent an added case, consult factory/gate-exceptions.json before failing.
+# An ordinary production ticket has no matching record, so this reads "none"
+# and falls straight to the same fail this gate has always produced — that
+# path is unchanged, byte for byte (scripts/factory/gate-exceptions.test.ts
+# proves it). A record only ever helps a ticket; it can never turn a real
+# pass into a failure.
 ADDED_CASES=$(git diff "${BASE_REF}"...HEAD -- '*.test.ts' '*.test.tsx' 2>/dev/null \
               | grep -cE '^\+[[:space:]]*(it|test)(\.[a-z]+)?\(') || ADDED_CASES=0
 if [ "${ADDED_CASES:-0}" -gt 0 ]; then
   record regression-test pass "${ADDED_CASES} test case(s) added"
 else
-  record regression-test fail "no new test case added — every ticket ships a red-first regression test"
+  EXC_OUT="$(pnpm exec tsx scripts/factory/gate-exceptions.ts check \
+      --ticket "${TICKET}" --gate regression-test 2>"$OUT_DIR/gate-exceptions.err")"
+  EXC_STATE="$(node -e '
+    try { const d = JSON.parse(process.argv[1]); process.stdout.write(d.state || ""); } catch {}
+  ' "${EXC_OUT:-}" 2>/dev/null)"
+  if [ "$EXC_STATE" = "approved" ]; then
+    EXC_NOTE="$(node -e '
+      const d = JSON.parse(process.argv[1]); const e = d.exception;
+      const pr = e.pr !== undefined ? `, PR #${e.pr}` : "";
+      process.stdout.write(
+        `pass-with-exception — approved by ${e.approver} on ${e.date} ` +
+        `(ticket ${e.ticket}, gate ${e.gate}${pr}): ${e.reason}`,
+      );
+    ' "$EXC_OUT")"
+    record regression-test pass-with-exception "${EXC_NOTE}"
+  else
+    record regression-test fail "no new test case added — every ticket ships a red-first regression test"
+  fi
 fi
 
 # --- G7: CHANGES.md entry ---------------------------------------------------
@@ -363,37 +390,34 @@ else
 fi
 
 # --- G10: review capture (advisory — pass/warn/skip only, NEVER fail) --------
+# TRO-560: the capture, retry, and stale-vs-fresh decision now live in
+# scripts/factory/review-capture.ts (unit-tested) — this block only invokes
+# it and records what it reports. Two defects that block fixed there: (1) an
+# rc!=0 fallback to a previous run's findings now names the SHA it was
+# captured at and says plainly when the current diff has NOT been reviewed,
+# instead of reading like a fresh pass; (2) the failed attempt's full
+# stdout/stderr/exit code is always kept in .factory/coderabbit-capture.json
+# — the CLI reports its error as a JSON line on STDOUT, not stderr, so the
+# old code's ".factory/coderabbit.err" pointer was reliably empty on exactly
+# the run it mattered most for (TRO-508, 2026-08-13 comment).
 if [ "$SKIP_REVIEW" = 1 ]; then
   record review skip "disabled for this run"
 elif ! command -v coderabbit >/dev/null 2>&1; then
   record review skip "CLI not installed — PR-level review is the authoritative channel"
 else
-  # Ship lessons baked in: timeout (the CLI hangs under concurrent load), and
-  # capture to a temp file so an error stub never destroys completed findings.
-  CR_TIMEOUT="${CR_TIMEOUT:-360}"
-  if command -v timeout >/dev/null 2>&1; then CR_RUNNER=(timeout --foreground -k 10 "${CR_TIMEOUT}")
-  elif command -v gtimeout >/dev/null 2>&1; then CR_RUNNER=(gtimeout --foreground -k 10 "${CR_TIMEOUT}")
-  else CR_RUNNER=(); fi
-  CR_TMP="$OUT_DIR/coderabbit.next.json"; : > "$CR_TMP"
-  if [ ${#CR_RUNNER[@]} -eq 0 ]; then
-    coderabbit review --agent --base "${BASE_REF}" > "$CR_TMP" 2>"$OUT_DIR/coderabbit.err"; CR_RC=$?
+  CR_JSON="$(FACTORY_BASE_REF="${BASE_REF}" pnpm exec tsx scripts/factory/review-capture.ts \
+      --base "${BASE_REF}" --out-dir "${OUT_DIR}" 2>"$OUT_DIR/review-capture.stderr.log")"
+  CR_TS_RC=$?
+  if [ "$CR_TS_RC" -ne 0 ]; then
+    record review warn "review-capture.ts itself failed (rc=${CR_TS_RC}) — see .factory/review-capture.stderr.log"
   else
-    "${CR_RUNNER[@]}" coderabbit review --agent --base "${BASE_REF}" > "$CR_TMP" 2>"$OUT_DIR/coderabbit.err"; CR_RC=$?
-  fi
-  cr_findings() { grep -c '"type"[[:space:]]*:[[:space:]]*"finding"' "$1" 2>/dev/null || true; }
-  CR_NEW_N="$(cr_findings "$CR_TMP")"; CR_NEW_N="${CR_NEW_N:-0}"
-  CR_OLD_N=0
-  [ -f "$OUT_DIR/coderabbit.json" ] && { CR_OLD_N="$(cr_findings "$OUT_DIR/coderabbit.json")"; CR_OLD_N="${CR_OLD_N:-0}"; }
-  if [ "$CR_RC" -eq 0 ] && [ "$CR_NEW_N" -gt 0 ]; then
-    mv "$CR_TMP" "$OUT_DIR/coderabbit.json"
-    record review pass "${CR_NEW_N} finding(s) captured — triage required"
-  elif [ "$CR_OLD_N" -gt 0 ]; then
-    rm -f "$CR_TMP"
-    record review warn "run incomplete (rc=${CR_RC}) — KEPT ${CR_OLD_N} finding(s) from an earlier run"
-  else
-    mv "$CR_TMP" "$OUT_DIR/coderabbit.json"
-    if [ "$CR_RC" -eq 0 ]; then record review pass "review completed with no findings"
-    else record review warn "review did not complete (rc=${CR_RC}) — see .factory/coderabbit.err"; fi
+    CR_STATUS="$(node -e '
+      try { const d = JSON.parse(process.argv[1]); process.stdout.write(d.status || ""); } catch {}
+    ' "${CR_JSON:-}" 2>/dev/null)"
+    CR_DETAIL="$(node -e '
+      try { const d = JSON.parse(process.argv[1]); process.stdout.write(d.detail || ""); } catch {}
+    ' "${CR_JSON:-}" 2>/dev/null)"
+    record review "${CR_STATUS:-warn}" "${CR_DETAIL:-review-capture produced no parseable result}"
   fi
 fi
 

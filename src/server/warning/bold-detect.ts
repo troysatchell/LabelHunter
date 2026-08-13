@@ -548,5 +548,5 @@ export function classifyBoldSignal(
   if (ratio >= BOLD_RATIO_THRESHOLD) {
     return { signal: "bold", reason: "the prefix's stroke width measures wider than the body's" };
   }
-  return { signal: "not-bold", reason: "the prefix and body stroke widths measure the same" };
+  return { signal: "not-bold", reason: "the prefix's stroke width does not measure wider than the body's" };
 }

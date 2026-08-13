@@ -21,18 +21,20 @@ compliant label of a violation it cannot prove.
 
 The measurement, in order:
 
-1. Greyscale the crop. Stretch contrast (`sharp`'s `.normalise()`). Binarize with Otsu's
-   method. Ink is the pixel class with fewer pixels, not "the dark class" — this reads gold
-   text on a maroon background (crown-royal) the same way it reads black text on white paper.
+1. Greyscale the crop. Stretch contrast with `sharp`'s `.normalise()`. Binarize with Otsu's
+   method. Ink is the pixel class with fewer pixels. It is not "the dark class." This reads
+   gold text on a maroon background (crown-royal) the same way it reads black text on white
+   paper.
 2. Find the crop's first text line. The `GOVERNMENT WARNING:` prefix always starts line 1.
-3. Search for the prefix/body boundary inside that line, constrained to 15%-65% of the
-   line's own ink width. An unconstrained search always finds a spurious split — case-08 and
-   case-09 (title-case golden-set cases) proved this during the prior investigation.
-4. At the winning split, measure stroke width as the median horizontal ink-run length on each
-   side. Normalize each side by its OWN local cap height, not one shared value for the whole
-   line — a title-case body's local cap height varies enough to distort a shared divisor.
+3. Search for the prefix/body boundary inside that line. Constrain the search to 15%-65% of
+   the line's own ink width. An unconstrained search always finds a spurious split. Case-08
+   and case-09 (title-case golden-set cases) proved this during the prior investigation.
+4. At the winning split, measure stroke width as the median horizontal ink-run length on
+   each side. Normalize each side by its OWN local cap height, not one shared value for the
+   whole line. A title-case body's local cap height varies enough to distort a shared
+   divisor.
 5. Classify. Below a 3px stroke-width floor: `uncertain`. No stable split found: `uncertain`.
-   The two sides' stroke-width ranges overlap (no clean separation): `uncertain`. At or above
+   The two sides' stroke-width ranges overlap: `uncertain` — no clean separation. At or above
    a 1.3 ratio: `bold`. Below it: `not-bold`.
 
 Every threshold above is marked **proposed** in the code, following this repo's own
@@ -86,8 +88,11 @@ Coverage:
   its own observed result and a stated reason — some still measure `bold` (the degradation
   does not reach the warning crop), some measure `uncertain` (it does). A rotation case where
   `detectWarningRegion` finds no region at all is stated as exactly that, not silently skipped.
-- A regression check confirming this file's tests fail for the right reason: reverting the
-  40%-line-height guard flips the two curved-photo tests back to the wrong `bold` answer.
+- A manual check, not an automated test, confirming the tests above fail for the right
+  reason: temporarily removing the 40%-line-height guard flips case-37 and case-39 back to
+  the wrong `bold` answer. Case-36 still measures `uncertain` without the guard — it fails
+  the separate ranges-overlap check instead, so the guard is not the only thing protecting
+  it. Only two of the three curved photos depend on this specific guard.
 
 **Not yet verified.** No golden-set case exists with `governmentWarningPrefixBold: false` for
 a present warning — TRO-527's own CHANGES.md entry names this gap (LH-023's case-33/case-34,

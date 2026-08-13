@@ -483,60 +483,84 @@ describe("measureBoldSignal — golden-set corpus, degraded cases: each case's O
   // legitimately compromised the measurement, which is the honest,
   // correct outcome for an advisory check that must never guess.
 
-  it("case-17-glare-front-label: still bold — the glare targets the FRONT label, not the warning block", async () => {
-    const crop = await detectAndCrop("golden-set/images/case-17-glare-front-label.jpg");
-    expect(crop).not.toBeNull();
-    if (!crop) return;
-    const result = await measureBoldSignal(crop);
-    expect(result.signal).toBe("bold");
-  });
-
-  it("case-18-glare-warning-block: uncertain, floor reason — this degradation targets the warning block itself", async () => {
-    const crop = await detectAndCrop("golden-set/images/case-18-glare-warning-block.jpg");
-    expect(crop).not.toBeNull();
-    if (!crop) return;
-    const result = await measureBoldSignal(crop);
-    expect(result.signal).toBe("uncertain");
-    expect(result.reason).toMatch(/floor/);
-  });
-
-  it("case-19-rotation-mild-correctable and case-20-rotation-severe-upside-down: detectWarningRegion finds NO region at all — a pre-existing LH-020 gap, out of this ticket's scope", async () => {
-    for (const imagePath of [
-      "golden-set/images/case-19-rotation-mild-correctable.jpg",
-      "golden-set/images/case-20-rotation-severe-upside-down.jpg",
-    ]) {
-      const crop = await detectAndCrop(imagePath);
-      expect(crop).toBeNull();
-    }
-  });
-
-  it("case-21-low-light-front-label: uncertain, ranges-overlap reason — front-label dimming still reaches the warning crop enough to blur the separation", async () => {
-    const crop = await detectAndCrop("golden-set/images/case-21-low-light-front-label.jpg");
-    expect(crop).not.toBeNull();
-    if (!crop) return;
-    const result = await measureBoldSignal(crop);
-    expect(result.signal).toBe("uncertain");
-    expect(result.reason).toMatch(/overlap/);
-  });
-
-  it("case-22-low-light-warning-block (TRO-546's own darkened case): still bold — contrast normalization (rule 4) is exactly what recovers this one", async () => {
-    const crop = await detectAndCrop("golden-set/images/case-22-low-light-warning-block.jpg");
-    expect(crop).not.toBeNull();
-    if (!crop) return;
-    const result = await measureBoldSignal(crop);
-    expect(result.signal).toBe("bold");
-  });
-
-  it("case-25-odd-typography-script-brand and case-26-odd-typography-blackletter-class-type: still bold — the odd typography is on the BRAND/CLASS-TYPE fields, the warning text itself is unaffected", async () => {
-    for (const imagePath of [
-      "golden-set/images/case-25-odd-typography-script-brand.jpg",
-      "golden-set/images/case-26-odd-typography-blackletter-class-type.jpg",
-    ]) {
-      const crop = await detectAndCrop(imagePath);
+  it(
+    "case-17-glare-front-label: still bold — the glare targets the FRONT label, not the warning block",
+    async () => {
+      const crop = await detectAndCrop("golden-set/images/case-17-glare-front-label.jpg");
       expect(crop).not.toBeNull();
-      if (!crop) continue;
+      if (!crop) return;
       const result = await measureBoldSignal(crop);
       expect(result.signal).toBe("bold");
-    }
-  });
+    },
+    15_000,
+  );
+
+  it(
+    "case-18-glare-warning-block: uncertain, floor reason — this degradation targets the warning block itself",
+    async () => {
+      const crop = await detectAndCrop("golden-set/images/case-18-glare-warning-block.jpg");
+      expect(crop).not.toBeNull();
+      if (!crop) return;
+      const result = await measureBoldSignal(crop);
+      expect(result.signal).toBe("uncertain");
+      expect(result.reason).toMatch(/floor/);
+    },
+    15_000,
+  );
+
+  it(
+    "case-19-rotation-mild-correctable and case-20-rotation-severe-upside-down: detectWarningRegion finds NO region at all — a pre-existing LH-020 gap, out of this ticket's scope",
+    async () => {
+      for (const imagePath of [
+        "golden-set/images/case-19-rotation-mild-correctable.jpg",
+        "golden-set/images/case-20-rotation-severe-upside-down.jpg",
+      ]) {
+        const crop = await detectAndCrop(imagePath);
+        expect(crop).toBeNull();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "case-21-low-light-front-label: uncertain, ranges-overlap reason — front-label dimming still reaches the warning crop enough to blur the separation",
+    async () => {
+      const crop = await detectAndCrop("golden-set/images/case-21-low-light-front-label.jpg");
+      expect(crop).not.toBeNull();
+      if (!crop) return;
+      const result = await measureBoldSignal(crop);
+      expect(result.signal).toBe("uncertain");
+      expect(result.reason).toMatch(/overlap/);
+    },
+    15_000,
+  );
+
+  it(
+    "case-22-low-light-warning-block (TRO-546's own darkened case): still bold — contrast normalization (rule 4) is exactly what recovers this one",
+    async () => {
+      const crop = await detectAndCrop("golden-set/images/case-22-low-light-warning-block.jpg");
+      expect(crop).not.toBeNull();
+      if (!crop) return;
+      const result = await measureBoldSignal(crop);
+      expect(result.signal).toBe("bold");
+    },
+    15_000,
+  );
+
+  it(
+    "case-25-odd-typography-script-brand and case-26-odd-typography-blackletter-class-type: still bold — the odd typography is on the BRAND/CLASS-TYPE fields, the warning text itself is unaffected",
+    async () => {
+      for (const imagePath of [
+        "golden-set/images/case-25-odd-typography-script-brand.jpg",
+        "golden-set/images/case-26-odd-typography-blackletter-class-type.jpg",
+      ]) {
+        const crop = await detectAndCrop(imagePath);
+        expect(crop).not.toBeNull();
+        if (!crop) continue;
+        const result = await measureBoldSignal(crop);
+        expect(result.signal).toBe("bold");
+      }
+    },
+    30_000,
+  );
 });

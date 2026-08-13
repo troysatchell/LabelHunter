@@ -53,6 +53,168 @@ changelog entry. The seeded verification/application rows stay in the deployed d
 are real, useful demo data, not a defect to revert. Truncating them is a separate, deliberate
 choice for whoever runs the demo next.
 
+## TRO-484 — LH-063: README (2026-08-13)
+
+**What changed.** This ticket adds `README.md` at the repo root. It closes TH-R14, a graded
+deliverable that was MISSING across three sweeps. The content is assembled from material that
+already existed. `docs/PRD.md` §1 supplies what LabelHunter is. `.env.local.example` and
+`package.json`'s scripts block supply the setup and run steps. `docs/PRD.md` §3.1 and §4
+supply the cascade architecture diagram and cost table. `docs/error-states.md` supplies the
+outbound-dependency list. `src/lib/db/schema.ts` and
+`src/server/review-queue/record-disposition.ts:11` supply the data-handling posture.
+`audit/requirements/gaps.md`'s TH-R14 and TH-R6 suggested scope (TRO-486) is the source for
+every piece above.
+
+**The deployed URL and access code are now published.** PR #43 (TRO-482, key protection: access
+code, rate limits, daily spend budget) merged into `main`. This ticket held the URL back
+through two earlier commits until the deployed instance's protection was independently
+confirmed, not assumed from the merge. `docs/PRD.md:248` already designs the access code to
+live in the README for evaluators, so publishing it here is the shipped design, not a leak.
+
+**The confirmation history, in order.** First commit: PR #43 open, URL withheld. Second
+commit: PR #43 merged. `GET /` still returned 200 with no redirect. `GET /api/review-queue`
+still returned 200 with real data. That is a stale build, not a live gate, so the URL stayed
+withheld. Third commit (this one): `GET /` now redirects to `/access-code`. An unauthenticated
+`GET /api/review-queue` now returns 401. `POST /api/access-code` with the real code returns 200
+plus a `Set-Cookie`. All three checked directly against the live URL. The URL and code are now
+in the README.
+
+**Observed, not derived.** This ticket ran these commands against a fresh worktree:
+`pnpm install`; `pnpm db:migrate` (8 migrations, exit 0); `pnpm typecheck` (exit 0); `pnpm lint`
+(0 errors, 1 pre-existing warning); `pnpm test` (169 files, 2108 tests, exit 0); `pnpm build`
+(15 routes, exit 0). `pnpm test:e2e` did **not** run this ticket — it boots a dev server, and
+this ticket changed no application code that suite covers. See this PR's own gate run for exact
+output.
+
+**How to run it.** Follow the README itself. Install dependencies. Start the Postgres
+container it documents. Copy `.env.local.example` to `.env.local` and set
+`ANTHROPIC_API_KEY`. Run `pnpm db:migrate`. Run `pnpm dev`.
+
+**Rollback.** Delete `README.md`. Remove this changelog entry. No schema or application code
+changed. `factory/review-findings.jsonl`'s entries for this ticket stay — that file is an
+append-only audit record, and a revert should not erase the history of what was reviewed and
+why.
+
+## TRO-565 / TRO-567 — access-gate hardening: eight follow-up findings from PR #43 (2026-08-13)
+
+Eight findings from PR #43's own review (TRO-482, the access-code gate and its rate
+limiter). All eight were triaged `new-ticket` and ledgered. TH-R6: sane baseline security
+for a prototype, documented. TRO-566 (the batch-queue budget subsystem) is a separate
+session and is not touched here.
+
+### TRO-565 — access-layer security
+
+**1. Open redirect in `?next=` (major).** `AccessCodeForm.tsx` read the `next` query
+parameter and passed it straight to `router.push()`. A link like
+`/access-code?next=https://evil.com` sent a visitor who had just entered the real access
+code straight off-site. `src/lib/utils/safe-redirect-path.ts` adds
+`sanitizeRedirectPath()`. It accepts only a same-origin, path-relative destination and
+falls back to `/` for anything else: a scheme, a `//` prefix, or a `/\` prefix. Both
+`AccessCodeForm.tsx` and `src/proxy.ts` call the same function. `proxy.ts` builds `next`
+from the request path. That path cannot carry a scheme. It CAN start with `//` — a
+client can request `GET //evil.com/steal`. So both ends needed the same guard, not just
+the more obviously exploitable one.
+
+**2. `getClientIp` trusted a client-settable header (major).** The rate limiter keyed its
+per-IP bucket on the FIRST entry of `x-forwarded-for`. A caller can set that header to
+anything, including a fresh value on every request. `getClientIp`
+(`src/server/rate-limit/instances.ts`) now trusts the RIGHTMOST entry instead. A
+well-formed reverse proxy only ever APPENDS the peer it directly observed. So the last
+entry is the one hop a caller cannot set by hand. This ticket could not confirm Render's
+exact `x-forwarded-for` behavior against the live deployment. It has no deploy
+credentials. The code comment above `getClientIp` records what public Render
+documentation confirms, and what it does not. It also names the follow-up check: send a
+forged leading hop to the deployed instance, then check what the function receives.
+Trusting the rightmost entry is safe only if Render itself appends or rewrites that hop.
+If Render instead passes a client-supplied `x-forwarded-for` through untouched, a caller
+can still control the rightmost entry and bypass the per-IP bucket. The follow-up check
+above resolves this open question; until then, treat the protection as unconfirmed, not
+guaranteed.
+
+**3. The rate-limiter map grew without bound (major).** `fixed-window.ts` reset a key
+lazily on its next check, but never freed a key nobody revisited.
+`createFixedWindowLimiter` now takes an optional `maxEntries` (default 10,000, reasoned
+in the file's own header comment). It evicts the least-recently-checked key once the cap
+is hit. This is a plain LRU built on `Map`'s own insertion-order iteration.
+
+**4. `EXEMPT_PATHS` missed a trailing slash (minor).** `/api/health/` was not exempt,
+though `/api/health` was. This is fail-closed: a blocked health check, not an opened
+hole. But it is a real risk — Render's health check could read as a false outage.
+`proxy.ts` now strips a trailing slash before matching the exempt-path set.
+
+### TRO-567 — test quality and docs
+
+**1. `.env.local.example`'s placeholder was a working access code (major).**
+`ACCESS_CODE=changeme-in-production` was a real, functional code the moment a reader
+copied the file to `.env.local`. That is exactly what the setup instructions say to do.
+`ACCESS_CODE=` now ships empty — `access-code.ts` already fails closed on an unset or
+empty value, so this is safe by construction, not just by convention. The file also
+states plainly that the deployed instance reads this from Render's own platform
+environment, never from this file.
+
+**5. `.env.local.example`'s docker command bound Postgres to every interface (major).**
+`-p 5432:5432` binds `0.0.0.0`, exposing Postgres — with this same file's own example
+password — to the whole host, not just to `localhost`. This is the third copy of a
+pattern this repo already fixed twice: `worktree.sh` (`5a7d205`) and the README are
+both loopback-bound already; this file was the one a new contributor actually copies.
+Changed to `-p 127.0.0.1:5432:5432`, with a comment stating why. Found and relayed by
+a peer session reviewing PR #66; verified against the code before applying.
+
+**2. Budget tests keyed on the real current UTC date (major).** `daily-budget.test.ts`
+computed `TEST_DAY` once from the real clock, then wrote and read using each call's own
+independent `new Date()` default. A run that crossed a real UTC midnight between calls
+would write one date and clean up another. That leaves a stray row in the shared
+worktree database. Every read, write, and cleanup in the DB-backed describe blocks now
+threads one explicit `FIXED_NOW` (2099-07-04T12:00:00Z) end to end. The real wall clock
+never enters the picture.
+
+**3. A 2099 clock leaked future window-starts into the shared rate limiter (minor,
+self-reported).** `route.test.ts`'s own TRO-482 budget-wiring tests move the WHOLE
+process clock to 2099. They use `vi.setSystemTime` to isolate their own database rows.
+That same faked clock also reaches the rate limiter's production singletons. This
+happens if a real request passes through `checkVerifyRateLimit` or
+`checkBatchStartRateLimit` while the fake clock is active. The request then stores a
+window-start far in the future. Once the fake clock is torn down, real time stays BEHIND
+that stored timestamp forever. The old fixed-window logic never recognized that state as
+expired. `fixed-window.ts`'s `check()` now also resets whenever the clock reads EARLIER
+than a key's stored window-start. Real wall-clock time never runs backward. So an
+earlier reading always means one of two things: a test's fake clock unwinding, or an
+actual system clock correction. Starting fresh is the only sound response either way.
+This is the same file TRO-565 finding 3 above already touches, for its own separate
+reason.
+
+**4. A weak assertion in the global-limiter test (minor).** `instances.test.ts` built the
+global limiter with a limit of 100. The test asserts that a rejected per-IP attempt does
+not also consume the global budget. But three real checks against a limit of 100 always
+pass — whether or not that assertion actually holds. So the test could not have caught a
+regression. The limit is now 2, chosen so the exact number of checks the test performs
+pins the behavior. A quick check reintroduced the bug this test exists to catch: always
+calling the global limiter, regardless of the per-IP decision. That version of the test
+failed, as expected. Reverting the injected bug returned it to green.
+
+### Regression tests (one per finding, each confirmed red first)
+
+```text
+src/lib/utils/safe-redirect-path.test.ts                    -- finding TRO-565 #1
+src/app/_components/AccessCodeForm.test.tsx                 -- finding TRO-565 #1
+src/proxy.test.ts                                            -- findings TRO-565 #1, #4
+src/server/rate-limit/instances.test.ts                      -- findings TRO-565 #2, TRO-567 #4
+src/server/rate-limit/fixed-window.test.ts                   -- findings TRO-565 #3, TRO-567 #3
+scripts/deploy/env-local-example.test.ts                     -- finding TRO-567 #1
+src/server/budget/daily-budget.test.ts                       -- finding TRO-567 #2
+```
+
+**How to run it.**
+
+```bash
+pnpm test -- src/lib/utils/safe-redirect-path.test.ts src/app/_components/AccessCodeForm.test.tsx \
+  src/proxy.test.ts src/server/rate-limit src/server/budget scripts/deploy/env-local-example.test.ts
+```
+
+**Rollback.** Revert this commit range. The gate, `next=` sanitizer, rightmost-hop trust,
+LRU-bounded rate-limit maps, empty `.env.local.example` placeholder, and the fixed test
+clocks all return to their pre-TRO-565/567 state.
+
 ## TRO-571 — The deployed batch worker OOM-crash-looped under real load (2026-08-13)
 
 **What happened.** TRO-483's 36-case batch against the deployed instance stalled

@@ -73,6 +73,41 @@ The same three forms work for `pnpm eval:tro-546-case22-check`.
 their pre-TRO-558 state. `artifact-guard.ts` and its test are additive — safe to leave in place
 even on a partial revert.
 
+## TRO-486 — LH-065: requirements-audit compare sweep at commit 876a295 (2026-08-13)
+
+**One row moved, and it moved down.** TH-R2 (single-label latency) held VERIFIED at the last
+two sweeps. This sweep re-ran the same INT-002 staleness check against roughly 99 commits of
+further work and found a different answer: four commits (TRO-502, TRO-542, TRO-546) rewrote
+files the deployed-latency artifact's own `pipelineScope` names as the measured path, all
+landing after the artifact's measurement. INT-002 is unconditional — a stale artifact never
+supports VERIFIED, no matter how small the real timing effect probably is. TH-R2 moves to
+PARTIAL. A fresh `pnpm latency:check` run against the deployed instance closes it.
+
+**Everything else held or improved.** 12 VERIFIED, 8 PARTIAL, 2 MISSING, 1
+IMPLEMENTED-UNVERIFIED, 0 ASSUMED, 0 BLOCKED — 23 active requirements. The golden set grew
+from 32 to 36 cases (TRO-529's five real bottle photographs). The test suite grew from 1928
+to 2108 tests, still 100% green. Cascade-verdict accuracy is now an honest K=3 band
+(80.56%-83.33%, TRO-561) instead of a single lucky point figure. TH-R14 (README) and TH-R15
+(approach.md) remain the two MISSING rows and the sweep's single highest-leverage finding —
+between them they also hold down five PARTIAL rows (TH-R6, TH-R7, TH-R19, TH-R21, TH-R23)
+whose content already exists in internal documents an evaluator will never open.
+
+**Method.** Six parallel sub-agents re-traced all 23 rows against current HEAD, re-opening
+every citation rather than copying the prior (uncommitted, ~3-hour-stale) draft forward. The
+orchestrator spot-checked 10 citations directly and reconciled the ticket mapping against all
+93 Linear issues in project LabelHunter, adding six Done tickets the tracers had missed
+(TRO-459, 502, 507, 509, 512, 524, 541) to their correct rows.
+
+**Observed, not derived.** `pnpm test`: 169 files / 2108 tests, exit 0. `pnpm eval:check`:
+PASS, no live API call. `gh pr view 43`: OPEN, mergedAt null — TH-R6's key-protection half
+stays PENDING, not absent, not shipped. `gh repo view`: PUBLIC. Full detail in
+`audit/requirements/REPORT.md` and `gaps.md`; this ticket's own evidence, including the
+suggested scope TRO-484/TRO-485/TRO-483 execute from directly, lives there.
+
+**How to run it.** `cat audit/requirements/REPORT.md` for the full matrix and delta;
+`cat audit/requirements/gaps.md` for the per-row suggested scope. No app code changed —
+`audit/requirements/` and this entry are the only diff.
+
 ## TRO-502 — beverage_type's evidence exemption, finished in the prompt (2026-08-13)
 
 **The ticket's premise was tested first, and half of it is wrong.** The 2026-08-12 update asked

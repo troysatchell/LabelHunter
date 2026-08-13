@@ -22,8 +22,14 @@
  */
 import type { BeverageType, LabelVerdict, ReviewDisposition, ReviewReason } from "../../../lib/db/enums";
 import type { ReviewQueueFieldDetail, ResolverSuggestedField } from "../../../server/review-queue";
+// A VALUE import, so it comes from `../../../server/review-queue/types`
+// directly rather than that package's barrel: the barrel also exports
+// `list.ts`, which imports `pg`, and this module is bundled for the
+// browser. The types module itself is pure by its own documented rule.
+import { REVIEW_QUEUE_RESOLVER_STATUSES, type ReviewQueueResolverStatus } from "../../../server/review-queue/types";
 
-export type { ReviewQueueFieldDetail, ResolverSuggestedField };
+export type { ReviewQueueFieldDetail, ResolverSuggestedField, ReviewQueueResolverStatus };
+export { REVIEW_QUEUE_RESOLVER_STATUSES };
 
 /** One row `GET /api/review-queue` returns — the wire twin of
  * `src/server/review-queue`'s `ReviewQueueListItem`, with `createdAt` as an
@@ -34,6 +40,7 @@ export interface ReviewQueueListItemWire {
   applicationId: number;
   reason: ReviewReason;
   reasonText: string;
+  resolverStatus: ReviewQueueResolverStatus;
   brandName: string;
   classType: string;
   beverageType: BeverageType;
@@ -41,9 +48,13 @@ export interface ReviewQueueListItemWire {
   createdAt: string;
 }
 
-/** `GET /api/review-queue`'s success body. */
+/** `GET /api/review-queue`'s success body — one page (TRO-507).
+ * `nextCursor` carries the opaque position of the next page, or `null`
+ * when this page ends the queue. A client that ignores it shows a
+ * complete-looking list that is not one. */
 export interface ReviewQueueListResponse {
   items: ReviewQueueListItemWire[];
+  nextCursor: string | null;
 }
 
 /** `PATCH /api/review-queue/:id`'s request body. */

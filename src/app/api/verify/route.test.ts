@@ -10,7 +10,11 @@ import { makeMockMessage, WELL_FORMED_EXTRACTION_BODY } from "../../../server/ex
 import { MAX_UPLOAD_BYTES, preprocessImage } from "../../../server/preprocessing";
 import { productionComparators } from "../../../server/comparators";
 import type { WarningComparatorResult } from "../../../server/router";
-import type { CompareGovernmentWarningFromImageInput } from "../../../server/warning";
+import type {
+  BoldSignalResult,
+  CompareGovernmentWarningFromImageInput,
+  CompareGovernmentWarningFromImageResult,
+} from "../../../server/warning";
 import { deleteLabelImageBlobsWhere, saveLabelImage } from "../../../server/storage/db-image-storage";
 import { BUDGET_EXHAUSTED_MESSAGE, getTodaySpendUsd, recordSpendUsd } from "../../../server/budget/daily-budget";
 import { createFixedWindowLimiter } from "../../../server/rate-limit/fixed-window";
@@ -105,8 +109,21 @@ async function buildFormData(overrides: FormOverrides = {}): Promise<FormData> {
  * wiring" describe block below overrides `compareGovernmentWarning`
  * explicitly to exercise the real MATCH/MISMATCH/failure behavior.
  */
-async function warningNeedsReviewStub(): Promise<WarningComparatorResult> {
-  return { verdict: "NEEDS_REVIEW", reviewReason: "WARNING_MISMATCH" };
+/** TRO-533 — every fake `compareGovernmentWarning` in this file returns
+ * `{ comparator, boldSignal }` now, not a bare `WarningComparatorResult`.
+ * This helper builds that shape so each test states only the comparator
+ * result it actually cares about; `boldSignal` defaults to `null` (the
+ * "no crop was produced" state), which is fine for every test that is not
+ * itself testing the bold-signal wiring. */
+function warningOutcome(
+  comparator: WarningComparatorResult,
+  boldSignal: BoldSignalResult | null = null,
+): CompareGovernmentWarningFromImageResult {
+  return { comparator, boldSignal };
+}
+
+async function warningNeedsReviewStub(): Promise<CompareGovernmentWarningFromImageResult> {
+  return warningOutcome({ verdict: "NEEDS_REVIEW", reviewReason: "WARNING_MISMATCH" });
 }
 
 function makeDeps(overrides: Partial<VerifyRouteDeps> = {}): VerifyRouteDeps {
@@ -486,7 +503,7 @@ describe("POST /api/verify — government warning wiring (TRO-514, TH-R9)", () =
       // `warningCalled` promise never settling.
       expect(callOrder).not.toContain("extractLabel:resolved");
       markWarningCalled();
-      return { verdict: "MATCH" };
+      return warningOutcome({ verdict: "MATCH" });
     };
 
     const deps = makeDeps({ anthropicClient, compareGovernmentWarning });
@@ -514,7 +531,7 @@ describe("POST /api/verify — government warning wiring (TRO-514, TH-R9)", () =
   it("a compliant warning (MATCH) contributes to a clean PASS label verdict", async () => {
     const deps = makeDeps({
       anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
-      compareGovernmentWarning: async () => ({ verdict: "MATCH", note: "Government Warning matches the required text." }),
+      compareGovernmentWarning: async () => warningOutcome({ verdict: "MATCH", note: "Government Warning matches the required text." }),
     });
     const response = await post(await buildFormData(), deps);
 
@@ -536,10 +553,11 @@ describe("POST /api/verify — government warning wiring (TRO-514, TH-R9)", () =
   it("a non-compliant warning (MISMATCH) contributes a FAIL label verdict", async () => {
     const deps = makeDeps({
       anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
-      compareGovernmentWarning: async () => ({
-        verdict: "MISMATCH",
-        note: "Government Warning wording differs from the required text.",
-      }),
+      compareGovernmentWarning: async () =>
+        warningOutcome({
+          verdict: "MISMATCH",
+          note: "Government Warning wording differs from the required text.",
+        }),
     });
     const response = await post(await buildFormData(), deps);
 
@@ -610,7 +628,7 @@ describe("POST /api/verify — government warning wiring (TRO-514, TH-R9)", () =
       },
       compareGovernmentWarning: async (input) => {
         capturedInput = input;
-        return { verdict: "MATCH" };
+        return warningOutcome({ verdict: "MATCH" });
       },
     });
     const response = await post(await buildFormData(), deps);
@@ -622,6 +640,78 @@ describe("POST /api/verify — government warning wiring (TRO-514, TH-R9)", () =
     expect(capturedInput!.originalImage.equals(originalMarker)).toBe(true);
     expect(capturedHaikuVariant).toBeDefined();
     expect(capturedInput!.originalImage.equals(capturedHaikuVariant!)).toBe(false);
+  });
+
+  it("persists the bold advisory signal for EVERY verification, not only escalated ones (TRO-533)", async () => {
+    const boldSignal: BoldSignalResult = {
+      signal: "bold",
+      reason: "the prefix's stroke width measures wider than the body's",
+      ratio: 2.1,
+      splitFraction: 0.49,
+      prefixStrokeWidthPx: 5,
+      bodyStrokeWidthPx: 2.4,
+    };
+    const deps = makeDeps({
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      compareGovernmentWarning: async () => warningOutcome({ verdict: "MATCH" }, boldSignal),
+    });
+    const response = await post(await buildFormData(), deps);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as VerifySuccessResponse;
+    createdApplicationIds.push(body.applicationId);
+    // This label is a clean PASS, no escalation at all — proves the signal
+    // reaches the database on the ordinary happy path, not only via the
+    // review_queue's resolverInput snapshot.
+    expect(body.labelVerdict).toBe("PASS");
+
+    const [row] = await db.select().from(verifications).where(eq(verifications.id, body.verificationId));
+    expect(row.boldSignal).toEqual(boldSignal);
+  });
+
+  it("the bold signal NEVER changes the label verdict, in either direction (TRO-533, the single most important rule in this ticket)", async () => {
+    const wronglyBold: BoldSignalResult = {
+      signal: "bold",
+      reason: "the prefix's stroke width measures wider than the body's",
+      ratio: 2.1,
+      splitFraction: 0.49,
+      prefixStrokeWidthPx: 5,
+      bodyStrokeWidthPx: 2.4,
+    };
+    const wronglyNotBold: BoldSignalResult = {
+      signal: "not-bold",
+      reason: "the prefix's stroke width does not measure wider than the body's",
+      ratio: 0.9,
+      splitFraction: 0.49,
+      prefixStrokeWidthPx: 2,
+      bodyStrokeWidthPx: 2.2,
+    };
+
+    // A comparator MISMATCH stays FAIL even when the bold signal reports
+    // the statute's OTHER requirement as fully compliant ("bold") — a
+    // gating implementation would be tempted to let a compliant bold
+    // prefix soften a wording failure. It must not.
+    const failDeps = makeDeps({
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      compareGovernmentWarning: async () =>
+        warningOutcome({ verdict: "MISMATCH", note: "Government Warning wording differs from the required text." }, wronglyBold),
+    });
+    const failResponse = await post(await buildFormData(), failDeps);
+    const failBody = (await failResponse.json()) as VerifySuccessResponse;
+    createdApplicationIds.push(failBody.applicationId);
+    expect(failBody.labelVerdict).toBe("FAIL");
+
+    // A comparator MATCH stays PASS even when the bold signal reports
+    // "not-bold" — a gating implementation would be tempted to downgrade a
+    // wording-compliant label because the prefix does not measure bold.
+    // It must not: CP-2 §7.2/§7.3, bold-detect.ts's own header comment.
+    const passDeps = makeDeps({
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      compareGovernmentWarning: async () => warningOutcome({ verdict: "MATCH" }, wronglyNotBold),
+    });
+    const passResponse = await post(await buildFormData(), passDeps);
+    const passBody = (await passResponse.json()) as VerifySuccessResponse;
+    createdApplicationIds.push(passBody.applicationId);
+    expect(passBody.labelVerdict).toBe("PASS");
   });
 });
 

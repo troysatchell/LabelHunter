@@ -359,7 +359,14 @@ export async function runOneCase(
     compareGovernmentWarning: async (input) => {
       try {
         const result = await defaultCompareGovernmentWarning(input);
-        capturedWarningResult = result;
+        // TRO-533: `result` now carries `{ comparator, boldSignal }` — this
+        // script's own re-derived `routeLabel` call (below) takes only the
+        // router-facing `comparator` half, the same boundary
+        // `handleVerifyRequest` itself enforces. Bold-signal accuracy is
+        // scored separately, read-only, by `pnpm eval:bold-signal-sweep`
+        // (`bold-signal-sweep.ts`) — this cascade runner is not that
+        // measurement's home.
+        capturedWarningResult = result.comparator;
         return result;
       } catch (cause) {
         capturedWarningResult = null;

@@ -1,0 +1,643 @@
+{
+  "ticket": "TRO-533 / LH-026",
+  "measuredAt": "2026-08-13T22:07:24.219Z",
+  "manifestVersion": "1.0.0",
+  "goldenSetCommitSha": "0e6e3e1432f63609ad49febf5445fb866cadaf91",
+  "manifestContentHash": "fa3dbcfb60a6ecbd6c2de4ec837c54c72b87e909865ee9429946ac79cc5e0784",
+  "method": "Read-only replay of the bold-signal pipeline (preprocessImage -> detectWarningRegion -> cropForOcr -> measureBoldSignal) against every committed golden-set image, in the same order the verify route's default dependencies call them. Scored against golden-set/manifest.json's label.governmentWarningPrefixBold ground truth (TRO-527 / LH-022). No Anthropic API call. No database write. The only file this script writes is this one.",
+  "caseCount": 36,
+  "scoreableCaseCount": 30,
+  "correctCount": 25,
+  "accuracy": 0.8333333333333334,
+  "signalDistribution": {
+    "bold": 25,
+    "not-bold": 0,
+    "uncertain": 6,
+    "not-measured": 5
+  },
+  "results": [
+    {
+      "caseId": "case-01-clean-match-spirits",
+      "category": "clean-match",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-02-clean-match-beer-no-abv",
+      "category": "clean-match",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-03-clean-match-wine",
+      "category": "clean-match",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-04-clean-match-spirits-alt-format",
+      "category": "clean-match",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-05-abv-mismatch-application-higher",
+      "category": "abv-mismatch",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-06-abv-mismatch-label-higher",
+      "category": "abv-mismatch",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-07-abv-proof-mismatch-internal",
+      "category": "abv-mismatch",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-08-title-case-warning-prefix-only",
+      "category": "title-case-warning",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 870,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-09-title-case-warning-full-statement",
+      "category": "title-case-warning",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 864,
+        "height": 166
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-10-reworded-warning-clause-one",
+      "category": "reworded-warning",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 870,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-11-reworded-warning-clause-two",
+      "category": "reworded-warning",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 134
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-12-missing-warning-spirits",
+      "category": "missing-warning",
+      "governmentWarningPresent": false,
+      "groundTruthPrefixBold": false,
+      "expectedSignal": null,
+      "measuredSignal": null,
+      "measuredReason": null,
+      "measuredRatio": null,
+      "region": null,
+      "detectionMethod": null,
+      "correct": null
+    },
+    {
+      "caseId": "case-13-missing-warning-wine",
+      "category": "missing-warning",
+      "governmentWarningPresent": false,
+      "groundTruthPrefixBold": false,
+      "expectedSignal": null,
+      "measuredSignal": null,
+      "measuredReason": null,
+      "measuredRatio": null,
+      "region": null,
+      "detectionMethod": null,
+      "correct": null
+    },
+    {
+      "caseId": "case-14-case-variant-brand-stones-throw",
+      "category": "case-variant-brand",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-15-case-variant-brand-punctuation",
+      "category": "case-variant-brand",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-16-case-variant-brand-extra-words",
+      "category": "case-variant-brand",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-17-glare-front-label",
+      "category": "glare",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-18-glare-warning-block",
+      "category": "glare",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "uncertain",
+      "measuredReason": "stroke width is below the reliable measurement floor",
+      "measuredRatio": 2,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 134
+      },
+      "detectionMethod": "classical",
+      "correct": false
+    },
+    {
+      "caseId": "case-19-rotation-mild-correctable",
+      "category": "rotation",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": null,
+      "measuredReason": null,
+      "measuredRatio": null,
+      "region": null,
+      "detectionMethod": null,
+      "correct": false
+    },
+    {
+      "caseId": "case-20-rotation-severe-upside-down",
+      "category": "rotation",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": null,
+      "measuredReason": null,
+      "measuredRatio": null,
+      "region": null,
+      "detectionMethod": null,
+      "correct": false
+    },
+    {
+      "caseId": "case-21-low-light-front-label",
+      "category": "low-light",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "uncertain",
+      "measuredReason": "prefix and body stroke-width ranges overlap; no clean separation",
+      "measuredRatio": 2.25,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 134
+      },
+      "detectionMethod": "classical",
+      "correct": false
+    },
+    {
+      "caseId": "case-22-low-light-warning-block",
+      "category": "low-light",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-23-tiny-warning-text-standard-bottle",
+      "category": "tiny-warning-text",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "uncertain",
+      "measuredReason": "stroke width is below the reliable measurement floor",
+      "measuredRatio": 2.25,
+      "region": {
+        "x": 58,
+        "y": 520,
+        "width": 878,
+        "height": 28
+      },
+      "detectionMethod": "classical",
+      "correct": false
+    },
+    {
+      "caseId": "case-25-odd-typography-script-brand",
+      "category": "odd-typography",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-26-odd-typography-blackletter-class-type",
+      "category": "odd-typography",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-27-conflicting-net-contents",
+      "category": "conflicting-application-vs-label",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-28-conflicting-class-type",
+      "category": "conflicting-application-vs-label",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-29-conflicting-brand-name",
+      "category": "conflicting-application-vs-label",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-30-clean-match-net-contents-alt-format",
+      "category": "clean-match",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-31-title-case-warning-surgeon-general-lowercase",
+      "category": "title-case-warning",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-32-reworded-warning-near-miss-missing-comma",
+      "category": "reworded-warning",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.7037037037037037,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-35-clean-match-real-photo-flat-scan",
+      "category": "clean-match",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 2.7272727272727275,
+      "region": {
+        "x": 67,
+        "y": 41,
+        "width": 1034,
+        "height": 406
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-36-rotation-real-photo-gentle-curve",
+      "category": "rotation",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": "unknown",
+      "expectedSignal": null,
+      "measuredSignal": "uncertain",
+      "measuredReason": "the detected line spans too much of the crop; the paragraph's lines likely merged into one",
+      "measuredRatio": null,
+      "region": {
+        "x": 0,
+        "y": 0,
+        "width": 1000,
+        "height": 187
+      },
+      "detectionMethod": "band-search",
+      "correct": null
+    },
+    {
+      "caseId": "case-37-rotation-real-photo-severe-curve-partial-crop",
+      "category": "rotation",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": "unknown",
+      "expectedSignal": null,
+      "measuredSignal": "uncertain",
+      "measuredReason": "the detected line spans too much of the crop; the paragraph's lines likely merged into one",
+      "measuredRatio": null,
+      "region": {
+        "x": 45,
+        "y": 122,
+        "width": 710,
+        "height": 408
+      },
+      "detectionMethod": "classical",
+      "correct": null
+    },
+    {
+      "caseId": "case-38-glare-real-photo-crown-royal",
+      "category": "glare",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": "unknown",
+      "expectedSignal": null,
+      "measuredSignal": null,
+      "measuredReason": null,
+      "measuredRatio": null,
+      "region": null,
+      "detectionMethod": null,
+      "correct": null
+    },
+    {
+      "caseId": "case-39-rotation-real-photo-coppola-wraparound",
+      "category": "rotation",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": "unknown",
+      "expectedSignal": null,
+      "measuredSignal": "uncertain",
+      "measuredReason": "the detected line spans too much of the crop; the paragraph's lines likely merged into one",
+      "measuredRatio": null,
+      "region": {
+        "x": 0,
+        "y": 0,
+        "width": 1920,
+        "height": 945
+      },
+      "detectionMethod": "classical",
+      "correct": null
+    }
+  ]
+}

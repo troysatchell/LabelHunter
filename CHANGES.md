@@ -18,22 +18,21 @@ reported the gate rejecting it as a latency measurement.
 The script predates the gate. Nothing failed loudly, because a 401 is a
 perfectly valid HTTP response — it just is not the thing being measured.
 
-**Why it mattered now.** TRO-486's sweep downgraded TH-R2 from VERIFIED to
-PARTIAL: the committed p50 3834 ms / p95 4458 ms figures predate TRO-546's
-change to `region-detect.ts`, which sits on the measured path. The
-remeasurement is the fix for that downgrade, and it could not run.
+**Why it mattered now.** TRO-486's sweep downgraded TH-R2 to PARTIAL. The
+committed p50 3834 ms and p95 4458 ms figures predate TRO-546. That ticket
+changed `region-detect.ts`, which sits on the measured path. The
+remeasurement fixes the downgrade. It could not run.
 
 **The fix.** `scripts/latency/access-code.ts` builds the credential headers
-from `ACCESS_CODE` and sends it as `x-access-code` — the header PRD §8
-provides so non-browser callers do not have to run the browser sign-in flow.
+from `ACCESS_CODE`. It sends the value as `x-access-code`. PRD §8 provides
+that header so non-browser callers can skip the browser sign-in flow.
 
 Two decisions worth naming:
 
 1. **Built once, before the first request.** A per-request build would turn
-   a missing credential into `runs` identical 401s. That reads as "the
-   deployed app is broken" rather than "you did not supply a credential",
-   and it spends the target's per-IP rate-limit budget on the way, which can
-   lock out the next honest attempt.
+   a missing credential into `runs` identical 401s. That reads as a broken
+   deployment, not a missing variable. It also spends the target's per-IP
+   rate-limit budget. A later honest attempt can then be locked out.
 2. **Whitespace-only is treated as absent, and a real value is trimmed.** A
    code pasted out of a dashboard often carries a trailing newline. Sent
    verbatim it fails the server's constant-time comparison and is
@@ -42,11 +41,12 @@ Two decisions worth naming:
 The gate is not weakened or bypassed. The harness authenticates as a real
 caller does, which is the only way the number describes the shipped path.
 
-**Confirmed.** `scripts/latency/access-code.test.ts`, 6 cases: the header is
-sent under its exact server-side name, a missing variable throws a named
-error rather than sending nothing, empty and whitespace-only are refused,
-and a padded value is trimmed. `render-target.ts` and `target-info.ts` were
-checked for the same gap and make no outbound request.
+**Confirmed.** `scripts/latency/access-code.test.ts` covers 6 cases. The
+header goes out under its exact server-side name. A missing variable throws
+a named error instead of sending nothing. Empty and whitespace-only values
+are refused. A padded value is trimmed. `render-target.ts` and
+`target-info.ts` were checked for the same gap. Neither makes an outbound
+request.
 
 **Not done here.** The remeasurement itself. That needs a real run against
 the deployed instance and belongs with the session that owns TH-R2.

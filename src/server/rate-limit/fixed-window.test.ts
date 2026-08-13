@@ -91,6 +91,27 @@ describe("createFixedWindowLimiter — bounded key count (TRO-565 finding 3)", (
     expect(limiter.check("a").allowed).toBe(true);
   });
 
+  it("refreshes a key's recency on every check, not only on insertion — accessing 'a' again protects it from the next eviction", () => {
+    // CodeRabbit review (TRO-565 PR): the test above only proves eviction
+    // follows INSERTION order (a, then b, then c — "a" happens to be both
+    // oldest-inserted and least-recently-used). This test tells those two
+    // apart: it re-checks "a" before adding "c", so "a" is no longer the
+    // least-recently-used entry even though it was inserted first — "b" is.
+    const clock = fakeClock();
+    const limiter = createFixedWindowLimiter({ limit: 1, windowMs: 1_000_000_000, now: clock.now, maxEntries: 2 });
+
+    expect(limiter.check("a").allowed).toBe(true); // "a" inserted
+    expect(limiter.check("b").allowed).toBe(true); // "b" inserted — insertion order: a, b
+    expect(limiter.check("a").allowed).toBe(false); // "a" re-checked (over its own limit) — but this ALSO refreshes "a" to most-recently-used, leaving "b" as the oldest
+    expect(limiter.check("c").allowed).toBe(true); // a THIRD key exceeds maxEntries: 2 — evicts "b" (now the least-recently-used), not "a"
+
+    // "a" is still tracked (it was refreshed, not evicted): a second check
+    // within its still-active window is rejected, same as before.
+    expect(limiter.check("a").allowed).toBe(false);
+    // "b" WAS evicted: this check starts a fresh window for it.
+    expect(limiter.check("b").allowed).toBe(true);
+  });
+
   it("never evicts a key that is still within maxEntries", () => {
     const clock = fakeClock();
     const limiter = createFixedWindowLimiter({ limit: 1, windowMs: 1_000_000_000, now: clock.now, maxEntries: 2 });

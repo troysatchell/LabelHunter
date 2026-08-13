@@ -536,13 +536,23 @@ describe("measureBoldSignal — golden-set corpus, degraded cases: each case's O
   );
 
   it(
-    "case-22-low-light-warning-block (TRO-546's own darkened case): still bold — contrast normalization (rule 4) is exactly what recovers this one",
+    "case-22-low-light-warning-block (TRO-563: strengthened past TRO-546's own recovery point): detectWarningRegion finds NO region at all — the case-19/20 pattern, not a bold measurement",
     async () => {
+      // TRO-546's fix recovered the ORIGINAL case-22 pixels (brightnessFactor
+      // 0.3 alone) well enough that contrast normalization (rule 4) still
+      // measured bold here. TRO-563 (2026-08-13, Troy-ruled) strengthened
+      // this case's own pixels further — contrastFactor 0.38, noiseAmplitude
+      // 30, plus a blur — specifically because that easy recovery let both
+      // OCR channels read the warning perfectly and scored this case PASS
+      // against its own REVIEW/LOW_IMAGE_QUALITY expectation
+      // (golden-set/manifest.json's own notes for this case). At the
+      // strengthened degradation, `detectWarningRegion` no longer finds a
+      // block at all (measured: scripts/eval/results/tro-563-case22-ocr-region-check.json)
+      // — the same "no region, not this ticket's function" outcome case-19
+      // and case-20 already document above, not a regression in this
+      // ticket's own bold-detect logic.
       const crop = await detectAndCrop("golden-set/images/case-22-low-light-warning-block.jpg");
-      expect(crop).not.toBeNull();
-      if (!crop) return;
-      const result = await measureBoldSignal(crop);
-      expect(result.signal).toBe("bold");
+      expect(crop).toBeNull();
     },
     15_000,
   );

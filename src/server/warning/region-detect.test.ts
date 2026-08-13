@@ -315,25 +315,30 @@ describe("region detection + crop + real OCR — a real golden-set label image",
   );
 
   it(
-    "case-22 (TRO-546): detects the darkened warning block and reads it back correctly — was null before this fix",
+    "case-22 (TRO-563): OCR channel is genuinely unavailable again, on purpose — TRO-546's own fix still works, the pixels changed",
     async () => {
-      // Before TRO-546: `detectWarningRegionClassical` returned null (the
-      // region's own background, darkened to ~grey 76, read as "ink" under
-      // the old fixed threshold), and `detectWarningRegionByBandSearch`'s
-      // fixed-thirds crop also failed on this image — `detectWarningRegion`
-      // returned null overall, CP-2 §4.5's "OCR unavailable" state.
-      // Measured: scripts/eval/results/case-22-ocr-region.json.
+      // TRO-546 fixed `detectWarningRegionClassical` returning a false
+      // null on this case (the region's own darkened background read as
+      // "ink" under the old fixed threshold). That fix is still correct —
+      // the synthetic-image tests above (`buildSyntheticLabelWithDimmedParagraph`)
+      // still prove it directly, with no dependency on this committed file.
+      //
+      // TRO-563: this case's own committed image changed. TRO-546's fix
+      // made the ORIGINAL case-22 pixels (brightnessFactor 0.3 alone) too
+      // easy — both Tesseract (confidence 95, EXACT_MATCH) and live Haiku
+      // (confidence 0.98, exact) read them perfectly, scoring this case
+      // PASS against its own REVIEW/LOW_IMAGE_QUALITY expectation
+      // (golden-set/manifest.json). Troy ruled (2026-08-13): strengthen the
+      // pixels, keep the expectation. Measured on the strengthened image
+      // (scripts/eval/results/tro-563-case22-ocr-region-check.json):
+      // NEITHER classical NOR band-search finds the warning block anymore
+      // — `detectWarningRegion` returns null, CP-2 §4.5's "OCR unavailable"
+      // state, which is this ticket's actual goal: force the single-channel
+      // table, not the dual-channel one, so the case can reach
+      // REVIEW/LOW_IMAGE_QUALITY again instead of a dual-channel PASS.
       const image = readFileSync("golden-set/images/case-22-low-light-warning-block.jpg");
       const result = await detectWarningRegion(image, async (crop) => runWarningOcr(crop));
-      expect(result).not.toBeNull();
-      if (!result) return;
-      expect(result.method).toBe("classical"); // measured: classical alone now finds it, band-search fallback is not needed
-      const crop = await cropForOcr(image, result.region);
-      const ocrResult = await runWarningOcr(crop);
-      expect(ocrResult).not.toBeNull();
-      expect(ocrResult?.text).toContain("GOVERNMENT WARNING");
-      expect(ocrResult?.text).toContain("Surgeon General");
-      expect(ocrResult?.confidence).toBeGreaterThan(OCR_CONFIDENCE_FLOOR);
+      expect(result).toBeNull();
     },
     15_000,
   );

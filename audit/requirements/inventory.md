@@ -82,7 +82,7 @@ independently checkable obligation appears, regardless of section.
 ## TH-R9
 - **Source:** source-TH.md, L33 (Jenny Park interview)
 - **Quote:** "the warning statement check is actually trickier than it sounds. It has to be exact. Like, word-for-word, and the 'GOVERNMENT WARNING:' part has to be in all caps and bold."
-- **Meaning in code:** Government warning verified word-for-word against the statutory text; 'GOVERNMENT WARNING:' prefix checked for all-caps; bold/formatting checked or explicitly documented as a limitation. Strict where TH-R8 is lenient — the two matching regimes coexist deliberately.
+- **Meaning in code:** Government warning verified word-for-word against the statutory text; 'GOVERNMENT WARNING:' prefix checked for all-caps; bold checked, with a verdict consequence. Strict where TH-R8 is lenient — the two matching regimes coexist deliberately. (Corrected 2026-08-13 per INT-005: this field previously read "bold/formatting checked **or explicitly documented as a limitation**". That allowance appears nowhere in the source quote, which reads "has to be in all caps and bold" and describes rejecting a label for getting the caps wrong. An interpretation may narrow a requirement into something testable; it may never widen it into something weaker than the brief.)
 - **Type:** functional
 - **Acceptance evidence:** Test cases: exact warning → pass; 'Government Warning' title-case → fail; reworded warning → fail.
 - **Status:** active

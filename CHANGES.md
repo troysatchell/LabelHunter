@@ -61,6 +61,22 @@ Left untouched — a non-pinning upper bound, still true at 31 ≤ 32; tightenin
 need loosening again once LH-023 adds cases back:
 `src/lib/golden-set/loader.test.ts`'s `expect(result.cases.length).toBeLessThanOrEqual(32)`.
 
+**Rubric-coverage consequence.** This merge takes vector V4 (warning in a notably smaller
+font, `audit/rubric.md:106`) from two cases to one. case-23 is now V4's only instance.
+Single-case coverage is already the norm for V6, V7, V8, and V9. V4 now matches that pattern.
+
+The two cases duplicated print size: both printed the warning at 9px. They differed on
+bottle size. case-23 used a standard bottle. case-24 used a 50 mL miniature. Read V4 as font
+size relative to the label, and the miniature bottle was the more demanding instance.
+
+Per `docs/diagnostics/2026-08-12-verdict-miss-triage.md:11`, both V4 cases currently miss
+their expected verdict. V4 is provable today by exactly one case, and that case currently
+fails.
+
+If the corpus chain (LH-023/LH-024) later judges V4's coverage too thin, the freed slot can
+host a redesigned miniature-bottle V4 case. That decision rides with Troy's corpus rulings,
+not this entry.
+
 **Not this ticket's job.** Setting `verified: true` on case-21/23/25/26 (case-24's own flag
 goes away with the case) stays Troy's, per `golden-set/README.md:81-85` — only a human sets it.
 

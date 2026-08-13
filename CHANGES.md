@@ -4,6 +4,41 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-556 — eval:check cheap mode now warns on manifest drift against the live file (2026-08-13)
+
+**The gap.** `scripts/eval/results/eval-report.json` and `scripts/eval/baseline.json` each carry
+a `manifestContentHash` (TRO-538). `eval:check` cheap mode compared only these two committed
+files against each other. It never read `golden-set/manifest.json` itself. A corpus rebuild
+could edit the manifest. Both frozen files could go stale together and still agree with each
+other. Gate G8 would pass. The committed accuracy evidence would describe images that no longer
+exist.
+
+**The fix.** `scripts/eval/manifest-drift.ts` adds one pure comparison. It checks the report's
+committed hash against a hash of the live manifest file, computed right now. `check.ts`'s cheap
+mode calls `hashManifestFile` — the same function live mode already uses. Cheap mode prints the
+result on every run. A match prints "no drift detected." A mismatch prints a loud, named
+`MANIFEST DRIFT` warning. The check reads one local file. It makes no live API call, so cheap
+mode stays cheap. The warning never fails the gate. A fail would block every corpus ticket the
+moment a golden-set PR merged, possibly before anyone ran the re-baseline protocol. The existing
+`stale-baseline` check already avoids this failure on its own axis. This new warning avoids the
+same failure on a different axis. See `check.ts`'s own module comment for the full reasoning.
+
+**Evidence.** `scripts/eval/manifest-drift.test.ts` proves two things: the function stays silent
+on a matching hash, and it fires the named warning on a synthetic mismatch. A manual run
+confirmed the same behavior against the real committed files:
+
+1. With the report's hash intact, `pnpm eval:check` printed "no drift detected" and exited 0.
+2. With the report's `manifestContentHash` field temporarily corrupted, the same command printed
+   the `MANIFEST DRIFT` warning and still exited 0.
+3. The corrupted file was then restored from the untouched backup copy.
+
+**State at pickup.** Both committed artifacts (`eval-report.json`, `baseline.json`) already carry
+the same hash as the live manifest: `fa3dbcf...`. TRO-561's authorized re-baseline sweep set this
+hash. No drift exists today. This ticket needs no live-eval refresh.
+
+**Rollback.** Revert this entry's commit. `check.ts` then compares the two committed files only,
+again. It no longer reads the live manifest file.
+
 ## TRO-572 — worktree.sh: a per-ticket lock serializes truly concurrent invocations (2026-08-13)
 
 **The gap.** TRO-557 refuses a worktree reuse from a DIFFERENT session. It checks a

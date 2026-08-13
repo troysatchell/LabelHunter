@@ -4,6 +4,49 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-577 — list surfaces stop hitching while scrolling (2026-08-13)
+
+**The report.** Troy: "in the review queue the scroll sticks randomly — it hitches." A
+parallel code sweep (workflow wf_d4a01062-e5b) ranked the causes. Each cause was then
+verified against the code by hand.
+
+**The causes, and the fixes.**
+1. **Link viewport prefetch (review queue).** Every queue row rendered a default-prefetch
+   `next/link`. In production, each link prefetches its detail route as it scrolls into
+   view. Each prefetch is a server render with database queries. Scrolling the seeded queue
+   fired a burst of them mid-scroll — felt as random hitches. Fix: `prefetch={false}` on the
+   row links. The detail page is one deliberate click away; nothing needs to load before
+   that click.
+2. **Batch page poll re-render.** The batch progress poll called `setPhase` with a fresh
+   object every 3 s, even when nothing changed. A still batch re-rendered the whole summary
+   and results table every tick. Fix: skip the update when the payload is identical
+   (`isSameProgress`, exported and unit-tested). One exception holds: identical data after
+   a failed poll still updates. Clearing the stale error note is itself a visible change.
+3. **Row re-render on Refresh / Load more (review queue).** The list re-rendered every row
+   at the moment of a click, because the phase transition re-rendered the parent.
+   `ReviewQueueList` is now memoized. The transitions keep the same `items` reference, so
+   only the status chrome re-renders.
+
+**Investigated, no change needed.** The sweep flagged refresh-from-error unmounting the
+list and losing scroll position. The code already guards this. A manual refresh keeps rows
+mounted for every state that has rows (`ReviewQueueBrowser.tsx`'s own PR #16 fix). The
+error state has no rows to lose. **Not applied:** `content-visibility: auto` on rows. A
+wrong `contain-intrinsic-size` estimate makes the scrollbar itself jump. That reads as the
+exact symptom this ticket removes, and the queue's row count does not need the
+optimization.
+
+**Rollback.** Revert the PR. All three surfaces return to their prior render behavior.
+
+**Confirmed.** The prefetch test failed red against the unmodified component:
+`data-prefetch` was `"undefined"`. The `isSameProgress` unit tests failed red on the
+missing export. Both failures were observed before the fix. Two poll integration tests pin
+the two ways the new skip could regress: a real change must still apply after identical
+no-op polls, and a stale error note must clear on identical data. Both pass against the old
+always-apply code by construction. All 33 tests across the three touched component files
+pass. `pnpm typecheck` is clean. **Not measured:** a before/after scroll-jank profile on
+the live deployment. The causal chain is verified in code. The production prefetch behavior
+does not reproduce in a dev-mode profile. Stated per the no-fabricated-numbers rule.
+
 ## TRO-575 — the review detail shows the label image (2026-08-13)
 
 **The gap.** The review-item page showed per-field text evidence with no label image. A

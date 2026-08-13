@@ -28,7 +28,57 @@
  * precise SLA. PRD §8 explicitly allows "a fixed-window or token-bucket
  * counter... is sufficient" — this repo picks the simpler of the two
  * sufficient options.
+ *
+ * **Bounded key count (TRO-565 finding 3).** The lazy reset above frees a
+ * key's MEMORY only the next time that exact key is checked again — a key
+ * nobody ever revisits stays in `state` forever. `../../proxy.ts`'s gate
+ * sits in front of every route this limiter protects, so an unauthenticated
+ * caller cannot reach `/api/verify` or `/api/batch/start` at all; the
+ * realistic source of many distinct keys is `/api/access-code` itself
+ * (exempt from the gate, by necessity — see `./instances.ts`'s own header
+ * comment) plus finding 2's own fix landing: even with `getClientIp` now
+ * keying on a hop a caller cannot forge, a long-lived process still accrues
+ * one entry per distinct real caller over its lifetime. `maxEntries` (below)
+ * bounds that growth with a plain LRU: `state` is a `Map`, whose iteration
+ * order tracks INSERTION order; every `check()` call re-inserts its key (via
+ * `delete` then `set`), which moves it to the end, so the front of the map
+ * is always the least-recently-checked key. Exceeding the cap evicts
+ * exactly that one key before admitting the new one.
+ *
+ * **Clock regression (TRO-567 finding 3).** `now` is injectable — real
+ * production code always uses `Date.now`, but a test can fake it. Vitest's
+ * `vi.setSystemTime` fakes the WHOLE process clock, including any call this
+ * limiter's production singletons (`./instances.ts`) make while a caller
+ * elsewhere in the suite has moved the clock far into the future to isolate
+ * a date-keyed database row (`../../app/api/verify/route.test.ts`'s own
+ * 2099 tests, TRO-482 merge review). That stores a window-start timestamp
+ * far in the future. Once the fake clock is torn down, real time is
+ * BEHIND that stored timestamp — `at - windowStartMs` is a large NEGATIVE
+ * number, which the plain `>= windowMs` check below would never treat as
+ * "expired," pinning that key's stale window for the rest of the process.
+ * `check()` also resets whenever `at` is earlier than the stored
+ * `windowStartMs`: real wall-clock time never runs backward, so a `now()`
+ * that goes backward relative to what this limiter last recorded is, by
+ * construction, either a test's fake clock unwinding or an actual system
+ * clock correction — in both cases the old window has no meaningful
+ * relationship to the new `at`, and starting fresh is the only reading that
+ * makes sense.
  */
+
+/** Default cap on distinct keys one limiter tracks at once (TRO-565 finding
+ * 3). This deployment is one Render `starter`-plan instance with no
+ * horizontal scaling (this file's own header comment above) — a real,
+ * scope-appropriate ceiling, not an arbitrary round number: the TTB golden
+ * set is ~20-30 labels and a live demo audience is a handful of people
+ * (`./instances.ts`'s own reasoning for its rate-limit numbers), so
+ * legitimate distinct callers over the life of one process realistically
+ * number in the tens, not thousands. 10,000 leaves three orders of
+ * magnitude of headroom above that while still bounding worst-case memory
+ * to a small, fixed number (each entry is two numbers plus a string key —
+ * a few hundred KB at the cap, not a leak) regardless of how long the
+ * process runs.
+ */
+export const DEFAULT_MAX_ENTRIES = 10_000;
 
 export interface RateLimitDecision {
   readonly allowed: boolean;
@@ -45,6 +95,10 @@ export interface FixedWindowLimiterConfig {
    * controllable clock (standing rule 8: never a real sleep in a rate-limit
    * window test). */
   readonly now?: () => number;
+  /** Hard cap on distinct keys tracked at once (TRO-565 finding 3).
+   * Defaults to `DEFAULT_MAX_ENTRIES`. Evicts the least-recently-checked
+   * key once exceeded — see this file's own header comment. */
+  readonly maxEntries?: number;
 }
 
 export interface FixedWindowLimiter {
@@ -77,24 +131,48 @@ export function createFixedWindowLimiter(config: FixedWindowLimiterConfig): Fixe
   if (!Number.isFinite(config.windowMs) || config.windowMs <= 0) {
     throw new RangeError(`createFixedWindowLimiter: windowMs must be a positive number, got ${config.windowMs}`);
   }
+  if (config.maxEntries !== undefined && (!Number.isInteger(config.maxEntries) || config.maxEntries <= 0)) {
+    throw new RangeError(`createFixedWindowLimiter: maxEntries must be a positive integer, got ${config.maxEntries}`);
+  }
   const { limit, windowMs } = config;
   const now = config.now ?? Date.now;
+  const maxEntries = config.maxEntries ?? DEFAULT_MAX_ENTRIES;
   const state = new Map<string, WindowState>();
+
+  /** Marks `key` as the most-recently-used entry by moving it to the end
+   * of `state`'s iteration order (delete, then re-insert — `Map` orders by
+   * insertion, not by key value). Evicts the single least-recently-used
+   * entry first if `key` is new AND the map is already at `maxEntries`. */
+  function touch(key: string, value: WindowState): void {
+    const isNewKey = !state.has(key);
+    if (isNewKey && state.size >= maxEntries) {
+      const oldestKey = state.keys().next().value;
+      if (oldestKey !== undefined) state.delete(oldestKey);
+    }
+    state.delete(key);
+    state.set(key, value);
+  }
 
   return {
     check(key: string): RateLimitDecision {
       const at = now();
       const existing = state.get(key);
 
-      if (!existing || at - existing.windowStartMs >= windowMs) {
+      // TRO-567 finding 3: `at < existing.windowStartMs` means the clock
+      // moved backward relative to what this limiter last recorded for
+      // this key — real wall-clock time never does that, so treat it the
+      // same as an ordinary expired window, not as "still inside a window
+      // that started in what now looks like the far future."
+      if (!existing || at < existing.windowStartMs || at - existing.windowStartMs >= windowMs) {
         // No window yet, or the previous one has fully elapsed — start a
         // fresh one. Lazy reset (only on the next real check for THIS key),
         // not a timer: a key nobody calls again costs nothing to expire.
-        state.set(key, { count: 1, windowStartMs: at });
+        touch(key, { count: 1, windowStartMs: at });
         return { allowed: true, retryAfterMs: 0 };
       }
 
       existing.count += 1;
+      touch(key, existing);
       if (existing.count > limit) {
         const retryAfterMs = existing.windowStartMs + windowMs - at;
         return { allowed: false, retryAfterMs: Math.max(retryAfterMs, 1) };

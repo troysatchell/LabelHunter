@@ -18,6 +18,7 @@
  */
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { sanitizeRedirectPath } from "../../lib/utils/safe-redirect-path";
 
 const DEFAULT_NEXT = "/";
 
@@ -64,10 +65,17 @@ export interface AccessCodeFormViewProps {
  * component's first (hydration) render. `next`'s value never appears in
  * rendered DOM output — only inside `handleSubmit`'s closure — so a
  * client value that differs from the server's default causes no
- * hydration mismatch warning; there is nothing visible to mismatch. */
+ * hydration mismatch warning; there is nothing visible to mismatch.
+ *
+ * `?next=` is attacker-controlled input (standing rule 18) — anyone can
+ * send a victim a link like `/access-code?next=https://evil.com`.
+ * `sanitizeRedirectPath` (TRO-565 finding 1) rejects anything that is not
+ * a same-origin, path-relative destination before this value ever reaches
+ * `router.push()`. */
 function readNextFromLocation(): string {
   if (typeof window === "undefined") return DEFAULT_NEXT;
-  return new URLSearchParams(window.location.search).get("next") || DEFAULT_NEXT;
+  const raw = new URLSearchParams(window.location.search).get("next");
+  return sanitizeRedirectPath(raw) || DEFAULT_NEXT;
 }
 
 export function AccessCodeFormView({ submit = submitAccessCode, onSuccess }: AccessCodeFormViewProps) {

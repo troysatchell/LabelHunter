@@ -102,7 +102,11 @@ through `--url` mode:
 ```bash
 pnpm latency:check -- --url=http://localhost:3874 --runs=5 --cleanup-db \
   --out=scripts/latency/results/single-label-verify-fake-server-validation.json \
-  --note="TRO-539 harness validation ONLY ... NOT a TH-R2 measurement"
+  --note="TRO-539 harness validation ONLY. Target ran scripts/e2e/fake-anthropic-server.ts via \
+ANTHROPIC_BASE_URL, not the real Anthropic API. This is a zero-cost, local-machine, \
+in-memory-canned-response run that proves the --url mode, Server-Timing capture, \
+--cleanup-db-gated loopback cleanup, and the request timeout all work end to end. It is NOT a \
+TH-R2 measurement, NOT a deployed-instance measurement, and must never be quoted as either."
 ```
 
 Committed at `scripts/latency/results/single-label-verify-fake-server-validation.json`. Real
@@ -151,11 +155,12 @@ real money end to end (preprocessing, Haiku, OCR — not the fake server's near-
 stand-ins). Until that run happens and its artifact is committed, TH-R2 stays PARTIAL. This PR
 does not raise it to VERIFIED, and does not claim to.
 
-**Tests.** `src/app/api/verify/server-timing.test.ts` (19 cases): `buildServerTimingHeader`
+**Tests.** `src/app/api/verify/server-timing.test.ts` (20 cases): `buildServerTimingHeader`
 round-trips through `parseServerTimingHeader`. Malformed, negative, non-numeric, and
 unknown-stage header entries are dropped, never trusted. A quoted `desc` param containing a
-comma no longer mis-splits the entry, and an unmatched quote on a `dur` value is rejected
-(both round 2 below).
+comma no longer mis-splits the entry (round 1), an unmatched quote on a `dur` value is rejected
+(round 2), and a backslash-escaped quote inside a `desc` value no longer ends the quoted span
+early (round 3) — all three below.
 
 `src/app/api/verify/route.test.ts` gained two cases in a "Server-Timing header (TRO-539, PRD
 §3.8)" describe block. A 200 response carries all five stage entries with non-negative
@@ -176,7 +181,7 @@ rounds below). Every pre-existing case is unchanged — the new fields are `unde
 absent, and vitest's `toEqual` ignores `undefined` properties.
 
 `scripts/latency/stage-breakdown.test.ts` (7 cases, new) and `scripts/latency/http-error.test.ts`
-(6 cases, new) cover the two modules the review rounds below extracted. Full suite: 1821 tests,
+(6 cases, new) cover the two modules the review rounds below extracted. Full suite: 1822 tests,
 all pass (`pnpm test`).
 
 **Local CodeRabbit review, round 1 (9 findings, 9 fixed, 0 dismissed).**
@@ -269,6 +274,35 @@ find real, different issues (lessons.md rule 31).
   27-word outlier is a quoted statutory-style fragment a splitter miscounts as one sentence with
   the sentence before it. No further split would remove a real violation — it would only
   fragment single facts. Dismissed as already-addressed, not a new issue.
+
+**Local CodeRabbit review, round 3 (5 findings, 4 fixed, 1 dismissed).**
+
+- (minor) `splitOutsideQuotes` did not honor a backslash-escaped quote inside a quoted span (RFC
+  7230's own `quoted-pair`, e.g. `desc="a \" b, c"`). An escaped quote would have closed the
+  quoted span early, letting the comma right after it wrongly split the entry. Fixed: a
+  backslash inside a quoted span now consumes the next character literally, without toggling
+  quote state. New test covers the exact shape.
+- (minor) This changelog's own `--note=...` example command used a literal `...` in place of the
+  real note text — not copy-pasteable, and not what the validation run actually used. Fixed:
+  replaced with the artifact's own real `validationNote` text, verbatim, confirmed to still be
+  valid, runnable bash (the backslash-newline continuations stay inside one double-quoted
+  string).
+- (minor) `cleanupSkippedReason`'s own doc comment described only some of the three conditions
+  that set it. Fixed: names all three — no `DATABASE_URL`, `DATABASE_URL` set but `--cleanup-db`
+  not passed, or `--cleanup-db` passed but the host is not loopback.
+- (major) The pool-close closure narrowed the outer `let pool` inside a ternary — correct today,
+  by TypeScript's own control-flow analysis, but fragile: a later refactor inserting an `await`
+  between the check and the closure could silently break that narrowing. Fixed: captured `pool`
+  into its own fresh `const` first, so the non-null guarantee no longer depends on the ternary's
+  specific shape.
+- (dismissed) A finding asked this ticket's own review-ledger entry for round 1's REPORT.md fix
+  to be corrected, since that paragraph's SAME edit also corrected 4232 ms to 3690 ms — a fact
+  change, not just style. The ledger is append-only; an old line cannot be edited. Checked the
+  history directly: the 4232 → 3690 correction landed in an earlier, separate commit, before
+  round 1's review ever ran. Round 1's own fix, in isolation, really did change no fact — it
+  only shortened sentences of an already-corrected paragraph. The ledger summary is accurate for
+  what that specific commit did. Recorded a new, clarifying ledger entry alongside the original
+  rather than editing it, so a future reader sees the full sequence.
 
 **How to run it.** `pnpm latency:check` runs the in-process mode, unchanged — real billed API
 calls. `pnpm latency:check -- --url=<origin> [--runs=N] [--out=path] [--note=text]

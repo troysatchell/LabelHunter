@@ -119,4 +119,14 @@ describe("parseServerTimingHeader", () => {
     expect(parseServerTimingHeader("haiku;dur=2500.0")).toEqual({ haiku: 2500 });
     expect(parseServerTimingHeader('haiku;dur="2500.0"')).toEqual({ haiku: 2500 });
   });
+
+  // CodeRabbit local review round 3 (minor): a backslash-escaped quote
+  // inside a quoted desc value (RFC 7230's own quoted-pair) must neither
+  // close the quoted span early nor let an internal comma inside it split
+  // the entry -- both the escaped quote and the comma after it are part of
+  // ONE desc value, and the metrics after it must still parse.
+  it('does not mis-split on a comma that follows a backslash-escaped quote inside a desc value', () => {
+    const header = 'haiku;desc="a \\" b, c";dur=2500.0, router;dur=0.4';
+    expect(parseServerTimingHeader(header)).toEqual({ haiku: 2500, router: 0.4 });
+  });
 });

@@ -511,13 +511,18 @@ interface HarnessReport {
    * behind in the worktree's own disposable database. */
   cleanupFailures: CleanupFailure[];
   /** Non-null only when this run had at least one successful
-   * `applicationId` to clean up but no `DATABASE_URL` was available to
-   * attempt it (TRO-539 — only reachable in `--url` mode; in-process mode
-   * requires `DATABASE_URL` up front, so this is always `null` there).
-   * Distinct from `cleanupFailures`: a failure means cleanup was
-   * attempted and did not work; this means cleanup was never attempted at
-   * all — not a failure, but not silently indistinguishable from "fully
-   * cleaned up" either. */
+   * `applicationId` to clean up but did not attempt it (TRO-539 — only
+   * reachable in `--url` mode; in-process mode requires `DATABASE_URL` up
+   * front, so this is always `null` there). One of THREE distinct reasons,
+   * named in the message itself: `DATABASE_URL` was not set at all; it was
+   * set but `--cleanup-db` was not passed; or `--cleanup-db` was passed but
+   * the target host is not a loopback address (round 2 of TRO-539's own
+   * local review: a loopback host alone is not sufficient proof
+   * `DATABASE_URL` is the target's own database — see `dbCleanupEligible`'s
+   * own comment in `main`). Distinct from `cleanupFailures`: a failure
+   * means cleanup was attempted and did not work; this means cleanup was
+   * never attempted at all — not a failure, but not silently
+   * indistinguishable from "fully cleaned up" either. */
   cleanupSkippedReason: string | null;
   /** `null` on a clean removal of the scratch image directory. The error
    * message on a failure — same "housekeeping, not a measurement problem"
@@ -695,8 +700,14 @@ async function main(): Promise<void> {
     //
     // TRO-539: `pool` is `null` when no `DATABASE_URL` was available at
     // all (only reachable in `--url` mode) — nothing to close in that
-    // case.
-    const closePool = pool ? () => pool.end() : async () => {};
+    // case. Narrowed into its own `const` (CodeRabbit local review round
+    // 3, major) rather than relying on the ternary's own closure narrowing
+    // of the outer `let pool` — correct either way today, but this makes
+    // the non-null guarantee explicit and immune to a future refactor
+    // (e.g. an `await` inserted between the check and this closure's own
+    // definition) silently invalidating it.
+    const poolToClose = pool;
+    const closePool = poolToClose ? () => poolToClose.end() : async () => {};
     ({ scratchDirCleanupError, closePoolError } = await cleanupScratchDirAndPool(async () => {}, closePool));
     if (scratchDirCleanupError) {
       console.warn(`measure.ts: unexpected error during cleanup: ${scratchDirCleanupError}`);

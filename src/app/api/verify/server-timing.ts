@@ -51,18 +51,23 @@ export function buildServerTimingHeader(stages: StageTimingsMs): string {
  * quoted `desc` parameter (e.g. `haiku;desc="crop, v2";dur=2500.0`), and a
  * naive `String.prototype.split` would cut that description's own comma
  * as if it were a new entry (CodeRabbit local review round 1, major —
- * confirmed against a real header shaped exactly like that example). Does
- * not handle a backslash-escaped quote inside a quoted string — a known,
- * deliberate simplification: this function only ever needs to survive
- * `buildServerTimingHeader`'s own output (which never quotes anything) and
- * a reasonably-shaped external header, not the full RFC 7230
- * `quoted-string` grammar.
+ * confirmed against a real header shaped exactly like that example). Also
+ * honors a backslash-escaped quote inside a quoted span (RFC 7230
+ * `quoted-string`'s own `quoted-pair`, e.g. `desc="a \" b, c"`) — a
+ * `\"` neither ends the quoted span nor gets treated as a delimiter
+ * boundary marker itself (CodeRabbit local review round 3, minor).
  */
 function splitOutsideQuotes(input: string, delimiter: string): string[] {
   const parts: string[] = [];
   let current = "";
   let inQuotes = false;
-  for (const ch of input) {
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    if (inQuotes && ch === "\\" && i + 1 < input.length) {
+      current += ch + input[i + 1];
+      i++;
+      continue;
+    }
     if (ch === '"') {
       inQuotes = !inQuotes;
       current += ch;

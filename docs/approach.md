@@ -61,7 +61,7 @@ user.
 | Dependency | When it is called | Required? | If blocked or unreachable |
 |---|---|---|---|
 | Anthropic API (`api.anthropic.com`) | Every verify request (Haiku extraction). Escalated labels get a second call (Sonnet resolution) — never the per-label happy path. | Yes — the core function. | One designed `SERVICE` state: "LabelHunter could not reach the verification service. Try again." No raw SDK error name reaches the response. No partial record is written. |
-| Postgres database | Every verify request, once extraction succeeds. | Yes — nothing persists without it. | 503, "LabelHunter could not save this verification. Try again." Same-network in production, `localhost` in local dev — not a firewall-allow-list concern in TH-R7's sense. |
+| Postgres database | Twice per verify request: a budget-check read before extraction, then a write after extraction succeeds. | Yes — nothing persists without it. | The post-extraction write has a designed response: 503, "LabelHunter could not save this verification. Try again." The pre-extraction budget-check read does not yet — a database failure there surfaces as a generic server error, tracked as [TRO-566](https://linear.app/troysatchell/issue/TRO-566). Same-network in production, `localhost` in local dev — not a firewall-allow-list concern in TH-R7's sense either way. |
 | Google Generative Language API (Gemini/Imagen) | Dev-time only: generating the test-label image set (`pnpm golden:build`). | No — build-time tooling, not part of the deployed app. | Irrelevant at runtime. The running app has no code path that calls Google. |
 
 **If a deployer's firewall blocks `api.anthropic.com`, every verify request fails the same

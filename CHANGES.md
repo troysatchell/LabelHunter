@@ -4,6 +4,32 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-574 — TH-R7's dependency degradation table now lives in a graded deliverable (2026-08-13)
+
+**The gap.** TH-R7 asks docs to name every outbound dependency and what the app does when one
+is blocked. README.md named the dependencies but pointed the reader at `docs/error-states.md`
+for the degradation behavior — an internal working document, not a graded deliverable.
+INT-003/INT-004 already ruled that placement matters: a requirement satisfied by content an
+evaluator never opens is not satisfied. Found by the `2026-08-13-postmerge` requirements-audit
+sweep, TH-R7 row.
+
+**The fix.** Added an "Outbound dependencies and degradation" section to `docs/approach.md`
+with the full table (Anthropic API, Postgres, the dev-only Google API) and the
+unreachable-endpoint failure behavior, reproduced rather than linked. Repointed README.md's one
+reference at the new section. A CodeRabbit review round caught a real inconsistency in the
+first draft — the Postgres row described one uniform "if blocked" behavior, but the database is
+actually read twice per request (a budget check before extraction, a write after), and only the
+post-extraction write has the designed 503 response; the budget-check read's own failure mode
+is a separate, already-tracked gap (TRO-566). The table now says so. Also corrected a stale
+"not yet written" note in `docs/error-states.md` now that `docs/approach.md` exists.
+
+**Docs-only.** No code change, no test added — this ticket does not change runtime behavior. Gate
+exception for the regression-test check follows the same G6 docs-only path TRO-483/484/485/570
+used, Troy-confirmed per ticket.
+
+**Confirmed.** `pnpm typecheck`/`pnpm lint`/`pnpm build`/`pnpm test`/`pnpm eval:check` all clean
+at this commit — no code touched, so no behavior to regress.
+
 ## TRO-562 — CI workflow pins actions to commits and images to digests, not mutable tags (2026-08-13)
 
 **The gap.** `.github/workflows/ci.yml` used `@v4` tags for four GitHub Actions

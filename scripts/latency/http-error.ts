@@ -28,5 +28,16 @@ export function describeHttpError(cause: unknown, wasAborted: boolean, timeoutMs
   if (wasAborted) {
     return `measure.ts: request timed out after ${timeoutMs}ms — the target may be hung or unreachable`;
   }
-  return cause instanceof Error ? cause.message : String(cause);
+  if (cause instanceof Error) return cause.message;
+  try {
+    // `String(cause)` is not guaranteed safe (CodeRabbit local review
+    // round 2, minor): an `Object.create(null)` value has no `toString` in
+    // its (empty) prototype chain, and `String()` on it throws a real
+    // TypeError, not a hypothetical one — confirmed directly, not assumed.
+    // A caught, unexpected NETWORK failure should never itself crash this
+    // "never throws" helper on top of that.
+    return String(cause);
+  } catch {
+    return "measure.ts: request failed with a cause that could not be converted to a string";
+  }
 }

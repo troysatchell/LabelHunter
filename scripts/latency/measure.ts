@@ -40,14 +40,18 @@
  * `ANTHROPIC_BASE_URL` targets `scripts/e2e/fake-anthropic-server.ts`
  * instead of the real Anthropic API. `ANTHROPIC_API_KEY` is NOT required
  * in this mode — the TARGET server holds its own key, not this script.
- * `DATABASE_URL` becomes OPTIONAL, and even when set is only trusted for
- * cleanup against a LOOPBACK target (`localhost`/`127.0.0.1`/`::1` —
- * `isLoopbackHostname`, `target-info.ts`): a real deployed target's own
+ * `DATABASE_URL` becomes OPTIONAL, and cleanup against it needs TWO
+ * explicit signals even when it is set: the operator's own `--cleanup-db`
+ * flag, AND a LOOPBACK target (`localhost`/`127.0.0.1/8`/`::1` —
+ * `isLoopbackHostname`, `target-info.ts`). A real deployed target's own
  * database has no reliable relationship to whatever `DATABASE_URL` happens
  * to be set in the operator's shell, and deleting by `applicationId`
- * against the WRONG database risks a cross-database ID collision. Cleanup
- * is skipped whenever it cannot be trusted, and that fact — and why — is
- * recorded in `cleanupSkippedReason`, never silently dropped. Every real
+ * against the WRONG database risks a cross-database ID collision — a
+ * loopback hostname ALONE is not enough proof of "same database", since
+ * this repo's own factory workflow runs several worktree-scoped databases
+ * on one localhost Postgres server. Cleanup is skipped whenever either
+ * signal is missing, and that fact — and why — is recorded in
+ * `cleanupSkippedReason`, never silently dropped. Every real
  * network request in this mode (`runOnceHttp`) is bounded by one shared
  * `HTTP_REQUEST_TIMEOUT_MS` deadline covering both the request and the
  * body read — the same "no request hangs this script forever" discipline
@@ -526,7 +530,7 @@ interface HarnessReport {
 }
 
 async function main(): Promise<void> {
-  const { runs, caseId, url, outPath, note } = parseArgs(process.argv.slice(2));
+  const { runs, caseId, url, outPath, note, cleanupDb } = parseArgs(process.argv.slice(2));
   const boundary: MeasurementBoundary = url !== undefined ? "http" : "in-process";
   // `new URL("/api/verify", url)` — not string concatenation — so a
   // `--url` value with or without a trailing slash both resolve to the
@@ -535,19 +539,26 @@ async function main(): Promise<void> {
   // passed that check).
   const verifyUrl = url !== undefined ? new URL("/api/verify", url).toString() : null;
   const target = buildTargetInfo(url ?? null, readRenderYamlTextOrNull());
-  // TRO-539, CodeRabbit local review round 1 (major): a --url run's own
-  // DATABASE_URL might point at a database that has NOTHING to do with
-  // the target server — e.g. a developer's shell still has last session's
-  // local DATABASE_URL exported while --url now points at a real deployed
-  // instance. Deleting `result.applicationId` in that case risks a
-  // cross-database ID COLLISION: some unrelated row in the WRONG database
-  // that happens to share the same numeric id. Only a loopback target
-  // (localhost/127.0.0.1/::1 — this ticket's own fake-model validation,
-  // and any future local dev-loop use) is treated as "probably the same
-  // database this script is already connected to"; every other --url
-  // target skips the delete and records why (`cleanupSkippedReason`
-  // below), never guesses.
-  const dbCleanupEligible = boundary === "in-process" || (url !== undefined && isLoopbackHostname(new URL(url).hostname));
+  // TRO-539, CodeRabbit local review round 1 (major), refined in round 2: a
+  // --url run's own DATABASE_URL might point at a database that has
+  // NOTHING to do with the target server — e.g. a developer's shell still
+  // has last session's local DATABASE_URL exported while --url now points
+  // at a real deployed instance. Deleting `result.applicationId` in that
+  // case risks a cross-database ID COLLISION: some unrelated row in the
+  // WRONG database that happens to share the same numeric id. Round 1
+  // gated this on `isLoopbackHostname` alone; round 2 found that
+  // insufficient on its own — this repo's own factory workflow (CLAUDE.md's
+  // "DATABASE_URL discipline") routinely runs SEVERAL worktree-scoped
+  // Postgres databases on the SAME localhost Postgres server, so a
+  // loopback target and a stale, differently-scoped DATABASE_URL can
+  // coexist on one machine. Cleanup now needs BOTH signals: the operator's
+  // own explicit `--cleanup-db` flag (they are asserting, not this script
+  // inferring, that DATABASE_URL matches the target) AND a loopback target
+  // (defense in depth against fat-fingering the flag against a real
+  // deployed URL). Every other case skips the delete and records why
+  // (`cleanupSkippedReason` below), never guesses.
+  const dbCleanupEligible =
+    boundary === "in-process" || (url !== undefined && cleanupDb === true && isLoopbackHostname(new URL(url).hostname));
 
   if (boundary === "in-process" && !process.env.ANTHROPIC_API_KEY) {
     throw new Error(
@@ -710,18 +721,33 @@ async function main(): Promise<void> {
   // by route.ts's current behavior.
   const stageBreakdownMs = buildStageBreakdown(runResults);
 
-  const cleanupSkippedReason: string | null =
-    cleanupSkippedApplicationIds.length === 0
-      ? null
-      : !db
-        ? `DATABASE_URL not set — ${cleanupSkippedApplicationIds.length} application row(s) left ` +
-          `uncleaned on the target's own database: ${cleanupSkippedApplicationIds.join(", ")}.`
-        : `--url target host is not localhost/127.0.0.1/::1 — this script cannot safely assume ` +
-          `DATABASE_URL points at the SAME database the target itself uses, so it did not attempt ` +
-          `a delete-by-id (a cross-database ID collision could delete an unrelated row). ` +
-          `${cleanupSkippedApplicationIds.length} application row(s) left uncleaned: ` +
-          `${cleanupSkippedApplicationIds.join(", ")}. Clean these up directly on the target's own ` +
-          `database if needed.`;
+  const cleanupSkippedReason: string | null = (() => {
+    if (cleanupSkippedApplicationIds.length === 0) return null;
+    const ids = cleanupSkippedApplicationIds.join(", ");
+    const count = cleanupSkippedApplicationIds.length;
+    if (!db) {
+      return (
+        `DATABASE_URL not set — ${count} application row(s) left uncleaned on the target's own ` +
+        `database: ${ids}.`
+      );
+    }
+    if (cleanupDb !== true) {
+      return (
+        `--cleanup-db not passed — this script never infers that DATABASE_URL is the SAME ` +
+        `database the --url target itself uses (round 2 of TRO-539's own local review found a ` +
+        `loopback hostname alone is not enough proof, since this repo's own factory workflow ` +
+        `runs several worktree-scoped databases on one localhost Postgres server). Pass ` +
+        `--cleanup-db to opt in once you have confirmed it yourself. ${count} application ` +
+        `row(s) left uncleaned: ${ids}.`
+      );
+    }
+    return (
+      `--url target host is not localhost/127.0.0.1/::1 — --cleanup-db was passed, but this ` +
+      `script still refuses a non-loopback target as a second, independent safety check. ` +
+      `${count} application row(s) left uncleaned: ${ids}. Clean these up directly on the ` +
+      `target's own database if needed.`
+    );
+  })();
 
   const report: HarnessReport = {
     ticket: "TRO-471 / LH-031 (extended by TRO-539 / LH-034: --url mode, Server-Timing breakdown, target provenance)",

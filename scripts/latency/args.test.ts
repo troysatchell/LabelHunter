@@ -110,7 +110,7 @@ describe("parseArgs", () => {
     expect(() => parseArgs(["--url="])).toThrow(/unrecognized argument/);
   });
 
-  it("accepts a --url with a path and trailing slash — measure.ts decides how to append /api/verify, this layer only validates absoluteness", () => {
+  it("accepts a --url with just a trailing slash — a bare origin, not a real path", () => {
     expect(() => parseArgs(["--url=https://labelhunter-web.onrender.com/"])).not.toThrow();
   });
 
@@ -122,6 +122,51 @@ describe("parseArgs", () => {
   it("rejects a non-http(s) --url scheme (CodeRabbit local review round 1, minor)", () => {
     expect(() => parseArgs(["--url=file:///etc/passwd"])).toThrow(/must be http: or https:/);
     expect(() => parseArgs(["--url=ftp://example.com"])).toThrow(/must be http: or https:/);
+  });
+
+  // CodeRabbit local review round 2 (minor): measure.ts's
+  // `new URL("/api/verify", url)` replaces a real path on `url` entirely
+  // (a leading slash is absolute), silently dropping it rather than
+  // combining it — reject a real path at parse time instead.
+  it("rejects a --url with a real path", () => {
+    expect(() => parseArgs(["--url=http://localhost:3874/staging"])).toThrow(/must be a bare origin/);
+  });
+
+  it("rejects a --url with a query string", () => {
+    expect(() => parseArgs(["--url=http://localhost:3874?debug=1"])).toThrow(/must be a bare origin/);
+  });
+
+  it("rejects a --url with a fragment", () => {
+    expect(() => parseArgs(["--url=http://localhost:3874#section"])).toThrow(/must be a bare origin/);
+  });
+
+  // CodeRabbit local review round 2 (major): fetch already rejects a
+  // request URL carrying credentials, but at parse time gives a clearer,
+  // --url-specific error instead of a generic fetch TypeError mid-run.
+  it("rejects a --url with an embedded username/password", () => {
+    expect(() => parseArgs(["--url=http://user:pass@localhost:3874"])).toThrow(/must not include a username or password/);
+    expect(() => parseArgs(["--url=http://user@localhost:3874"])).toThrow(/must not include a username or password/);
+  });
+
+  it("cleanupDb defaults to undefined (not passed)", () => {
+    expect(parseArgs([]).cleanupDb).toBeUndefined();
+    expect(parseArgs(["--url=http://localhost:3874"]).cleanupDb).toBeUndefined();
+  });
+
+  it("parses --cleanup-db as true", () => {
+    expect(parseArgs(["--url=http://localhost:3874", "--cleanup-db"]).cleanupDb).toBe(true);
+  });
+
+  it("parses --cleanup-db alongside every other flag", () => {
+    expect(
+      parseArgs(["--url=http://localhost:3874", "--cleanup-db", "--runs=3", "--out=out.json"]),
+    ).toEqual({
+      runs: 3,
+      caseId: DEFAULT_CASE_ID,
+      url: "http://localhost:3874",
+      outPath: "out.json",
+      cleanupDb: true,
+    });
   });
 
   it("parses --note=<text>, including embedded spaces (one argv token)", () => {

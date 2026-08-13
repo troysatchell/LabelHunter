@@ -1,15 +1,15 @@
 {
   "ticket": "TRO-471 / LH-031 (extended by TRO-539 / LH-034: --url mode, Server-Timing breakdown, target provenance)",
-  "measuredAt": "2026-08-13T01:59:33.538Z",
+  "measuredAt": "2026-08-13T02:17:41.000Z",
   "model": "not observed by this script -- the target server (localhost:3874) makes its own model choice; this repo's own code names claude-haiku-4-5, but --url mode never confirms the target is actually running it",
-  "validationNote": "TRO-539 harness validation ONLY. Target ran scripts/e2e/fake-anthropic-server.ts via ANTHROPIC_BASE_URL, not the real Anthropic API. This is a zero-cost, local-machine, in-memory-canned-response run that proves the --url mode, Server-Timing capture, loopback-gated cleanup, and the request timeout all work end to end. It is NOT a TH-R2 measurement, NOT a deployed-instance measurement, and must never be quoted as either.",
+  "validationNote": "TRO-539 harness validation ONLY. Target ran scripts/e2e/fake-anthropic-server.ts via ANTHROPIC_BASE_URL, not the real Anthropic API. This is a zero-cost, local-machine, in-memory-canned-response run that proves the --url mode, Server-Timing capture, --cleanup-db-gated loopback cleanup, and the request timeout all work end to end. It is NOT a TH-R2 measurement, NOT a deployed-instance measurement, and must never be quoted as either.",
   "goldenSetCase": {
     "caseId": "case-01-clean-match-spirits",
     "category": "clean-match",
     "beverageType": "spirits",
     "imagePath": "golden-set/images/case-01-clean-match-spirits.jpg"
   },
-  "pipelineScope": "Preprocess (sharp) -> Haiku extraction (claude-haiku-4-5, real API call) concurrently with the government-warning comparator (region detection + tesseract.js OCR on the warning crop, bounded by a 2000ms OCR deadline, TRO-519) -> deterministic Validation Router -> DB writes (TRO-518: label image bytes land in Postgres, not disk). LH-014's Sonnet resolver has merged to main, but route.ts never calls it inline -- every run is the fast path only; Sonnet resolution, when it happens, runs asynchronously off the review queue, never inside this request (TH-R19). Boundary: http -- this run sent a real multipart POST over the network to the target URL recorded in this artifact's own target field, and measured wall-clock from just before that request to the full response body received, including the Next.js HTTP framing layer and the real network path -- but still excludes a real browser's own upload/render time. CAVEAT: the pipeline description above is this repo's OWN claim about what code the target runs -- an http --url target can in principle be any server. This script never independently confirms the target is running this exact commit (same caveat as this artifact's own model field); it is accurate when --url points at a real deployment of this repo, which is this harness's only intended use.",
+  "pipelineScope": "Preprocess (sharp) -> Haiku extraction (claude-haiku-4-5 in this repo's own code -- whether the target actually made a real API call for it is not something this script observes) concurrently with the government-warning comparator (region detection + tesseract.js OCR on the warning crop, bounded by a 2000ms OCR deadline, TRO-519) -> deterministic Validation Router -> DB writes (TRO-518: label image bytes land in Postgres, not disk). LH-014's Sonnet resolver has merged to main, but route.ts never calls it inline -- every run is the fast path only; Sonnet resolution, when it happens, runs asynchronously off the review queue, never inside this request (TH-R19). Boundary: http -- this run sent a real multipart POST over the network to the target URL recorded in this artifact's own target field, and measured wall-clock from just before that request to the full response body received, including the Next.js HTTP framing layer and the real network path -- but still excludes a real browser's own upload/render time. CAVEAT: the pipeline description above is this repo's OWN claim about what code the target runs -- an http --url target can in principle be any server. This script never independently confirms the target is running this exact commit (same caveat as this artifact's own model field); it is accurate when --url points at a real deployment of this repo, which is this harness's only intended use.",
   "target": {
     "boundary": "http",
     "host": "localhost:3874",
@@ -31,52 +31,52 @@
   },
   "summaryMs": {
     "count": 5,
-    "min": 377,
-    "max": 696,
+    "min": 371,
+    "max": 688,
     "mean": 443,
     "p50": 381,
-    "p95": 696
+    "p95": 688
   },
   "stageBreakdownMs": {
     "preprocess": {
       "count": 5,
-      "min": 34.1,
-      "max": 39.7,
+      "min": 33.5,
+      "max": 37.1,
       "mean": 35,
-      "p50": 34.6,
-      "p95": 39.7
+      "p50": 34.4,
+      "p95": 37.1
     },
     "ocr": {
       "count": 5,
-      "min": 326,
-      "max": 352.7,
-      "mean": 333,
+      "min": 323.5,
+      "max": 349.8,
+      "mean": 335,
       "p50": 328.8,
-      "p95": 352.7
+      "p95": 349.8
     },
     "haiku": {
       "count": 5,
-      "min": 2.2,
-      "max": 10.8,
+      "min": 2.3,
+      "max": 10.4,
       "mean": 4,
-      "p50": 2.3,
-      "p95": 10.8
+      "p50": 2.4,
+      "p95": 10.4
     },
     "router": {
       "count": 5,
       "min": 0.1,
-      "max": 2.8,
+      "max": 2.7,
       "mean": 1,
-      "p50": 0.3,
-      "p95": 2.8
+      "p50": 0.6,
+      "p95": 2.7
     },
     "db": {
       "count": 5,
-      "min": 10.6,
-      "max": 28.4,
-      "mean": 15,
-      "p50": 11.4,
-      "p95": 28.4
+      "min": 7,
+      "max": 32.1,
+      "mean": 14,
+      "p50": 10.1,
+      "p95": 32.1
     }
   },
   "budget": {
@@ -92,18 +92,18 @@
   "runs": [
     {
       "index": 1,
-      "durationMs": 696,
+      "durationMs": 688,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "PASS",
       "headlineReason": null,
-      "applicationId": 931,
+      "applicationId": 1602,
       "serverTimingMs": {
-        "preprocess": 39.7,
-        "ocr": 352.7,
-        "haiku": 10.8,
-        "router": 2.8,
-        "db": 28.4
+        "preprocess": 37.1,
+        "ocr": 348,
+        "haiku": 10.4,
+        "router": 2.7,
+        "db": 32.1
       }
     },
     {
@@ -113,61 +113,61 @@
       "httpStatus": 200,
       "labelVerdict": "PASS",
       "headlineReason": null,
-      "applicationId": 932,
+      "applicationId": 1603,
       "serverTimingMs": {
-        "preprocess": 34.6,
-        "ocr": 328.8,
-        "haiku": 2.2,
-        "router": 1.2,
-        "db": 10.6
+        "preprocess": 35.6,
+        "ocr": 325.6,
+        "haiku": 2.3,
+        "router": 1.1,
+        "db": 12.9
       }
     },
     {
       "index": 3,
-      "durationMs": 382,
+      "durationMs": 379,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "PASS",
       "headlineReason": null,
-      "applicationId": 933,
+      "applicationId": 1604,
       "serverTimingMs": {
-        "preprocess": 34.7,
-        "ocr": 329.9,
-        "haiku": 2.6,
-        "router": 0.3,
-        "db": 11.4
+        "preprocess": 34.2,
+        "ocr": 328.8,
+        "haiku": 2.4,
+        "router": 0.6,
+        "db": 9.9
       }
     },
     {
       "index": 4,
-      "durationMs": 378,
+      "durationMs": 371,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "PASS",
       "headlineReason": null,
-      "applicationId": 934,
+      "applicationId": 1605,
       "serverTimingMs": {
-        "preprocess": 34.1,
-        "ocr": 326,
+        "preprocess": 33.5,
+        "ocr": 323.5,
         "haiku": 2.3,
         "router": 0.1,
-        "db": 12.6
+        "db": 10.1
       }
     },
     {
       "index": 5,
-      "durationMs": 377,
+      "durationMs": 396,
       "ok": true,
       "httpStatus": 200,
       "labelVerdict": "PASS",
       "headlineReason": null,
-      "applicationId": 935,
+      "applicationId": 1606,
       "serverTimingMs": {
-        "preprocess": 34.2,
-        "ocr": 326.9,
-        "haiku": 2.2,
-        "router": 0.3,
-        "db": 11.4
+        "preprocess": 34.4,
+        "ocr": 349.8,
+        "haiku": 2.6,
+        "router": 0.2,
+        "db": 7
       }
     }
   ]

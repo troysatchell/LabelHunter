@@ -25,8 +25,17 @@ import { deriveRenderPlanForHost } from "./render-target";
  * default a caller could forget to set. */
 export type MeasurementBoundary = "in-process" | "http";
 
-const SHARED_PIPELINE_DESCRIPTION =
-  "Preprocess (sharp) -> Haiku extraction (claude-haiku-4-5, real API call) concurrently with " +
+// The Haiku clause is boundary-specific, not shared (CodeRabbit local
+// review round 2, minor) — an in-process run genuinely IS the real API
+// call (this script's own extractLabel makes it), but an http --url
+// target's own Haiku call is exactly the kind of claim buildPipelineScope's
+// own CAVEAT below already says this script cannot confirm. Stating "real
+// API call" unconditionally, even in a fake-model validation artifact,
+// directly contradicted that artifact's own `model` field. Fixed: each
+// boundary states its own, honest version of this one clause.
+const SHARED_PIPELINE_DESCRIPTION_PREFIX = "Preprocess (sharp) -> Haiku extraction (claude-haiku-4-5";
+const SHARED_PIPELINE_DESCRIPTION_SUFFIX =
+  ") concurrently with " +
   "the government-warning comparator (region detection + tesseract.js OCR on the warning crop, " +
   "bounded by a 2000ms OCR deadline, TRO-519) -> deterministic Validation Router -> DB writes " +
   "(TRO-518: label image bytes land in Postgres, not disk). LH-014's Sonnet resolver has merged " +
@@ -44,14 +53,19 @@ const SHARED_PIPELINE_DESCRIPTION =
 export function buildPipelineScope(boundary: MeasurementBoundary): string {
   if (boundary === "in-process") {
     return (
-      SHARED_PIPELINE_DESCRIPTION +
+      SHARED_PIPELINE_DESCRIPTION_PREFIX +
+      ", a real API call this script itself made" +
+      SHARED_PIPELINE_DESCRIPTION_SUFFIX +
       " Boundary: in-process -- this run called handleVerifyRequest directly, the same function " +
       "route.ts's POST calls, NOT a real HTTP round-trip. Excludes a real browser's upload time " +
       "and the Next.js HTTP framing layer."
     );
   }
   return (
-    SHARED_PIPELINE_DESCRIPTION +
+    SHARED_PIPELINE_DESCRIPTION_PREFIX +
+    " in this repo's own code -- whether the target actually made a real API call for it is not " +
+    "something this script observes" +
+    SHARED_PIPELINE_DESCRIPTION_SUFFIX +
     " Boundary: http -- this run sent a real multipart POST over the network to the target URL " +
     "recorded in this artifact's own target field, and measured wall-clock from just before that " +
     "request to the full response body received, including the Next.js HTTP framing layer and " +
@@ -64,19 +78,43 @@ export function buildPipelineScope(boundary: MeasurementBoundary): string {
   );
 }
 
+const IPV4_LOOPBACK_PATTERN = /^127\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+
+/** `true` for an IPv4 literal anywhere in the loopback block, 127.0.0.0/8
+ * (RFC 5735) -- not just the conventional `127.0.0.1`. `127.0.0.2` and
+ * `127.255.255.255` are just as much "this machine" as `127.0.0.1` is
+ * (CodeRabbit local review round 2, minor). Rejects an out-of-range octet
+ * (e.g. `127.0.0.256`) rather than trusting the regex's digit-count bound
+ * alone. */
+function isIpv4LoopbackAddress(hostname: string): boolean {
+  const match = IPV4_LOOPBACK_PATTERN.exec(hostname);
+  if (!match) return false;
+  return match.slice(1, 4).every((octet) => {
+    const n = Number(octet);
+    return Number.isInteger(n) && n >= 0 && n <= 255;
+  });
+}
+
 /** `true` for a hostname that only ever resolves back to THIS machine —
- * `localhost`, `127.0.0.1`, or the IPv6 loopback in either its bare or
- * bracketed form. Case-insensitive (RFC 4343). Used by `measure.ts` to
- * decide whether a `--url` run's `DATABASE_URL` can be trusted as the
- * SAME database the target itself uses (CodeRabbit local review round 1,
- * major): a real deployed target's own database is never reachable by
- * guessing at a hostname, so only a loopback target is treated as
- * "probably the same database" — see `measure.ts`'s own cleanup-gating
- * comment for the cross-database delete risk this specifically guards
- * against. */
+ * `localhost`, any `127.0.0.0/8` IPv4 loopback literal, or the IPv6
+ * loopback in either its bare or bracketed form. Case-insensitive (RFC
+ * 4343). One of two independent signals `measure.ts` requires before
+ * trusting a `--url` run's `DATABASE_URL` as the SAME database the target
+ * itself uses (CodeRabbit local review round 1, major, refined in round
+ * 2): a real deployed target's own database is never reachable by
+ * guessing at a hostname, and even a loopback target is not proof enough
+ * on its own — this repo's own factory workflow routinely runs several
+ * worktree-scoped Postgres databases on the SAME localhost Postgres
+ * server, so a loopback target and a stale, differently-scoped
+ * `DATABASE_URL` can coexist on one machine. `measure.ts` also requires
+ * the operator's own explicit `--cleanup-db` flag — this function narrows
+ * an already-explicit decision, it does not make the decision by itself.
+ * See `measure.ts`'s own cleanup-gating comment for the cross-database
+ * delete risk this guards against. */
 export function isLoopbackHostname(hostname: string): boolean {
   const normalized = hostname.toLowerCase();
-  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1" || normalized === "[::1]";
+  if (normalized === "localhost" || normalized === "::1" || normalized === "[::1]") return true;
+  return isIpv4LoopbackAddress(normalized);
 }
 
 export interface TargetInfo {

@@ -61,6 +61,19 @@ describe("buildPipelineScope", () => {
   it("does NOT hedge the in-process boundary — that mode calls this repo's own code directly, a real fact, not a claim about a remote target", () => {
     expect(buildPipelineScope("in-process")).not.toMatch(/CAVEAT/);
   });
+
+  // CodeRabbit local review round 2 (minor): the shared Haiku clause used
+  // to say "real API call" unconditionally, contradicting a fake-model
+  // --url validation artifact's own model field.
+  it("states the in-process boundary made a real API call itself", () => {
+    expect(buildPipelineScope("in-process")).toMatch(/a real API call this script itself made/);
+  });
+
+  it("does NOT assert the http boundary's target made a real API call as flat fact — only that this script never observes it", () => {
+    const scope = buildPipelineScope("http");
+    expect(scope).not.toMatch(/claude-haiku-4-5, real API call\)/);
+    expect(scope).toMatch(/not something this script observes/);
+  });
 });
 
 describe("isLoopbackHostname", () => {
@@ -87,6 +100,24 @@ describe("isLoopbackHostname", () => {
   it("returns false for a hostname that merely contains 'localhost' as a substring", () => {
     expect(isLoopbackHostname("notlocalhost.example.com")).toBe(false);
     expect(isLoopbackHostname("localhost.attacker.example")).toBe(false);
+  });
+
+  // CodeRabbit local review round 2 (minor): the whole 127.0.0.0/8 block is
+  // loopback (RFC 5735), not just 127.0.0.1.
+  it("recognizes the full 127.0.0.0/8 loopback range, not just 127.0.0.1", () => {
+    expect(isLoopbackHostname("127.0.0.2")).toBe(true);
+    expect(isLoopbackHostname("127.1.2.3")).toBe(true);
+    expect(isLoopbackHostname("127.255.255.255")).toBe(true);
+  });
+
+  it("rejects an out-of-range octet even with a 127 prefix", () => {
+    expect(isLoopbackHostname("127.0.0.256")).toBe(false);
+    expect(isLoopbackHostname("127.999.0.1")).toBe(false);
+  });
+
+  it("still rejects a non-127 IPv4 address", () => {
+    expect(isLoopbackHostname("126.0.0.1")).toBe(false);
+    expect(isLoopbackHostname("128.0.0.1")).toBe(false);
   });
 });
 

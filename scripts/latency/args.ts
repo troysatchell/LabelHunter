@@ -54,6 +54,22 @@ export interface CliArgs {
    * the JSON directly, with neither in view, must still see it). `undefined`
    * when the flag is absent, same reasoning as `url` above. */
   note?: string;
+  /** `--cleanup-db` (TRO-539, CodeRabbit local review round 2, major): the
+   * operator's own EXPLICIT claim that `DATABASE_URL`, if set, is the SAME
+   * database the `--url` target itself uses — never inferred automatically.
+   * A `--url` target's hostname resolving to loopback is NOT sufficient
+   * proof of that on its own: this repo's own factory workflow routinely
+   * runs several worktree-scoped Postgres databases on the SAME localhost
+   * Postgres server (`CLAUDE.md`'s "DATABASE_URL discipline"), so a
+   * loopback target and a stale, differently-scoped `DATABASE_URL` can
+   * coexist on one machine. `measure.ts` still ALSO requires the target
+   * to be loopback before attempting a delete (`isLoopbackHostname`,
+   * `target-info.ts`) — this flag narrows an automatic decision down to an
+   * explicit one, it does not replace that check. Meaningless (ignored,
+   * not an error) in the default in-process mode, which always has its own
+   * definitely-correct `db`. `undefined` (not `false`) when the flag is
+   * absent, same reasoning as `url` above — treat both as "not passed". */
+  cleanupDb?: boolean;
 }
 
 /**
@@ -69,6 +85,7 @@ export function parseArgs(argv: readonly string[]): CliArgs {
   let url: string | undefined;
   let outPath: string | undefined;
   let note: string | undefined;
+  let cleanupDb: boolean | undefined;
   // `pnpm run latency:check -- --runs=5` forwards the literal `--` token
   // into argv (npm strips it, pnpm does not — the same quirk
   // `scripts/run-tests.cjs` works around for `pnpm test`). Skip it rather
@@ -101,9 +118,13 @@ export function parseArgs(argv: readonly string[]): CliArgs {
       note = noteMatch[1];
       continue;
     }
+    if (arg === "--cleanup-db") {
+      cleanupDb = true;
+      continue;
+    }
     throw new Error(
       `measure.ts: unrecognized argument "${arg}" (expected --runs=<n>, --case=<caseId>, ` +
-        `--url=<origin>, --out=<path>, or --note=<text>)`,
+        `--url=<origin>, --out=<path>, --note=<text>, or --cleanup-db)`,
     );
   }
   if (!Number.isInteger(runs) || runs < 1) {
@@ -137,6 +158,32 @@ export function parseArgs(argv: readonly string[]): CliArgs {
           `— this harness sends a real HTTP request, it cannot target any other scheme`,
       );
     }
+    // An origin only — no path, query, or fragment (CodeRabbit local review
+    // round 2, minor). measure.ts builds the real request URL with
+    // `new URL("/api/verify", url)`, and a LEADING SLASH there replaces the
+    // whole path component of `url`: a `--url` with its own path (e.g. a
+    // reverse-proxy prefix) would have that path silently dropped, hitting
+    // the wrong endpoint with no error. Rejecting it here, at parse time,
+    // turns a confusing silent wrong-endpoint request into an immediate,
+    // specific CLI error instead.
+    if ((parsedUrl.pathname !== "" && parsedUrl.pathname !== "/") || parsedUrl.search !== "" || parsedUrl.hash !== "") {
+      throw new Error(
+        `measure.ts: --url=${JSON.stringify(url)} must be a bare origin, with no path, query, or ` +
+          `fragment — this harness appends /api/verify itself, and a path on --url would be ` +
+          `silently dropped, not combined (expected e.g. --url=http://localhost:3874)`,
+      );
+    }
+    // No embedded credentials (CodeRabbit local review round 2, major).
+    // `fetch` already rejects a request URL carrying a non-empty username or
+    // password, so this is unreachable via a successful run either way —
+    // rejecting it HERE gives a clear, specific CLI error naming --url,
+    // instead of a generic TypeError several seconds into a run.
+    if (parsedUrl.username !== "" || parsedUrl.password !== "") {
+      throw new Error(
+        `measure.ts: --url must not include a username or password — pass a bare origin ` +
+          `(expected e.g. --url=http://localhost:3874, never --url=http://user:pass@host)`,
+      );
+    }
   }
-  return { runs, caseId, url, outPath, note };
+  return { runs, caseId, url, outPath, note, cleanupDb };
 }

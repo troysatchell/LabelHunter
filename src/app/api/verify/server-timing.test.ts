@@ -102,4 +102,21 @@ describe("parseServerTimingHeader", () => {
   it("accepts a quoted numeric dur value", () => {
     expect(parseServerTimingHeader('haiku;dur="2500.0"')).toEqual({ haiku: 2500 });
   });
+
+  // CodeRabbit local review round 2 (minor): the earlier pattern's two `"?`
+  // markers were independently optional, so an UNMATCHED quote (an opening
+  // quote with no closing one, or vice versa) still matched and produced a
+  // number. Confirmed both directions are now rejected.
+  it("rejects an unmatched opening quote on a dur value", () => {
+    expect(parseServerTimingHeader('haiku;dur="2500.0')).toEqual({});
+  });
+
+  it("rejects an unmatched closing quote on a dur value", () => {
+    expect(parseServerTimingHeader('haiku;dur=2500.0"')).toEqual({});
+  });
+
+  it("still accepts a fully unquoted or fully-and-correctly-quoted dur alongside the unmatched-quote fix", () => {
+    expect(parseServerTimingHeader("haiku;dur=2500.0")).toEqual({ haiku: 2500 });
+    expect(parseServerTimingHeader('haiku;dur="2500.0"')).toEqual({ haiku: 2500 });
+  });
 });

@@ -28,4 +28,14 @@ describe("describeHttpError", () => {
     expect(() => describeHttpError(undefined, false, 30_000)).not.toThrow();
     expect(() => describeHttpError(null, true, 30_000)).not.toThrow();
   });
+
+  // CodeRabbit local review round 2 (minor): String() on a null-prototype
+  // object throws for real -- it has no toString anywhere in its (empty)
+  // prototype chain. Confirmed directly here, not assumed.
+  it("does not throw when String(cause) itself would throw (a null-prototype cause)", () => {
+    const nullProtoCause = Object.create(null) as unknown;
+    expect(() => String(nullProtoCause)).toThrow(); // the premise this test protects against, proven first
+    expect(() => describeHttpError(nullProtoCause, false, 30_000)).not.toThrow();
+    expect(describeHttpError(nullProtoCause, false, 30_000)).toMatch(/could not be converted to a string/);
+  });
 });

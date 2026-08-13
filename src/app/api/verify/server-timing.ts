@@ -80,7 +80,15 @@ function splitOutsideQuotes(input: string, delimiter: string): string[] {
 }
 
 const STAGE_NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
-const DUR_PARAM_PATTERN = /^dur\s*=\s*"?([0-9]+(?:\.[0-9]+)?)"?$/;
+const NUMBER_PATTERN = "[0-9]+(?:\\.[0-9]+)?";
+// Two exclusive branches — unquoted OR quoted-with-a-MATCHING-close-quote —
+// not two independently optional `"?` markers. The earlier version
+// (`^dur\s*=\s*"?(...)"?$`) let each `"?` match independently, so
+// `dur="123.4` (an opening quote with no closing one) still matched —
+// CodeRabbit local review round 2, minor, confirmed against that exact
+// input before this fix. Group 1 is the unquoted value; group 2 is the
+// quoted one — the caller checks whichever is defined.
+const DUR_PARAM_PATTERN = new RegExp(`^dur\\s*=\\s*(?:(${NUMBER_PATTERN})|"(${NUMBER_PATTERN})")$`);
 
 /**
  * Parses a `Server-Timing` header value back into per-stage milliseconds.
@@ -114,7 +122,9 @@ export function parseServerTimingHeader(headerValue: string): Partial<StageTimin
     for (const param of params.slice(1)) {
       const match = DUR_PARAM_PATTERN.exec(param);
       if (match) {
-        dur = Number(match[1]);
+        // Exactly one of the two groups is defined — DUR_PARAM_PATTERN's
+        // two branches are mutually exclusive (see its own comment).
+        dur = Number(match[1] ?? match[2]);
         break;
       }
     }

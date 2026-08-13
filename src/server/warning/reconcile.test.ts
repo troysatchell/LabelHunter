@@ -146,32 +146,58 @@ describe("reconcileWarningChannels — single channel: OCR unavailable (CP-2 §4
     expect(result.note).toBe("Government Warning differs by a single character. A reviewer must confirm the exact wording.");
   });
 
-  it("VLM caps failure (single channel, title case) -> NEEDS_REVIEW, NEVER a hard FAIL", () => {
-    // CP-2 §7.1: "the agreement rule requires both channels to produce the
-    // same capitalization verdict before either is trusted" — one channel
-    // alone cannot make a caps violation a FAIL.
+  // The five tests below encode Troy's CP-2 amendment (2026-08-13,
+  // docs/checkpoints/cp2-warning-subsystem.md): "it should fail outright
+  // if it's that deterministic — if we know with absolute certainty that
+  // GOVERNMENT WARNING is not capitalized, it fails." A single channel at
+  // the SAME threshold the pass rule already trusts (>= 0.90) renders the
+  // verdict when the reading is structurally clean and self-consistent.
+  // The previous tests here asserted the opposite ("never accuse on one
+  // channel") — superseded by the amendment, not weakened: the REVIEW
+  // outcomes below are the cases that remain genuinely uncertain.
+
+  it("VLM caps failure, self-consistent, confidence >= 0.90 -> MISMATCH with the capitalization reason (the ruling's own example)", () => {
     const result = reconcileWarningChannels(vlm(TITLE_CASE_TEXT, { prefixCasing: "TITLE_CASE", confidence: 0.99 }), OCR_UNAVAILABLE);
-    assertNeedsReview(result);
-    expect(result.reviewReason).toBe("WARNING_MISMATCH");
-    expect(result.note).toBe("Government Warning could not be confirmed from this image alone.");
+    expect(result.verdict).toBe("MISMATCH");
+    expect(result.note).toBe("Government Warning must print in capital letters.");
+    expect(result.channel).toBe("single");
   });
 
-  it("VLM genuine mismatch (single channel) -> NEEDS_REVIEW, never FAIL", () => {
+  it("VLM lower-case Surgeon General, confidence >= 0.90 -> MISMATCH with the Surgeon General reason", () => {
+    const result = reconcileWarningChannels(vlm(LOWER_SURGEON_GENERAL_TEXT, { confidence: 0.99 }), OCR_UNAVAILABLE);
+    expect(result.verdict).toBe("MISMATCH");
+    expect(result.note).toBe("Surgeon General must print with capital letters.");
+  });
+
+  it("VLM coherent rewording (the case-10 paraphrase), confidence >= 0.90 -> MISMATCH with the wording reason", () => {
     const result = reconcileWarningChannels(vlm(REWORDED_TEXT, { confidence: 0.99 }), OCR_UNAVAILABLE);
+    expect(result.verdict).toBe("MISMATCH");
+    expect(result.note).toBe("Government Warning wording differs from the required text.");
+    expect(result.channel).toBe("single");
+  });
+
+  it("the same rewording BELOW 0.90 stays NEEDS_REVIEW — below the threshold there is no certainty to act on", () => {
+    const result = reconcileWarningChannels(vlm(REWORDED_TEXT, { confidence: 0.7 }), OCR_UNAVAILABLE);
     assertNeedsReview(result);
     expect(result.reviewReason).toBe("WARNING_MISMATCH");
     expect(result.note).toBe("Government Warning could not be confirmed from this image alone.");
   });
 
-  it("never returns a MISMATCH verdict on a single channel, across every scenario above", () => {
+  it("a caps failure the model's own casing report contradicts still downgrades to NEEDS_REVIEW — self-disagreement is not certainty", () => {
+    // Derived caps say title case; the model claims ALL_CAPS. CP-2 §7.1's
+    // cross-check outranks the new rule, exactly as it outranks a PASS.
+    const result = reconcileWarningChannels(vlm(TITLE_CASE_TEXT, { prefixCasing: "ALL_CAPS", confidence: 0.99 }), OCR_UNAVAILABLE);
+    assertNeedsReview(result);
+    expect(result.note).toBe("Government Warning could not be read consistently.");
+  });
+
+  it("a near-miss never hard-fails on one channel, at ANY confidence — one character is noise, not a deviation", () => {
     const scenarios: Array<[VlmWarningCandidate, OcrChannelInput]> = [
-      [vlm(TITLE_CASE_TEXT, { prefixCasing: "TITLE_CASE", confidence: 0.99 }), OCR_UNAVAILABLE],
-      [vlm(REWORDED_TEXT, { confidence: 0.99 }), OCR_UNAVAILABLE],
-      [vlm(LOWER_SURGEON_GENERAL_TEXT, { confidence: 0.99 }), OCR_UNAVAILABLE],
       [vlm(MISSING_COMMA_TEXT, { confidence: 0.99 }), OCR_UNAVAILABLE],
+      [vlm(MISSING_COMMA_TEXT, { confidence: 0.5 }), OCR_UNAVAILABLE],
     ];
     for (const [vlmCandidate, ocrInput] of scenarios) {
-      expect(reconcileWarningChannels(vlmCandidate, ocrInput).verdict).not.toBe("MISMATCH");
+      expect(reconcileWarningChannels(vlmCandidate, ocrInput).verdict).toBe("NEEDS_REVIEW");
     }
   });
 });

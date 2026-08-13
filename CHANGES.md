@@ -4,6 +4,37 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-581 — a deterministic single-channel warning violation fails outright (2026-08-13)
+
+**Troy's ruling (CP-2 amendment, recorded verbatim in
+`docs/checkpoints/cp2-warning-subsystem.md`):** "it should fail out right if its that
+deterministic if we know with absolute certainty that government warning is not capitalizied
+it fails."
+
+**What changed.** CP-2 §4.5's single-channel table said a lone reading may PASS a label at
+confidence ≥ 0.90 but may never FAIL one. That asymmetry trusted the wrong reading. A VLM's
+known transcription failure mode is normalization — silently correcting label text toward
+the statute it knows. So a single-channel exact match is the LESS trustworthy reading, and a
+single-channel coherent deviation is the MORE trustworthy one. The observed cost was case-10
+live: a seeded paraphrased warning downgraded to "could not be confirmed" when the deployed
+worker's OCR channel failed.
+
+`reconcileSingleChannel` now mirrors the dual-channel table's precedence, gated by the SAME
+0.90 threshold the pass rule already trusts: caps failure → FAIL with the caps reason;
+coherent wording mismatch → FAIL with the wording reason. Three guards survive on purpose:
+a near-miss never hard-fails on one channel at any confidence; anything below 0.90 renders
+no verdict; and §7.1's prefix-casing cross-check still downgrades a FAIL the model's own
+casing report contradicts. Certainty renders the verdict. Doubt escalates.
+
+**Rollback.** Revert the PR. The single-channel table returns to never-FAIL.
+
+**Confirmed.** Red first: four new tests failed against the old table for the right reasons
+(REVIEW where the ruling demands MISMATCH; the cross-check interaction). The superseded
+"never accuse on one channel" assertions were rewritten under the amendment's authority —
+a spec change with named provenance, not a weakening; the genuinely-uncertain REVIEW cases
+keep their assertions. All 195 warning tests pass. `pnpm eval:check` is green — the
+committed eval runs every case dual-channel, so no baseline verdict moves.
+
 ## TRO-578 — design tokens and one visual hierarchy (2026-08-13)
 
 **The point.** Troy: "spacing and hierarchy are incredibly important and scream even louder

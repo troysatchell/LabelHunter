@@ -514,6 +514,44 @@ That last row is the asymmetry worth defending. A single-channel PASS is allowed
 confidence; a single-channel FAIL never is. The reason is TH-R10 and the cost of the two errors:
 a wrong PASS delays a catch, a wrong FAIL accuses a compliant producer of a federal violation.
 
+> **Amendment, 2026-08-13 (TRO-581 — Troy's ruling, live review of the seeded demo).** The
+> last row above is overturned. Troy, verbatim: "it should fail out right if its that
+> deterministic if we know with absolute certainty that government warning is not capitalizied
+> it fails." The table's third row becomes four:
+>
+> | Single channel says | Outcome | Why |
+> |---|---|---|
+> | caps failure, VLM confidence ≥ 0.90 | **FAIL** (caps reason) | Casing is a deterministic read. The ruling's own example |
+> | near miss (distance 1-2), any confidence | **REVIEW** `WARNING_MISMATCH` | One character is inside transcription noise — not certainty |
+> | wording mismatch, VLM confidence ≥ 0.90 | **FAIL** (wording reason) | See the false-accusation analysis below |
+> | any non-match, VLM confidence < 0.90 | **REVIEW** `WARNING_MISMATCH` | Below the threshold the pass rule trusts, there is no certainty either way |
+>
+> **Why the original asymmetry was wrong, in its own terms.** The 0.90 threshold already lets
+> one channel *certify* a statutory field. But a VLM's known failure mode when transcribing
+> legal boilerplate is normalization — silently correcting label text toward the canonical
+> statute it knows. That makes the single-channel exact MATCH the *less* trustworthy reading,
+> and the single-channel coherent deviation (three whole-word substitutions the model did not
+> invent) the *more* trustworthy one. The old rule trusted the reading a model is more likely
+> to fake and distrusted the one it cannot plausibly hallucinate. The observed cost was
+> case-10 on the live instance: a seeded, deliberately paraphrased warning downgraded to a
+> shrug ("could not be confirmed") when the OCR channel failed on the deployed worker.
+>
+> **What still protects against false accusation.** Three guards survive, deliberately:
+> the near-miss band never hard-fails on one channel (transcription noise is not a deviation);
+> anything below 0.90 never renders a verdict; and §7.1's prefix-casing cross-check still
+> downgrades a would-be FAIL the model's own casing report contradicts — a self-inconsistent
+> reading is not "absolute certainty," so it escalates. **Named, accepted limit:** a model that
+> over-reports confidence on garbled text could now hard-fail a label the old rule would have
+> escalated; the §7.1 cross-check catches the common self-contradiction shape, but confidence
+> calibration itself belongs to the extractor, not this table.
+>
+> **Defend-it Q&A.** *"Why is one channel enough to condemn but you added a second channel at
+> all?"* — The second channel exists for the murky cases, and they still get it: every REVIEW
+> row escalates. Certainty doesn't need a second witness; doubt does. *"What changed your
+> mind?"* — Watching the system understate a violation it had already read clearly, on the same
+> screen where the identical evidence at dual-channel confirms FAIL. A high-calibration system
+> reports what it knows; escalation is for what it doesn't.
+
 > **Amendment, 2026-08-12 (TRO-535 / LH-030b).** The `60` above was never measured — its own
 > "proposed" label said so, and this section named the ticket that would replace it (§12; §11
 > open question 7). That ticket ran. `scripts/eval/ocr-floor-sweep.ts` replayed the OCR channel

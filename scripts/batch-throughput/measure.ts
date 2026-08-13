@@ -70,6 +70,7 @@ import * as schema from "../../src/lib/db/schema";
 import { SONNET_RESOLVER_MODEL } from "../../src/server/resolver/request";
 import { parseArgs } from "./args";
 import { deriveBatchCostUsd, meanCost } from "./cost";
+import { HARNESS_POOL_OPTIONS } from "./pool-config";
 import type { BatchThroughputRunReport, BatchThroughputWorkerConcurrency } from "./types";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -395,7 +396,7 @@ async function main(): Promise<void> {
   // connection ESTABLISHMENT only, so query_timeout bounds the
   // established query too (post-merge review finding).
   {
-    const probePool = new Pool({ connectionString, connectionTimeoutMillis: 10_000, query_timeout: 15_000 });
+    const probePool = new Pool({ connectionString, ...HARNESS_POOL_OPTIONS });
     probePool.on("error", (err) => console.error("measure.ts: unexpected error on idle Postgres client", err));
     try {
       await probePool.query("SELECT 1");
@@ -448,9 +449,7 @@ async function main(): Promise<void> {
   // (scripts/eval/check.ts's own runLive does the same, for the same
   // reason; see that file and scripts/batch-worker/run.ts's own comment on
   // the distinction).
-  // query_timeout bounds the established queries; connectionTimeoutMillis
-  // alone bounds only connection establishment (post-merge review finding).
-  const pool = new Pool({ connectionString, connectionTimeoutMillis: 10_000, query_timeout: 15_000 });
+  const pool = new Pool({ connectionString, ...HARNESS_POOL_OPTIONS });
   pool.on("error", (err) => console.error("measure.ts: unexpected error on idle Postgres client", err));
   const db = drizzle(pool, { schema });
   let sonnetCallCount: number;

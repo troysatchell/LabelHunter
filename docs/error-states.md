@@ -11,8 +11,10 @@ that vendor's features, with no warning to the user.
 
 This document covers the single-label verify flow (`POST /api/verify`). It
 is the error-path walkthrough TH-R20 asks for, and the dependency list
-TH-R7 asks for. LH-064 (`docs/approach.md`, not yet written) will fold this
-into the submission's trade-offs section. This file is the working source.
+TH-R7 asks for. `docs/approach.md`'s "Outbound dependencies and
+degradation" section folds the TH-R7 half of this into the submission's
+graded trade-offs. This file stays the working source and the fuller
+error-path walkthrough for TH-R20.
 
 ## Outbound dependencies (TH-R7)
 
@@ -25,7 +27,7 @@ so the distinction is explicit, not assumed.
 | Dependency | When it is called | Required? | If blocked or unreachable |
 |---|---|---|---|
 | Anthropic API (`api.anthropic.com`) | Every verify request (Haiku extraction). Escalated labels only (Sonnet resolver, LH-014) — never the per-label happy path (TH-R19). | Yes — the core function. | See "Unreachable-endpoint degradation" below. Graceful: a clear message, no crash, no hang, a retry button. |
-| Postgres database | Every verify request, once extraction succeeds — persists the application, image, verdict, and field rows. | Yes — nothing persists without it. | 503 SERVICE: "LabelHunter could not save this verification. Try again." (`route.ts`, tested in `route.test.ts`). Not a TH-R7 concern in the same sense — not a public-internet vendor endpoint behind a firewall allow-list. In production it is a same-network Render service; in local dev it is `localhost`. |
+| Postgres database | Twice per verify request: a budget-check read before extraction, then a write after extraction succeeds — the write persists the application, image, verdict, and field rows. | Yes — nothing persists without it. | The write has a designed response: 503 SERVICE, "LabelHunter could not save this verification. Try again." (`route.ts`, tested in `route.test.ts`). The budget-check read does not yet — a failure there surfaces as a generic server error, tracked as TRO-566. Not a TH-R7 concern in the same sense either way — not a public-internet vendor endpoint behind a firewall allow-list. In production it is a same-network Render service; in local dev it is `localhost`. |
 | Google Generative Language API (Gemini/Imagen) | Dev-time only: golden-set image generation (`GOOGLE_API_KEY`, `.env.local.example`). | No — build-time tooling, not part of the deployed app. | Irrelevant at runtime. The running app has no code path that calls Google. |
 
 **Design consequence.** LabelHunter makes exactly one outbound call to a

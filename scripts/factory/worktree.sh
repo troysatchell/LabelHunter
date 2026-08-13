@@ -17,6 +17,11 @@
 # resetting a database that session may still be using. Pass --steal to
 # reassign ownership and proceed anyway.
 #
+# Two invocations for the SAME ticket landing at once serialize on a
+# per-ticket lock (TRO-572) rather than both racing the database reset — see
+# the lock's own comment below for why the ownership stamp alone cannot
+# catch that case.
+#
 set -euo pipefail
 
 USAGE="usage: worktree.sh <TICKET-ID> <branch-name> [base-ref] [--steal]"
@@ -108,6 +113,121 @@ if ! docker ps --format '{{.Names}}' | grep -qx "$PG_CONTAINER"; then
   echo "    -p 127.0.0.1:${PG_PORT}:5432 postgres:16-alpine" >&2
   exit 1
 fi
+
+# --- per-ticket lock (TRO-572) ----------------------------------------------
+# TRO-557 refuses a reuse from a DIFFERENT session, but only by comparing a
+# stamp file written near the END of a successful provision (after the
+# database is dropped/recreated and the port is claimed). Two invocations for
+# the SAME ticket -- the same session calling twice at once, or two --steal
+# calls landing together -- can both pass that check before either has
+# written anything, then both proceed to DROP/CREATE the database and both
+# `cd` into the same worktree to run `pnpm install`/`db:migrate` at once.
+# That is a genuine data race, not merely a UX gap (TRO-557's own review
+# triage scoped it out on purpose: cross-session refusal, not intra-session
+# mutual exclusion).
+#
+# `mkdir` is atomic on every filesystem this factory runs on, and this
+# machine has no `flock` binary (macOS ships none by default) -- so `mkdir`
+# is both the portable choice and the one that needs no new dependency.
+# Exactly one concurrent invocation can create LOCK_DIR; every other one
+# waits, or breaks a lock left behind by a crashed same-host holder.
+LOCK_DIR="${WT_PATH}.lock"
+REAP_LOCK="${LOCK_DIR}.reaping"
+LOCK_POLLS=0
+LOCK_MAX_POLLS=300 # ~60s at 0.2s/poll
+
+# `ps -p`, not `kill -0`: `kill -0` fails for two different reasons -- ESRCH
+# (no such process, genuinely dead) and EPERM (the process exists but this
+# user cannot signal it, e.g. it is owned by someone else). Treating both as
+# "dead" would break a lock a live process still holds. `ps -p` reports
+# existence regardless of ownership, on both the BSD (macOS) and GNU (Linux
+# CI) variants (CodeRabbit, TRO-572 review round 2).
+pid_is_alive() {
+  ps -p "$1" >/dev/null 2>&1
+}
+
+while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+  # Counted at the TOP of every iteration, including the stale-break path
+  # below, so a pathological run of back-to-back stale locks still reaches
+  # the timeout instead of spinning past it uncounted.
+  LOCK_POLLS=$(( LOCK_POLLS + 1 ))
+  if [ "$LOCK_POLLS" -gt "$LOCK_MAX_POLLS" ]; then
+    echo "ERROR: timed out waiting for the lock on ${TICKET} (${LOCK_DIR})." >&2
+    echo "       There is no reliable way to check a pid's liveness on a" >&2
+    echo "       different host, so a lock stamped from elsewhere always" >&2
+    echo "       waits out its holder rather than being auto-broken." >&2
+    echo "       CONFIRM no other worktree.sh invocation for ${TICKET} is" >&2
+    echo "       really running before removing it by hand:" >&2
+    echo "         rm -rf '${LOCK_DIR}'" >&2
+    exit 2
+  fi
+
+  # Stale-lock recovery, gated by its OWN mutex (REAP_LOCK). Two earlier
+  # versions of this fix inspected LOCK_DIR by moving it aside first (a
+  # capture-then-confirm-then-restore dance). Both left a real window: while
+  # one waiter held the lock's content OUTSIDE the LOCK_DIR path -- even
+  # briefly, even to put it straight back -- LOCK_DIR did not exist, and a
+  # DIFFERENT invocation's `mkdir` could win that gap. That let two
+  # processes each believe they held the lock alone (CodeRabbit, TRO-572
+  # review rounds 1 and 2, both critical).
+  #
+  # This version never moves LOCK_DIR at all. `mkdir "$REAP_LOCK"` lets
+  # AT MOST ONE waiter at a time even attempt to inspect-and-maybe-remove
+  # the stale lock; every other waiter that fails to grab REAP_LOCK just
+  # skips straight to the wait/retry path below, touching nothing. While
+  # this waiter holds REAP_LOCK, nothing else can start its own inspection,
+  # and LOCK_DIR still exists at its normal path the whole time (nobody
+  # else's `mkdir` can succeed against an existing directory) -- so
+  # read-then-remove is safe here, with no capture, confirm, or restore
+  # step needed. REAP_LOCK itself is held only for a few local filesystem
+  # calls, not for the ticket's whole critical section, so it gets no
+  # stale-recovery of its own: a crash inside that narrow window is
+  # vastly less likely than one during `pnpm install`/`db:migrate`, and the
+  # 60s timeout below is the backstop either way.
+  if mkdir "$REAP_LOCK" 2>/dev/null; then
+    STALE_HOST=""
+    STALE_PID=""
+    if [ -f "${LOCK_DIR}/owner" ]; then
+      STALE_HOST="$(sed -n 's/^HOST=//p' "${LOCK_DIR}/owner" 2>/dev/null || true)"
+      STALE_PID="$(sed -n 's/^PID=//p' "${LOCK_DIR}/owner" 2>/dev/null || true)"
+    fi
+    BROKE_STALE_LOCK=0
+    if [ "$STALE_HOST" = "$(hostname)" ] && [ -n "$STALE_PID" ] && ! pid_is_alive "$STALE_PID"; then
+      echo "  lock:      breaking a stale lock from dead pid ${STALE_PID} on this host" >&2
+      rm -rf "$LOCK_DIR"
+      BROKE_STALE_LOCK=1
+    fi
+    rm -rf "$REAP_LOCK"
+    if [ "$BROKE_STALE_LOCK" -eq 1 ]; then
+      continue
+    fi
+  fi
+
+  if [ "$LOCK_POLLS" -eq 1 ]; then
+    echo "  lock:      another invocation is provisioning ${TICKET} -- waiting..." >&2
+  fi
+  sleep 0.2
+done
+
+# The owner file is written BEFORE the trap, so the trap's own ownership
+# check (below) never runs against a lock dir that has no owner file yet --
+# an early interrupt between `mkdir` and this write would otherwise make the
+# trap refuse to clean up its own, definitely-ours lock.
+{
+  echo "PID=$$"
+  echo "HOST=$(hostname)"
+} > "${LOCK_DIR}/owner"
+# Released on ANY exit -- success, error, or signal -- so a failed or
+# interrupted provision never leaves the next invocation waiting forever.
+# Checks the stamp still names THIS pid first: under the pre-check design
+# above nobody else should ever touch a live lock, but this is a cheap,
+# direct answer to "verify ownership before the EXIT trap removes it"
+# (CodeRabbit, TRO-572 review round 2) rather than relying on that
+# invariant alone.
+trap '
+  lock_owner_pid="$(sed -n "s/^PID=//p" "${LOCK_DIR}/owner" 2>/dev/null || true)"
+  [ "$lock_owner_pid" = "$$" ] && rm -rf "$LOCK_DIR"
+' EXIT
 
 # --- 2. worktree ------------------------------------------------------------
 if git worktree list --porcelain | grep -qx "worktree ${WT_PATH}"; then

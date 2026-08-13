@@ -1,0 +1,416 @@
+{
+  "mode": "compare",
+  "label": "2026-08-13-postreskin",
+  "baselineRef": "matrix.after-2026-08-13-postmerge.json",
+  "commit": "8f14c17fbf587804ad7f7e26e989a2094690be90",
+  "dirty": false,
+  "dirty_paths": [],
+  "date": "2026-08-13T21:26:17.000Z",
+  "config_hash": "253ea8d244fd11bd84917c6ecd19c477d5ba521a6268e9266eb4e5408986c2f9",
+  "ticket_mapping": {
+    "status": "OK",
+    "provider": "linear",
+    "team": "Troysatchell",
+    "scope": "This sweep did not re-pull all issues in project LabelHunter fresh -- it reuses the prior sweep's complete pull (108 issues, project-filtered per the same config scope) as the ticket population, and separately pulled every issue updated in the last 24 hours (65 issues) via mcp__linear__list_issues to catch anything new or changed since. That recency pull surfaced TRO-573 (this sweep's own reskin, now Done) and TRO-574 (TH-R7 fix) -- TRO-574's PR #81 merged WHILE this sweep was in progress (commit 8f14c17), so the swept commit moved forward one more time before this sweep finished; TH-R7 was re-checked against the post-merge state rather than reported stale. Orphan detection is not attempted this sweep for the same reason the prior sweep gave: keyword mapping is too coarse at this population size to distinguish a genuine orphan from a mapping miss."
+  },
+  "requirements": [
+    {
+      "id": "TH-R1",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-461", "TRO-462", "TRO-463", "TRO-465"],
+      "evidence": [
+        { "file": "src/app/api/verify/route.ts", "line": 313, "note": "handleVerifyRequest -- unchanged since the prior sweep (git diff 06dceb1..420fa6c touches no file under src/app/api/verify/); the single request that does the whole fast path." },
+        { "file": "e2e/verify.spec.ts", "line": 26, "note": "Happy-path E2E: uploads a real golden-set image, fills the application record, submits, and asserts the rendered per-field checklist." }
+      ],
+      "verification": {
+        "command": "pnpm test:e2e",
+        "result_excerpt": "12 passed (20.7s) at commit 420fa6c -- includes the case-01 happy path asserting a Match badge on all five checklist rows."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta. `git diff 06dceb1..420fa6c -- src/app/api/verify/ src/server/extractor/ src/server/router/ src/server/comparators/ src/server/warning/` returns 0 files -- the only application-code change since the prior sweep is the Notion reskin (CSS only, see TH-R3), which touches nothing under this row's traced path."
+    },
+    {
+      "id": "TH-R2",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-471", "TRO-539", "TRO-568"],
+      "evidence": [
+        { "file": "scripts/latency/results/single-label-verify-url-mode.json", "line": 3, "note": "\"measuredAt\": \"2026-08-13T19:43:22.669Z\" -- unchanged since the prior sweep." },
+        { "file": "scripts/latency/results/single-label-verify-url-mode.json", "line": 33, "note": "\"summaryMs\": { \"p50\": 3618, \"p95\": 4197, \"mean\": 3738 } -- under the ~5000ms budget. 20/20 PASS." }
+      ],
+      "verification": {
+        "command": "git log 4b004bb..420fa6c --oneline -- src/app/api/verify/route.ts src/server/router/ src/server/warning/ src/server/extractor/ scripts/latency/measure.ts render.yaml",
+        "result_excerpt": "0 commits -- re-confirmed this sweep that nothing touching the measured path landed since the artifact's own measuredAt, extending the prior sweep's check by one more commit (the Notion reskin, which does not touch this path)."
+      },
+      "interpretation": "I-002",
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta. Same evidence and reasoning as the prior sweep; re-confirmed the staleness check still holds after the one intervening commit (CSS-only, no measured-path files)."
+    },
+    {
+      "id": "TH-R3",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-480", "TRO-570", "TRO-573", "TRO-465"],
+      "evidence": [
+        { "file": "CHANGES.md", "line": 246, "note": "\"## TRO-570 -- first-time-user walkthrough and accessibility assessment (2026-08-13)\" -- line shifted from 138 (prior sweep) to 246 after TRO-573's entry was prepended above it this sweep; content unchanged, re-confirmed open at the new line before citing it." },
+        { "file": "CHANGES.md", "line": 370, "note": "\"axe-core ... 24 scans, `0` violations total\" (TRO-570's own scan, pre-reskin)." },
+        { "file": "CHANGES.md", "line": 7, "note": "\"## TRO-573 -- Notion-style light-only reskin (TH-R3, 2026-08-13)\" -- new this sweep. A full visual reskin (typography, color, spacing, borders) with its own live re-verification: axe-core re-run against all 8 real screens post-reskin, 0 violations, and a re-check that TRO-480's original dark-mode contrast fix's light-mode counterpart still holds (it does; dark mode itself was removed by this ticket, ruled acceptable -- see notes)." },
+        { "file": "src/app/globals-contrast.test.ts", "line": 1, "note": "New this sweep: a permanent automated regression test that parses globals.css's live custom-property values and checks every critical color pair against its WCAG floor -- guards this row's contrast claims against a future silent regression, not just a one-time measurement." },
+        { "file": "src/app/_components/VerifyForm.test.tsx", "line": 69, "note": "expect(screen.getAllByRole(\"button\")).toHaveLength(1) -- the one-button claim as a test, unchanged and still green." }
+      ],
+      "verification": {
+        "command": "pnpm test:e2e && pnpm exec vitest run src/app/globals-contrast.test.ts",
+        "result_excerpt": "test:e2e: 12 passed (20.7s). globals-contrast.test.ts: 8 passed -- every checked color pair (body text, muted text, functional border, button text, focus ring, all three verdict colors) clears its WCAG floor against the live CSS."
+      },
+      "interpretation": "I-006",
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No verdict delta -- re-confirmed VERIFIED, not carried forward blind. TRO-573 (Troy-directed, in-session, merged PR #80 this sweep window) replaced the USWDS-influenced visual language with a Notion-style one and dropped dark mode entirely. This is a real, repo-wide visual change since the prior sweep, so this row was re-verified rather than assumed unaffected: axe-core re-run live against all 8 screens post-reskin (0 violations, matching TRO-570's own pre-reskin baseline), and the new globals-contrast.test.ts (8 cases) checks the same WCAG floors TRO-570 measured by hand, now as a permanent automated guard. Dropping dark mode is a scope reduction of a feature TRO-480 had fixed, not a regression of anything TH-R3 requires -- TH-R3's own acceptance is about a first-time user's experience of the shipped app, and the shipped app is light-only by deliberate, Troy-approved design; there is no 'the dark-mode experience must also pass' clause in the brief. Named as a judgment call for the record, not hidden."
+    },
+    {
+      "id": "TH-R4",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-473", "TRO-474", "TRO-475", "TRO-483", "TRO-571"],
+      "evidence": [
+        { "file": "src/app/_components/BatchUploadForm.tsx", "line": 296, "note": "`multiple` on the label-images input -- unchanged since prior sweep." },
+        { "file": "scripts/golden/results/seeded-demo-batch-2026-08-13.json", "line": 1, "note": "\"totalCount\":36,\"processedCount\":36,\"status\":\"COMPLETED\" -- unchanged since prior sweep." }
+      ],
+      "verification": {
+        "command": "pnpm test:e2e",
+        "result_excerpt": "12 passed (20.7s) -- includes e2e/batch.spec.ts's full manifest+images -> preview -> run -> live progress -> results table -> detail flow, re-run against the reskinned CSS with no behavior change."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta. The stale docs/approach.md:194-198 sentence the prior sweep flagged (\"largest batch actually measured so far is 32 items\") is unchanged this sweep -- still a documentation staleness observation, not a verdict issue, not fixed here (application docs are read-only to this sweep)."
+    },
+    {
+      "id": "TH-R5",
+      "verdict": "VERIFIED",
+      "tickets": [],
+      "evidence": [
+        { "file": "src/server/router/required-fields.ts", "line": 21, "note": "Unchanged since prior sweep." }
+      ],
+      "verification": {
+        "command": "grep -rn \"COLA\" src/ --include=\"*.ts\" --include=\"*.tsx\"",
+        "result_excerpt": "1 hit: src/server/router/required-fields.ts:21, a comment citing the federal rule by name -- no client, no registry call. Re-run fresh this sweep, same result."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta."
+    },
+    {
+      "id": "TH-R6",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-457", "TRO-482", "TRO-484", "TRO-565", "TRO-567", "TRO-566"],
+      "evidence": [
+        { "file": "README.md", "line": 151, "note": "Unchanged since prior sweep." },
+        { "file": "src/lib/db/schema.ts", "line": 61, "note": "\"No PII anywhere (TH-R6)\" -- unchanged (git diff 06dceb1..420fa6c does not touch schema.ts)." }
+      ],
+      "verification": {
+        "command": "pnpm test",
+        "result_excerpt": "184 files, 2287 tests, all passed (20.03s) at commit 420fa6c -- includes src/proxy.test.ts and the access-code/rate-limit/budget suites, unchanged since prior sweep plus the new contrast utility's own 8 tests (unrelated to this row)."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta. TRO-566 (batch-worker daily-budget gaps) remains Backlog per Linear, unchanged since prior sweep -- a real, already-ticketed follow-up, not blocking this row's VERIFIED verdict (the baseline data-model and documented-posture acceptance are both already met)."
+    },
+    {
+      "id": "TH-R7",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-478", "TRO-485", "TRO-574"],
+      "evidence": [
+        { "file": "docs/approach.md", "line": 53, "note": "\"### Outbound dependencies and degradation\" -- new section, TRO-574 (merged 8f14c17 during this sweep). The full dependency table (line 61) and its \"If blocked or unreachable\" column (line 64) are now reproduced directly in a graded deliverable, not linked from one." },
+        { "file": "docs/approach.md", "line": 67, "note": "\"If a deployer's firewall blocks api.anthropic.com, every verify request fails the same...\" -- the TH-R7 firewall scenario stated directly, matching the interview's own language." },
+        { "file": "README.md", "line": 177, "note": "\"'Outbound dependencies and degradation' section has the full dependency table and what happens if the Anthropic endpoint is unreachable.\" -- README now points to the reproduced content in docs/approach.md, not to the internal docs/error-states.md working document." }
+      ],
+      "verification": {
+        "command": "grep -n 'unreachable\\|blocked\\|firewall\\|degradation' docs/approach.md ; grep -n 'unreachable\\|blocked\\|degradation\\|outbound' README.md",
+        "result_excerpt": "docs/approach.md: 6 hits including the full table and the firewall-scenario paragraph. README.md: 3 hits, all pointing at the reproduced section rather than at docs/error-states.md. Read both sections in full this sweep, not sampled from grep alone."
+      },
+      "interpretation": "I-004",
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "DELTA from PARTIAL, landed mid-sweep. TRO-574's PR #81 merged (8f14c17) while this sweep was in progress -- this row was re-checked after the merge rather than left at its pre-merge state. INT-004's rule (dependency-list-and-degradation-behavior content must appear IN a graded deliverable, not be referenced from one) is now met: docs/approach.md carries the full table and the firewall scenario directly, and README.md points to that reproduced content rather than to docs/error-states.md. The implementation half was already met and unchanged (a real APIConnectionError yields a designed 503 with a retry affordance, src/app/api/verify/route.test.ts, untouched by this PR)."
+    },
+    {
+      "id": "TH-R8",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-463", "TRO-536"],
+      "evidence": [
+        { "file": "src/server/comparators/brand.ts", "line": 25, "note": "Unchanged since prior sweep." }
+      ],
+      "verification": {
+        "command": "pnpm test",
+        "result_excerpt": "184 files, 2287 tests, all passed (20.03s) -- includes brand.test.ts's STONE'S THROW case."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta."
+    },
+    {
+      "id": "TH-R9",
+      "verdict": "PARTIAL",
+      "tickets": ["TRO-468", "TRO-469", "TRO-527", "TRO-532", "TRO-533", "TRO-528", "TRO-569"],
+      "evidence": [
+        { "file": "src/server/warning/index.test.ts", "line": 202, "note": "Unchanged since prior sweep." },
+        { "file": "src/server/extractor/types.ts", "line": 80, "note": "`bold: WarningBoldness;` -- still extracted and typed, still not read downstream." }
+      ],
+      "verification": null,
+      "interpretation": "I-001, I-005",
+      "assumption": null,
+      "suggested_scope": "Unchanged from the prior sweep: TRO-532 (LH-025, stroke-width bold advisory) is now In Progress per Linear (moved from Todo since the prior sweep -- re-confirmed this sweep, no PR open yet). TRO-533 (LH-026) and TRO-528 (LH-023, bold-isolating golden cases) remain Todo. TRO-569 (Urgent) still tracks the gap directly, still Backlog.",
+      "notes": "NO DELTA -- re-confirmed PARTIAL via a fresh grep this sweep (`grep -rn \"formatting.bold\\|\\.bold\\b|isBold|boldCheck\" src/server/router/ src/app/_components/DetailView.tsx`, 0 hits, same as prior sweep). The only change since the last sweep is TRO-532's Linear status moving from Todo to In Progress -- no code has landed for it yet (no open PR). This remains the single most consequential open gap in the whole sweep: a real, un-softened, Urgent-ticketed correctness gap against a statutory requirement."
+    },
+    {
+      "id": "TH-R10",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-477", "TRO-497", "TRO-542", "TRO-543"],
+      "evidence": [
+        { "file": "src/server/router/golden-image-quality.test.ts", "line": 1, "note": "Unchanged since prior sweep." }
+      ],
+      "verification": {
+        "command": "pnpm eval:check",
+        "result_excerpt": "cheap mode -- extraction 87.2% within 87.2-87.8% band (K=3); cascade-verdict 80.6% within 80.6-83.3% band. PASS. Identical result to the prior sweep -- confirmed the extractor/router/warning/comparators paths remain untouched since (git diff 06dceb1..420fa6c returns 0 files under those roots)."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta."
+    },
+    {
+      "id": "TH-R11",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-461", "TRO-458"],
+      "evidence": [
+        { "file": "src/server/router/types.ts", "line": 35, "note": "Unchanged since prior sweep." }
+      ],
+      "verification": {
+        "command": "pnpm test:e2e",
+        "result_excerpt": "12 passed (20.7s)."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta."
+    },
+    {
+      "id": "TH-R12",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-458", "TRO-497", "TRO-498", "TRO-499", "TRO-529"],
+      "evidence": [
+        { "file": "golden-set/README.md", "line": 3, "note": "Unchanged since prior sweep." }
+      ],
+      "verification": {
+        "command": "pnpm test",
+        "result_excerpt": "184 files, 2287 tests, all passed (20.03s)."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta."
+    },
+    {
+      "id": "TH-R13",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-456", "TRO-562"],
+      "evidence": [
+        { "file": ".github/workflows/ci.yml", "line": 51, "note": "`uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0` -- changed since the prior sweep: TRO-562 (merged 549a06b/50acd02, between 06dceb1 and this sweep's commit) pins every action and the Postgres container image to a commit SHA/digest. Line 54: `persist-credentials: false`, TRO-562's other fix. Line 79: `pnpm install --frozen-lockfile`, unaffected. This sweep's prior citation (line 47) was checked directly against the current file and found stale after TRO-562's diff shifted it -- corrected here, not carried forward." }
+      ],
+      "verification": {
+        "command": "gh api repos/troysatchell/LabelHunter --jq '{visibility,private}' ; gh run list --repo troysatchell/LabelHunter --branch main --limit 3 --json headSha,status,conclusion",
+        "result_excerpt": "visibility: public, private: false. CI on 420fa6c (this sweep's commit): status completed, conclusion success."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No verdict delta. TRO-562 landed since the prior sweep (its ticket ID was already listed there via keyword mapping, ahead of the code actually merging -- a known limitation of that mapping method, corrected here by citing the actual current line and confirming the change is real). Net effect on this row: strictly positive -- CI is more supply-chain-hardened than at the prior sweep, buildability from clone is untouched."
+    },
+    {
+      "id": "TH-R14",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-484"],
+      "evidence": [
+        { "file": "README.md", "line": 1, "note": "Unchanged since prior sweep." }
+      ],
+      "verification": {
+        "command": "CARRIED FORWARD, not re-run -- the prior sweep's fresh clone + install + scratch-DB migrate + build (commit 06dceb1)",
+        "result_excerpt": "install exit 0; migrations applied successfully; build exit 0 (prior sweep's own capture). Not re-executed this sweep: `git diff 06dceb1..420fa6c -- README.md` returns 0 lines, so the setup instructions this check exercises are byte-identical to what the prior sweep already proved installable."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta. Verification object explicitly marked as carried forward, not fresh, so this row is distinguishable from one this sweep actually re-ran. Re-running a full fresh-clone check for an unrelated CSS/CI delta was judged disproportionate; a reader who wants it re-run at submission time should do so once more, close to the actual submission commit."
+    },
+    {
+      "id": "TH-R15",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-485"],
+      "evidence": [
+        { "file": "docs/approach.md", "line": 1, "note": "Unchanged since prior sweep (274 lines)." }
+      ],
+      "verification": {
+        "command": "CARRIED FORWARD, not re-read this sweep -- the prior sweep's full read of docs/approach.md (274 lines), confirming all four PRD-named sections present",
+        "result_excerpt": "`git diff 06dceb1..420fa6c -- docs/approach.md` returns 0 lines -- byte-identical to what the prior sweep already read in full and confirmed complete."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta. Verification marked as carried forward, not a fresh read, since the file is provably unchanged."
+    },
+    {
+      "id": "TH-R16",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-481", "TRO-482", "TRO-483", "TRO-568"],
+      "evidence": [
+        { "file": "scripts/latency/results/single-label-verify-url-mode.json", "line": 30, "note": "Unchanged since prior sweep." }
+      ],
+      "verification": {
+        "command": "curl -s -o /dev/null -w \"%{http_code}\" https://labelhunter-web.onrender.com/ ; curl -s -o /dev/null -w \"%{http_code}\" https://labelhunter-web.onrender.com/api/health ; curl -s -o /dev/null -w \"%{http_code}\" https://labelhunter-web.onrender.com/api/review-queue",
+        "result_excerpt": "GET / -> 307. GET /api/health -> 200. GET /api/review-queue (no credential) -> 401. Re-run fresh this sweep, same result as prior -- read-only GETs, no mutation. Note: the deployed instance has not yet had the Notion reskin (TRO-573) deployed to it as of this check -- Render auto-deploys from main on merge per render.yaml, so this is expected to catch up shortly; the live-reachability claim this row makes does not depend on which visual skin is currently live."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta."
+    },
+    {
+      "id": "TH-R17",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-459", "TRO-470"],
+      "evidence": [
+        { "file": "src/app/api/verify/route.ts", "line": 313, "note": "Unchanged since prior sweep." }
+      ],
+      "verification": {
+        "command": "pnpm typecheck && pnpm lint && pnpm build && pnpm test && pnpm test:e2e && pnpm eval:check",
+        "result_excerpt": "typecheck: clean. lint: 1 warning, 0 errors. build: exit 0. test: 184 files / 2287 tests, all passed (20.03s). test:e2e: 12 passed (20.7s). eval:check: PASS."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No verdict delta -- the full verify suite re-ran clean at the current commit, 20 more tests than the prior sweep (the reskin's own new contrast.ts/contrast.test.ts/globals-contrast.test.ts)."
+    },
+    {
+      "id": "TH-R18",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-456", "TRO-508", "TRO-548", "TRO-573"],
+      "evidence": [
+        { "file": "eslint.config.mjs", "line": 13, "note": "Unchanged since prior sweep." },
+        { "file": "src/lib/utils/contrast.ts", "line": 1, "note": "New this sweep: a small, well-isolated, independently-unit-tested utility (WCAG relative-luminance math) added by TRO-573 -- a real example of the clean-structure bar this row grades, not just an absence of lint errors." }
+      ],
+      "verification": {
+        "command": "pnpm typecheck && pnpm lint && pnpm build && pnpm test",
+        "result_excerpt": "typecheck: clean. lint: 1 problem (0 errors, 1 warning) -- same single pre-existing warning as prior sweep. build: exit 0. test: 184 files / 2287 tests, all passed (20.03s)."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No verdict delta."
+    },
+    {
+      "id": "TH-R19",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-459", "TRO-470", "TRO-485"],
+      "evidence": [
+        { "file": "docs/approach.md", "line": 16, "note": "Unchanged since prior sweep." }
+      ],
+      "verification": {
+        "command": "CARRIED FORWARD, not re-read this sweep -- the prior sweep's read of docs/approach.md's \"The cascade\" and \"Tools used\" sections",
+        "result_excerpt": "`git diff 06dceb1..420fa6c -- docs/approach.md` returns 0 lines -- byte-identical to the prior sweep's own read."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta."
+    },
+    {
+      "id": "TH-R20",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-478", "TRO-479", "TRO-570"],
+      "evidence": [
+        { "file": "docs/error-states.md", "line": 39, "note": "Unchanged since prior sweep." },
+        { "file": "CHANGES.md", "line": 355, "note": "TRO-570's two live-triggered error states (client-side network failure; server-side unreachable endpoint) -- line shifted from 247 to 355 after TRO-573's entry was prepended; content unchanged, re-confirmed at the new line." }
+      ],
+      "verification": {
+        "command": "pnpm test:e2e && pnpm test",
+        "result_excerpt": "test:e2e: 12 passed (20.7s). test: 184 files / 2287 tests, all passed (20.03s)."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No verdict delta."
+    },
+    {
+      "id": "TH-R21",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-486", "TRO-569", "TRO-533"],
+      "evidence": [
+        { "file": "docs/approach.md", "line": 258, "note": "Unchanged since prior sweep." }
+      ],
+      "verification": {
+        "command": "CARRIED FORWARD, not re-read this sweep -- the prior sweep's judgment call, reasoned against the row's own acceptance wording",
+        "result_excerpt": "`git diff 06dceb1..420fa6c -- docs/approach.md` returns 0 lines. All 23 rows in this sweep are still VERIFIED or PARTIAL-with-an-explicit-ticketed-gap, the same whole-inventory condition the prior sweep's judgment call rested on."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta -- same judgment-call reasoning as the prior sweep (see that matrix entry for the full rationale). Still auditable, still reversible under a stricter reading."
+    },
+    {
+      "id": "TH-R22",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-464", "TRO-476", "TRO-470"],
+      "evidence": [
+        { "file": "docs/approach.md", "line": 243, "note": "Unchanged since prior sweep." }
+      ],
+      "verification": {
+        "command": "pnpm test:e2e ; pnpm eval:check",
+        "result_excerpt": "test:e2e: 12 passed (20.7s). eval:check: PASS."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta."
+    },
+    {
+      "id": "TH-R23",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-485", "TRO-487", "TRO-531"],
+      "evidence": [
+        { "file": "docs/approach.md", "line": 138, "note": "Unchanged since prior sweep." }
+      ],
+      "verification": {
+        "command": "CARRIED FORWARD, not re-read this sweep -- the prior sweep's read of docs/approach.md's \"Trade-offs and limitations\" section",
+        "result_excerpt": "`git diff 06dceb1..420fa6c -- docs/approach.md` returns 0 lines -- byte-identical to the prior sweep's own read."
+      },
+      "interpretation": "I-003",
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta."
+    }
+  ],
+  "orphan_tickets": [],
+  "needs_ruling": [],
+  "commands_run": [
+    { "command": "pnpm typecheck", "result": "exit 0 -- tsc --noEmit clean", "bears_on": ["TH-R17", "TH-R18"], "note": "run in the TRO-486 worktree (labelhunter-wt-tro_486, re-provisioned this sweep), its own isolated database, at commit 420fa6c" },
+    { "command": "pnpm lint", "result": "exit 0 -- 1 problem (0 errors, 1 warning)", "bears_on": ["TH-R17", "TH-R18"], "note": null },
+    { "command": "pnpm build", "result": "exit 0 -- production build succeeded", "bears_on": ["TH-R17", "TH-R18"], "note": null },
+    { "command": "pnpm test", "result": "184 files, 2287 tests, all passed (20.03s)", "bears_on": ["TH-R1", "TH-R6", "TH-R8", "TH-R9", "TH-R11", "TH-R12", "TH-R17", "TH-R18", "TH-R20"], "note": "20 more tests than the prior sweep (2267 -> 2287), all from TRO-573's new contrast utility + its two test files" },
+    { "command": "pnpm test:e2e", "result": "12 passed (20.7s)", "bears_on": ["TH-R1", "TH-R3", "TH-R4", "TH-R11", "TH-R17", "TH-R20", "TH-R22"], "note": "fake Anthropic server by default; E2E_LIVE=1 was NOT used" },
+    { "command": "pnpm eval:check", "result": "PASS -- extraction 87.2% within 87.2-87.8% band; cascade-verdict 80.6% within 80.6-83.3% band (K=3)", "bears_on": ["TH-R10", "TH-R17", "TH-R19", "TH-R22"], "note": "cheap mode, identical to prior sweep -- confirmed the extractor/router/warning/comparators paths remain untouched since 06dceb1" },
+    { "command": "pnpm exec vitest run src/app/globals-contrast.test.ts", "result": "8 passed", "bears_on": ["TH-R3"], "note": "new this sweep -- the reskin's own permanent contrast regression test, run directly to confirm the palette holds, not assumed from the ticket's own CHANGES.md claim" },
+    { "command": "git log 4b004bb..420fa6c --oneline -- src/app/api/verify/route.ts src/server/router/ src/server/warning/ src/server/extractor/ scripts/latency/measure.ts render.yaml", "result": "0 commits", "bears_on": ["TH-R2", "TH-R16"], "note": "extends the prior sweep's staleness check by the one intervening commit" },
+    { "command": "curl -s -o /dev/null -w '%{http_code}' https://labelhunter-web.onrender.com/ ; same for /api/health and /api/review-queue", "result": "307; 200; 401 without credential", "bears_on": ["TH-R6", "TH-R16"], "note": "read-only GET probes against the live deploy; no mutation" },
+    { "command": "grep -rn \"COLA\" src/ --include=*.ts --include=*.tsx", "result": "1 hit, a regulatory-citation comment, not a client", "bears_on": ["TH-R5"], "note": null },
+    { "command": "grep -rn 'formatting.bold|\\.bold\\b|isBold|boldCheck' src/server/router/ src/app/_components/DetailView.tsx", "result": "0 hits", "bears_on": ["TH-R9"], "note": "confirms the bold signal is still not read anywhere downstream of the extractor" },
+    { "command": "gh api repos/troysatchell/LabelHunter --jq '{visibility,private}' ; gh run list --repo troysatchell/LabelHunter --branch main --limit 3 --json headSha,status,conclusion", "result": "visibility: public, private: false; CI on 420fa6c completed/success", "bears_on": ["TH-R13"], "note": null },
+    { "command": "gh pr list --repo troysatchell/LabelHunter --state all (checking for a TRO-574 PR)", "result": "initially none open; PR #81 opened and merged (8f14c17) while this sweep was still in progress -- re-checked and caught before finishing", "bears_on": ["TH-R7"], "note": "TRO-574's docs-only G6 gate exception landed first (commit b3dcf87), then its PR followed minutes later -- this sweep's swept commit was advanced to 8f14c17 and TH-R7 was re-traced against the merged content rather than reported at its pre-merge state" },
+    { "command": "grep -n 'unreachable|blocked|firewall|degradation' docs/approach.md ; grep -n 'unreachable|blocked|degradation|outbound' README.md", "result": "docs/approach.md: 6 hits including the full dependency table and firewall-scenario paragraph. README.md: 3 hits, pointing at the reproduced section.", "bears_on": ["TH-R7"], "note": "confirms TRO-574's content is IN the graded deliverable, not merely linked, satisfying INT-004" },
+    { "command": "pnpm eval:check -- --live --full", "result": "NOT RUN", "bears_on": ["TH-R17"], "note": "deliberately not run: costs real API money; unchanged since prior sweep, still current under INT-002" },
+    { "command": "pnpm latency:check -- --url=<deployed>", "result": "NOT RUN", "bears_on": ["TH-R2"], "note": "deliberately not run: would bill a real Anthropic call; the already-fresh committed artifact supplies the evidence instead" }
+  ]
+}

@@ -6,30 +6,36 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
 ## TRO-484 — LH-063: README (2026-08-13)
 
-**What changed.** Added `README.md` at the repo root — TH-R14's graded deliverable, previously
-MISSING (three sweeps running). Assembled from material that already existed: what LabelHunter
-is (`docs/PRD.md` §1), setup/run steps (`.env.local.example`, `package.json`'s scripts block),
-the cascade architecture diagram and cost table (`docs/PRD.md` §3.1, §4), the outbound-dependency
-list (`docs/error-states.md`), and the data-handling posture (`src/lib/db/schema.ts`,
-`src/server/review-queue/record-disposition.ts:11`) — sourced from
-`audit/requirements/gaps.md`'s TH-R14 and TH-R6 suggested scope (TRO-486).
+**What changed.** This ticket adds `README.md` at the repo root. It closes TH-R14, a graded
+deliverable that was MISSING across three sweeps. The content is assembled from material that
+already existed. `docs/PRD.md` §1 supplies what LabelHunter is. `.env.local.example` and
+`package.json`'s scripts block supply the setup and run steps. `docs/PRD.md` §3.1 and §4
+supply the cascade architecture diagram and cost table. `docs/error-states.md` supplies the
+outbound-dependency list. `src/lib/db/schema.ts` and
+`src/server/review-queue/record-disposition.ts:11` supply the data-handling posture.
+`audit/requirements/gaps.md`'s TH-R14 and TH-R6 suggested scope (TRO-486) is the source for all
+of it.
 
 **The deployed URL is deliberately not published yet.** PR #43 (TRO-482, key protection: access
 code, rate limits, daily spend budget) is open and unmerged. The live instance has no
-protection against uninvited use and makes real, billed Anthropic API calls. The README says so
-plainly instead of silently omitting the URL or publishing it unguarded. Once #43 merges, add
-the URL and access code to the "Try it" section.
+protection against uninvited use and makes real, billed Anthropic API calls. The README does
+not name the instance's address at all, rather than name it with a caveat — a caveat next to a
+live, searchable address does not stop someone from using the address. Once #43 merges, add the
+URL and access code to the "Try it" section.
 
-**Observed, not derived.** Every command in the Setup and Running the tests sections was run
-against a fresh worktree this ticket: `pnpm install`, `pnpm db:migrate` (8 migrations, exit 0),
-`pnpm typecheck` (exit 0), `pnpm lint` (0 errors, 1 pre-existing warning), `pnpm test`, `pnpm
-build` (15 routes) — see this PR's own gate run for exact output.
+**Observed, not derived.** This ticket ran these commands against a fresh worktree:
+`pnpm install`; `pnpm db:migrate` (8 migrations, exit 0); `pnpm typecheck` (exit 0); `pnpm lint`
+(0 errors, 1 pre-existing warning); `pnpm test` (169 files, 2108 tests, exit 0); `pnpm build`
+(15 routes, exit 0). `pnpm test:e2e` did **not** run this ticket — it boots a dev server, and
+this ticket changed no application code that suite covers. See this PR's own gate run for exact
+output.
 
-**How to run it.** Follow the README itself: `pnpm install`, start the Postgres container it
-documents, `cp .env.local.example .env.local` and set `ANTHROPIC_API_KEY`, `pnpm db:migrate`,
-`pnpm dev`.
+**How to run it.** Follow the README itself: install dependencies, start the Postgres
+container it documents, copy `.env.local.example` to `.env.local` and set
+`ANTHROPIC_API_KEY`, run `pnpm db:migrate`, then run `pnpm dev`.
 
-**Rollback.** Delete `README.md`. No other file changed; no schema, no app code.
+**Rollback.** Delete `README.md` and remove this changelog entry. No schema or application code
+changed.
 
 ## TRO-486 — LH-065: requirements-audit compare sweep at commit 876a295 (2026-08-13)
 

@@ -9,19 +9,19 @@ statement.
 A human agent makes the final call on anything the tool flags. LabelHunter narrows the search.
 It does not replace judgment.
 
-Built for a TTB take-home interview brief. `docs/approach.md` covers the design reasoning,
-tools, assumptions, and trade-offs in full.
+LabelHunter was built for a TTB take-home interview brief. `docs/approach.md` covers the
+design reasoning, tools, assumptions, and trade-offs in full.
 
 ## Try it
 
-**Deployed URL:** not yet published here.
+**Deployed URL:** not published here yet.
 
-The app deploys to `https://labelhunter-web.onrender.com`. This README does not link it as a
-usable evaluation target yet. [PR #43](https://github.com/troysatchell/LabelHunter/pull/43) —
-the access-code gate, rate limits, and daily spend budget — has not merged. Until it merges,
-the deployed instance has no protection against uninvited use. It also makes real, billed
-calls to the Anthropic API. Once PR #43 merges, this section carries the URL and the access
-code.
+A deployed instance exists, but this README does not name its address yet.
+[PR #43](https://github.com/troysatchell/LabelHunter/pull/43) — the access-code gate, rate
+limits, and daily spend budget — has not merged. Until it merges, that instance has no
+protection against uninvited use, and it makes real, billed calls to the Anthropic API.
+Publishing its address here would invite exactly that use before the protection lands. Once
+PR #43 merges, this section carries the URL and the access code.
 
 Until then, run LabelHunter locally with the steps below.
 
@@ -35,41 +35,47 @@ Until then, run LabelHunter locally with the steps below.
 
 ## Setup
 
-1. Clone the repo and install dependencies.
+1. Clone the repo.
 
    ```bash
    git clone https://github.com/troysatchell/LabelHunter.git
    cd LabelHunter
+   ```
+
+2. Install dependencies.
+
+   ```bash
    pnpm install
    ```
 
-2. Start a local Postgres container.
+3. Start a local Postgres container. This binds only to your own machine
+   (`127.0.0.1`), not your whole network.
 
    ```bash
    docker run --name labelhunter-pg \
      -e POSTGRES_USER=labelhunter \
      -e POSTGRES_PASSWORD=labelhunter_dev_password \
      -e POSTGRES_DB=labelhunter_dev \
-     -p 5432:5432 -d postgres:16-alpine
+     -p 127.0.0.1:5432:5432 -d postgres:16-alpine
    ```
 
-3. Copy the environment file.
+4. Copy the environment file.
 
    ```bash
    cp .env.local.example .env.local
    ```
 
-   Open `.env.local` and set `ANTHROPIC_API_KEY`. Leave `DATABASE_URL` as it is — it already
+5. Open `.env.local` and set `ANTHROPIC_API_KEY`. Leave `DATABASE_URL` as it is — it already
    matches the container above. Leave `GOOGLE_API_KEY` blank. The running app never reads it
    (see "What LabelHunter does not call" below).
 
-4. Run the database migrations.
+6. Run the database migrations.
 
    ```bash
    pnpm db:migrate
    ```
 
-5. Start the app.
+7. Start the app.
 
    ```bash
    pnpm dev
@@ -99,7 +105,7 @@ measurement.
 LabelHunter reads a label with a cost-tiered cascade instead of running one expensive model
 call on every image:
 
-```
+```text
 Upload (single label or batch)
    ↓
 Image preprocessing (rotation, resizing, a crop of the government warning block)

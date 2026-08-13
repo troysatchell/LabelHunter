@@ -4,6 +4,36 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-564 — the OCR sweeps now refuse to run against a dirty golden-set/ tree (2026-08-13)
+
+**The gap.** `ocr-floor-sweep.ts` records `goldenSetCommitSha` from
+`lastCommitTouchingPath(REPO_ROOT, "golden-set")`. That function returns the SHA of the last
+COMMIT to touch `golden-set/`. It says nothing about the working tree at sweep time. Run the
+sweep with an uncommitted `golden-set/` edit, and the artifact still names the last clean
+commit. The artifact then misrepresents what the sweep actually measured — the same
+provenance-integrity gap TRO-558/TRO-559 closed for stale and clobbered artifacts, now showing
+up as working-tree drift instead. `tro-546-case22-ocr-region-check.ts` shares the same OCR
+method and reads the same `golden-set/` images, so the same gap applies there too.
+
+**The fix.** A new function, `assertPathTreeClean`, lives next to `lastCommitTouchingPath` in
+`scripts/eval/git-provenance.ts` — the file the ticket named to check first for reusable
+dirty-tree detection. It runs `git status --porcelain -- <path>` and throws when the output is
+not empty: a staged change, an unstaged change, or an untracked file all count. Both sweep
+scripts call `assertPathTreeClean(REPO_ROOT, "golden-set")` as the first line of `main()`,
+before the manifest loads and before any OCR work runs. A dirty tree now fails in under a
+second, with the exact `git status` output in the error message, instead of running the full
+sweep and writing a mismatched artifact.
+
+**Confirmed.** `pnpm vitest run scripts/eval/git-provenance.test.ts` — 4 new cases: a clean
+path does not throw, a modified tracked file throws, an untracked file throws, and a failed
+git command throws (never treated as "clean"). All 9 cases in the file pass. `pnpm typecheck`
+and `pnpm lint` are clean.
+
+Manually confirmed against the real script, not just the mocked unit test (observed
+2026-08-13): dirtied `golden-set/README.md`, ran `pnpm eval:ocr-floor-sweep`, and it failed in
+0.7s with the new error message and wrote no artifact. Reverted the change, re-ran the same
+command, and it completed its normal 36-case sweep in 19s and wrote the artifact as before.
+
 ## TRO-572 — worktree.sh: a per-ticket lock serializes truly concurrent invocations (2026-08-13)
 
 **The gap.** TRO-557 refuses a worktree reuse from a DIFFERENT session. It checks a

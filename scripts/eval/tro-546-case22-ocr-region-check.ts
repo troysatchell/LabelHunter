@@ -36,6 +36,7 @@ import {
 } from "../../src/server/warning";
 import { parseArtifactGuardArgs, writeGuardedJsonArtifact } from "./artifact-guard";
 import { REPO_ROOT } from "./cascade-runner";
+import { assertPathTreeClean } from "./git-provenance";
 
 export interface CaseResult {
   caseId: string;
@@ -116,6 +117,13 @@ async function main(): Promise<void> {
     console.error("This script only accepts --out=<path> and --force.");
     process.exit(2);
   }
+  // TRO-564: fail before doing any OCR work when golden-set/ has an
+  // uncommitted change. This artifact has no goldenSetCommitSha field of
+  // its own, but it shares ocr-floor-sweep.ts's exact method and reads the
+  // same golden-set/ images. A reader still needs the committed tree state
+  // to match what this run actually measured.
+  assertPathTreeClean(REPO_ROOT, "golden-set");
+
   const manifest = loadGoldenSetManifest();
   console.log(
     `tro-546-case22-ocr-region-check.ts: sweeping ${manifest.cases.length} golden-set case(s), OCR channel only, no API call.`,

@@ -85,8 +85,9 @@ on every image. TRO-518 has since landed and moved that storage to Postgres; thi
 carries it. Deployed throughput is still not measured. No claim about it appears anywhere
 in this entry, the code, or the artifact.
 
-**How to run it.** `pnpm batch:fixture` once. Then, in three terminals: `pnpm dev`, `pnpm
-worker`, `pnpm batch:throughput`. Output lands at
+**How to run it.** Source `.factory-env` in every terminal first (or keep `.env.local`
+present in a plain checkout). `pnpm batch:fixture` once. Then, in three terminals: `pnpm
+dev`, `pnpm worker`, `pnpm batch:throughput`. Output lands at
 `scripts/batch-throughput/results/local-batch-run.json`. This costs real money — about
 $0.15-0.30 for the full 32-case fixture, at the eval harness's measured per-call rates.
 
@@ -198,6 +199,17 @@ guards. One was dismissed: a request to re-bullet these triage paragraphs — th
 are already single-claim, and reformatting bookkeeping changes no reported fact. The triage
 stops when a round changes no shipped behavior and no factual claim; this round's
 follow-ups will be judged by that rule.
+
+Round 8 still found substance, so it did not stop the triage. Six fixed: the harness now
+proves the database answers `SELECT 1` before any spend-inducing request; the post-run
+cross-check now requires status and both timestamps to match, so a same-ID row in a
+mispointed database cannot pass on counts alone; logged and persisted URLs are stripped of
+userinfo and query strings; this "How to run it" now names the `source .factory-env`
+prerequisite; a cost-test title stopped calling the Haiku figure a real call count; and the
+scorecard's first fail row now names its cause (stale worktree database) in the row itself.
+Two dismissed: a repeat of the re-bullet request (same reason as round 7), and a request to
+replace the scorecard's one approximate timestamp — no measured value exists for it, and
+inventing one is banned.
 
 **Do NOT.** No column was added to `batch_jobs` — every input already existed. No claim was
 extrapolated past this run's real 32 items to TH-R4's 200-300 label reference.

@@ -251,10 +251,26 @@ async function pollUntilTerminal(
   }
 }
 
+/** Strips credentials and query parameters from a URL before it reaches
+ * a log line or the committed artifact. URI userinfo (`user:pass@`) and
+ * the query string are the two places a credential can ride inside a URL
+ * (review finding, local review round 8). Returns origin + path only.
+ * Requests still use the raw URL; only records are sanitized. */
+function sanitizeUrlForRecord(raw: string): string {
+  try {
+    const u = new URL(raw);
+    return `${u.origin}${u.pathname === "/" ? "" : u.pathname}`;
+  } catch {
+    return "unparseable-url-redacted";
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  console.log(`measure.ts: base URL ${args.baseUrl}`);
-  console.log(`measure.ts: DATABASE_URL host/db = ${(process.env.DATABASE_URL ?? "unset").replace(/:\/\/[^@]*@/, "://***@")}`);
+  console.log(`measure.ts: base URL ${sanitizeUrlForRecord(args.baseUrl)}`);
+  console.log(
+    `measure.ts: DATABASE_URL host/db = ${(process.env.DATABASE_URL ?? "unset").replace(/:\/\/[^@]*@/, "://***@").replace(/\?.*$/, "")}`,
+  );
 
   // Everything below this point is validated BEFORE the first real,
   // spend-inducing request (review finding, local review round 3) — a
@@ -280,6 +296,27 @@ async function main(): Promise<void> {
   // override. Run it before any request, so a bad value cannot abort the
   // script AFTER a real batch has already spent real money.
   const workerConcurrency = readWorkerConcurrency();
+
+  // Same fail-fast reasoning again: prove the database is REACHABLE, not
+  // just configured, before any spend-inducing request (review finding,
+  // local review round 8). A short-lived probe pool, closed immediately —
+  // the pool for the post-run reads opens later, so nothing idles through
+  // a potentially 30-minute batch. Both hardened settings are copied from
+  // the post-run pool (standing rule 22).
+  {
+    const probePool = new Pool({ connectionString, connectionTimeoutMillis: 10_000 });
+    probePool.on("error", (err) => console.error("measure.ts: unexpected error on idle Postgres client", err));
+    try {
+      await probePool.query("SELECT 1");
+    } catch (cause) {
+      throw new Error(
+        "measure.ts: DATABASE_URL is set but the database did not answer SELECT 1 — fix the connection before spending money on a batch.",
+        { cause },
+      );
+    } finally {
+      await probePool.end();
+    }
+  }
 
   await checkHealth(args.baseUrl);
 
@@ -331,14 +368,28 @@ async function main(): Promise<void> {
       throw new Error(`measure.ts: batch_jobs row ${started.batchJobId} vanished between the HTTP poll and this database read.`);
     }
     sonnetCallCount = row.sonnetCallCount;
-    // Cross-check: the HTTP-observed counts and the direct database read
+    // Cross-check: the HTTP-observed state and the direct database read
     // must agree — both read the exact same row, moments apart, on an
-    // already-COMPLETED (so no longer being written to) batch.
-    if (row.totalCount !== finalProgress.totalCount || row.processedCount !== finalProgress.processedCount) {
+    // already-COMPLETED (so no longer being written to) batch. Counts
+    // alone are not enough: a same-ID row in a DIFFERENT database (a
+    // mispointed DATABASE_URL) could match them by coincidence. Status
+    // and both timestamps must match too (review finding, local review
+    // round 8). The API serializes these Dates via JSON.stringify, which
+    // calls toISOString — the same conversion applied to the row here.
+    if (
+      row.status !== "COMPLETED" ||
+      row.totalCount !== finalProgress.totalCount ||
+      row.processedCount !== finalProgress.processedCount ||
+      row.startedAt?.toISOString() !== finalProgress.startedAt ||
+      row.completedAt?.toISOString() !== finalProgress.completedAt
+    ) {
       throw new Error(
         `measure.ts: batch_jobs row disagrees with the polled API response ` +
-          `(db totalCount=${row.totalCount}/processedCount=${row.processedCount} vs ` +
-          `api totalCount=${finalProgress.totalCount}/processedCount=${finalProgress.processedCount}) — investigate before trusting this run.`,
+          `(db status=${row.status}/totalCount=${row.totalCount}/processedCount=${row.processedCount}/` +
+          `startedAt=${row.startedAt?.toISOString()}/completedAt=${row.completedAt?.toISOString()} vs ` +
+          `api status=${finalProgress.status}/totalCount=${finalProgress.totalCount}/processedCount=${finalProgress.processedCount}/` +
+          `startedAt=${finalProgress.startedAt}/completedAt=${finalProgress.completedAt}) — ` +
+          `the DATABASE_URL this script sees may not be the database the server writes to. Investigate before trusting this run.`,
       );
     }
 
@@ -390,7 +441,7 @@ async function main(): Promise<void> {
     ticket: "TRO-544 / LH-039",
     measuredAt: runStartedAt,
     deployment: "local dev workstation, not deployed",
-    baseUrl: args.baseUrl,
+    baseUrl: sanitizeUrlForRecord(args.baseUrl),
     haikuModel: HAIKU_EXTRACTOR_MODEL,
     sonnetModel: SONNET_RESOLVER_MODEL,
     machine: readMachineInfo(),

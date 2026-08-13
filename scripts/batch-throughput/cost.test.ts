@@ -29,7 +29,7 @@ describe("meanCost", () => {
 });
 
 describe("deriveBatchCostUsd", () => {
-  it("combines real Haiku and Sonnet call counts with their measured mean costs", () => {
+  it("combines the Haiku attempt upper bound and the real Sonnet call count with their measured mean costs", () => {
     const usd = deriveBatchCostUsd({
       haikuCallCount: 32,
       haikuMeanCostUsd: 0.004668,

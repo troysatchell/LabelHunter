@@ -4,6 +4,67 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-547 — BatchProgressBrowser poll test asserted a value a correct poll overwrites (2026-08-12)
+
+**What changed.** One line of test data in `src/app/_components/BatchProgressBrowser.test.tsx`.
+The component is unchanged.
+
+**The diagnosis, and a correction to the ticket's premise.** TRO-547 was filed as "flaky under
+load", by analogy with TRO-513. That framing is wrong. The test fails with no suite load at all:
+measured 2 failures in 10 isolated runs of that file alone.
+
+It is also not a component race. `progress()` defaults to `status: "RUNNING"`, which is not
+terminal, so after the held poll resolves the component correctly keeps polling every
+`FAST_POLL_MS` (15ms). The mock's fallback returned `processedCount: 3`, so a legitimate next
+poll rewrote the banner to "3 of 2" before `waitFor` could observe the "2 of 2" the assertion
+wanted. The test asserted a transient value that correct behaviour overwrites.
+
+**The fix.** The fallback now returns the same `processedCount: 2` the held poll resolves with,
+so a later poll is idempotent and the assertion is stable. The `3 of 2` value was never
+meaningful — it is not a state the component can legitimately reach.
+
+**Why this does not weaken the test.** The overlap guard this test exists to prove is asserted
+by the call count, not by the banner text. Verified by mutation: with
+`if (requestInFlight) return;` removed from `BatchProgressBrowser.tsx`, the test still FAILS, on
+`expect(fetchProgress).toHaveBeenCalledTimes(2)`. The component was then restored
+byte-identically (`git diff` empty). A test that still catches the bug it was written for has
+not been weakened.
+
+**Evidence.** 30 consecutive isolated runs of the file: 0 failures (was 2/10 before). Mutation
+test fails as required. Full suite green.
+
+**Known gap, not fixed here.** `phaseRef` is synced in a `useEffect`, so the interval's terminal
+check can read a one-tick-stale phase. That is a real latent issue and a different one — it is
+not what this test hits, and fixing production code to settle a test defect would be the wrong
+trade. Worth its own ticket.
+
+**⚠️ FLAGGED GATE EXCEPTION — `regression-test` FAILS, escalated for sign-off.**
+
+`G6: regression-test` requires every ticket to ship a new red-first test case. This ticket
+cannot honestly satisfy it, and it was not routed around.
+
+The gate's rule assumes a ticket fixes production code. This ticket fixes a TEST. No
+production code changed, so there is nothing for a red-first test to go red against.
+
+The obvious candidate — "polling continues while status is RUNNING" — is **already covered**
+by the existing test at line 66, "polls again while the batch is still RUNNING, and shows the
+newer data". Adding a second test of the same behaviour would be padding written to turn a gate
+green, which `CLAUDE.md` forbids in spirit and which would make the suite worse, not better.
+
+What stands in place of a new test case, and is stronger evidence:
+- **A mutation test.** With `if (requestInFlight) return;` removed from
+  `BatchProgressBrowser.tsx`, the amended test still FAILS on
+  `expect(fetchProgress).toHaveBeenCalledTimes(2)`. The component was restored byte-identically.
+  This proves the test still detects the defect it was written for — the exact property
+  `G6` exists to protect.
+- **30 consecutive isolated runs, 0 failures**, against a measured 2-in-10 before.
+
+Requesting orchestrator/human sign-off on this exception rather than self-approving it.
+
+**How to run it.** `pnpm test -- src/app/_components/BatchProgressBrowser.test.tsx`
+
+**Rollback.** `git revert` this commit. The change is one line of mock data plus its comment.
+
 ## TRO-516 — Golden-set corpus calibration (2026-08-12)
 
 Advances TH-R12, TH-R17. Diagnosis: `docs/diagnostics/2026-08-12-verdict-miss-triage.md`. That

@@ -4,7 +4,86 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
-## TRO-532 — LH-025 · Stroke-width bold advisory check (2026-08-13)
+## TRO-566 — Batch budget enforcement, the check-then-act race, and 500-vs-503 on a DB failure (2026-08-13)
+
+Advances TH-R4, TH-R6, TH-R19. Three findings from PR #43's review of TRO-482's daily budget
+guard, all in `src/server/budget/`, `src/server/batch-queue/`, and the verify/batch-start
+routes.
+
+**Finding 1: batch workers never checked the budget.** The extract and resolve workers made
+every Haiku and Sonnet call with no budget check at all. A batch admitted under budget could
+run past the daily cap once it started running. Both workers now reserve budget before every
+model call (`processExtractClaim`, `processResolveClaim`). Each worker settles the reservation
+to the real, measured cost right after the call. A refused reservation retries like a rate
+limit. It shares the same `maxAttempts` limit every other retryable failure uses. Once retries
+run out, the item fails with a clear reason: "Today's spending limit is reached."
+**Design decision:** items fail; the batch does not pause. A pause needs a new `batch_jobs`
+status and resume logic — bigger scope than this fix. A human sees the distinct failure reason
+and can resubmit the batch once the budget resets.
+
+**Finding 2: a check-then-act race.** `checkDailyBudget` read the total before a model call;
+`recordSpendUsd` wrote it after. Concurrent callers could all read "under budget" before any of
+them spent, and all proceed. `reserveDailyBudget`/`settleBudgetReservation`
+(`src/server/budget/daily-budget.ts`) close this with one atomic conditional `UPDATE`, the same
+pattern `escalation-cap.ts`'s `reserveSonnetCall` already proves against real concurrency. No
+open database transaction spans the model call: the reservation commits before the call starts,
+the settlement commits after it ends. `/api/verify` now reserves before its own Haiku call too,
+closing the same race there.
+
+**Finding 3: a ledger failure returned 500, not 503.** Both routes now catch a failure from the
+budget check and return the designed `503 SERVICE` response instead of an unhandled exception —
+fail-closed either way (no model call happens), but the caller gets a real answer.
+
+**A fourth, self-caught gap.** Verifying finding 1 with a real batch-worker run against the
+live API showed a reservation of $0.01, then a settlement back to exactly $0 after a real,
+successful Haiku call — the real cost was never recorded. `defaultDeps()` in both workers never
+bound a real `anthropicClient`, so this ticket's own usage-capture wrapper wrapped `undefined`
+instead of the client `extractLabel`/`resolveEscalatedLabel` actually fell back to and used for
+real. The exact TRO-482 round-1 bug, in the worker path this time. Fixed the same way: a
+memoized getter binding the real shared client. Re-ran the same live batch-worker call after
+the fix: a real, observed `daily_spend` row read $0.004249 — not refunded to zero.
+
+**What changed.**
+
+- `src/server/budget/daily-budget.ts`: `reserveDailyBudget`, `settleBudgetReservation`,
+  `BudgetExhaustedError`, `BUDGET_CHECK_UNAVAILABLE_MESSAGE`, and the two conservative
+  per-call reservation estimates (`HAIKU_CALL_RESERVE_ESTIMATE_USD`,
+  `SONNET_CALL_RESERVE_ESTIMATE_USD` — 2x PRD §4's own committed cost figures, documented
+  headroom, not a second measured number).
+- `src/server/budget/anthropic-usage.ts`: `sonnetCallCostUsd`, the resolver's real-cost
+  counterpart to the existing `haikuCallCostUsd`.
+- `src/server/batch-queue/backoff.ts`: `classifyModelCallError` recognizes
+  `BudgetExhaustedError` and retries it with a fixed 60-second floor
+  (`BUDGET_EXHAUSTED_RETRY_DELAY_MS`) — a pool-wide spending gate, not a transient API error,
+  needs its own delay, not the exponential formula built for the latter.
+- `src/server/batch-queue/pool.ts`: the whole-pool cooldown (previously rate-limit-only) also
+  engages on a budget-exhausted retry outcome, via a distinct `isBudgetExhausted` flag —
+  `isRateLimit` still means only a real 429.
+- `src/server/batch-queue/extract-worker.ts`, `resolve-worker.ts`: reserve/settle wired around
+  each model call; real `anthropicClient` binding added to each `defaultDeps()`.
+- `src/app/api/verify/route.ts`: `checkBudget`/`recordSpend` replaced with
+  `reserveBudget`/`settleBudget`; every early return between the reservation and the Haiku call
+  refunds it; the reservation check is guarded with `try`/`catch`.
+- `src/app/api/batch/start/route.ts`: the budget check is guarded with `try`/`catch` — this
+  route stays a read-only admission check (no model call happens here; the workers are where
+  real spend and the atomic reservation now live).
+
+**Ordering tradeoff, accepted and documented.** `resolve-worker.ts` reserves the dollar budget
+AFTER the pre-existing per-batch escalation-cap reservation, not before. A budget-blocked
+attempt still counts as one escalation-cap attempt. Reordering would need a give-back path
+added to `escalation-cap.ts` for a rare case, for a marginal gain — not worth the added surface
+here.
+
+**Acceptance evidence.** A red-first regression test per finding
+(`src/server/budget/daily-budget.test.ts`'s own concurrent-race proof; `extract-worker.test.ts`
+and `resolve-worker.test.ts`'s own "refuses to call the model once the budget is exhausted"
+cases; `verify/route.test.ts`'s and `batch/start/route.test.ts`'s own 503-not-500 cases). A real,
+observed `daily_spend` row written by an actual batch-worker run against the live API:
+$0.004249, one Haiku extraction call, 2026-08-13 — not estimated, read directly off the
+database after the run.
+
+**How to roll back.** Revert this commit. `daily_spend` keeps accumulating from whatever ran
+before the revert; no migration, no schema change.
 
 Advances TH-R9. CP-2 §7.2 named a technique for bold detection and did not try it: binarize
 the crop, measure stroke width by morphological erosion, and compare the `GOVERNMENT

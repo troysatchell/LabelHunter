@@ -35,13 +35,42 @@
  * `readLabelImage` returns — never the resized `haikuVariant`. CP-2 §8.3:
  * the resized variant falls below the OCR engine's usable resolution at
  * the statute's legal minimum print size (1 mm).
+ *
+ * **Daily budget (TRO-566 finding 1).** Before this ticket, this worker
+ * never checked or recorded the daily spend budget at all — a batch
+ * admitted under budget (`/api/batch/start`'s own gate) could run past the
+ * daily cap once in flight. This module now reserves
+ * `HAIKU_CALL_RESERVE_ESTIMATE_USD` of today's budget BEFORE every Haiku
+ * call, atomically (`../budget/daily-budget.ts`'s `reserveDailyBudget` —
+ * closes the check-then-act race finding 2 also named), and settles the
+ * reservation to the call's REAL, measured cost right after (or refunds it
+ * in full if the call never actually happened). A refused reservation
+ * throws `BudgetExhaustedError`, caught by this function's own outer catch
+ * below and classified by `backoff.ts`'s `classifyModelCallError` exactly
+ * like any other retryable condition — see that error class's own doc
+ * comment for the full design rationale (why "fail the remaining items,
+ * not pause the batch").
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { sql } from "drizzle-orm";
 import { db as defaultDb } from "../../lib/db";
 import type { FieldName } from "../../lib/db/enums";
 import { batchJobs, batchQueueItems, fieldResults, verifications } from "../../lib/db/schema";
-import { extractLabel as defaultExtractLabel, type ExtractLabelOptions, type HaikuExtractionResult, type PreprocessedLabelImage } from "../extractor";
+import {
+  BudgetExhaustedError,
+  HAIKU_CALL_RESERVE_ESTIMATE_USD,
+  reserveDailyBudget,
+  settleBudgetReservation,
+  type BudgetReservation,
+} from "../budget/daily-budget";
+import { haikuCallCostUsd, wrapAnthropicClientForUsageCapture } from "../budget/anthropic-usage";
+import {
+  extractLabel as defaultExtractLabel,
+  getDefaultExtractorClient,
+  type ExtractLabelOptions,
+  type HaikuExtractionResult,
+  type PreprocessedLabelImage,
+} from "../extractor";
 import {
   routeLabel,
   type ApplicationRecord,
@@ -86,6 +115,26 @@ export interface ExtractWorkerDeps {
    * not need to set this. */
   compareGovernmentWarning?: (input: CompareGovernmentWarningFromImageInput) => Promise<WarningComparatorResult>;
   backoffConfig: BackoffConfig;
+  /**
+   * TRO-566 finding 1. Reserves `estimatedUsd` of today's daily spend
+   * budget atomically, BEFORE the Haiku call — see this file's own header
+   * comment. Optional, with an always-reserve fallback
+   * (`ALLOW_ALL_RESERVATION`) inside `processExtractClaim` itself: this
+   * field predates none of this file's own pre-existing test suite, so
+   * every test built before this ticket keeps passing unchanged — it
+   * never sets this field and gets the safe default. `defaultDeps()`
+   * below binds the REAL, DB-backed function, so production (called via
+   * `scripts/batch-worker/run.ts`, which does not override this field)
+   * gets real enforcement without any change to that entry point.
+   */
+  reserveBudget?: (estimatedUsd: number) => Promise<BudgetReservation>;
+  /**
+   * TRO-566 finding 1. Corrects a reservation to the call's real, measured
+   * cost (or refunds it in full when the call never happened) — see
+   * `../budget/daily-budget.ts`'s `settleBudgetReservation`. Same
+   * optional/safe-default shape as `reserveBudget`, for the same reason.
+   */
+  settleBudget?: (reservedUsd: number, realUsd: number) => Promise<void>;
 }
 
 export type ExtractClaimOutcome =
@@ -93,8 +142,11 @@ export type ExtractClaimOutcome =
   /** `isRateLimit` distinguishes a 429 from any other retryable failure —
    * `pool.ts`'s whole-pool cooldown (CP-3 §5.3) only ever engages on a
    * rate limit specifically, matching the design doc's own "whenever any
-   * worker sees a 429," not on every transient error. */
-  | { kind: "retry"; delayMs: number; isRateLimit: boolean }
+   * worker sees a 429," not on every transient error. `isBudgetExhausted`
+   * (TRO-566) is the SAME kind of pool-wide signal for a different cause —
+   * see `backoff.ts`'s `classifyModelCallError`/`BudgetExhaustedError` and
+   * `pool.ts`'s own comment on why the two flags stay distinct. */
+  | { kind: "retry"; delayMs: number; isRateLimit: boolean; isBudgetExhausted?: boolean }
   | { kind: "failed"; reason: string }
   /** This worker's own claim episode was no longer current by the time it
    * tried to finish — another worker already reclaimed and completed (or
@@ -138,6 +190,35 @@ export function toApplicationRecord(row: ApplicationRow): ApplicationRecord {
   };
 }
 
+/** Used only when a caller's `deps` does not set `reserveBudget` — see
+ * that field's own doc comment. `reservedUsd: 0`: nothing was really
+ * reserved, so `settleBudgetReservation` (called with THIS reservation's
+ * own `reservedUsd`, not the constant directly) correctly settles it as a
+ * no-op too. */
+const ALLOW_ALL_RESERVATION: BudgetReservation = { reserved: true, reservedUsd: 0, spentUsd: 0, budgetUsd: 0 };
+
+/** Used only when a caller's `deps` does not set `settleBudget` — see that
+ * field's own doc comment. */
+async function noopSettleBudget(): Promise<void> {}
+
+/**
+ * Settles a reservation, logging (never throwing) a write failure — the
+ * same best-effort posture `verify/route.ts` already uses for its own
+ * spend recording: a ledger write failure must not fail an otherwise-
+ * successful item, and it must not be silent either (standing rule 24).
+ */
+async function settleReservationBestEffort(
+  settleBudget: ExtractWorkerDeps["settleBudget"],
+  reservedUsd: number,
+  realUsd: number,
+): Promise<void> {
+  try {
+    await (settleBudget ?? noopSettleBudget)(reservedUsd, realUsd);
+  } catch (cause) {
+    console.error("Could not settle a daily-budget reservation for a batch EXTRACT item", cause);
+  }
+}
+
 function defaultDeps(): ExtractWorkerDeps {
   return {
     db: defaultDb,
@@ -146,6 +227,34 @@ function defaultDeps(): ExtractWorkerDeps {
     extractLabel: defaultExtractLabel,
     compareGovernmentWarning: defaultCompareGovernmentWarning,
     backoffConfig: DEFAULT_BACKOFF_CONFIG,
+    // TRO-566 — real, DB-backed by default (not an allow-all stand-in):
+    // `scripts/batch-worker/run.ts` calls `processExtractClaim` with a
+    // PARTIAL deps object that does not set either field, so this default
+    // is what actually enforces the budget in production. Tests that want
+    // a safe, deterministic stand-in set their own (this file's
+    // `alwaysReserveBudget`/`noopSettleBudget`), the same shadowing
+    // `compareGovernmentWarning` above already relies on.
+    reserveBudget: (estimatedUsd) => reserveDailyBudget(estimatedUsd, defaultDb),
+    settleBudget: (reservedUsd, realUsd) => settleBudgetReservation(reservedUsd, realUsd, defaultDb),
+    /**
+     * TRO-566 — real, measured evidence (a live-API observed run) caught
+     * this missing: without it, `d.anthropicClient` stays `undefined` in
+     * production (`scripts/batch-worker/run.ts` does not set it either),
+     * so `wrapAnthropicClientForUsageCapture(undefined)` wraps nothing —
+     * `extractLabel` still calls the real API (falling back to its OWN
+     * shared default client, `../extractor/index.ts`), but this worker's
+     * usage capture never sees that call, `takeLastUsage()` always answers
+     * `null`, and `settleBudget` always refunds the FULL reservation even
+     * after a genuinely successful, real-money call. The EXACT bug shape
+     * `verify/route.ts`'s own `defaultDeps` getter fixes for TRO-482 —
+     * see that file's matching comment. A getter, not a plain value, for
+     * the same reason: `getDefaultExtractorClient()` builds the client on
+     * first use and memoizes, so importing this module never constructs
+     * one, and every claim after the first reuses it.
+     */
+    get anthropicClient(): Anthropic {
+      return getDefaultExtractorClient();
+    },
   };
 }
 
@@ -187,7 +296,9 @@ async function handleExtractFailure(
   if (classification.retryable && item.attempts < backoffConfig.maxAttempts) {
     const delayMs = computeBackoffDelayMs(item.attempts, backoffConfig, classification.retryAfterMs);
     const guarded = await releaseForRetry(db, item.id, item.claimToken as string, delayMs);
-    return guarded ? { kind: "retry", delayMs, isRateLimit: classification.isRateLimit } : { kind: "stale" };
+    return guarded
+      ? { kind: "retry", delayMs, isRateLimit: classification.isRateLimit, isBudgetExhausted: classification.isBudgetExhausted }
+      : { kind: "stale" };
   }
 
   const lastError = classification.retryable ? `${message} (exhausted after ${item.attempts} attempt(s))` : message;
@@ -246,7 +357,18 @@ export async function processExtractClaim(item: ClaimedBatchQueueItem, deps: Par
     const haikuVariant = await resizeStoredOriginalToHaikuVariant(original, labelImageRow.widthPx, labelImageRow.heightPx);
     const extractorImage: PreprocessedLabelImage = { data: haikuVariant.buffer.toString("base64"), mediaType: "image/jpeg" };
 
-    const extractionPromise = (d.extractLabel ?? defaultExtractLabel)(extractorImage, { client: d.anthropicClient });
+    // TRO-566 finding 1/2 — reserve BEFORE the Haiku call, atomically, so
+    // this worker cannot spend past the daily cap and cannot race a
+    // concurrent reservation (this file's own header comment). A refused
+    // reservation throws; the outer catch below classifies and retries it
+    // exactly like any other retryable condition.
+    const reservation = await (d.reserveBudget ?? (async () => ALLOW_ALL_RESERVATION))(HAIKU_CALL_RESERVE_ESTIMATE_USD);
+    if (!reservation.reserved) {
+      throw new BudgetExhaustedError(reservation);
+    }
+
+    const usageCapture = wrapAnthropicClientForUsageCapture(d.anthropicClient);
+    const extractionPromise = (d.extractLabel ?? defaultExtractLabel)(extractorImage, { client: usageCapture.client });
     // `.then`, not `await` — this is what starts the warning check in the
     // same tick as the Haiku call instead of after it resolves (this
     // file's header comment, CP-2 §4.4 rule 1). The `.catch(() => {})`
@@ -265,7 +387,22 @@ export async function processExtractClaim(item: ClaimedBatchQueueItem, deps: Par
     });
 
     let warningResult: WarningComparatorResult | null;
-    [extraction, warningResult] = await Promise.all([extractionPromise, warningPromise]);
+    try {
+      [extraction, warningResult] = await Promise.all([extractionPromise, warningPromise]);
+    } catch (callError) {
+      // The Haiku call itself failed — no real cost was incurred. Refund
+      // the reservation in full before this propagates to the outer
+      // catch's retry/fail classification, so a failed call never leaves a
+      // permanent phantom charge in the ledger (TRO-566).
+      await settleReservationBestEffort(d.settleBudget, reservation.reservedUsd, 0);
+      throw callError;
+    }
+    // The call succeeded and really happened; its real cost is owed
+    // regardless of what happens next in this item's processing —
+    // recorded best-effort, mirroring verify/route.ts's own posture: a
+    // ledger write failure must not fail an otherwise-successful item.
+    const haikuUsage = usageCapture.takeLastUsage();
+    await settleReservationBestEffort(d.settleBudget, reservation.reservedUsd, haikuUsage ? haikuCallCostUsd(haikuUsage) : 0);
 
     const applicationRecord = toApplicationRecord(application);
     // longEdgePx comes from the variant sharp ACTUALLY produced

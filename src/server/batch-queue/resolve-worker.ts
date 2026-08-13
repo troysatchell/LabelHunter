@@ -19,11 +19,42 @@
  * completion guard against its RESOLVE row... in the same transaction it
  * updates verifications.resolutionPath... and marks the RESOLVE item
  * DONE" — the guard transaction comes after, not around, the call.
+ *
+ * **Daily budget (TRO-566 finding 1).** Before this ticket, this worker
+ * never checked or recorded the daily spend budget either — the same gap
+ * `extract-worker.ts` had. This module now reserves
+ * `SONNET_CALL_RESERVE_ESTIMATE_USD` of today's budget AFTER the
+ * escalation-cap reservation above succeeds but BEFORE calling
+ * `resolveEscalatedLabel`, and settles it to the call's REAL, measured
+ * cost afterward (or refunds it in full when this caller's own call
+ * reused another caller's already-finished result instead of touching
+ * Sonnet at all — `resolveEscalatedLabel`'s own TRO-506 reservation, see
+ * this file's header comment above). **Ordering tradeoff, accepted and
+ * documented:** placing the dollar-budget check AFTER the escalation-cap
+ * reservation means a budget-blocked attempt still counts as one
+ * escalation-cap attempt (`sonnet_call_count` still increments) even
+ * though no real Sonnet call happens. Reordering to check dollars FIRST
+ * would avoid that, but only by adding a give-back path to
+ * `escalation-cap.ts` for this rare case — more surface for a marginal
+ * correctness gain (the escalation cap only bounds a cost HEURISTIC, PRD
+ * §3.7). A refused reservation throws `BudgetExhaustedError`, caught by
+ * this function's own existing catch and classified by `backoff.ts`'s
+ * `classifyModelCallError` exactly like any other retryable condition —
+ * see that error class's own doc comment for the full design rationale.
  */
 import { sql } from "drizzle-orm";
 import { db as defaultDb } from "../../lib/db";
 import { batchJobs, verifications } from "../../lib/db/schema";
 import {
+  BudgetExhaustedError,
+  reserveDailyBudget,
+  settleBudgetReservation,
+  SONNET_CALL_RESERVE_ESTIMATE_USD,
+  type BudgetReservation,
+} from "../budget/daily-budget";
+import { sonnetCallCostUsd, wrapAnthropicClientForUsageCapture } from "../budget/anthropic-usage";
+import {
+  getDefaultResolverClient,
   resolveEscalatedLabel as defaultResolveEscalatedLabel,
   insertSkippedReviewQueueEntry,
   type ResolveEscalatedLabelOptions,
@@ -44,6 +75,17 @@ export interface ResolveWorkerDeps {
   resolveEscalatedLabel?: (input: ResolverInput, options?: ResolveEscalatedLabelOptions) => Promise<ResolverResult>;
   anthropicClient?: ResolveEscalatedLabelOptions["client"];
   backoffConfig: BackoffConfig;
+  /** TRO-566 finding 1 — see this file's header comment. Optional, with an
+   * always-reserve fallback (`ALLOW_ALL_RESERVATION`) inside
+   * `processResolveClaim` itself, the same shape/reasoning as
+   * `extract-worker.ts`'s own `reserveBudget`. `defaultDeps()` below binds
+   * the REAL, DB-backed function, so production (via
+   * `scripts/batch-worker/run.ts`, which does not override this field)
+   * gets real enforcement without any change to that entry point. */
+  reserveBudget?: (estimatedUsd: number) => Promise<BudgetReservation>;
+  /** TRO-566 finding 1 — see `extract-worker.ts`'s matching field for the
+   * full reasoning. */
+  settleBudget?: (reservedUsd: number, realUsd: number) => Promise<void>;
 }
 
 export type ResolveOutcomeLabel = "resolved" | "needs-human" | "cap-skipped";
@@ -51,13 +93,53 @@ export type ResolveOutcomeLabel = "resolved" | "needs-human" | "cap-skipped";
 export type ResolveClaimOutcome =
   | { kind: "done"; outcome: ResolveOutcomeLabel }
   /** See `ExtractClaimOutcome`'s matching comment — `isRateLimit` drives
-   * `pool.ts`'s whole-pool cooldown (CP-3 §5.3). */
-  | { kind: "retry"; delayMs: number; isRateLimit: boolean }
+   * `pool.ts`'s whole-pool cooldown (CP-3 §5.3). `isBudgetExhausted`
+   * (TRO-566) is the same kind of pool-wide signal for a different cause. */
+  | { kind: "retry"; delayMs: number; isRateLimit: boolean; isBudgetExhausted?: boolean }
   | { kind: "failed"; reason: string }
   | { kind: "stale" };
 
+/** Used only when a caller's `deps` does not set `reserveBudget` — see
+ * `extract-worker.ts`'s matching constant for the full reasoning. */
+const ALLOW_ALL_RESERVATION: BudgetReservation = { reserved: true, reservedUsd: 0, spentUsd: 0, budgetUsd: 0 };
+
+/** Used only when a caller's `deps` does not set `settleBudget`. */
+async function noopSettleBudget(): Promise<void> {}
+
+/** Settles a reservation, logging (never throwing) a write failure — same
+ * best-effort posture as `extract-worker.ts`'s own `settleReservationBestEffort`. */
+async function settleReservationBestEffort(
+  settleBudget: ResolveWorkerDeps["settleBudget"],
+  reservedUsd: number,
+  realUsd: number,
+): Promise<void> {
+  try {
+    await (settleBudget ?? noopSettleBudget)(reservedUsd, realUsd);
+  } catch (cause) {
+    console.error("Could not settle a daily-budget reservation for a batch RESOLVE item", cause);
+  }
+}
+
 function defaultDeps(): Omit<ResolveWorkerDeps, "readLabelImage"> {
-  return { db: defaultDb, backoffConfig: DEFAULT_BACKOFF_CONFIG };
+  return {
+    db: defaultDb,
+    backoffConfig: DEFAULT_BACKOFF_CONFIG,
+    // TRO-566 — real, DB-backed by default; see extract-worker.ts's own
+    // matching comment for why this is the safe production shape.
+    reserveBudget: (estimatedUsd) => reserveDailyBudget(estimatedUsd, defaultDb),
+    settleBudget: (reservedUsd, realUsd) => settleBudgetReservation(reservedUsd, realUsd, defaultDb),
+    // TRO-566 — real evidence (a live-API observed run) caught this
+    // missing: without it, `d.anthropicClient` stays `undefined` in
+    // production, `resolveEscalatedLabel` still calls the real API
+    // (falling back to its OWN shared default client), but this worker's
+    // usage capture never sees that call and always refunds the FULL
+    // reservation even after a genuine call. See `extract-worker.ts`'s
+    // matching `anthropicClient` getter for the full reasoning — same
+    // fix, same bug shape, this module's own Sonnet client.
+    get anthropicClient(): ResolveEscalatedLabelOptions["client"] {
+      return getDefaultResolverClient();
+    },
+  };
 }
 
 /**
@@ -173,7 +255,9 @@ async function handleResolveFailure(
   if (classification.retryable && item.attempts < backoffConfig.maxAttempts) {
     const delayMs = computeBackoffDelayMs(item.attempts, backoffConfig, classification.retryAfterMs);
     const guarded = await releaseForRetry(db, item.id, item.claimToken as string, delayMs);
-    return guarded ? { kind: "retry", delayMs, isRateLimit: classification.isRateLimit } : { kind: "stale" };
+    return guarded
+      ? { kind: "retry", delayMs, isRateLimit: classification.isRateLimit, isBudgetExhausted: classification.isBudgetExhausted }
+      : { kind: "stale" };
   }
 
   const lastError = classification.retryable ? `${message} (exhausted after ${item.attempts} attempt(s))` : message;
@@ -286,11 +370,36 @@ export async function processResolveClaim(item: ClaimedBatchQueueItem, deps: Par
     return completeCapSkip(d.db, item, headlineReason, d.backoffConfig);
   }
 
+  // TRO-566 finding 1/2 — reserve real dollar budget AFTER the
+  // escalation-cap reservation above, BEFORE calling resolveEscalatedLabel.
+  // See this file's header comment for the ordering tradeoff this accepts.
+  // A refused reservation throws; the outer catch below classifies and
+  // retries it exactly like any other retryable condition.
+  const dollarReservation = await (d.reserveBudget ?? (async () => ALLOW_ALL_RESERVATION))(SONNET_CALL_RESERVE_ESTIMATE_USD);
+  if (!dollarReservation.reserved) {
+    return handleResolveFailure(d.db, item, d.backoffConfig, new BudgetExhaustedError(dollarReservation));
+  }
+
   let plan: CompletionPlan;
   try {
     try {
-      const result = await (d.resolveEscalatedLabel ?? defaultResolveEscalatedLabel)(resolverInput, { client: d.anthropicClient, db: d.db });
-      plan = { setResolverPath: true, counterKey: result.outcome === "resolved" ? "resolvedBySonnetCount" : "needsHumanCount", outcome: result.outcome };
+      const usageCapture = wrapAnthropicClientForUsageCapture(d.anthropicClient);
+      try {
+        const result = await (d.resolveEscalatedLabel ?? defaultResolveEscalatedLabel)(resolverInput, { client: usageCapture.client, db: d.db });
+        plan = { setResolverPath: true, counterKey: result.outcome === "resolved" ? "resolvedBySonnetCount" : "needsHumanCount", outcome: result.outcome };
+      } finally {
+        // Settles regardless of success/failure below — `takeLastUsage()`
+        // is non-null exactly when `messages.create` genuinely ran, which
+        // is true whether resolveEscalatedLabel goes on to return
+        // normally, throw a unique-violation this outer catch recovers
+        // from, or throw a genuine error this function re-throws. A caller
+        // that reused another caller's already-finished result (this
+        // file's header comment, TRO-506) never touches the client at
+        // all — takeLastUsage() answers null, and the FULL reservation
+        // comes back out.
+        const sonnetUsage = usageCapture.takeLastUsage();
+        await settleReservationBestEffort(d.settleBudget, dollarReservation.reservedUsd, sonnetUsage ? sonnetCallCostUsd(sonnetUsage) : 0);
+      }
     } catch (error) {
       if (!isUniqueViolation(error, "review_queue_verification_id_unique")) throw error;
       plan = planFromWinningOutcome(await readReviewQueueOutcome(d.db, item.verificationId as number));

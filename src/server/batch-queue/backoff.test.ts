@@ -3,7 +3,9 @@
  */
 import { APIConnectionError, APIConnectionTimeoutError, BadRequestError, InternalServerError, RateLimitError } from "@anthropic-ai/sdk";
 import { describe, expect, it } from "vitest";
+import { BudgetExhaustedError } from "../budget/daily-budget";
 import {
+  BUDGET_EXHAUSTED_RETRY_DELAY_MS,
   classifyModelCallError,
   computeBackoffDelayMs,
   DEFAULT_BACKOFF_CONFIG,
@@ -71,6 +73,16 @@ describe("classifyModelCallError", () => {
   it("ignores a non-numeric retry-after header rather than propagating NaN", () => {
     const result = classifyModelCallError(rateLimitError("not-a-number"));
     expect(result).toEqual({ retryable: true, retryAfterMs: null, isRateLimit: true });
+  });
+
+  // TRO-566 finding 1 — a worker's own reservation refusal reuses this
+  // SAME classification/backoff state machine, distinguished from a real
+  // rate limit so pool.ts's whole-pool cooldown can still engage (it
+  // checks isRateLimit OR isBudgetExhausted) without the two conditions
+  // being confused for one another anywhere downstream.
+  it("classifies a BudgetExhaustedError as retryable, NOT a rate limit, with the fixed budget-cooldown floor", () => {
+    const result = classifyModelCallError(new BudgetExhaustedError({ spentUsd: 5, budgetUsd: 5 }));
+    expect(result).toEqual({ retryable: true, retryAfterMs: BUDGET_EXHAUSTED_RETRY_DELAY_MS, isRateLimit: false, isBudgetExhausted: true });
   });
 });
 

@@ -130,7 +130,14 @@ import {
 } from "../../../server/warning";
 import { saveLabelImage as defaultSaveLabelImage, type SavedLabelImage } from "../../../server/storage/db-image-storage";
 import { checkVerifyRateLimit, type RateLimitCheckResult } from "../../../server/rate-limit/instances";
-import { checkDailyBudget, recordSpendUsd, BUDGET_EXHAUSTED_MESSAGE, type BudgetStatus } from "../../../server/budget/daily-budget";
+import {
+  BUDGET_CHECK_UNAVAILABLE_MESSAGE,
+  BUDGET_EXHAUSTED_MESSAGE,
+  HAIKU_CALL_RESERVE_ESTIMATE_USD,
+  reserveDailyBudget,
+  settleBudgetReservation,
+  type BudgetReservation,
+} from "../../../server/budget/daily-budget";
 import { haikuCallCostUsd, wrapAnthropicClientForUsageCapture } from "../../../server/budget/anthropic-usage";
 import { parseVerifyFormData } from "./parse-request";
 import { buildServerTimingHeader, SERVER_TIMING_STAGES, type ServerTimingStage, type StageTimingsMs } from "./server-timing";
@@ -185,17 +192,25 @@ export interface VerifyRouteDeps {
    * — the persisted daily spend budget (`../../../server/budget/
    * daily-budget.ts`). Same optional/always-allow-by-default shape as
    * `checkRateLimit`, for the same reason.
+   *
+   * TRO-566 finding 2: renamed from `checkBudget` (a read-only check) to
+   * `reserveBudget` (an atomic reservation) — a plain read-then-decide
+   * left a check-then-act race open: two concurrent requests could both
+   * read "under budget" before either had spent anything, and both
+   * proceed. `reserveDailyBudget` closes it (see that function's own doc
+   * comment).
    */
-  checkBudget?: () => Promise<BudgetStatus>;
+  reserveBudget?: (estimatedUsd: number) => Promise<BudgetReservation>;
   /**
-   * TRO-482 / LH-061. Records this request's real, measured Haiku cost
-   * into the daily ledger after a successful extraction. Optional,
-   * no-op by default — the pre-existing test suite neither sets this nor
-   * needs to: with no recorder wired, nothing is written, so those tests
-   * touch `daily_spend` not at all. Production wires the real, DB-backed
-   * `recordSpendUsd`.
+   * TRO-482 / LH-061. Corrects this request's reservation to the real,
+   * measured Haiku cost after the call (or refunds it in full if the call
+   * failed) — TRO-566 finding 2's other half. Optional, no-op by default —
+   * the pre-existing test suite neither sets this nor needs to: with no
+   * settler wired, nothing is written, so those tests touch `daily_spend`
+   * not at all. Production wires the real, DB-backed
+   * `settleBudgetReservation`.
    */
-  recordSpend?: (usd: number) => Promise<void>;
+  settleBudget?: (reservedUsd: number, realUsd: number) => Promise<void>;
 }
 
 /**
@@ -213,8 +228,8 @@ export const defaultDeps: VerifyRouteDeps = {
   saveLabelImage: defaultSaveLabelImage,
   comparators: productionComparators,
   checkRateLimit: checkVerifyRateLimit,
-  checkBudget: () => checkDailyBudget(defaultDb),
-  recordSpend: (usd) => recordSpendUsd(usd, defaultDb),
+  reserveBudget: (estimatedUsd) => reserveDailyBudget(estimatedUsd, defaultDb),
+  settleBudget: (reservedUsd, realUsd) => settleBudgetReservation(reservedUsd, realUsd, defaultDb),
   /**
    * TRO-482, merge review round 1. This binding is what makes the daily
    * budget real, and it was missing until that review found it.
@@ -222,10 +237,11 @@ export const defaultDeps: VerifyRouteDeps = {
    * Without it, `deps.anthropicClient` was `undefined` in production.
    * `wrapAnthropicClientForUsageCapture(undefined)` then returned a
    * capture whose `takeLastUsage()` always answers `null`, so
-   * `recordSpend` below was never reached, `daily_spend` was never
-   * written, and `checkDailyBudget` read 0 forever. The guard could not
-   * trip. Binding the same shared client `extractLabel` would have
-   * fallen back to gives the wrapper something real to read usage from.
+   * `settleBudget` below was never reached with a real cost, `daily_spend`
+   * was never written, and the reservation check read 0 forever. The
+   * guard could not trip. Binding the same shared client `extractLabel`
+   * would have fallen back to gives the wrapper something real to read
+   * usage from.
    *
    * A getter, not a plain value: `getDefaultExtractorClient()` builds the
    * client on first use, so importing this route never constructs one.
@@ -243,18 +259,40 @@ export const defaultDeps: VerifyRouteDeps = {
  * that field's own doc comment. */
 const ALLOW_ALL_RATE_LIMIT: RateLimitCheckResult = { allowed: true, message: "" };
 
-/** Used only when a caller's `deps` does not set `checkBudget` — see that
- * field's own doc comment. The exact `spentUsd`/`budgetUsd` values are
- * never read when `exhausted` is `false`, so they carry no real meaning
- * here; `0` is honest for "not tracked in this context." */
-const ALLOW_ALL_BUDGET: BudgetStatus = { exhausted: false, spentUsd: 0, budgetUsd: 0 };
+/** Used only when a caller's `deps` does not set `reserveBudget` — see
+ * that field's own doc comment. `reservedUsd: 0`: nothing was really
+ * reserved, so a later settle call (also given THIS reservation's own
+ * `reservedUsd`, not the constant directly) correctly no-ops too. */
+const ALLOW_ALL_RESERVATION: BudgetReservation = { reserved: true, reservedUsd: 0, spentUsd: 0, budgetUsd: 0 };
 
-/** Used only when a caller's `deps` does not set `recordSpend` — see that
+/** Used only when a caller's `deps` does not set `settleBudget` — see that
  * field's own doc comment. */
-async function noopRecordSpend(): Promise<void> {}
+async function noopSettleBudget(): Promise<void> {}
 
 function errorResponse(status: number, kind: VerifyErrorKind, message: string): NextResponse<VerifyErrorResponse> {
   return NextResponse.json({ error: { kind, message } }, { status });
+}
+
+/**
+ * Settles a reservation, logging (never throwing) a write failure — the
+ * same best-effort posture this route already used for its own spend
+ * recording pre-TRO-566: a ledger write failure must not fail an
+ * otherwise-successful request, and it must not be silent either
+ * (standing rule 24). Mirrors `extract-worker.ts`'s own
+ * `settleReservationBestEffort` — small, independent duplication between
+ * two call sites, the same posture this file's `resolveWarningOrDegrade`
+ * already takes relative to that file's own copy.
+ */
+async function settleReservationBestEffort(
+  settleBudget: VerifyRouteDeps["settleBudget"],
+  reservedUsd: number,
+  realUsd: number,
+): Promise<void> {
+  try {
+    await (settleBudget ?? noopSettleBudget)(reservedUsd, realUsd);
+  } catch (cause) {
+    console.error("Could not settle a daily-budget reservation for a verify request", cause);
+  }
 }
 
 /**
@@ -322,8 +360,19 @@ export async function handleVerifyRequest(request: Request, deps: VerifyRouteDep
     return errorResponse(429, "RATE_LIMITED", rateLimitResult.message);
   }
 
-  const budgetStatus = await (deps.checkBudget ?? (async () => ALLOW_ALL_BUDGET))();
-  if (budgetStatus.exhausted) {
+  // TRO-566 finding 2 — an atomic RESERVATION, not a read-then-decide
+  // check: closes the race where concurrent requests could all read
+  // "under budget" before any of them had spent anything. TRO-566 finding
+  // 3 — a ledger failure here fails closed (no model call happens either
+  // way) with the DESIGNED 503 response, never an unhandled 500.
+  let budgetReservation: BudgetReservation;
+  try {
+    budgetReservation = await (deps.reserveBudget ?? (async () => ALLOW_ALL_RESERVATION))(HAIKU_CALL_RESERVE_ESTIMATE_USD);
+  } catch (cause) {
+    console.error("Could not check today's spending limit", cause);
+    return errorResponse(503, "SERVICE", BUDGET_CHECK_UNAVAILABLE_MESSAGE);
+  }
+  if (!budgetReservation.reserved) {
     return errorResponse(503, "BUDGET_EXHAUSTED", BUDGET_EXHAUSTED_MESSAGE);
   }
 
@@ -332,15 +381,21 @@ export async function handleVerifyRequest(request: Request, deps: VerifyRouteDep
   // call; never shared across concurrent requests.
   const stageTimingsMs = newStageTimings();
 
+  // TRO-566 — every early return between the reservation above and the
+  // Haiku call below must refund it in full; none of these represents any
+  // real spend. The Haiku call's own success/failure paths settle for
+  // real, further down.
   let formData: FormData;
   try {
     formData = await request.formData();
   } catch {
+    await settleReservationBestEffort(deps.settleBudget, budgetReservation.reservedUsd, 0);
     return errorResponse(400, "VALIDATION", "LabelHunter could not read this submission. Try again.");
   }
 
   const parsed = parseVerifyFormData(formData);
   if (!parsed.ok) {
+    await settleReservationBestEffort(deps.settleBudget, budgetReservation.reservedUsd, 0);
     return errorResponse(400, "VALIDATION", parsed.message);
   }
   const input = parsed.value;
@@ -351,6 +406,7 @@ export async function handleVerifyRequest(request: Request, deps: VerifyRouteDep
   try {
     preprocessed = await deps.preprocessImage(imageBytes);
   } catch (cause) {
+    await settleReservationBestEffort(deps.settleBudget, budgetReservation.reservedUsd, 0);
     if (cause instanceof PreprocessingError) {
       return errorResponse(422, "IMAGE", cause.message);
     }
@@ -402,6 +458,13 @@ export async function handleVerifyRequest(request: Request, deps: VerifyRouteDep
   try {
     [extraction, warningResult] = await Promise.all([extractionPromise, warningPromise]);
   } catch (cause) {
+    // TRO-566 — the Haiku call itself failed (or never happened, if it
+    // lost the race to the warning promise's own rejection path, which
+    // resolveWarningOrDegrade already prevents by catching its own
+    // errors — this branch is reached only by a genuine extraction
+    // failure). No real cost was incurred; refund the reservation in
+    // full.
+    await settleReservationBestEffort(deps.settleBudget, budgetReservation.reservedUsd, 0);
     if (cause instanceof HaikuExtractionError) {
       return errorResponse(502, "EXTRACTION", "LabelHunter could not read this label. Take a clearer photo and try again.");
     }
@@ -409,19 +472,15 @@ export async function handleVerifyRequest(request: Request, deps: VerifyRouteDep
   }
 
   // TRO-482 — the Haiku call above succeeded and really happened; its real
-  // cost is owed regardless of what happens next in this request. Recorded
+  // cost is owed regardless of what happens next in this request. Settled
   // best-effort: a failure to WRITE the ledger entry must not fail an
   // otherwise-successful verification the requester is waiting on — the
   // same "degrade, don't fail the request" posture `resolveWarningOrDegrade`
-  // already uses above for a different dependency.
+  // already uses above for a different dependency. TRO-566: settles the
+  // REAL cost against the reservation taken before the call, rather than
+  // recording a fresh, unguarded amount.
   const haikuUsage = usageCapture.takeLastUsage();
-  if (haikuUsage) {
-    try {
-      await (deps.recordSpend ?? noopRecordSpend)(haikuCallCostUsd(haikuUsage));
-    } catch (cause) {
-      console.error("Could not record spend for a Haiku extraction call", cause);
-    }
-  }
+  await settleReservationBestEffort(deps.settleBudget, budgetReservation.reservedUsd, haikuUsage ? haikuCallCostUsd(haikuUsage) : 0);
 
   const application: ApplicationRecord = {
     beverageType: input.beverageType,

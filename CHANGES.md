@@ -41,9 +41,11 @@ plus a zero-cost local validation). The real deployed measurement stays blocked 
    times `saveLabelImage` (TRO-518) together with the verification-tables transaction, as one
    combined figure. `haiku` and `ocr` run concurrently (CP-2 §4.4) but are measured
    independently. Their reported durations can overlap. They are not meant to sum to the total.
-   A non-200 response carries no header — an early error means at least one stage never ran.
-   `--url` mode parses this header off the real response (`parseServerTimingHeader`) and rolls
-   every successful run's samples into a per-stage `stageBreakdownMs` summary
+   A non-200 response carries no header — an early error means at least one stage never ran. The
+   harness parses this header off the `Response` object either mode produces
+   (`parseServerTimingHeader`) — the in-process mode reads it off the same object
+   `handleVerifyRequest` returns; `--url` mode reads it off the real HTTP response. Either way,
+   every successful run's samples roll into a per-stage `stageBreakdownMs` summary
    (`scripts/latency/stage-breakdown.ts`), reusing the same `summarizeLatencies` the overall
    p50/p95 already uses. Only a successful run's samples ever count.
 
@@ -303,6 +305,13 @@ find real, different issues (lessons.md rule 31).
   only shortened sentences of an already-corrected paragraph. The ledger summary is accurate for
   what that specific commit did. Recorded a new, clarifying ledger entry alongside the original
   rather than editing it, so a future reader sees the full sequence.
+
+**Local CodeRabbit review, round 4 (1 finding, 1 fixed).** This entry's own item 4, above,
+said `--url` mode parses the `Server-Timing` header and builds `stageBreakdownMs` — true, but
+incomplete. Both modes do: `route.ts` attaches the header to any 200 response, and `main`
+builds `stageBreakdownMs` from whichever mode's `runResults` ran, unconditionally. `measure.ts`'s
+own code comment already said so correctly; this entry's prose did not. Fixed: reworded item 4
+above to name both modes.
 
 **How to run it.** `pnpm latency:check` runs the in-process mode, unchanged — real billed API
 calls. `pnpm latency:check -- --url=<origin> [--runs=N] [--out=path] [--note=text]

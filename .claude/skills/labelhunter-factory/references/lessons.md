@@ -198,6 +198,16 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     checks (`verify`, `e2e`) are green. Troy's explicit ruling, given mid-rate-limit across
     three concurrent sessions on one day. (2026-08-13.)
 
+35. **A PR with zero CI runs, even after a fresh push, is a merge-conflict symptom, not an
+    Actions outage.** GitHub will not fire `pull_request` workflows when it cannot compute a
+    merge commit against the base branch. Check `gh pr view <n> --json
+    mergeable,mergeStateStatus` before assuming CI is stuck or rate-limited — `CONFLICTING`/
+    `DIRTY` is the answer, and the fix is `git merge origin/main` (rule 26b for the
+    conflicts), not an empty commit or a close/reopen cycle. With several sessions merging
+    into `main` concurrently, this can recur on the same branch multiple times in a row;
+    re-check mergeable state after every push, not just once. (TRO-557, 2026-08-13 — cost a
+    close/reopen cycle and an empty commit before the real cause was found.)
+
 ## Mechanized (no longer prompt-dependent)
 
 - `gate.sh` refuses (`exit 2`) on an uncommitted worktree before running anything (unless

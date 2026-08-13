@@ -26,7 +26,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "PASS",
@@ -82,7 +84,9 @@
         "netContentsUnit": "fl oz",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "PASS",
@@ -140,7 +144,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "PASS",
@@ -198,7 +204,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "PASS",
@@ -258,7 +266,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "FAIL",
@@ -314,7 +324,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "FAIL",
@@ -370,7 +382,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -428,7 +442,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "Government Warning: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": false
+        "governmentWarningPrefixAllCaps": false,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "FAIL",
@@ -486,7 +502,9 @@
         "netContentsUnit": "fl oz",
         "governmentWarningPresent": true,
         "governmentWarningText": "Government Warning: (1) According To The Surgeon General, Women Should Not Drink Alcoholic Beverages During Pregnancy Because Of The Risk Of Birth Defects. (2) Consumption Of Alcoholic Beverages Impairs Your Ability To Drive A Car Or Operate Machinery, And May Cause Health Problems.",
-        "governmentWarningPrefixAllCaps": false
+        "governmentWarningPrefixAllCaps": false,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "FAIL",
@@ -544,7 +562,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, pregnant women should not consume alcoholic beverages due to the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "FAIL",
@@ -601,7 +621,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages may impair your ability to operate a vehicle or machinery, and can cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "FAIL",
@@ -659,7 +681,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": false,
         "governmentWarningText": "",
-        "governmentWarningPrefixAllCaps": false
+        "governmentWarningPrefixAllCaps": false,
+        "governmentWarningPrefixBold": false,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -716,7 +740,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": false,
         "governmentWarningText": "",
-        "governmentWarningPrefixAllCaps": false
+        "governmentWarningPrefixAllCaps": false,
+        "governmentWarningPrefixBold": false,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -773,7 +799,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "PASS",
@@ -832,7 +860,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "PASS",
@@ -890,7 +920,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -948,7 +980,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -1009,7 +1043,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -1070,7 +1106,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "PASS",
@@ -1130,7 +1168,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -1193,7 +1233,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -1257,7 +1299,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -1318,7 +1362,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -1378,7 +1424,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -1437,7 +1485,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "PASS",
@@ -1494,7 +1544,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "PASS",
@@ -1550,7 +1602,9 @@
         "netContentsUnit": "fl oz",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "FAIL",
@@ -1606,7 +1660,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "FAIL",
@@ -1662,7 +1718,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "FAIL",
@@ -1721,7 +1779,9 @@
         "netContentsUnit": "ml",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "PASS",
@@ -1781,7 +1841,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the surgeon general, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "FAIL",
@@ -1839,7 +1901,9 @@
         "netContentsUnit": "fl oz",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",

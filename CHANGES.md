@@ -122,6 +122,479 @@ ci.yml`) returns CI to never running `pnpm test:e2e` — the original gap. Rever
 `e2e/verify-fake-only.spec.ts` split restores the in-place `test.skip(` in
 `e2e/verify.spec.ts`. Troy already approved that shape (lessons.md rule 30), so reverting is
 safe if a real reason to prefer it ever turns up.
+## TRO-543 — LH-038 · Measure verdict variance, Part 2: the authorized sweep (2026-08-13)
+
+Advances TH-R10 (stretch), TH-R17, TH-R19. Part 1 (2026-08-12, below) built the tool and
+measured a free retrospective number from five earlier ad hoc runs. This entry is Part 2: the
+one real, paid sweep Troy authorized. It reports the sweep's own measured numbers, not a
+derived estimate.
+
+**Authorization.** Recorded on the Linear ticket, 2026-08-13: 32 cases x 3 repeats, the full
+golden set. Part 1's own derived estimate for this scope was ~$0.88, at a 40.6% escalation
+rate observed on one earlier run. TRO-538 had already merged, so the harness scores the
+cascade's real end state, not the router's pre-resolution stage.
+
+**The command, run once.** `pnpm eval:variance -- --live --full --repeats=3`. One invocation.
+No retries, no second sweep.
+
+**The measured result.** N=32 cases, K=3 repeats, 96 real cascade runs, 0 failures. Corpus
+stability: 30 of 32 cases (93.8%) returned the identical label verdict across all K=3 repeats.
+
+**Two unstable cases (N=2 of 32):**
+- `case-16-case-variant-brand-extra-words` (K=3): REVIEW, REVIEW, PASS. Two runs carried
+  headline reason `LOW_MODEL_CONFIDENCE`; the third carried none. The manifest expects
+  REVIEW / AMBIGUOUS_BRAND.
+- `case-19-rotation-mild-correctable` (K=3): PASS, REVIEW, PASS. The one REVIEW run carried
+  `LOW_MODEL_CONFIDENCE`. The manifest expects PASS.
+
+**Case-17 held steady this time, and stayed wrong.** Part 1's own finding named
+`case-17-glare-front-label` as the unstable case: 3 REVIEW, 2 PASS across five earlier
+committed runs. This sweep's own K=3 repeats returned PASS all three times. That is stable.
+But every run disagrees with the manifest's REVIEW / LOW_IMAGE_QUALITY expectation.
+TRO-516's finding C8 already ruled on this case's own pixels. This entry does not relitigate
+that ruling. It changes no manifest expectation. The instability itself moved to two
+different cases this run, not case-17. CP-1 already names the reason: `temperature: 0`
+variance is a property of the model, not a property of one fixed case.
+
+**Accuracy spread.** Across the K=3 repeats, label-verdict accuracy on the same N=32 cases
+ranged from 78.1% (25/32, repeats 2 and 3) to 81.3% (26/32, repeat 1). That is a 3.2-point
+spread from unchanged code against unchanged images. Read every single-run accuracy figure
+against this spread. A single run's number is one draw from this range. It is not the
+system's fixed accuracy.
+
+**Cost: measured, not derived.** Total **$0.8346**. 96 Haiku calls, mean $0.004670 each,
+$0.4483 total. 37 of 96 case-runs escalated to the Sonnet resolver (38.5%), mean $0.010439
+each, $0.3862 total. The measured total sits below Part 1's derived $0.88 estimate at the
+40.6% rate. That derivation held.
+
+**The artifact.** `scripts/eval/results/variance-report.json`, committed with this entry. It
+carries every field Part 1's own discipline requires:
+
+- K verdicts and K headline reasons per case, the modal verdict, and a per-case stability rate.
+- Corpus stability and the accuracy spread's lowest and highest rate.
+- Real per-call and total costs.
+- `measuredAt`: `2026-08-13T12:30:00.795Z`.
+- Exact model IDs: `claude-haiku-4-5`, `claude-sonnet-5`.
+- Commit SHA: `850ba51d4bdef22d0aa95e1e26babdc616e5f425`.
+- Manifest content hash: `8c9fad3fe780d4ea059681473c793163664708be583c5f7200e75e5c67b21f8f`.
+  Independently recomputed from the committed manifest's own SHA-256 during review. It matches.
+
+**New regression test, red first.** `scripts/eval/variance-report-artifact.test.ts` loads the
+committed artifact straight off disk. It is not a synthetic fixture. `report-validation.test.ts`
+already owns that job. This test asserts the 32 x 3 contract instead:
+
+- 32 distinct case IDs, matching (not just same-sized) between `caseIds` and `summary.perCase`.
+- `requestedFull: true`, and 3 repeats.
+- Every case's runs at exactly indexes 1, 2, and 3.
+- 0 incomplete cases, 96 runs, 0 failures.
+- A positive total cost, both model IDs, a commit SHA, and a 64-character manifest hash.
+
+It was red before the sweep ran — the artifact did not exist (`ENOENT`). It is green now.
+
+**What this test proves, precisely.** It proves the committed file, on disk right now, has the
+authorized shape and values. It does not independently prove a live API call produced that
+file — a hand-edited JSON matching the same shape would pass too. That proof is external to
+this test: the sweep's own real-time console output during the run, and Troy's authorization
+record on the Linear ticket. The manifest content hash is a different kind of provenance. It
+confirms which golden-set version the run used. It does not prove the run was live. This
+test's real job is narrower than either of those: catch a future commit that silently narrows
+or corrupts this artifact. It does not re-prove `variance-analysis.ts`'s own arithmetic — the
+pure-function suite already does that.
+
+**How to run it.** Do not re-run the live sweep without new written authorization — this was
+the one authorized run. `pnpm eval:variance` alone, no flags, reads this committed report
+back at zero cost.
+
+**Rollback.** `git revert` this ticket's Part 2 commits on `feat/lh-038-variance-sweep`. No
+schema change. Reverting drops the committed artifact, the new test, and this Part 2's own
+hardening of `report-validation.ts`'s `validateVarianceReport` (the `haikuModel`/`sonnetModel`/
+`commitSha`/`requestedFull` checks). Part 1's own original `validateVarianceReport` behavior —
+working against no committed report at all — is unaffected either way.
+
+**Not done here, on purpose.** No fix for the variance — no retry, no lower temperature, no
+self-consistency vote. No golden-set expectation changed, case-17 included. No entry in
+`docs/approach.md` — TRO-485 has not created that file yet. This finding, and Part 1's, both
+belong there once it exists.
+## TRO-539 — LH-034 · The paid deployed run: TH-R2 returns to VERIFIED (2026-08-13)
+
+Advances TH-R2, TH-R15, TH-R19. This entry covers ticket steps 5, 7, 8, and 9 — the real,
+billed, sequential run against the deployed Render instance — plus a step-6 preparation section
+Troy still needs to act on. The harness itself (steps 1-4) merged first, in PR #51; see this
+file's earlier TRO-539 entry, below, for that work.
+
+### The measurement
+
+Troy set `ANTHROPIC_API_KEY` on both Render services and gave the go-ahead for one paid,
+sequential run on 2026-08-13. Ran:
+
+```bash
+pnpm latency:check -- --url=https://labelhunter-web.onrender.com --runs=20
+```
+
+20 requests, one at a time, never concurrent — every request bills a real Haiku call. All 20
+succeeded. All 20 returned `PASS`. Committed at
+`scripts/latency/results/single-label-verify-url-mode.json`.
+
+| Stat | Value |
+|---|---|
+| p50 | **3834 ms** |
+| p95 | **4458 ms** |
+| mean | 3946 ms |
+| min | 3688 ms |
+| max | 5185 ms |
+
+**Provenance, recorded in the artifact itself, not just here.**
+
+- `target.boundary`: `"http"` — a real multipart POST over the network, not an in-process call.
+- `target.host`: `"labelhunter-web.onrender.com"`.
+- `target.renderPlan`: `"starter"` — read from `render.yaml`, matching `render.yaml:29`.
+- `measuredAt`: `2026-08-13T12:40:42.385Z` — after `2026-08-12T03:30:19Z`, the instant commit
+  `c5e49f8` wired the warning comparator into the route. This run measures the pipeline that
+  ships today.
+- **Deployed commit not exposed — not verified.** The app has no `/api/version` or commit
+  header. This run cannot independently confirm the deployed instance served the exact reviewed
+  code — only that `render.yaml`'s `autoDeployTrigger: checksPass` should have deployed the
+  latest green `main` before this run. Stated honestly, not assumed.
+
+**Per-stage breakdown, from the real `Server-Timing` header, p50 across the 20 runs:**
+
+| Stage | p50 (ms) | Share of total |
+|---|---|---|
+| preprocess | 125.9 | 3.3% |
+| ocr | 3544.1 | — (see note) |
+| haiku | 3544.1 | 92.4% |
+| router | 0.2 | <0.1% |
+| db | 8.1 | 0.2% |
+
+`ocr` and `haiku` are within 0.1 ms of each other on every single run, not just close. The
+reason is structural, not coincidental: `compareGovernmentWarningFromImage`
+(`src/server/warning/index.ts:171`) awaits `Promise.all([extractedPromise, ocrChannelPromise])`
+— it needs Haiku's own extracted text before it can finish reconciling, so the whole warning
+channel cannot resolve before Haiku does. On this deployed run, Haiku is always the slower of
+the two, so `ocr`'s reported duration is really "wait for Haiku, then finish OCR reconciliation"
+— it does not isolate real OCR/tesseract cost. The zero-cost fake-server validation run
+(`single-label-verify-fake-server-validation.json`, this file's earlier TRO-539 entry) is the
+only artifact that shows real, isolated OCR cost: 328.8 ms p50, against a canned near-instant
+Haiku stand-in. **Answering "where does the 3.8 seconds go?": almost all of it is the live
+Haiku call.** `preprocess` + `haiku` + `router` + `db` sums to 3678.3 ms of the 3834 ms total.
+The remaining ~156 ms (4%) is HTTP framing, multipart parsing, and network transfer time —
+real cost the in-process harness could never see, now visible because this run crossed a real
+boundary.
+
+**Not investigated further here:** every run returned `PASS`. The prior committed in-process
+artifact (`single-label-verify.json`, before TRO-514/TRO-516) returned `REVIEW` /
+`LOW_MODEL_CONFIDENCE` on all 20 runs. The two artifacts measure different pipelines —
+TRO-516's golden-set corpus calibration landed between them — so this is not evidence of a
+regression or a fix; it is an observation, not a claim.
+
+**Side effect worth knowing about.** `--cleanup-db` was not passed — the harness never infers
+that a local worktree's `DATABASE_URL` is the deployed instance's own database, by design (see
+this file's earlier TRO-539 entry). 20 `applications` rows (ids 1-20) from this run remain in
+the deployed Postgres database, uncleaned. The artifact's own `cleanupSkippedReason` field
+records this. Removing them, if wanted, needs a direct connection to the deployed database —
+out of this worktree's reach and out of this ticket's scope.
+
+### TH-R2: PARTIAL → VERIFIED
+
+TH-R2's acceptance evidence (`audit/requirements/inventory.md:31`) is: "Measured latency of the
+single-label verify flow ≤ ~5s (p50, realistic image); measurement method documented." p50
+3834 ms and p95 4458 ms both clear that bar, on a real HTTP round-trip, against the Render
+`starter` instance, with the shipping pipeline (warning comparator included, OCR bounded by
+TRO-519's 2000 ms deadline). That is the real, deployed number TH-R2 asks for — not an
+in-process estimate, not a superseded artifact. `audit/requirements/REPORT.md` updated to
+match (see below).
+
+### Step 7 — composition: still pending step 6
+
+The ticket's composition formula (`preprocess + max(Haiku, OCR) + router + db + HTTP`, an upper
+bound built from a sequential run plus a separate zero-cost concurrency envelope) needs the
+fake-server concurrency envelope from step 6. **That run has not happened.** No composed figure
+is written here. Writing one without step 6's own number would be a fabricated figure — CLAUDE.md's
+own non-negotiable. When step 6 lands, the composed number's overlap double-count (it
+double-counts the concurrent OCR/Haiku window, overestimating by roughly the OCR time) gets
+stated next to the figure, every time it is quoted.
+
+### Step 6 — PENDING. Exact instructions for Troy (zero Anthropic cost, not zero Render cost)
+
+This agent did not touch any Render configuration and did not run any load against the real
+route. The steps below are instructions only.
+
+**1. Deploy the fake Anthropic server as its own temporary Render service.** Add a third
+service to `render.yaml` (or add it directly in the Render dashboard — either works; a
+dashboard-only service will not appear in this repo's own config, so `render.yaml` is the
+tidier choice if this stays around for more than one session):
+
+```yaml
+  - type: web
+    name: labelhunter-fake-anthropic
+    runtime: node
+    plan: free
+    branch: main
+    buildCommand: pnpm install --frozen-lockfile
+    startCommand: FAKE_MODEL_PORT=$PORT pnpm exec tsx scripts/e2e/fake-anthropic-server.ts
+```
+
+Deploy it (push, or "New Web Service" in the dashboard pointed at this repo). Confirm it is up:
+
+```bash
+curl -sS -o /dev/null -w "%{http_code}\n" https://labelhunter-fake-anthropic.onrender.com/
+```
+
+Any response (even a 404 — this server only implements `POST /v1/messages`) confirms the
+process is listening. A connection timeout means it is not.
+
+**2. Point `labelhunter-web` — the web service, never the worker — at it.** Render dashboard →
+`labelhunter-web` → Environment → add:
+
+```
+ANTHROPIC_BASE_URL=https://labelhunter-fake-anthropic.onrender.com
+```
+
+Save (this redeploys `labelhunter-web`). Leave the worker's environment untouched — batch jobs
+are out of this measurement's scope, and its real key should stay wired.
+
+**3. Confirm the swap took, before driving any real load:**
+
+```bash
+pnpm latency:check -- --url=https://labelhunter-web.onrender.com --runs=1 \
+  --out=scripts/latency/results/tmp-fake-swap-check.json
+```
+
+This costs $0 once the swap has taken — the deployed instance's real key never gets used. Open
+the file. If `serverTimingMs.haiku` still reads like a multi-second real call, the environment
+variable did not take. Stop and check the Render dashboard before driving load.
+
+**4. Drive concurrency with parallel harness instances, not a generic HTTP tool.** `oha` and
+`autocannon` do not know this route's multipart contract — building that body by hand is real
+risk for no benefit, since `measure.ts` already builds the exact request `VerifyForm` sends.
+Run several harness processes in parallel instead, each with its own output file:
+
+```bash
+for i in 1 2 3 4 5; do
+  pnpm latency:check -- --url=https://labelhunter-web.onrender.com --runs=10 \
+    --out=scripts/latency/results/concurrency-c5-worker${i}.json &
+done
+wait
+```
+
+Repeat at a few concurrency levels — vary the loop's upper bound (`c1`, `c5`, `c10`), not
+`--runs`. Name every output file with its own concurrency level, and commit all of them; do not
+overwrite one run with the next. If a raw-HTTP tool is still wanted for a second, independent
+reading, `oha`/`autocannon` need a pre-built multipart body file and a fixed boundary string —
+this note does not cover building one.
+
+**5. Revert, in this order.** Remove `ANTHROPIC_BASE_URL` from `labelhunter-web`'s environment
+(Render dashboard → Environment → delete the variable → Save; this redeploys). Confirm:
+
+```bash
+pnpm latency:check -- --url=https://labelhunter-web.onrender.com --runs=1 \
+  --out=scripts/latency/results/tmp-revert-check.json
+```
+
+`serverTimingMs.haiku` should look like a real multi-second call again. Then delete or suspend
+the temporary `labelhunter-fake-anthropic` service — it has no purpose once step 6 is done, and
+a stray endpoint that answers fake extractions is worth removing, not leaving live.
+
+### Regression test (G6)
+
+`scripts/latency/deployed-artifact.test.ts` (new, 6 cases). Loads the committed artifact and
+asserts TRO-539's own acceptance contract: `pipelineScope` names the warning comparator;
+`target.boundary`/`host`/`renderPlan` are present; `measuredAt` is later than
+`2026-08-12T03:30:19Z`; every PRD §3.8 stage has a breakdown entry; at least one run succeeded.
+
+Red first, confirmed for the right reason: moved the artifact aside, ran the test —
+`ENOENT: no such file or directory, open '.../single-label-verify-url-mode.json'`. Restored the
+artifact, ran again — 6/6 pass.
+
+### Docs corrected
+
+`audit/requirements/REPORT.md:15` and the TH-R2 matrix row (`:38`) updated: the deployed p50/p95
+above, the artifact's new path, and the VERIFIED verdict. Full detail there, not repeated here.
+
+### Rollback
+
+Revert this commit. `scripts/latency/results/single-label-verify.json` (the in-process artifact)
+and `single-label-verify-fake-server-validation.json` are untouched. The 20 uncommitted
+`applications` rows in the deployed database (see "Side effect" above) are not affected by a
+code revert either way — they are data, not code.
+## TRO-541 — LH-036 · Correct `scripts/eval/args.ts`'s default-sample coverage claim (2026-08-13)
+
+**What changed.** `scripts/eval/args.ts`'s `DEFAULT_SAMPLE_CASE_IDS` doc comment, plus one new
+exported constant and its test. `DEFAULT_SAMPLE_CASE_IDS` itself, `MAX_CASES`, `parseEvalArgs`,
+`validateCheckArgs`, and `resolveCaseIds` are unchanged. No runtime behavior changed.
+
+**The false claim.** The old comment said the eight-case default `--live` sample "exercises
+every reviewReason family." It named case-25 as covering `LOW_MODEL_CONFIDENCE` and case-17 as
+covering `LOW_IMAGE_QUALITY`. Measured, from the committed `eval-report.json`, neither case
+produces its named reason at the router stage. The eight cases together produce exactly one
+reviewReason: `MISSING_REQUIRED_FIELD`, on case-12.
+
+**Premise correction — the report this ticket cites moved.** TRO-541 was filed against a
+2026-08-12 13:26 run. TRO-516 committed a fresh full-corpus run after that. Its `measuredAt` is
+`"2026-08-13T01:47:56.655Z"`. It was already merged when this worktree was provisioned. As part
+of its own C1/C2 correction, TRO-516 changed case-25's manifest expectation. The old expectation
+was REVIEW/LOW_MODEL_CONFIDENCE. The new one is PASS/null. That is the same false claim this
+ticket removes from the comment. TRO-516 confirms it independently, from the corpus side. This
+entry cites the current committed run, not the stale one the ticket named. The underlying
+finding stands: 0 of 32 cases produce `LOW_MODEL_CONFIDENCE` or `AMBIGUOUS_NET_CONTENTS` at the
+router stage, in this run.
+
+**Scoped to a named run, not a structural claim.** A concurrent live run produced
+REVIEW/LOW_MODEL_CONFIDENCE on case-07. That run is TRO-543's variance sweep, dated 2026-08-13.
+It proves the reviewReason is reachable. It was just not present in the router-stage results of
+the one committed run this ticket's evidence comes from. The rewritten comment names the run and
+date on every such claim. It does not say the pipeline "cannot" produce these reasons — only
+that this one measured run did not.
+
+**Fix.**
+- `args.ts` case-25/case-17 list lines: now state what each case is in the sample for (script
+  brand font; front-label glare), naming no reviewReason.
+- Deleted the "swapped case-23 for case-25 to keep this sample covering every reviewReason
+  family" sentence.
+- Replaced the "exercises every reviewReason family" claim with the measured result above.
+- Added a named gap: no case in the golden set produced `LOW_MODEL_CONFIDENCE` or
+  `AMBIGUOUS_NET_CONTENTS` in that run.
+- "31-case" / "31 cases today" corrected to 32 — the manifest's real, current count.
+- Kept the TRO-469 / case-23 history verbatim. It is a separate, still-correct decision.
+- Added `DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS`, an exported map from sample case ID to the
+  `ReviewReason` (or `null`) the committed report actually shows, at the router stage.
+
+**Test — red before, green after.** `scripts/eval/args.test.ts` gains a
+`DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS` suite. One assertion checks the map against
+`report.cases[i].routerVerdict.actualReviewReason` for every `DEFAULT_SAMPLE_CASE_IDS` entry,
+loaded through `validateEvalReport`. A second confirms every sample case ID exists in the real
+manifest, via `loadGoldenSetManifest`. No assertion reads `args.ts`'s source text.
+
+Red run, map seeded with the old comment's claims (case-17: `LOW_IMAGE_QUALITY`, case-25:
+`LOW_MODEL_CONFIDENCE`):
+
+```text
+❯ scripts/eval/args.test.ts (41 tests | 1 failed)
+  × matches the committed report's router-stage actualReviewReason for every
+    DEFAULT_SAMPLE_CASE_IDS case
+    AssertionError: expected 'LOW_IMAGE_QUALITY' to be null
+ Test Files  1 failed (1)
+      Tests  1 failed | 40 passed (41)
+```
+
+Green run, map corrected to `null` for both:
+
+```text
+ Test Files  1 passed (1)
+      Tests  41 passed (41)
+```
+
+**Evidence.** The string "31" no longer appears in `args.ts`. `pnpm test`: 158 files, 1911
+tests, all pass. This includes `warning-golden-cases.test.ts` and `report-validation.test.ts`.
+Neither pins case-25 or case-17. Neither file was edited. `pnpm typecheck`, `pnpm lint`: clean.
+This ticket made no live API call. Every number above comes from the already-committed
+`eval-report.json`.
+
+**Known, not this ticket's job.** case-17's manifest expectation (REVIEW/LOW_IMAGE_QUALITY)
+still mismatches the committed run's router-stage result (PASS/null). This is already tracked:
+TRO-516's own C8 leaves case-17 untouched on purpose — "case-17's variance is TRO-543's measured
+story now." Not re-litigated here.
+## TRO-527 — LH-022 · Golden-set bold ground truth + renderer bold prefix (2026-08-13)
+
+Advances TH-R9, TH-R12. 27 CFR 16.22(a)(2) has two bold rules: the "GOVERNMENT WARNING:"
+prefix must print bold, and the rest of the statement must not. The golden set could not
+express either rule before this ticket. Every one of the 32 cases rendered the whole warning
+at one font weight. The measured prefix/body stroke-width ratio was 1.00. A real compliant
+label's ratio is 2.2 (`factory/tickets.md` § LH-022).
+
+**What changed.** Added two required fields to `GoldenLabelFields`
+(`src/lib/golden-set/types.ts`): `governmentWarningPrefixBold` and
+`governmentWarningBodyBold`, each typed `boolean | "unknown"`. `"unknown"` exists for a real
+photograph a careful human reader cannot call either way. A `false` there would be a
+fabricated compliance claim against a shipped product. LH-024's hand-transcribed real-label
+cases will use it. None of this manifest's 32 cases needs it, since this repo controls every
+one of their renders.
+
+`src/lib/golden-set/loader.ts` validates the two new fields the same way it validates
+`governmentWarningPrefixAllCaps` — required, `boolean | "unknown"`.
+
+`scripts/golden/render.ts` now splits a case's warning text at the FIRST colon
+(`splitGovernmentWarning`, `scripts/golden/render.ts:281`). It renders the prefix and body as
+two separately-weighted `<span>`s (`buildWarningHtml`, `scripts/golden/render.ts:319`), each
+driven by the case's own bold ground truth. `warningSpanFontWeight` throws on `"unknown"` —
+this renderer draws real pixels, and no pixel means "we don't know." A case with `"unknown"`
+bold ground truth must use a different provenance and never reach this function.
+
+Backfilled all 32 cases in `golden-set/manifest.json`. The 30 cases with a warning get
+`governmentWarningPrefixBold: true`, `governmentWarningBodyBold: false` — the statutorily
+compliant setting. None of these 32 cases tests a bold violation; that is LH-023's job
+(case-33, case-34). The 2 missing-warning cases (case-12, case-13) get `false`/`false`,
+matching `governmentWarningPrefixAllCaps`'s own "false, including when absent" convention.
+Case-24's existence and every other case's identity stayed untouched. TRO-516 C5 (merge
+case-24 into case-23) is queued behind this ticket, to avoid concurrent manifest surgery.
+
+Ran `pnpm golden:build`. 30 of 32 images changed pixels — every case with a warning. The 2
+missing-warning cases are byte-identical: an absent warning renders nothing, so the new
+fields never reach the page for those two.
+
+**Regression test.** `scripts/golden/render.test.ts`, describe block "government warning bold
+prefix/body split (TRO-527 / LH-022)". Confirmed red first, against the old renderer (one
+unweighted text node) and the old manifest (fields absent). Both new tests failed on a real
+assertion — no `warningPrefix`/`warningBody` span found — not an import or type error. One
+test proves, for all 30 warning-bearing cases, that `prefix + body` reconstructs the case's
+`governmentWarningText` byte for byte. It also proves each span carries its case's recorded
+weight. The other test proves the split happens at the FIRST colon only, using a synthetic
+case whose body itself contains a second colon.
+
+Adapted two pre-existing `render.test.ts` tests to the new two-span shape. The exact-warning-
+text test now checks the prefix and body substrings separately. A `<span>` boundary now sits
+between them, so the old single contiguous-substring check no longer holds. The
+HTML-escaping test's synthetic warning text now carries a colon in its prefix half, matching
+every real case. It still checks both halves stay exactly escaped — no paraphrasing tolerated
+on either side. Updated the five other test fixtures that build a full `GoldenLabelFields`
+literal (`scripts/eval/test-support.ts`, `scripts/golden/build.test.ts`,
+`scripts/golden/renderSmoke.test.ts`, `scripts/golden/verify.test.ts`,
+`src/lib/golden-set/loader.test.ts`) to carry the two new required fields.
+
+**How to run it.** `pnpm test -- scripts/golden/render.test.ts` for the new and adapted
+tests. `pnpm golden:build` regenerates every rendered / rendered+degraded image from the
+manifest. `pnpm golden:verify` checks the manifest and images stay consistent.
+
+**Known limit — one committed eval artifact now predates this rebuild.**
+`scripts/eval/results/eval-report.json` and `scripts/eval/baseline.json` (commit `491e195`,
+2026-08-12, a real live run against Haiku and Sonnet, $0.28 measured) both carry
+`manifestContentHash: "8c9fad3f…"`. This ticket changed `golden-set/manifest.json`'s content
+(two new fields per case), so the manifest's live hash is now `"f2587e8e…"` — the two no
+longer match. Per this ticket's brief, a rebuild must not trigger a paid live eval to repair
+this correspondence. `pnpm eval:check`'s cheap mode still passes. It compares the report and
+the baseline to each other, not to the live manifest, and those two still agree with each
+other. The next `--live` eval run, whenever a future ticket runs one, will refresh both files
+against the current manifest and images.
+
+A real gap follows from this: nothing today warns when the live manifest drifts from a
+committed report's hash. CodeRabbit's review of this PR flagged the same gap (round 1,
+finding: CHANGES.md, major, `test-coverage`) — recorded in the review ledger as a new-ticket
+candidate rather than fixed here, since fixing it means either deleting real, honestly-
+measured evidence or adding a new check to `eval:check`, and this ticket's brief forbids
+spending on a live eval to paper over the mismatch instead.
+
+**Rollback.** `git revert` this ticket's commits, in order. They touch
+`src/lib/golden-set/types.ts`, `src/lib/golden-set/loader.ts`, `scripts/golden/render.ts`,
+six test files, `golden-set/manifest.json`, and the 30 changed images together. Reverting all
+of them returns the golden set to its pre-TRO-527 state.
+
+**CodeRabbit review triage (4 findings, 1 fixed, 2 batched to a new ticket, 1 dismissed):**
+- `src/lib/golden-set/loader.ts` (minor, `boundary-validation`): the loader never rejects
+  `governmentWarningPrefixBold` / `governmentWarningBodyBold` = `true`/`"unknown"` when
+  `governmentWarningPresent` is `false`. Real gap — but the pre-existing sibling field
+  `governmentWarningPrefixAllCaps` has the identical unenforced convention already, so fixing
+  only the two new fields here would leave the schema inconsistent. New-ticket: add the
+  cross-field check symmetrically for all three fields, with loader tests.
+- `CHANGES.md` (minor, `prose-style`): several sentences in this entry exceeded ASD-STE100's
+  25-word limit. Fixed — split into shorter sentences, same content.
+- `CHANGES.md` (major, `test-coverage`): the committed eval artifact's `manifestContentHash`
+  no longer matches the live manifest (see "Known limit" above). New-ticket, not fixed here —
+  this ticket's brief explicitly forbids running a paid live eval to repair it.
+- `scripts/golden/render.ts` (minor, `false-positive-review`): suggested guarding the
+  `"unknown"` bold case by checking the case's `provenance`. Dismissed — `RenderableCase`
+  carries no `provenance` field, and no `GoldenSetProvenance` value for a real-photograph case
+  exists yet (that's LH-024's job). Cannot validate against a type that does not exist yet;
+  the current throw already gives a clear, specific error.
 
 ## TRO-547 — BatchProgressBrowser poll test asserted a value a correct poll overwrites (2026-08-12)
 
@@ -765,10 +1238,10 @@ plus a zero-cost local validation). The real deployed measurement stays blocked 
    combined figure. `haiku` and `ocr` run concurrently (CP-2 §4.4) but are measured
    independently. Their reported durations can overlap. They are not meant to sum to the total.
    A non-200 response carries no header — an early error means at least one stage never ran. The
-   harness parses this header off the `Response` object either mode produces
-   (`parseServerTimingHeader`) — the in-process mode reads it off the same object
-   `handleVerifyRequest` returns; `--url` mode reads it off the real HTTP response. Either way,
-   every successful run's samples roll into a per-stage `stageBreakdownMs` summary
+   harness parses this header with `parseServerTimingHeader`. Both modes read it off a
+   `Response` object. The in-process mode reads the object `handleVerifyRequest` returns.
+   `--url` mode reads the real HTTP response. Either way, every successful run's samples roll
+   into a per-stage `stageBreakdownMs` summary
    (`scripts/latency/stage-breakdown.ts`), reusing the same `summarizeLatencies` the overall
    p50/p95 already uses. Only a successful run's samples ever count.
 

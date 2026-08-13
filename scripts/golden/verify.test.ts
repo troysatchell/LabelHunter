@@ -60,6 +60,8 @@ function baseCase(overrides: Partial<GoldenSetCase> = {}): GoldenSetCase {
       governmentWarningPresent: true,
       governmentWarningText: "GOVERNMENT WARNING: test.",
       governmentWarningPrefixAllCaps: true,
+      governmentWarningPrefixBold: true,
+      governmentWarningBodyBold: false,
     },
     expected: {
       labelVerdict: "PASS",

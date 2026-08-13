@@ -128,22 +128,24 @@ model or careful stroke-width measurement. This prototype has neither at product
 reliability. LabelHunter reports a bold signal instead — `true`, `false`, or `uncertain` —
 rather than silently dropping the check or reporting false confidence.
 
-**No runtime access control is live on the deployed instance yet.** The brief's own guidance
-("just don't do anything crazy... not storing anything sensitive") sets a light bar for a
-prototype. The data model meets that bar: no PII, no reviewer identity, no secrets in the
-repo. A separate concern is runtime cost — the deployed URL calls a real, billed Anthropic API
-key. A shared access-code gate, per-IP and global rate limits, and a persisted daily spend
-budget are built and in review
-([PR #43](https://github.com/troysatchell/LabelHunter/pull/43)), not yet merged. That review
-already found two follow-up gaps, before merge:
+**Runtime access control is merged, not yet confirmed live.** The brief's own guidance ("just
+don't do anything crazy... not storing anything sensitive") sets a light bar for a prototype.
+The data model meets that bar: no PII, no reviewer identity, no secrets in the repo. A separate
+concern is runtime cost — the deployed URL calls a real, billed Anthropic API key. A shared
+access-code gate, per-IP and global rate limits, and a persisted daily spend budget merged into
+`main` ([PR #43](https://github.com/troysatchell/LabelHunter/pull/43)). Its own review already
+found two follow-up gaps, before merge:
 
 1. The batch workers check the spend budget only when a batch starts, not again while it runs.
-   A long-running batch is not budget-capped mid-run. Tracked as PR #43's own follow-up.
+   A long-running batch is not budget-capped mid-run.
 2. A database failure during the budget check currently surfaces as a generic server error,
    not the designed "budget unavailable" response.
 
-Until PR #43 merges, treat the deployed instance as unprotected. The README says the same
-thing, in the same words, so the two documents cannot drift apart.
+Merged code is not the same claim as a live, protected deployment. Render redeploys
+automatically from a green `main`, but this document does not assert the deployed instance is
+protected until that redeploy is independently confirmed — a probe against the live URL, not
+an assumption from the merge alone. Check `README.md`'s "Try it" section for the current,
+verified state; the two documents are kept in sync on this point deliberately.
 
 **No batch has run at the brief's own named scale yet.** Sarah Chen's interview names 200–300
 labels as the real peak-season number. The code caps batch size at 1000. Durable Postgres image

@@ -21,14 +21,19 @@ document does not repeat that.
 
 **The latency figure is deliberately withheld.** TRO-486's sweep downgraded TH-R2 to PARTIAL
 because the last deployed-latency measurement predates commits that touch its own measured
-path. Quoting either the old number or a new one now would be premature — a peer session
-holding PR #43 (which itself changes the measured path again) asked that the re-measurement
-wait until #43 merges. This document says so plainly instead of quoting a number.
+path. PR #43 changed that same path again and has now merged. A fresh measurement waits until
+the redeploy is confirmed live, not just merged — measuring against a stale build would repeat
+the exact defect this document exists to avoid.
 
 **Names two gaps found during PR #43's own review, before merge.** The batch workers do not
 re-check the spend budget mid-run, and a database failure during the budget check 500s instead
 of returning the designed 503. Both are real, both are already tracked, and naming them here is
 a better answer at interview than an unexamined system would be.
+
+**Updated after PR #43 merged, mid-ticket.** The first commit on this branch said PR #43 was
+"not yet merged." It merged shortly after, so a second commit corrects that claim. It does not
+claim the deployed instance is protected — that needs its own independent check against the
+live URL, which had not happened by this commit.
 
 **Observed, not derived.** This ticket ran these commands against a fresh worktree:
 `pnpm install`; `pnpm db:migrate` (8 migrations, exit 0); `pnpm typecheck` (exit 0); `pnpm lint`

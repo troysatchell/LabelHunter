@@ -20,9 +20,10 @@
  *   - `--case=<id>` runs exactly one named case, for debugging a single
  *     result without paying for the rest of the sample.
  */
+import type { ReviewReason } from "../../src/server/router/types";
 
 /**
- * A fixed, deliberately small subset of the 31-case golden set
+ * A fixed, deliberately small subset of the 32-case golden set
  * (`golden-set/manifest.json`), chosen to span every `LabelVerdict` and a
  * spread of `GoldenSetCategory` values without running (and paying for)
  * the whole set on every `--live` invocation:
@@ -33,24 +34,41 @@
  *   - case-08: title-case-warning, FAIL — Jenny Park's real catch (TH-R9).
  *   - case-12: missing-warning, REVIEW / MISSING_REQUIRED_FIELD.
  *   - case-14: case-variant-brand, PASS — the STONE'S THROW case (TH-R8).
- *   - case-17: glare, REVIEW / LOW_IMAGE_QUALITY.
- *   - case-25: odd-typography, REVIEW / LOW_MODEL_CONFIDENCE (brand_name).
+ *   - case-17: glare on the front label — an image-quality stress case.
+ *   - case-25: odd typography — an ornate script brand font.
  *
  * `case-23` (tiny-warning-text) was this list's original LOW_MODEL_CONFIDENCE
  * exemplar; TRO-469 / LH-021 (CP-2 §9.2 finding 1) corrected its own
  * expected reviewReason to `LOW_IMAGE_QUALITY` — `WarningComparatorResult`
  * cannot return `LOW_MODEL_CONFIDENCE` (`docs/checkpoints/cp2-warning-subsystem.md`
  * §6.2), so a tiny-but-legible warning reaching that comparator always
- * routes on image quality, never model confidence. Swapped to `case-25`
- * (a comparator-driven field's own genuine LOW_MODEL_CONFIDENCE path,
- * `field-resolution.ts`'s `resolveComparatorField`) to keep this sample
- * covering every reviewReason family it always intended to.
+ * routes on image quality, never model confidence.
  *
- * Not a statistically representative sample — eight cases cannot be. It is
- * a cheap, fast smoke set that exercises every reviewReason family and both
- * REVIEW-escalation and no-escalation paths. `--full` is the real evidence
- * run; this default exists so an accidental bare `--live` cannot burn the
- * cost of the whole golden set.
+ * TRO-541 / LH-036 replaced the swap claim that used to follow this
+ * paragraph with a measured result. The committed `eval-report.json`
+ * (`measuredAt: "2026-08-13T01:47:56.655Z"`, 32 cases, from `pnpm
+ * eval:check -- --live --full`) shows this eight-case sample producing
+ * exactly one distinct `reviewReason`: `MISSING_REQUIRED_FIELD`, on
+ * case-12. `DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS` below records that
+ * result for every sample case. It uses the router stage — the same
+ * stage `EvalReportSummary.reviewReasonAccuracy` scores (`types.ts`'s own
+ * comment on that field). `args.test.ts` checks the constant against the
+ * same committed report on every test run.
+ *
+ * In that same run, no case produced `LOW_MODEL_CONFIDENCE` or
+ * `AMBIGUOUS_NET_CONTENTS` — two of the eight `ReviewReason` members.
+ * This is a property of that one run, not a claim about what the
+ * pipeline can or cannot produce elsewhere. Live-model output varies run
+ * to run; `DEFAULT_REPEATS`'s own comment below already records that
+ * variance for case-17's REVIEW/PASS split. TRO-541 records this gap. It
+ * is not a fix for the gap.
+ *
+ * Not a statistically representative sample — eight cases cannot be. It
+ * is a cheap, fast smoke set covering both REVIEW-escalation and
+ * no-escalation paths, not every reviewReason family (see the measured
+ * note above). `--full` is the real evidence run; this default exists so
+ * an accidental bare `--live` cannot burn the cost of the whole golden
+ * set.
  */
 export const DEFAULT_SAMPLE_CASE_IDS: readonly string[] = [
   "case-01-clean-match-spirits",
@@ -64,8 +82,36 @@ export const DEFAULT_SAMPLE_CASE_IDS: readonly string[] = [
 ];
 
 /**
+ * Which `ReviewReason` each `DEFAULT_SAMPLE_CASE_IDS` case actually
+ * produced in the committed `eval-report.json` run this repo carries now
+ * (`measuredAt: "2026-08-13T01:47:56.655Z"`, 32 cases, from `pnpm
+ * eval:check -- --live --full`), at the router stage —
+ * `VerdictCaseScore.actualReviewReason` on `routerVerdict`, the same
+ * stage `EvalReportSummary.reviewReasonAccuracy` scores (`types.ts`'s own
+ * comment on that field). `null` means the router verdict was PASS or
+ * FAIL, with no `reviewReason`.
+ *
+ * A snapshot of one measured run (TRO-541 / LH-036), not a claim about
+ * what the pipeline can or cannot produce on a different run —
+ * `DEFAULT_REPEATS`'s own comment below already records real run-to-run
+ * variance for case-17. `args.test.ts` checks this map against the same
+ * committed report on every test run, so a stale value here fails loudly
+ * instead of drifting silently from measured reality.
+ */
+export const DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS: Readonly<Record<string, ReviewReason | null>> = {
+  "case-01-clean-match-spirits": null,
+  "case-02-clean-match-beer-no-abv": null,
+  "case-05-abv-mismatch-application-higher": null,
+  "case-08-title-case-warning-prefix-only": null,
+  "case-12-missing-warning-spirits": "MISSING_REQUIRED_FIELD",
+  "case-14-case-variant-brand-stones-throw": null,
+  "case-17-glare-front-label": null,
+  "case-25-odd-typography-script-brand": null,
+};
+
+/**
  * Hard ceiling on how many cases one `--live` invocation may run — the
- * golden set's own size (31 cases today). `--full` already reaches this
+ * golden set's own size (32 cases today). `--full` already reaches this
  * ceiling by design; this constant exists so a future larger golden set
  * cannot silently make one careless invocation far more expensive than any
  * operator intended, the same backstop role `scripts/latency/args.ts`'s

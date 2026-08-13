@@ -4,6 +4,81 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-541 — LH-036 · Correct `scripts/eval/args.ts`'s default-sample coverage claim (2026-08-13)
+
+**What changed.** `scripts/eval/args.ts`'s `DEFAULT_SAMPLE_CASE_IDS` doc comment, plus one new
+exported constant and its test. `DEFAULT_SAMPLE_CASE_IDS` itself, `MAX_CASES`, `parseEvalArgs`,
+`validateCheckArgs`, and `resolveCaseIds` are unchanged. No runtime behavior changed.
+
+**The false claim.** The old comment said the eight-case default `--live` sample "exercises
+every reviewReason family." It named case-25 as covering `LOW_MODEL_CONFIDENCE` and case-17 as
+covering `LOW_IMAGE_QUALITY`. Measured, from the committed `eval-report.json`, neither case
+produces its named reason at the router stage. The eight cases together produce exactly one
+reviewReason: `MISSING_REQUIRED_FIELD`, on case-12.
+
+**Premise correction — the report this ticket cites moved.** TRO-541 was filed against a
+2026-08-12 13:26 run. TRO-516 committed a fresh full-corpus run after that
+(`measuredAt: "2026-08-13T01:47:56.655Z"`, already merged when this worktree was provisioned)
+and, as part of its own C1/C2 correction, changed case-25's manifest expectation from
+REVIEW/LOW_MODEL_CONFIDENCE to PASS/null — the same false claim this ticket removes from the
+comment, confirmed independently from the corpus side. This entry cites the current committed
+run, not the stale one the ticket named. The underlying finding stands: 0 of 32 cases produce
+`LOW_MODEL_CONFIDENCE` or `AMBIGUOUS_NET_CONTENTS` at the router stage, in this run.
+
+**Scoped to a named run, not a structural claim.** A concurrent live run (TRO-543's variance
+sweep, 2026-08-13) produced REVIEW/LOW_MODEL_CONFIDENCE on case-07 — proof the reviewReason is
+reachable, just not present in the router-stage results of the one committed run this ticket's
+evidence comes from. The rewritten comment names the run and date on every such claim. It does
+not say the pipeline "cannot" produce these reasons, only that this one measured run did not.
+
+**Fix.**
+- `args.ts` case-25/case-17 list lines: now state what each case is in the sample for (script
+  brand font; front-label glare), naming no reviewReason.
+- Deleted the "swapped case-23 for case-25 to keep this sample covering every reviewReason
+  family" sentence.
+- Replaced the "exercises every reviewReason family" claim with the measured result above, plus
+  a named gap: no case in the golden set produced `LOW_MODEL_CONFIDENCE` or
+  `AMBIGUOUS_NET_CONTENTS` in that run.
+- "31-case" / "31 cases today" corrected to 32 — the manifest's real, current count.
+- Kept the TRO-469 / case-23 history verbatim. It is a separate, still-correct decision.
+- Added `DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS`, an exported map from sample case ID to the
+  `ReviewReason` (or `null`) the committed report actually shows, at the router stage.
+
+**Test — red before, green after.** `scripts/eval/args.test.ts` gains a
+`DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS` suite. One assertion checks the map against
+`report.cases[i].routerVerdict.actualReviewReason` for every `DEFAULT_SAMPLE_CASE_IDS` entry,
+loaded through `validateEvalReport`. A second confirms every sample case ID exists in the real
+manifest, via `loadGoldenSetManifest`. No assertion reads `args.ts`'s source text.
+
+Red run, map seeded with the old comment's claims (case-17: `LOW_IMAGE_QUALITY`, case-25:
+`LOW_MODEL_CONFIDENCE`):
+
+```
+❯ scripts/eval/args.test.ts (41 tests | 1 failed)
+  × matches the committed report's router-stage actualReviewReason for every
+    DEFAULT_SAMPLE_CASE_IDS case
+    AssertionError: expected 'LOW_IMAGE_QUALITY' to be null
+ Test Files  1 failed (1)
+      Tests  1 failed | 40 passed (41)
+```
+
+Green run, map corrected to `null` for both:
+
+```
+ Test Files  1 passed (1)
+      Tests  41 passed (41)
+```
+
+**Evidence.** The string "31" no longer appears in `args.ts`. `pnpm test`: 158 files, 1911
+tests, all pass — includes `warning-golden-cases.test.ts` and `report-validation.test.ts`,
+neither pinning case-25 or case-17, neither edited. `pnpm typecheck`, `pnpm lint`: clean. No
+live API call made. Every number above is read from the already-committed `eval-report.json`.
+
+**Known, not this ticket's job.** case-17's manifest expectation (REVIEW/LOW_IMAGE_QUALITY)
+still mismatches the committed run's router-stage result (PASS/null). This is already tracked:
+TRO-516's own C8 leaves case-17 untouched on purpose — "case-17's variance is TRO-543's measured
+story now." Not re-litigated here.
+
 ## TRO-547 — BatchProgressBrowser poll test asserted a value a correct poll overwrites (2026-08-12)
 
 **What changed.** One line of test data in `src/app/_components/BatchProgressBrowser.test.tsx`.

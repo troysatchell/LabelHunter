@@ -1,14 +1,19 @@
 {
-  "ticket": "TRO-535 / LH-030b",
-  "measuredAt": "2026-08-12T21:05:35.686Z",
+  "ticket": "TRO-535 / LH-030b (re-measured TRO-558)",
+  "measuredAt": "2026-08-13T17:18:29.037Z",
   "manifestVersion": "1.0.0",
+  "goldenSetCommitSha": "0e6e3e1432f63609ad49febf5445fb866cadaf91",
+  "manifestContentHash": "fa3dbcfb60a6ecbd6c2de4ec837c54c72b87e909865ee9429946ac79cc5e0784",
   "method": "Read-only replay of the OCR channel (preprocessImage -> detectWarningRegion -> cropForOcr -> runWarningOcr -> evaluateCandidate) against every committed golden-set image, in the same order the verify route's default dependencies call them. No Anthropic API call. No database write. The only file this script writes is this one.",
-  "caseCount": 32,
-  "warningBearingCaseCount": 27,
+  "caseCount": 36,
+  "warningBearingCaseCount": 31,
   "warningBearingConfidencesSorted": [
-    56,
-    58,
+    33,
+    41,
+    47,
+    65,
     91,
+    93,
     95,
     95,
     95,
@@ -26,10 +31,11 @@
     95,
     95,
     95,
-    96,
-    96,
-    96,
-    96,
+    95,
+    95,
+    95,
+    95,
+    95,
     96,
     96,
     96
@@ -42,10 +48,10 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
@@ -61,14 +67,14 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
-      "ocrConfidence": 96,
+      "ocrConfidence": 95,
       "wording": "EXACT_MATCH",
       "distance": 0,
       "capsOk": true
@@ -80,14 +86,14 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
-      "ocrConfidence": 95,
+      "ocrConfidence": 96,
       "wording": "EXACT_MATCH",
       "distance": 0,
       "capsOk": true
@@ -99,14 +105,14 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
-      "ocrConfidence": 96,
+      "ocrConfidence": 95,
       "wording": "EXACT_MATCH",
       "distance": 0,
       "capsOk": true
@@ -118,10 +124,10 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
@@ -137,10 +143,10 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
@@ -156,14 +162,14 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
-      "ocrConfidence": 96,
+      "ocrConfidence": 95,
       "wording": "EXACT_MATCH",
       "distance": 0,
       "capsOk": true
@@ -175,10 +181,10 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 882,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 870,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
@@ -194,10 +200,10 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 886,
-        "height": 138
+        "x": 58,
+        "y": 526,
+        "width": 864,
+        "height": 166
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
@@ -213,10 +219,10 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 882,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 870,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
@@ -232,10 +238,10 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 138
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 134
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
@@ -279,10 +285,10 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
@@ -298,14 +304,14 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
-      "ocrConfidence": 96,
+      "ocrConfidence": 95,
       "wording": "EXACT_MATCH",
       "distance": 0,
       "capsOk": true
@@ -317,10 +323,10 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
@@ -336,14 +342,14 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
-      "ocrConfidence": 95,
+      "ocrConfidence": 96,
       "wording": "EXACT_MATCH",
       "distance": 0,
       "capsOk": true
@@ -355,16 +361,16 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 138
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 134
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
       "ocrConfidence": 91,
       "wording": "MISMATCH",
-      "distance": 45,
+      "distance": 46,
       "capsOk": false
     },
     {
@@ -402,10 +408,10 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 134
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
@@ -420,13 +426,18 @@
       "governmentWarningPresent": true,
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
-      "region": null,
-      "detectionMethod": null,
-      "ocrAvailable": false,
-      "ocrConfidence": null,
-      "wording": null,
-      "distance": null,
-      "capsOk": null
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrAvailable": true,
+      "ocrConfidence": 95,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
     },
     {
       "caseId": "case-23-tiny-warning-text-standard-bottle",
@@ -435,35 +446,16 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
+        "x": 58,
         "y": 520,
-        "width": 886,
-        "height": 30
+        "width": 878,
+        "height": 28
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
-      "ocrConfidence": 58,
+      "ocrConfidence": 65,
       "wording": "MISMATCH",
-      "distance": 47,
-      "capsOk": false
-    },
-    {
-      "caseId": "case-24-tiny-warning-text-miniature-bottle",
-      "category": "tiny-warning-text",
-      "governmentWarningPresent": true,
-      "imageWidthPx": 1000,
-      "imageHeightPx": 800,
-      "region": {
-        "x": 52,
-        "y": 520,
-        "width": 886,
-        "height": 30
-      },
-      "detectionMethod": "classical",
-      "ocrAvailable": true,
-      "ocrConfidence": 56,
-      "wording": "MISMATCH",
-      "distance": 42,
+      "distance": 25,
       "capsOk": false
     },
     {
@@ -473,10 +465,10 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
@@ -492,10 +484,10 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
@@ -511,10 +503,10 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
@@ -530,14 +522,14 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
-      "ocrConfidence": 96,
+      "ocrConfidence": 95,
       "wording": "EXACT_MATCH",
       "distance": 0,
       "capsOk": true
@@ -549,14 +541,14 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
-      "ocrConfidence": 95,
+      "ocrConfidence": 96,
       "wording": "EXACT_MATCH",
       "distance": 0,
       "capsOk": true
@@ -568,10 +560,10 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
@@ -587,14 +579,14 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
-      "ocrConfidence": 96,
+      "ocrConfidence": 95,
       "wording": "EXACT_MATCH",
       "distance": 0,
       "capsOk": false
@@ -606,17 +598,107 @@
       "imageWidthPx": 1000,
       "imageHeightPx": 800,
       "region": {
-        "x": 52,
-        "y": 524,
-        "width": 894,
-        "height": 140
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
       },
       "detectionMethod": "classical",
       "ocrAvailable": true,
-      "ocrConfidence": 96,
+      "ocrConfidence": 95,
       "wording": "NEAR_MISS",
       "distance": 1,
       "capsOk": true
+    },
+    {
+      "caseId": "case-35-clean-match-real-photo-flat-scan",
+      "category": "clean-match",
+      "governmentWarningPresent": true,
+      "imageWidthPx": 1200,
+      "imageHeightPx": 596,
+      "region": {
+        "x": 67,
+        "y": 41,
+        "width": 1034,
+        "height": 406
+      },
+      "detectionMethod": "classical",
+      "ocrAvailable": true,
+      "ocrConfidence": 93,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-36-rotation-real-photo-gentle-curve",
+      "category": "rotation",
+      "governmentWarningPresent": true,
+      "imageWidthPx": 1000,
+      "imageHeightPx": 562,
+      "region": {
+        "x": 0,
+        "y": 0,
+        "width": 1000,
+        "height": 187
+      },
+      "detectionMethod": "band-search",
+      "ocrAvailable": true,
+      "ocrConfidence": 47,
+      "wording": "MISMATCH",
+      "distance": 186,
+      "capsOk": false
+    },
+    {
+      "caseId": "case-37-rotation-real-photo-severe-curve-partial-crop",
+      "category": "rotation",
+      "governmentWarningPresent": true,
+      "imageWidthPx": 800,
+      "imageHeightPx": 530,
+      "region": {
+        "x": 45,
+        "y": 122,
+        "width": 710,
+        "height": 408
+      },
+      "detectionMethod": "classical",
+      "ocrAvailable": true,
+      "ocrConfidence": 41,
+      "wording": "MISMATCH",
+      "distance": 192,
+      "capsOk": false
+    },
+    {
+      "caseId": "case-38-glare-real-photo-crown-royal",
+      "category": "glare",
+      "governmentWarningPresent": true,
+      "imageWidthPx": 1271,
+      "imageHeightPx": 721,
+      "region": null,
+      "detectionMethod": null,
+      "ocrAvailable": false,
+      "ocrConfidence": null,
+      "wording": null,
+      "distance": null,
+      "capsOk": null
+    },
+    {
+      "caseId": "case-39-rotation-real-photo-coppola-wraparound",
+      "category": "rotation",
+      "governmentWarningPresent": true,
+      "imageWidthPx": 1920,
+      "imageHeightPx": 1080,
+      "region": {
+        "x": 0,
+        "y": 0,
+        "width": 1920,
+        "height": 945
+      },
+      "detectionMethod": "classical",
+      "ocrAvailable": true,
+      "ocrConfidence": 33,
+      "wording": "MISMATCH",
+      "distance": 215,
+      "capsOk": false
     }
   ]
 }

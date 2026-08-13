@@ -65,6 +65,17 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   reporter: "list",
+  // TRO-521: e2e/verify-fake-only.spec.ts exercises the fake Anthropic
+  // server's own failure-injection trigger, which has no live-API
+  // equivalent by design (see that file's header comment). Excluding it
+  // here, structurally, replaces an earlier in-body
+  // `test.skip(E2E_LIVE, "…")` — the same outcome (the scenario never
+  // runs under E2E_LIVE=1), but the exclusion now lives at the config
+  // level, next to the E2E_LIVE decision it depends on, instead of as a
+  // runtime skip a reviewer has to re-justify on every pass. Under the
+  // default (fake) mode this list is empty, and the file runs like any
+  // other spec.
+  testIgnore: E2E_LIVE ? ["**/verify-fake-only.spec.ts"] : undefined,
   use: {
     baseURL,
     trace: "on-first-retry",

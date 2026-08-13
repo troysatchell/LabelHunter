@@ -4,6 +4,75 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-502 — beverage_type's evidence exemption, finished in the prompt (2026-08-13)
+
+**The ticket's premise was tested first, and half of it is wrong.** The 2026-08-12 update asked
+for CP-1 §4.4 rule 1 (evidence present) to be exempted for `beverage_type`, by the argument that
+already exempts rule 2. Rule 1 is not exempted here. Rule 2 asks whether the value appears
+inside the evidence. The word "spirits" can never appear inside "Straight Bourbon Whiskey", so
+rule 2 is unsatisfiable for this field. Rule 1 asks a different question: did the model name any
+label text at all? That is always satisfiable. This ticket's own original scope required it —
+"evidence should still name the words that justify it". CP-1 §3.4 makes provenance a compliance
+requirement. Rule 1 stays.
+
+**Measured, not argued.** The committed 32-case live run
+(`scripts/eval/results/eval-report.json`, mode `live`, `claude-haiku-4-5`) records
+`beverage_type` for every case. Zero cases returned a non-null value with blank evidence. Rule 1
+has never rejected this field. An exemption would change no case, and it would delete the only
+evidence check the field has left.
+
+**What was genuinely unfinished.** This ticket's original ask was an amendment to CP-1 §3.2 rule
+3. Only the router half shipped. Rule 3 read:
+
+> 3. The value must appear inside the evidence. If you cannot copy evidence from
+>    the label, set value to null.
+
+CP-1 §3.1 asks the opposite of this one field: "The extractor infers the beverage type from the
+label." Read literally, rule 3 tells the model to return `null` for `beverage_type` on every
+label, which would silently switch off §5.3's free cross-check. Four sentences are appended:
+
+> 3. The value must appear inside the evidence. If you cannot copy evidence from
+>    the label, set value to null.
+>    beverage_type is the one exception. Its value is your reading of the
+>    product category. The category word does not have to appear in the
+>    evidence. Copy the label text that supports your reading, for example the
+>    class designation.
+
+The same bytes live in three files, and all three changed together:
+`docs/checkpoints/cp1-cascade-router-prompts.md` §3.2, `src/server/extractor/prompt.ts`, and
+`src/server/extractor/request.test.ts`'s independent oracle. **CP-1 is a checkpoint artifact.
+Troy must sign off on this wording.**
+
+**Rule 1 now checks the invariant it states.** `src/server/router/overrides.ts` tested
+`evidence.length === 0`. CP-1 §3.2 rule 2 defines evidence as "the text on the label". A run of
+spaces, or a zero-width character, passes a length test and is still not label text. Every other
+field reaches rule 2, which rejects blank evidence on its own. `beverage_type` does not, so its
+one remaining check has to be exact. `hasLabelText` now requires one character that a label can
+print. `String.prototype.trim` alone is not enough: U+200B is not JavaScript whitespace.
+
+**Evidence.** Both new tests failed first, for the stated reason. Two live single-case runs
+under the amended prompt, `claude-haiku-4-5`, worktree database:
+
+| Case | `beverage_type` before (committed run) | after | Label verdict |
+|---|---|---|---|
+| case-01-clean-match-spirits | `spirits` / "Straight Bourbon Whiskey" / 0.99 | identical | PASS, extraction 5/5 |
+| case-11-reworded-warning-clause-two | `mead` / "Mead" / 0.99 | identical | FAIL — matches TH-R9's expectation |
+
+Haiku cost: $0.0046 and $0.0047. No golden case changed verdict. Two runs cannot separate a
+prompt effect from model variance, so the amendment's effect on the full corpus is **not
+measured**; a `pnpm eval:check -- --live --full` sweep would measure it.
+
+**Not done here, deliberately.** `src/server/extractor/schema.ts` still leaves `beverage_type`
+free-form with no enum. An enum would close the vocabulary asymmetry at source. It is a CP-1
+§3.4 change that needs Troy's sign-off, and it would force the model to guess a category the
+label may not support.
+
+**How to run it.** `pnpm test` (full unit suite). For the live check:
+`pnpm eval:check -- --live --case=case-01-clean-match-spirits`.
+
+**Rollback.** Revert this commit range. The prompt reverts to the CP-1 bytes approved on
+2026-08-10, and rule 1 reverts to the length test.
+
 ## TRO-547 — BatchProgressBrowser poll test asserted a value a correct poll overwrites (2026-08-12)
 
 **What changed.** One line of test data in `src/app/_components/BatchProgressBrowser.test.tsx`.

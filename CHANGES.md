@@ -61,6 +61,14 @@ empty value, so this is safe by construction, not just by convention. The file a
 states plainly that the deployed instance reads this from Render's own platform
 environment, never from this file.
 
+**5. `.env.local.example`'s docker command bound Postgres to every interface (major).**
+`-p 5432:5432` binds `0.0.0.0`, exposing Postgres — with this same file's own example
+password — to the whole host, not just to `localhost`. This is the third copy of a
+pattern this repo already fixed twice: `worktree.sh` (`5a7d205`) and the README are
+both loopback-bound already; this file was the one a new contributor actually copies.
+Changed to `-p 127.0.0.1:5432:5432`, with a comment stating why. Found and relayed by
+a peer session reviewing PR #66; verified against the code before applying.
+
 **2. Budget tests keyed on the real current UTC date (major).** `daily-budget.test.ts`
 computed `TEST_DAY` once from the real clock, then wrote and read using each call's own
 independent `new Date()` default. A run that crossed a real UTC midnight between calls

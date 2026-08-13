@@ -66,4 +66,15 @@ describe(".env.local.example — ACCESS_CODE placeholder is not a working code",
     const text = readEnvExampleText();
     expect(text).toMatch(/platform/i);
   });
+
+  it("binds the example Postgres container to loopback, not every interface", () => {
+    // A bare "-p 5432:5432" binds 0.0.0.0, exposing Postgres -- with this
+    // same file's own example password -- to the whole host. worktree.sh
+    // (5a7d205) and the README already bind to loopback; this file, the
+    // one a new contributor actually copies, must match.
+    const portFlagLine = readEnvExampleText()
+      .split("\n")
+      .find((candidate) => candidate.includes("-p "));
+    expect(portFlagLine).toMatch(/-p 127\.0\.0\.1:5432:5432\b/);
+  });
 });

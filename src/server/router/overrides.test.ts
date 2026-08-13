@@ -177,6 +177,20 @@ describe("applyFieldOverrides — rule 2 exemption for beverage_type (TRO-502)",
     }
   });
 
+  it("rejects a NON-exempt field with whitespace-only evidence as rule 1, not rule 2 (TRO-502)", () => {
+    // The tests above all use "exempt", where rule 1 is the only evidence
+    // check. A non-exempt field reaches both rules, and the order decides
+    // which violation it reports: rule 1 (evidence_missing) fires first, so
+    // blank evidence must never be classified as rule 2's
+    // evidence_does_not_support_value. Tightening rule 1 from a length test
+    // to a printable-character test must not silently move that boundary
+    // (CodeRabbit finding, PR #57).
+    const outcome = applyFieldOverrides(field({ value: "Old Tom Distillery", evidence: "   " }), "text");
+    expect(outcome.rejected).toBe(true);
+    expect(outcome.violation).toBe("evidence_missing");
+    expect(outcome.value).toBeNull();
+  });
+
   it("accepts an exempt field whose evidence is padded label text", () => {
     const outcome = applyFieldOverrides(
       field({ value: "spirits", evidence: "  Kentucky Straight Bourbon Whiskey  " }),

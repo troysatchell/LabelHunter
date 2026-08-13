@@ -22,10 +22,27 @@ import { loadBottleReference, type BottleScene } from "../../src/lib/golden-set/
 import type { CameraCondition } from "../../src/lib/golden-set/types";
 import { BLANK_LABEL_COLOR_RGB, PROMPT_VERSION, buildBackdropPrompt } from "./imagenPrompt";
 import { detectBlankRegionQuad, type DetectedQuad } from "./blankRegionDetector";
+import {
+  WILD_LABEL_PROMPT_VERSION,
+  WILD_LABEL_REQUESTS,
+  buildWildLabelPrompt,
+  type WildLabelRequest,
+} from "./wildLabelPrompt";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const REFERENCES_DIR = path.resolve(REPO_ROOT, "assets/golden/references");
 const BACKDROPS_DIR = path.resolve(REPO_ROOT, "golden-set/backdrops");
+/**
+ * Staging area for the wild-label track (LH-027 / TRO-530). NOT
+ * `golden-set/images/` — a wild-label case is not folded into
+ * `golden-set/manifest.json` until a human confirms its transcription and
+ * sets `verified: true` (the loader's own tested rule — see
+ * `golden-set/wild-labels/README.md`). Committing straight to
+ * `golden-set/images/` before that would leave the image as an orphan no
+ * manifest case points to (`scripts/golden/verify.ts` check 3). This
+ * mirrors job 1's own `BACKDROPS_DIR` staging convention above.
+ */
+const WILD_LABELS_DIR = path.resolve(REPO_ROOT, "golden-set/wild-labels");
 
 const MODEL = "gemini-3.1-flash-image";
 const RESOLUTION = "1K";
@@ -252,6 +269,238 @@ export interface GenerationResult {
   readonly detectedQuad: DetectedQuad | null;
 }
 
+// ---------------------------------------------------------------------------
+// Wild labels (LH-027 / TRO-530, design doc §5, job 2). Job 1 above
+// composites a renderer's exact-text label onto a Gemini-generated photo.
+// Job 2 has Gemini draw the whole label -- brand, class/type, ABV, net
+// contents, and the government warning -- as one flat piece of artwork, no
+// bottle, no backdrop, no compositing, no warp (the ticket's own words).
+// `wildLabelPrompt.ts` owns the prompt text; this section owns the API
+// call, the real per-call cost, and the sidecar writer, reusing job 1's
+// `ensurePngBytes`, `assertSafeSlug`, and `resolveWithinDir` exactly as the
+// ticket asks ("job 1's code already carries the API client, the cost log,
+// and the sidecar writer").
+// ---------------------------------------------------------------------------
+
+const WILD_LABEL_MODEL = "gemini-3.1-flash-image";
+const WILD_LABEL_RESOLUTION = "1K";
+
+/**
+ * gemini-3.1-flash-image standard-tier pricing per 1M tokens, confirmed
+ * LIVE against ai.google.dev/gemini-api/docs/pricing on 2026-08-13 (the
+ * same page job 1's `ESTIMATED_COST_PER_IMAGE_USD` cites, two days
+ * earlier -- unchanged): $0.50 (text/image) input, $3.00 (text and
+ * thinking) output, $60.00 (images) output. The page also confirms 1K
+ * resolution costs exactly 1120 image-output tokens -- the real value a
+ * live test call's own `usageMetadata.candidatesTokensDetails` reported
+ * (1120 tokens, IMAGE modality), cross-checked against the documented
+ * count rather than assumed.
+ */
+const WILD_LABEL_INPUT_USD_PER_1M_TOKENS = 0.5;
+const WILD_LABEL_TEXT_OUTPUT_USD_PER_1M_TOKENS = 3;
+const WILD_LABEL_IMAGE_OUTPUT_USD_PER_1M_TOKENS = 60;
+
+/** Real, per-call token usage this generation actually consumed -- never an estimate. */
+export interface WildLabelUsage {
+  readonly promptTokenCount: number;
+  readonly imageOutputTokenCount: number;
+  /** Every non-IMAGE output token (text, thinking, or any other modality Gemini reports), billed at the text/thinking output rate. */
+  readonly otherOutputTokenCount: number;
+}
+
+/** The subset of Gemini's real `GenerateContentResponse.usageMetadata` this file reads. */
+interface RawWildLabelUsageMetadata {
+  readonly promptTokenCount?: number;
+  readonly candidatesTokenCount?: number;
+  readonly candidatesTokensDetails?: ReadonlyArray<{ readonly modality?: string; readonly tokenCount?: number }>;
+}
+
+/**
+ * Derives `WildLabelUsage` from a real API response's `usageMetadata`.
+ * Every field defaults to 0 when the SDK omits it, rather than throwing --
+ * `generateWildLabelWithGemini` below is the place that decides a
+ * completely-missing `usageMetadata` on an otherwise-successful call is a
+ * harness bug worth failing loudly on; this function itself stays a pure,
+ * total function so it is trivially unit-testable against a hand-built
+ * fixture.
+ */
+export function extractWildLabelUsage(usageMetadata: RawWildLabelUsageMetadata | undefined): WildLabelUsage {
+  const promptTokenCount = usageMetadata?.promptTokenCount ?? 0;
+  const candidatesTokenCount = usageMetadata?.candidatesTokenCount ?? 0;
+  const imageOutputTokenCount = (usageMetadata?.candidatesTokensDetails ?? [])
+    .filter((detail) => detail.modality === "IMAGE")
+    .reduce((sum, detail) => sum + (detail.tokenCount ?? 0), 0);
+  // Math.max(0, ...): candidatesTokenCount and candidatesTokensDetails come
+  // from the same real response but are two independently-reported fields
+  // -- never let a rounding or reporting mismatch between them produce a
+  // fabricated negative cost component.
+  const otherOutputTokenCount = Math.max(0, candidatesTokenCount - imageOutputTokenCount);
+  return { promptTokenCount, imageOutputTokenCount, otherOutputTokenCount };
+}
+
+/**
+ * Computes the exact real cost of one wild-label generation call from its
+ * real token usage (`extractWildLabelUsage`) and the live-confirmed
+ * pricing constants above. Never an estimate: every input is either a real
+ * count the API reported for THIS call, or a price this file's own module
+ * comment cites a live source for.
+ */
+export function computeWildLabelCostUsd(usage: WildLabelUsage): number {
+  const inputCostUsd = (usage.promptTokenCount / 1_000_000) * WILD_LABEL_INPUT_USD_PER_1M_TOKENS;
+  const imageOutputCostUsd = (usage.imageOutputTokenCount / 1_000_000) * WILD_LABEL_IMAGE_OUTPUT_USD_PER_1M_TOKENS;
+  const otherOutputCostUsd = (usage.otherOutputTokenCount / 1_000_000) * WILD_LABEL_TEXT_OUTPUT_USD_PER_1M_TOKENS;
+  return inputCostUsd + imageOutputCostUsd + otherOutputCostUsd;
+}
+
+/** One real generation call's result: the image bytes plus the real usage that produced `computeWildLabelCostUsd`'s input. */
+export interface WildLabelGenerationOutput {
+  readonly image: Buffer;
+  readonly usage: WildLabelUsage;
+}
+
+/**
+ * Injected so `generateWildLabelOne`'s orchestration is testable without a
+ * real network call -- the wild-label counterpart to job 1's
+ * `ImageGenerator`. Takes only a prompt: unlike a backdrop, a wild label
+ * has no reference photo (design doc §5, ticket item "no bottle").
+ */
+export type WildLabelGenerator = (prompt: string) => Promise<WildLabelGenerationOutput>;
+
+/**
+ * Builds a real `WildLabelGenerator` backed by the Gemini API -- a
+ * text-only counterpart to job 1's `generateWithGemini` above (no
+ * `inlineData` reference image in the request). Live-tested against the
+ * real API on 2026-08-13 (unlike job 1's own generator, which its own doc
+ * comment flags as best-effort/untested): confirmed model name, confirmed
+ * request/response shape, confirmed `usageMetadata` shape.
+ */
+export async function generateWildLabelWithGemini(apiKey: string): Promise<WildLabelGenerator> {
+  const client = new GoogleGenAI({ apiKey });
+  return async (prompt: string): Promise<WildLabelGenerationOutput> => {
+    const response = await client.models.generateContent({
+      model: WILD_LABEL_MODEL,
+      contents: [{ text: prompt }],
+      config: { responseModalities: ["IMAGE"] },
+    });
+    const imagePart = response.candidates?.[0]?.content?.parts?.find(
+      (p: { inlineData?: { data?: string } }) => p.inlineData?.data,
+    );
+    if (!imagePart?.inlineData?.data) {
+      throw new Error(`imagen: no wild-label image returned for prompt: ${prompt.slice(0, 80)}...`);
+    }
+    if (!response.usageMetadata) {
+      // A successful call with no usageMetadata at all would silently cost
+      // real money while computeWildLabelCostUsd reports $0 -- CLAUDE.md's
+      // "never fabricate a number" applies to a silent zero exactly as much
+      // as to a made-up positive one. Fail loudly instead.
+      throw new Error("imagen: wild-label response carried no usageMetadata -- cannot compute its real cost");
+    }
+    const responseBytes = Buffer.from(imagePart.inlineData.data, "base64");
+    const image = await ensurePngBytes(responseBytes);
+    const usage = extractWildLabelUsage(response.usageMetadata);
+    return { image, usage };
+  };
+}
+
+export interface WildLabelGenerationResult {
+  readonly caseId: string;
+  readonly imagePath: string;
+  readonly metaPath: string;
+  readonly costUsd: number;
+}
+
+/**
+ * Generates one wild label and writes the raw PNG plus a `.meta.json`
+ * forensic sidecar (prompt actually sent, real usage, real computed cost,
+ * generation metadata) to `outDir`. Reuses `assertSafeSlug` and
+ * `resolveWithinDir` from job 1 above unchanged -- the same path-safety
+ * reasoning applies verbatim: `caseId` must stay a safe filename slug
+ * before it ever reaches a real, paid Gemini call.
+ *
+ * The sidecar records what was generated; it does NOT record ground
+ * truth. A human transcribes what actually rendered by looking at the
+ * committed image and hand-authors the candidate case entry separately
+ * (`golden-set/wild-labels/candidates.json`) -- see this file's module
+ * comment and `golden-set/wild-labels/README.md`.
+ */
+export async function generateWildLabelOne(
+  request: WildLabelRequest,
+  generate: WildLabelGenerator,
+  outDir: string = WILD_LABELS_DIR,
+): Promise<WildLabelGenerationResult> {
+  assertSafeSlug(request.caseId, "wild-label caseId");
+  mkdirSync(outDir, { recursive: true });
+  const imagePath = resolveWithinDir(outDir, `${request.caseId}.png`, "wild-label image path");
+  const metaPath = resolveWithinDir(outDir, `${request.caseId}.meta.json`, "wild-label meta path");
+
+  const prompt = buildWildLabelPrompt(request);
+  const { image, usage } = await generate(prompt);
+  const costUsd = computeWildLabelCostUsd(usage);
+
+  writeFileSync(imagePath, image);
+  writeFileSync(
+    metaPath,
+    JSON.stringify(
+      {
+        caseId: request.caseId,
+        prompt,
+        usage,
+        costUsd,
+        generationMetadata: {
+          model: WILD_LABEL_MODEL,
+          resolution: WILD_LABEL_RESOLUTION,
+          promptVersion: WILD_LABEL_PROMPT_VERSION,
+          generatedAt: new Date().toISOString(),
+        },
+      },
+      null,
+      2,
+    ),
+  );
+
+  return { caseId: request.caseId, imagePath, metaPath, costUsd };
+}
+
+/** Generates every request in `requests` (default: the full `WILD_LABEL_REQUESTS` set), in order. */
+export async function generateAllWildLabels(
+  generate: WildLabelGenerator,
+  outDir: string = WILD_LABELS_DIR,
+  requests: readonly WildLabelRequest[] = WILD_LABEL_REQUESTS,
+): Promise<WildLabelGenerationResult[]> {
+  const results: WildLabelGenerationResult[] = [];
+  for (const request of requests) {
+    results.push(await generateWildLabelOne(request, generate, outDir));
+  }
+  return results;
+}
+
+/**
+ * CLI entry point for the wild-label track: `pnpm golden:imagen -- --wild`.
+ * Network, costs real money -- run manually, never from CI, same posture
+ * `main` below documents for backdrops. Writes to `WILD_LABELS_DIR`, never
+ * to `golden-set/manifest.json` (this file's own module comment on
+ * `WILD_LABELS_DIR`).
+ */
+export async function mainWild(): Promise<void> {
+  const apiKey = process.env.GOOGLE_API_KEY;
+  if (!apiKey) {
+    throw new Error("imagen: GOOGLE_API_KEY is not set (see .env.local.example)");
+  }
+  const generate = await generateWildLabelWithGemini(apiKey);
+  let spentUsd = 0;
+  const results: WildLabelGenerationResult[] = [];
+  for (const request of WILD_LABEL_REQUESTS) {
+    const result = await generateWildLabelOne(request, generate);
+    spentUsd += result.costUsd;
+    results.push(result);
+    console.log(`${result.caseId}: OK, $${result.costUsd.toFixed(4)} (running total $${spentUsd.toFixed(4)})`);
+  }
+  console.log(
+    `\nDone. ${results.length} wild label(s) generated, $${spentUsd.toFixed(4)} real spend ` +
+      `(exact, from each call's real usageMetadata -- see each .meta.json for its own figure).`,
+  );
+}
+
 /**
  * Joins `filename` onto `dir` and confirms the result still resolves inside
  * `dir`. `caseId` (built from `assertSafeSlug`-checked components — see
@@ -351,7 +600,8 @@ export async function main(): Promise<void> {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((err: unknown) => {
+  const entryPoint = process.argv.includes("--wild") ? mainWild : main;
+  entryPoint().catch((err: unknown) => {
     console.error(err);
     process.exitCode = 1;
   });

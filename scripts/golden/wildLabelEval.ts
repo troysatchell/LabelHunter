@@ -1,0 +1,181 @@
+/**
+ * Real, live scoring for the wild-label candidates (LH-027 / TRO-530).
+ *
+ * The 5 candidate cases in `golden-set/wild-labels/candidates.json` are
+ * NOT in `golden-set/manifest.json` yet -- see this directory's `README.md`
+ * for why (the loader's own tested rule: an `ai-generated` case must be
+ * `verified: true` to load at all, and only Troy sets that flag). That
+ * means `pnpm eval:check -- --case=<id>` cannot reach them (`resolveCaseIds`
+ * only recognizes manifest case IDs).
+ *
+ * This script runs each candidate through the exact same real cascade
+ * `scripts/eval/check.ts` uses -- `runOneCase` from `cascade-runner.ts`,
+ * unmodified -- so the acceptance evidence ("the eval harness scores every
+ * case and the extraction accuracy is reported per case") is real, not
+ * simulated. It never writes to `scripts/eval/results/eval-report.json` or
+ * `scripts/eval/baseline.json`: this is a standalone, informational run
+ * over cases the committed baseline does not (yet) include, exactly the
+ * same posture `check.ts`'s own `--case=<id>` mode already documents for a
+ * single debug case.
+ *
+ * Network, costs real money (real Haiku extraction, and a real Sonnet
+ * resolver call for any case that escalates to REVIEW) -- run manually:
+ * `pnpm golden:wild-eval`. Never wired into CI or gate.sh.
+ */
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+import * as schema from "../../src/lib/db/schema";
+import type { GoldenSetCase } from "../../src/lib/golden-set/types";
+import { cleanupScratchDirAndPool } from "../latency/cleanup";
+import { REPO_ROOT, runOneCase, type CaseRunOutcome } from "../eval/cascade-runner";
+
+const CANDIDATES_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../golden-set/wild-labels/candidates.json",
+);
+const RESULTS_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../golden-set/wild-labels/results/wild-eval-report.json",
+);
+
+interface CandidatesFile {
+  readonly note: string;
+  readonly cases: readonly GoldenSetCase[];
+}
+
+/**
+ * Reads and lightly validates `candidates.json` -- lightly, because full
+ * schema validation (`src/lib/golden-set/loader.ts`'s `validateManifest`)
+ * cannot run on an unverified `ai-generated` case by design (the same rule
+ * this whole file's module comment explains). This checks the handful of
+ * invariants THIS script actually depends on: `cases` is a non-empty
+ * array, every case is `provenance: "ai-generated"` and `verified: false`
+ * (so a future accidental `verified: true` entry here — which would mean
+ * it belongs in the real manifest, not this staging file — is caught
+ * loudly), and every case's `imagePath` resolves to a real, non-empty
+ * file. Pure and synchronous: no network, so it's unit-testable directly.
+ */
+export function loadWildLabelCandidates(candidatesPath: string = CANDIDATES_PATH): GoldenSetCase[] {
+  const raw: unknown = JSON.parse(readFileSync(candidatesPath, "utf8"));
+  if (typeof raw !== "object" || raw === null || !("cases" in raw) || !Array.isArray((raw as CandidatesFile).cases)) {
+    throw new Error(`wildLabelEval: ${candidatesPath} does not have a "cases" array`);
+  }
+  const cases = (raw as CandidatesFile).cases;
+  if (cases.length === 0) {
+    throw new Error(`wildLabelEval: ${candidatesPath} has zero cases`);
+  }
+  const seenIds = new Set<string>();
+  for (const c of cases) {
+    if (seenIds.has(c.caseId)) {
+      throw new Error(`wildLabelEval: duplicate caseId "${c.caseId}" in ${candidatesPath}`);
+    }
+    seenIds.add(c.caseId);
+    if (c.provenance !== "ai-generated") {
+      throw new Error(`wildLabelEval: ${c.caseId} has provenance "${c.provenance}", expected "ai-generated"`);
+    }
+    if (c.verified !== false) {
+      throw new Error(
+        `wildLabelEval: ${c.caseId} has verified: ${JSON.stringify(c.verified)} -- a verified candidate belongs ` +
+          "in golden-set/manifest.json, not this staging file (see README.md's fold-in steps).",
+      );
+    }
+    const imagePath = path.resolve(REPO_ROOT, c.imagePath);
+    if (!existsSync(imagePath)) {
+      throw new Error(`wildLabelEval: ${c.caseId}: no file at ${c.imagePath}`);
+    }
+  }
+  return [...cases];
+}
+
+function printCaseLine(outcome: CaseRunOutcome, index: number, total: number): void {
+  if (outcome.failure) {
+    console.log(`  [${index}/${total}] ${outcome.failure.caseId}: FAILED — ${outcome.failure.error}`);
+    return;
+  }
+  const r = outcome.result!;
+  const extractionCorrect = r.extraction.fields.filter((f) => f.correct).length;
+  const routerNote = r.routerVerdict.labelVerdictCorrect
+    ? "router matches expected"
+    : `router differs from expected (expected ${r.routerVerdict.expectedLabelVerdict}, got ${r.routerVerdict.actualLabelVerdict})`;
+  const resolverNote = r.resolverOutcome
+    ? `, resolver: ${r.resolverOutcome} ($${r.resolverCost!.usd.toFixed(4)})`
+    : r.resolverError
+      ? `, resolver: FAILED (${r.resolverError})`
+      : "";
+  console.log(
+    `  [${index}/${total}] ${r.caseId}: extraction ${extractionCorrect}/5 fields correct, ${routerNote}, haiku $${r.haikuCost.usd.toFixed(4)}${resolverNote}`,
+  );
+}
+
+async function main(): Promise<void> {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error("wildLabelEval: ANTHROPIC_API_KEY is not set. source .factory-env in a factory worktree, or set it in .env.local.");
+  }
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error("wildLabelEval: DATABASE_URL is not set. source .factory-env in a factory worktree, or set it in .env.local.");
+  }
+
+  const candidates = loadWildLabelCandidates();
+  console.log(`wildLabelEval: scoring ${candidates.length} wild-label candidate(s) against the real cascade.\n`);
+
+  const pool = new Pool({ connectionString, connectionTimeoutMillis: 10_000 });
+  pool.on("error", (err) => {
+    console.error("wildLabelEval: unexpected error on idle Postgres client", err);
+  });
+  const db = drizzle(pool, { schema });
+
+  const outcomes: CaseRunOutcome[] = [];
+  try {
+    for (let i = 0; i < candidates.length; i++) {
+      const outcome = await runOneCase(candidates[i], db);
+      outcomes.push(outcome);
+      printCaseLine(outcome, i + 1, candidates.length);
+    }
+  } finally {
+    const { scratchDirCleanupError, closePoolError } = await cleanupScratchDirAndPool(
+      async () => {},
+      () => pool.end(),
+    );
+    if (scratchDirCleanupError) console.warn(`wildLabelEval: unexpected error during cleanup: ${scratchDirCleanupError}`);
+    if (closePoolError) console.warn(`wildLabelEval: failed to close the database pool: ${closePoolError}`);
+  }
+
+  const failures = outcomes.filter((o) => o.failure !== null).map((o) => o.failure!);
+  const results = outcomes.filter((o) => o.result !== null).map((o) => o.result!);
+  const totalCostUsd = results.reduce((sum, r) => sum + r.haikuCost.usd + (r.resolverCost?.usd ?? 0), 0);
+
+  mkdirSync(path.dirname(RESULTS_PATH), { recursive: true });
+  writeFileSync(
+    RESULTS_PATH,
+    JSON.stringify(
+      {
+        ticket: "TRO-530 / LH-027",
+        measuredAt: new Date().toISOString(),
+        note:
+          "Standalone real scoring of the wild-label candidates in candidates.json -- these cases are NOT part of " +
+          "the committed eval baseline (scripts/eval/baseline.json) and this report never feeds it.",
+        cases: results,
+        failures,
+        totalCostUsd,
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+
+  console.log(`\nwildLabelEval: ${results.length}/${candidates.length} case(s) scored, ${failures.length} failed.`);
+  console.log(`wildLabelEval: real spend this run: $${totalCostUsd.toFixed(4)} (Haiku extraction + any Sonnet resolver calls).`);
+  console.log(`wildLabelEval: full report written to ${RESULTS_PATH}`);
+  process.exitCode = failures.length > 0 ? 1 : 0;
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((err: unknown) => {
+    console.error(err);
+    process.exitCode = 1;
+  });
+}

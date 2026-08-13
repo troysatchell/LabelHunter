@@ -31,13 +31,21 @@ The pipeline is the render-first hybrid design doc §2 lays out:
 - **`scripts/golden/build.ts`** — orchestrates render → degrade for every case, and writes
   the committed JPEG at its manifest path. Run it with `pnpm golden:build`.
 
-**Still not done — `ai-generated` wild labels.** Design doc §5 describes about 5 fully
-`ai-generated` "wild" labels (text included). No case in this manifest has `provenance:
-"ai-generated"` yet. When a future ticket adds one, its image starts out absent — the same way
-every case here started before LH-004. That ticket must land the image and set `verified: true`
-in the same manifest change. The loader rejects a `verified: false` `ai-generated` case at load time. It checks the schema
-shape only, not whether the file exists. `scripts/golden/images.test.ts` checks that the file
-exists.
+**Staged, not yet folded in — `ai-generated` wild labels (LH-027 / TRO-530).** Design doc §5
+describes about 5 fully `ai-generated` "wild" labels (text included). Five real, committed
+images now exist at `golden-set/wild-labels/*.png`, each with a hand-transcribed candidate
+`GoldenSetCase` entry in `golden-set/wild-labels/candidates.json` — see that directory's own
+`README.md` for the full picture, including two real generation defects the transcription
+caught and a real dual-channel-disagreement finding a live eval run surfaced.
+
+No case in THIS manifest has `provenance: "ai-generated"` yet, still — and that is deliberate,
+not an oversight. The loader rejects a `verified: false` `ai-generated` case at load time (it
+checks the schema shape only, not whether the file exists — `scripts/golden/images.test.ts`
+checks that separately), and `verified: true` is Troy's decision alone, made after he confirms
+each transcription against the real image. Landing an unverified case directly here would break
+`loadGoldenSetManifest()` for every one of this repo's ~30 other callers, not just this one
+case — so the 5 candidates stage in `golden-set/wild-labels/` until Troy folds each one in
+(that directory's README documents the exact, small fold-in steps).
 
 **Still not done — the realistic-corpus track.** A newer design doc supersedes the rest of the
 original §5 scope: `docs/superpowers/specs/2026-08-11-realistic-corpus-gemini-design.md`.

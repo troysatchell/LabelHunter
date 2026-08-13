@@ -1,0 +1,16 @@
+{
+  "caseId": "case-42-odd-typography-wild-script-wine",
+  "prompt": "Create a flat, front-facing product label graphic for a fictional bottled or canned wine beverage, as if scanned straight-on with no bottle, no can, no shadow, and no background scene -- just the printed label artwork on a plain neutral background, like a print proof.\n\nBrand name printed prominently: \"Amberfield Cellars\"\nClass/type line: \"Pinot Noir\"\nAlcohol content line: \"13.5% Alc./Vol.\"\nNet contents line: \"750 mL\"\n\nGovernment warning statement, printed somewhere on the label:\n\"GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.\"\n\nDesign direction: an elegant, minimal wine label, muted cream-and-burgundy palette, a delicate flowing script typeface for the brand name, a thin single-line rule under the class/type line. Place the government warning as a single dense paragraph in very small print along the very bottom edge of the label, not boxed.\n\nThis is a fictional brand created for software testing only. Do not depict, reference, or imitate any real, existing brand, distillery, brewery, winery, or trademark.",
+  "usage": {
+    "promptTokenCount": 275,
+    "imageOutputTokenCount": 1120,
+    "otherOutputTokenCount": 328
+  },
+  "costUsd": 0.0683215,
+  "generationMetadata": {
+    "model": "gemini-3.1-flash-image",
+    "resolution": "1K",
+    "promptVersion": "v1",
+    "generatedAt": "2026-08-13T22:43:05.078Z"
+  }
+}

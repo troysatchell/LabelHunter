@@ -4,6 +4,70 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-530 — LH-027 · wild AI-generated labels, staged pending Troy's review (2026-08-13)
+
+Advances TH-R12. Design doc §5, job 2: about 5 labels Gemini draws whole, no bottle, no
+backdrop, no compositing. Real COLA artwork varies in layout, color, ornament, typeface, and
+warning placement. The renderer's own labels do not. This ticket adds that variety.
+
+**What changed.**
+
+1. `scripts/golden/wildLabelPrompt.ts` is new. It compiles 5 wild-label prompts — a fictional
+   brand and design brief each, varying beverage type, layout, typeface, color, and warning
+   placement. A shared guardrail clause on every prompt forbids a real brand or trademark.
+2. `scripts/golden/imagen.ts` adds a text-only Gemini generation path (`generateWildLabelOne`,
+   `generateAllWildLabels`, `mainWild`), reusing job 1's API client shape and sidecar-writer
+   pattern. Run it with `pnpm golden:imagen:wild`. It computes real, exact cost per call from
+   each response's own token usage, not an estimate — `computeWildLabelCostUsd`, pricing
+   confirmed live against `ai.google.dev/gemini-api/docs/pricing` on 2026-08-13.
+3. `pnpm golden:imagen:wild` generated 5 real images, committed at
+   `golden-set/wild-labels/*.png`. A human transcribed what actually rendered into
+   `golden-set/wild-labels/candidates.json` — the real text, not the requested text. Two labels
+   show a real generation defect: one warning duplicates a word fragment, one renders as tiny,
+   rotated, partly-corrupted print.
+4. `scripts/golden/wildLabelEval.ts` is new (`pnpm golden:wild-eval`). It runs each candidate
+   through the real cascade (`runOneCase`, unmodified) and writes
+   `golden-set/wild-labels/results/wild-eval-report.json`. Real result: 24/25 extraction fields
+   correct (the one miss is the intentionally-uncertain garbled-warning case), 5/5 label
+   verdicts matching the corrected expected values.
+5. `verified` stays `false` on all 5 candidate cases. That flag is Troy's decision alone
+   (this repo's standing rule) — this ticket never sets it. The 5 cases stay OUT of
+   `golden-set/manifest.json` on purpose: `src/lib/golden-set/loader.ts` refuses to load ANY
+   manifest containing an unverified `ai-generated` case, for every one of this repo's ~30
+   other callers, not just this ticket's own tests. Landing an unverified case there would have
+   broken the whole suite. `golden-set/wild-labels/README.md` documents why and lists the exact
+   fold-in steps for whoever lands them later.
+
+**A real finding, not assumed away.** A first-pass ground truth judged 3 of the 5 cases by "can
+a human read this correctly" alone. A live `pnpm golden:wild-eval` run showed the real router
+disagreeing — CP-2 §4.5's dual-channel rule routes an OCR/vision disagreement to REVIEW even
+when the vision reading is exactly right, and real decorative typefaces trip that disagreement
+in ways the renderer's plain corpus never does. `candidates.json`'s `expected` blocks now match
+that corrected, evidence-backed ground truth, not the first guess.
+
+**Real spend, itemized, from real API responses (never estimated):**
+
+| What | Amount |
+|---|---|
+| 5 committed wild-label images (`golden-set/wild-labels/*.meta.json`) | $0.341443 |
+| Final `pnpm golden:wild-eval` run (committed `wild-eval-report.json`) | $0.088572 |
+| One earlier `pnpm golden:wild-eval` run, superseded by the corrected re-run above | ~$0.0925 |
+| One discarded probe call during development (image not committed) | $0.068096 |
+| **Total** | **~$0.591** |
+
+Design doc §5 estimates the full set under $5. The measured total is about 12% of that budget.
+
+**Rollback.** Revert the PR. `golden-set/wild-labels/` and its two new scripts disappear;
+`golden-set/manifest.json` never changed, so nothing else is affected.
+
+**Confirmed.** `scripts/golden/wildLabelPrompt.test.ts`, `wildLabelImagen.test.ts`, and
+`wildLabelCandidates.test.ts` are new — 37 test cases, red first (`generateWildLabelOne` and
+`generateAllWildLabels` did not exist yet), green after the implementation landed. The
+candidates' schema shape is checked against the real, current `GoldenSetCase` validator
+(`verified`/`imagePath` patched to their post-fold-in values for that one check only, never
+written to disk). `pnpm typecheck` is clean. The full unit suite and the existing
+`imagen.test.ts`/`imagenPrompt.test.ts` job-1 suites still pass unchanged.
+
 ## TRO-577 — list surfaces stop hitching while scrolling (2026-08-13)
 
 **The report.** Troy: "in the review queue the scroll sticks randomly — it hitches." A

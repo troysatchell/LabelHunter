@@ -16,34 +16,47 @@ TRO-557's own review triage named this gap. It scoped the gap out on purpose: cr
 refusal, not intra-session mutual exclusion.
 
 **The fix.** `worktree.sh` now takes a per-ticket lock around the whole provision/reuse
-critical section (worktree add or reuse, database reset, port claim, dependency install and
-migration). `mkdir` is the lock primitive: it is atomic on every filesystem this factory runs
-on, and this machine has no `flock` binary — macOS ships none by default, so `mkdir` needs no
-new dependency. A losing invocation polls every 0.2 s, for up to about 60 s, printing one
-"waiting" line. Two failure modes get specific handling:
+critical section: worktree add or reuse, database reset, port claim, dependency install, and
+migration. `mkdir` is the lock primitive. It is atomic on every filesystem this factory runs
+on. This machine has no `flock` binary — macOS ships none by default — so `mkdir` needs no new
+dependency. A losing invocation polls every 0.2 s, for up to about 60 s, printing one "waiting"
+line. Two failure modes get specific handling:
 
 - **A crashed holder on the same host.** The lock directory records the holder's pid and
-  hostname. A waiter checks whether that pid is still alive on the same host with `kill -0`,
-  and breaks the lock immediately instead of waiting out the full timeout if it is not.
+  hostname. A waiter checks the pid with `ps -p`, not `kill -0`: `kill -0` fails both for a
+  genuinely dead pid and for one this user cannot signal, and treating both as dead would break
+  a live holder's lock. `ps -p` reports existence regardless of who owns the process. A dead
+  pid's lock breaks through a two-step check, never a single read-then-delete: a cheap,
+  non-destructive read decides whether to even attempt a break; only then does the waiter
+  atomically capture the lock (`mv`, atomic on one filesystem) and re-confirm staleness on that
+  private copy before deleting it. A live lock is never captured at all — only read in place —
+  so a third invocation's `mkdir` can never win a gap opened by inspecting someone else's live
+  lock. The owner file is written before the release trap is set, and that trap re-checks its
+  own pid against the file before deleting anything, so a process only ever removes a lock it
+  still actually owns.
 - **An unreachable holder on a different host.** There is no reliable way to check a pid's
-  liveness on another machine, so a lock stamped from elsewhere always waits out its holder,
-  or needs a human to remove it by hand (`rm -rf <worktree-dir>.lock`) — the timeout message
-  says so.
+  liveness on another machine. A lock stamped from elsewhere always waits out its holder. The
+  timeout message asks a human to CONFIRM no invocation for that ticket is really running,
+  first, before removing the lock by hand (`rm -rf <worktree-dir>.lock`) — an unconditional
+  removal instruction would risk deleting a live holder's lock.
 
-The lock releases on any exit — success, error, or an interrupted script — via a `trap ... EXIT`,
-so a failed provision never leaves the next invocation waiting forever.
+The lock releases on any exit — success, error, or an interrupted script — through a
+`trap ... EXIT`. A failed provision never leaves the next invocation waiting forever.
 
-**Confirmed.** `scripts/factory/worktree-lock.test.ts`, three new cases against the real script,
+**Confirmed.** `scripts/factory/worktree-lock.test.ts`, four new cases against the real script,
 a disposable git repo, and a disposable database on the same Postgres server this worktree's own
 `DATABASE_URL` points at:
 1. A held lock blocks a second invocation, which proceeds once the lock releases.
 2. A stale lock from a dead same-host pid breaks immediately instead of waiting ~60 s.
 3. Two real, truly concurrent invocations for the same ticket both succeed, neither raises a
    postgres error, and the database is left in a valid, queryable state.
+4. Two waiters racing to break the exact same stale lock — the round-1 review's own TOCTOU
+   scenario — never both reset the database at once.
 
-All 3 new tests pass, plus the 2 pre-existing `worktree-owner.test.ts` (TRO-557) cases, unaffected
+All 4 new tests pass, plus the 2 pre-existing `worktree-owner.test.ts` (TRO-557) cases, unaffected
 (`pnpm vitest run scripts/factory/worktree-lock.test.ts scripts/factory/worktree-owner.test.ts`,
-observed 2026-08-13). `pnpm typecheck` and `pnpm lint` are clean.
+observed 2026-08-13, plus 10 repeated runs of the timing-sensitive cases with no flake). `pnpm
+typecheck` and `pnpm lint` are clean.
 
 ## TRO-562 — CI workflow pins actions to commits and images to digests, not mutable tags (2026-08-13)
 

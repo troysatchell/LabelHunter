@@ -81,6 +81,18 @@ function ticketSlug(ticket: string): string {
   return ticket.toLowerCase().replace(/-/g, "_");
 }
 
+/** A pid guaranteed dead on every OS: spawn a real child and wait for it to
+ * exit (spawnSync blocks until it does), then reuse its now-vacated pid. A
+ * hardcoded magic number risks colliding with a live process on a system
+ * with a high `pid_max` (CodeRabbit, TRO-572 review round 2). */
+function deadPid(): number {
+  const result = spawnSync(process.execPath, ["-e", "process.exit(0)"]);
+  if (!result.pid) {
+    throw new Error(`could not determine the reaped child's pid: ${result.error}`);
+  }
+  return result.pid;
+}
+
 interface Fixture {
   scratchRoot: string;
   repoDir: string;
@@ -260,6 +272,11 @@ async function withFixture(fn: (fx: Fixture, pg: PgTarget) => Promise<void>): Pr
   const pg: PgTarget = { ...pgConn, container: discoverPgContainer(pgConn.port) };
   const fx = makeFixture();
   let bodyFailed = false;
+  // Cleanup's own error is recorded here and thrown AFTER try/finally
+  // completes, never from inside finally -- throwing directly inside a
+  // finally block silently replaces whatever the try/catch above it was
+  // already propagating (CodeRabbit, TRO-572 review round 2).
+  let cleanupError: unknown;
   try {
     await fn(fx, pg);
   } catch (err) {
@@ -268,13 +285,15 @@ async function withFixture(fn: (fx: Fixture, pg: PgTarget) => Promise<void>): Pr
   } finally {
     try {
       await cleanupFixture(fx, pg);
-    } catch (cleanupErr) {
+    } catch (err) {
+      cleanupError = err;
       if (bodyFailed) {
-        console.error("TRO-572 fixture cleanup ALSO failed after a test failure:", cleanupErr);
-      } else {
-        throw cleanupErr;
+        console.error("TRO-572 fixture cleanup ALSO failed after a test failure:", err);
       }
     }
+  }
+  if (cleanupError) {
+    throw cleanupError;
   }
 }
 
@@ -319,16 +338,15 @@ describe("worktree.sh concurrency lock (TRO-572)", () => {
     () =>
       withFixture(async (fx, pg) => {
         mkdirSync(fx.lockDir);
-        // No real process has this pid on a normal machine -- macOS pids
-        // don't reach six digits, so `kill -0` fails with ESRCH.
-        writeFileSync(join(fx.lockDir, "owner"), `PID=999999\nHOST=${hostname()}\n`);
+        const pid = deadPid();
+        writeFileSync(join(fx.lockDir, "owner"), `PID=${pid}\nHOST=${hostname()}\n`);
 
         const startedAt = Date.now();
         const result = runWorktreeSh(fx, pg, "test-session-lock-b");
         const elapsedMs = Date.now() - startedAt;
 
         expect(result.status, `stderr: ${result.stderr}`).toBe(0);
-        expect(result.stderr).toContain("breaking a stale lock from dead pid 999999");
+        expect(result.stderr).toContain(`breaking a stale lock from dead pid ${pid}`);
         // Well under the ~60s poll timeout -- proves it broke the lock
         // immediately rather than waiting it out and succeeding anyway.
         expect(elapsedMs).toBeLessThan(20_000);
@@ -391,7 +409,7 @@ describe("worktree.sh concurrency lock (TRO-572)", () => {
         // they each held the lock alone. Both racers below see the exact
         // same stale, dead-pid lock at once.
         mkdirSync(fx.lockDir);
-        writeFileSync(join(fx.lockDir, "owner"), `PID=999999\nHOST=${hostname()}\n`);
+        writeFileSync(join(fx.lockDir, "owner"), `PID=${deadPid()}\nHOST=${hostname()}\n`);
 
         const first = spawnWorktreeSh(fx, pg, "test-session-stale-race");
         const firstExit = waitForExit(first);

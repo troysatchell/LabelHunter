@@ -134,64 +134,109 @@ fi
 LOCK_DIR="${WT_PATH}.lock"
 LOCK_POLLS=0
 LOCK_MAX_POLLS=300 # ~60s at 0.2s/poll
+
+# Reads HOST=/PID= out of an owner file at the given path (a lock dir or a
+# captured copy of one) without trusting it further than that -- same
+# boundary-validation discipline as the `.factory-owner` reader below
+# (lessons.md #13).
+read_lock_owner() {
+  LOCK_OWNER_HOST=""
+  LOCK_OWNER_PID=""
+  if [ -f "$1/owner" ]; then
+    LOCK_OWNER_HOST="$(sed -n 's/^HOST=//p' "$1/owner" 2>/dev/null || true)"
+    LOCK_OWNER_PID="$(sed -n 's/^PID=//p' "$1/owner" 2>/dev/null || true)"
+  fi
+}
+
+# `ps -p`, not `kill -0`: `kill -0` fails for two different reasons -- ESRCH
+# (no such process, genuinely dead) and EPERM (the process exists but this
+# user cannot signal it, e.g. it is owned by someone else). Treating both as
+# "dead" would break a lock a live process still holds. `ps -p` reports
+# existence regardless of ownership, on both the BSD (macOS) and GNU (Linux
+# CI) variants (CodeRabbit, TRO-572 review round 2).
+pid_is_alive() {
+  ps -p "$1" >/dev/null 2>&1
+}
+
 while ! mkdir "$LOCK_DIR" 2>/dev/null; do
-  # Stale-lock recovery, race-safe. A naive read-then-rm here has a real
-  # TOCTOU hole: waiter B reads the owner file, sees a dead same-host pid,
-  # and is about to `rm -rf` -- but between B's read and B's `rm -rf`, the
-  # lock could legitimately change (the crashed holder's slot gets broken
-  # and re-acquired by a THIRD invocation, now live). B's unconditional
-  # `rm -rf` would then delete a lock a live process actually holds, and
-  # both B and that live process would believe they hold the lock alone
-  # (CodeRabbit, TRO-572 review round 1).
-  #
-  # `mv` on the same filesystem is atomic: at most one waiter's `mv` can
-  # rename LOCK_DIR away at a time. Capture it FIRST, before reading or
-  # deciding anything -- whatever this waiter inspects afterward is a
-  # private copy nothing else can concurrently mutate or re-grab, so only
-  # one waiter ever evaluates (and possibly discards) any single lock
-  # instance. A losing `mv` (source already gone -- another waiter beat
-  # this one to it, or the holder released normally) just falls through to
-  # the wait/retry path below.
-  CAPTURE_DIR="${LOCK_DIR}.break.$$"
-  if mv "$LOCK_DIR" "$CAPTURE_DIR" 2>/dev/null; then
-    LOCK_HOST="$(sed -n 's/^HOST=//p' "${CAPTURE_DIR}/owner" 2>/dev/null || true)"
-    LOCK_PID="$(sed -n 's/^PID=//p' "${CAPTURE_DIR}/owner" 2>/dev/null || true)"
-    if [ "$LOCK_HOST" = "$(hostname)" ] && [ -n "$LOCK_PID" ] && ! kill -0 "$LOCK_PID" 2>/dev/null; then
-      echo "  lock:      breaking a stale lock from dead pid ${LOCK_PID} on this host" >&2
-      rm -rf "$CAPTURE_DIR"
-      continue
-    fi
-    # Not actually stale (or unreadable): this waiter's capture caught a
-    # live holder's lock by unlucky timing. Put it back exactly as found.
-    # If some other waiter already grabbed the now-free path in the
-    # meantime, that is a normal, harmless hand-off -- this capture is
-    # simply discarded instead of restored.
-    if ! mv "$CAPTURE_DIR" "$LOCK_DIR" 2>/dev/null; then
-      rm -rf "$CAPTURE_DIR"
-    fi
-  fi
-  # There is no reliable way to check a pid's liveness on a different host,
-  # so a lock stamped from elsewhere always waits out its holder (or needs a
-  # human to remove it) instead of being auto-broken.
-  if [ "$LOCK_POLLS" -eq 0 ]; then
-    echo "  lock:      another invocation is provisioning ${TICKET} -- waiting..." >&2
-  fi
+  # Counted at the TOP of every iteration, including the stale-break path
+  # below, so a pathological run of back-to-back stale locks still reaches
+  # the timeout instead of spinning past it uncounted.
   LOCK_POLLS=$(( LOCK_POLLS + 1 ))
   if [ "$LOCK_POLLS" -gt "$LOCK_MAX_POLLS" ]; then
     echo "ERROR: timed out waiting for the lock on ${TICKET} (${LOCK_DIR})." >&2
-    echo "       If no other worktree.sh invocation for ${TICKET} is really" >&2
-    echo "       running, remove it: rm -rf '${LOCK_DIR}'" >&2
+    echo "       There is no reliable way to check a pid's liveness on a" >&2
+    echo "       different host, so a lock stamped from elsewhere always" >&2
+    echo "       waits out its holder rather than being auto-broken." >&2
+    echo "       CONFIRM no other worktree.sh invocation for ${TICKET} is" >&2
+    echo "       really running before removing it by hand:" >&2
+    echo "         rm -rf '${LOCK_DIR}'" >&2
     exit 2
+  fi
+
+  # Cheap, NON-destructive pre-check: only even attempt to capture a lock
+  # that already looks stale in place. A live lock is never renamed here.
+  # An earlier version of this fix captured (renamed away) EVERY lock it
+  # encountered just to inspect it, live or not -- and a rename, even one
+  # immediately undone, leaves LOCK_DIR briefly absent. A THIRD invocation's
+  # `mkdir` could win that gap out from under the true holder, who is still
+  # actively running its critical section the whole time (CodeRabbit,
+  # TRO-572 review round 2 -- critical). Gating on a non-destructive
+  # pre-check means a live lock's owner data is read, found alive, and
+  # never touched at all.
+  read_lock_owner "$LOCK_DIR"
+  if [ "$LOCK_OWNER_HOST" = "$(hostname)" ] && [ -n "$LOCK_OWNER_PID" ] && ! pid_is_alive "$LOCK_OWNER_PID"; then
+    # Looks stale. `mv` on the same filesystem is atomic: at most one
+    # waiter's `mv` can rename a given LOCK_DIR away at a time, so only one
+    # waiter ever gets to evaluate (and possibly discard) any single lock
+    # instance. The pre-check above is itself racy -- the lock could change
+    # between that read and this `mv` -- so CONFIRM staleness again on the
+    # captured copy before deleting anything; trust only what this waiter
+    # now exclusively owns, never the shared path.
+    CAPTURE_DIR="${LOCK_DIR}.break.$$"
+    if mv "$LOCK_DIR" "$CAPTURE_DIR" 2>/dev/null; then
+      read_lock_owner "$CAPTURE_DIR"
+      if [ "$LOCK_OWNER_HOST" = "$(hostname)" ] && [ -n "$LOCK_OWNER_PID" ] && ! pid_is_alive "$LOCK_OWNER_PID"; then
+        echo "  lock:      breaking a stale lock from dead pid ${LOCK_OWNER_PID} on this host" >&2
+        rm -rf "$CAPTURE_DIR"
+        continue
+      fi
+      # The confirm disagreed with the pre-check: the lock changed under
+      # this waiter (a new live holder grabbed it since the pre-check read).
+      # Put it back exactly as found. If some other waiter already grabbed
+      # the now-free path in the meantime, that is a normal, harmless
+      # hand-off -- this capture is simply discarded instead of restored.
+      if ! mv "$CAPTURE_DIR" "$LOCK_DIR" 2>/dev/null; then
+        rm -rf "$CAPTURE_DIR"
+      fi
+    fi
+  fi
+
+  if [ "$LOCK_POLLS" -eq 1 ]; then
+    echo "  lock:      another invocation is provisioning ${TICKET} -- waiting..." >&2
   fi
   sleep 0.2
 done
-# Released on ANY exit -- success, error, or signal -- so a failed or
-# interrupted provision never leaves the next invocation waiting forever.
-trap 'rm -rf "$LOCK_DIR"' EXIT
+
+# The owner file is written BEFORE the trap, so the trap's own ownership
+# check (below) never runs against a lock dir that has no owner file yet --
+# an early interrupt between `mkdir` and this write would otherwise make the
+# trap refuse to clean up its own, definitely-ours lock.
 {
   echo "PID=$$"
   echo "HOST=$(hostname)"
 } > "${LOCK_DIR}/owner"
+# Released on ANY exit -- success, error, or signal -- so a failed or
+# interrupted provision never leaves the next invocation waiting forever.
+# Checks the stamp still names THIS pid first: under the pre-check design
+# above nobody else should ever touch a live lock, but this is a cheap,
+# direct answer to "verify ownership before the EXIT trap removes it"
+# (CodeRabbit, TRO-572 review round 2) rather than relying on that
+# invariant alone.
+trap '
+  lock_owner_pid="$(sed -n "s/^PID=//p" "${LOCK_DIR}/owner" 2>/dev/null || true)"
+  [ "$lock_owner_pid" = "$$" ] && rm -rf "$LOCK_DIR"
+' EXIT
 
 # --- 2. worktree ------------------------------------------------------------
 if git worktree list --porcelain | grep -qx "worktree ${WT_PATH}"; then

@@ -94,7 +94,12 @@ async function makeQueueItemFixture(options: FixtureOptions = {}) {
     })
     .returning();
 
-  return { applicationId: application.id, verificationId: verification.id, queueId: queueRow.id };
+  return {
+    applicationId: application.id,
+    verificationId: verification.id,
+    queueId: queueRow.id,
+    labelImageId: labelImage.id,
+  };
 }
 
 async function cleanup(applicationId: number) {
@@ -165,6 +170,25 @@ describe("getReviewQueueItem — real database", () => {
       for (const row of result.item.fields) {
         expect(row.reason).not.toMatch(/\d+(\.\d+)?%/);
       }
+    } finally {
+      await cleanup(applicationId);
+    }
+  });
+
+  it("returns the label image the verification ran against — url, dimensions, filename (TRO-575)", async () => {
+    const { applicationId, queueId, labelImageId } = await makeQueueItemFixture();
+    try {
+      const result = await getReviewQueueItem(db, queueId);
+      if (!result.found) throw new Error("expected found: true");
+      // The url targets the byte-serving route. The width and height are
+      // the persisted pixel dimensions the fixture inserted. The browser
+      // uses them to reserve layout space before the image loads.
+      expect(result.item.labelImage).toEqual({
+        url: `/api/label-images/${labelImageId}`,
+        width: 1000,
+        height: 1200,
+        originalFilename: "tro-476.jpg",
+      });
     } finally {
       await cleanup(applicationId);
     }

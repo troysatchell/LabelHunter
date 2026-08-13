@@ -585,11 +585,11 @@ a wrong PASS delays a catch, a wrong FAIL accuses a compliant producer of a fede
 > One honest limit. Case-36's 47 is the closest any measured case has come to the 50 line: 3
 > points under. The previous closest approach was case-23's old 56, 6 points over. A floor of 45,
 > not 50, would have let case-36's distance-186 garbage through as a single-channel "healthy"
-> reading — the corpus offered no evidence on this question before this run. That gap is new and
+> reading. The corpus offered no evidence on this question before this run. That gap is new and
 > narrower than the 2026-08-12 amendment described. It is not, by itself, a reason to move the
-> floor: no case in this corpus crosses to the wrong side of 50, and the floor's job — discard
-> unreliable OCR, keep reliable OCR — is still measurably correct on every one of the 36 current
-> cases. `OCR_CONFIDENCE_FLOOR` stays 50.
+> floor. No case in this corpus crosses to the wrong side of 50. The floor's job is to discard
+> unreliable OCR and keep reliable OCR. That job is still measurably correct on every one of the
+> 36 current cases. `OCR_CONFIDENCE_FLOOR` stays 50.
 
 ---
 

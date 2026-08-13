@@ -11,13 +11,15 @@ place, with no warning. An agent diagnosing TRO-546 re-ran it and silently repla
 committed artifact with numbers from a different image set. `scripts/eval/artifact-guard.ts`
 closes that gap: a guarded writer now refuses to overwrite an existing artifact unless the
 caller passes `--force`. Pass `--out=<path>` instead to write a separate comparison copy without
-touching the committed file. The regression test (`artifact-guard.test.ts`) ran red first,
-against a version of the guard with no `existsSync` check — today's real, silent-overwrite
-behavior — then green once the check was added.
+touching the committed file. The regression test (`artifact-guard.test.ts`) ran red first. It
+ran against a version of the guard with no `existsSync` check — today's real, silent-overwrite
+behavior. It ran green once the check was added. A review round then found the check alone left
+a race window between the check and the write; `writeGuardedJsonArtifact` now opens the file
+with Node's `wx` flag instead, so the guarantee is atomic, not check-then-write.
 
 Two scripts convert to the guarded path: `scripts/eval/ocr-floor-sweep.ts` and
 `scripts/eval/tro-546-case22-ocr-region-check.ts`. Both are one ticket's frozen evidence
-snapshot, not a rolling report — git history shows exactly one commit ever touched each output
+snapshot, not a rolling report. Git history shows exactly one commit ever touched each output
 file, before this ticket's own re-measurement. Every other `scripts/eval/` writer is left alone,
 each for a stated reason — no writer is skipped silently:
 
@@ -29,35 +31,39 @@ each for a stated reason — no writer is skipped silently:
 | `variance.ts` (`--establish-baseline`) | `scripts/eval/baseline.json` | The ticket's own named exception. TRO-561's re-baseline protocol: an explicit flag, archives the old baseline first (`archiveExistingBaseline`, never deletes), git history is the provenance trail. |
 | `variance.ts` (`--establish-baseline`) | `scripts/eval/results/eval-report.json` (refresh) | A byproduct of the same protocol-gated, explicit-flag path as `baseline.json` above — not a second, separate risk. |
 
+Review also found `--out=` with no path attached (`--out=` alone) fell through unrecognized and
+silently used the default path instead. `parseArtifactGuardArgs` now rejects it explicitly,
+matching the module's own no-silent-failure rule.
+
 **TRO-558.** `scripts/eval/results/ocr-floor-sweep.json` and CP-2 §4.5's amendment table both
 quoted confidences measured on 2026-08-12 against a 32-case golden set. That golden set no
-longer exists: TRO-527 rebuilt every image (bold ground-truth prefix), TRO-516 C5 merged
-case-24 into case-23, and TRO-529 added five real-photograph cases, case-35 through case-39.
+longer exists. TRO-527 rebuilt every image, adding the bold ground-truth prefix. TRO-516 C5
+merged case-24 into case-23. TRO-529 added five real-photograph cases, case-35 through case-39.
 The current golden set has 36 cases, not 32.
 
 Re-measured via the new guarded path. `pnpm eval:ocr-floor-sweep` refused on the first attempt,
-because the stale file already existed — a live demonstration TRO-559's fix works against the
-exact file its own bug report names. `pnpm eval:ocr-floor-sweep -- --force` then wrote the fresh
-measurement, deliberately:
+because the stale file already existed. That is a live demonstration: TRO-559's fix works
+against the exact file its own bug report names. `pnpm eval:ocr-floor-sweep -- --force` then
+wrote the fresh measurement, deliberately:
 
 - 36 cases total. 31 are warning-bearing with a usable OCR candidate.
 - Sorted confidences: 33, 41, 47, 65, 91, 93, then 95 (22 cases) and 96 (3 cases).
 - `goldenSetCommitSha`: `0e6e3e1432f63609ad49febf5445fb866cadaf91`. `manifestContentHash`:
   `fa3dbcfb60a6ecbd6c2de4ec837c54c72b87e909865ee9429946ac79cc5e0784`. Both fields are new on this
   artifact (TRO-558) and both match `scripts/eval/baseline.json`'s own values for the same
-  commit — an independent cross-check that this run measured the golden set it claims to.
+  commit. That match is an independent cross-check: this run measured the golden set it claims to.
 
 **Measured, not assumed: the floor decision is unchanged.** `OCR_CONFIDENCE_FLOOR` stays 50.
 Case-23 — the original reason the floor had to move below 56 — measured 65 this run, further
 from the floor than before, not closer. The three new real-photograph rotation cases (case-36,
-case-37, case-39) measure 33, 41, and 47, all below 50. Their edit distances, 186 to 215 against
-the 283-character canonical string, confirm the OCR read is genuine garbage, not a borderline
-reading — the floor correctly discards all three. The full table, and the one honest limit the
-new data surfaces (case-36's 47 sits only 3 points under the floor, the closest any measured
-case has come), are in `docs/checkpoints/cp2-warning-subsystem.md` §4.5's new 2026-08-13
-amendment, appended after the 2026-08-12 amendment. The original row and the first amendment are
-unchanged, per CP-2's own stated discipline of dating a later finding rather than rewriting an
-earlier one.
+case-37, case-39) measure 33, 41, and 47, all below 50. Their edit distances run 186 to 215
+against the 283-character canonical string. That confirms the OCR read is genuine garbage, not
+a borderline reading — the floor correctly discards all three. The full table is in
+`docs/checkpoints/cp2-warning-subsystem.md` §4.5's new 2026-08-13 amendment, appended after the
+2026-08-12 amendment. The same amendment states the one honest limit the new data surfaces.
+Case-36's 47 sits only 3 points under the floor — the closest any measured case has come. The
+original row and the first amendment are unchanged, per CP-2's own stated discipline of dating
+a later finding rather than rewriting an earlier one.
 
 **How to run it.**
 

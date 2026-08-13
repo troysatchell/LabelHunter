@@ -15,13 +15,19 @@ export function walk(node: ts.Node, visit: (n: ts.Node) => void): void {
  * Names the function a node sits inside.
  *
  * Used by the identity hash, so two identical call sites in different
- * functions get different identities.
+ * functions get different identities. A method name alone is not unique:
+ * `A.validate()` and `B.validate()` both name only "validate", so a
+ * violation in one class silently reuses the other's identity. A method
+ * name is qualified with its enclosing class or object scope for this
+ * reason; a plain function or arrow keeps its own name unqualified.
  */
 export function enclosingFunctionName(node: ts.Node): string {
   let current: ts.Node | undefined = node.parent;
   while (current) {
     if (ts.isFunctionDeclaration(current) && current.name) return current.name.text;
-    if (ts.isMethodDeclaration(current) && ts.isIdentifier(current.name)) return current.name.text;
+    if (ts.isMethodDeclaration(current) && ts.isIdentifier(current.name)) {
+      return `${enclosingScopeName(current)}.${current.name.text}`;
+    }
     if (
       (ts.isArrowFunction(current) || ts.isFunctionExpression(current)) &&
       current.parent &&
@@ -33,6 +39,29 @@ export function enclosingFunctionName(node: ts.Node): string {
     current = current.parent;
   }
   return "<module>";
+}
+
+/**
+ * Names the class or object literal a method belongs to.
+ *
+ * Checked shapes: a named class (`class A { validate() {} }`), and an
+ * object literal assigned to a name — directly (`const A = { validate()
+ * {} }`) or as a property value (`{ A: { validate() {} } }`). Falls back
+ * to `<anonymous>` when the enclosing scope has no name to read, so the
+ * identity still separates same-named methods without crashing on an
+ * unnamed class expression.
+ */
+function enclosingScopeName(method: ts.MethodDeclaration): string {
+  const parent = method.parent;
+  if ((ts.isClassDeclaration(parent) || ts.isClassExpression(parent)) && parent.name) {
+    return parent.name.text;
+  }
+  if (ts.isObjectLiteralExpression(parent)) {
+    const owner = parent.parent;
+    if (ts.isVariableDeclaration(owner) && ts.isIdentifier(owner.name)) return owner.name.text;
+    if (ts.isPropertyAssignment(owner) && ts.isIdentifier(owner.name)) return owner.name.text;
+  }
+  return "<anonymous>";
 }
 
 /** The 1-based line of a node. */

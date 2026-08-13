@@ -37,6 +37,8 @@ const PROGRESS_SUCCESS: BatchProgressResponse = {
   startedAt: "2026-08-12T00:00:00.000Z",
   completedAt: null,
   latency: null,
+  throughput: null,
+  autoVerifiedShare: null,
   rateLimitBackoff: { active: false, itemCount: 0 },
   results: [],
 };

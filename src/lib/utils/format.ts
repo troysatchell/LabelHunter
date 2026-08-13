@@ -39,3 +39,17 @@ export function formatDuration(ms: number): string {
   const remainderSeconds = totalSeconds % 60;
   return `${minutes}m ${remainderSeconds}s`;
 }
+
+/**
+ * Formats a `0..1` fraction as a percentage string with one decimal place
+ * (e.g. `0.72` -> `"72.0%"`), matching the precision `scripts/eval/check.ts`
+ * and `scripts/eval/baseline-compare.ts` already use for every rate they
+ * print (`(rate * 100).toFixed(1)`). One convention for "rate as text"
+ * across the whole codebase, not a second one invented here.
+ */
+export function formatPercent(rate: number): string {
+  if (!Number.isFinite(rate) || rate < 0 || rate > 1) {
+    throw new RangeError(`formatPercent: expected a finite number between 0 and 1, got ${rate}`);
+  }
+  return `${(rate * 100).toFixed(1)}%`;
+}

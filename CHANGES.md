@@ -4,6 +4,246 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-544 — LH-039 · Report batch throughput, local number (2026-08-12)
+
+**What this builds.** PRD §3.8 promises this: "batch reports items/minute and per-item
+averages." Nothing computed that number before this ticket. Two pure functions do now:
+`computeBatchThroughput` and `computeAutoVerifiedShare`
+(`src/lib/utils/batch-throughput.ts`). Both read columns `batch_jobs` already has:
+`totalCount`, `startedAt`, `completedAt`, `autoVerifiedCount`, `processedCount`. No schema
+change.
+
+The batch progress screen (`BatchProgressSummary.tsx`) shows two new tiles. **Items per
+minute** shows the batch's real wall-clock rate. A sub-note gives the per-item average.
+**Auto-verified share** shows CP-1 §4.5 step 3's own figure: "the share of labels finished
+without a resolver call." Both numbers travel the same path every other batch stat already
+uses. `get-batch-progress.ts` computes them. The `/api/batch/:id` route serializes them. The
+component renders them. Neither is a number the UI invents on its own.
+
+Items per minute is a DIFFERENT number from the existing "Average time per label" tile. That
+tile averages one label's own extraction time. It cannot see the worker pool running five
+labels at once. Items per minute can. This run's own numbers show why both matter. The
+per-label average reads 3.71s. The whole-batch rate reads 1.19s per item. Concurrency moves
+faster than any one label's own time suggests.
+
+**A real 32-item batch ran, start to finish, on a local dev workstation.** `pnpm
+batch:fixture` builds a CSV + image zip from the full golden set. A new harness, `pnpm
+batch:throughput` (`scripts/batch-throughput/measure.ts`), runs the real thing. It submits
+that fixture through the real running app (`pnpm dev`). A real worker process (`pnpm worker`)
+processes it. Both are the same two HTTP routes the upload screen calls. The harness then
+polls the batch's progress endpoint. It waits for a real status change until the batch
+finishes. Batch 124 processed 32 items. These figures are cross-checked against a direct
+read of the `batch_jobs` row:
+
+| Figure | Value | N |
+|---|---|---|
+| Items per minute | 50.48 | 32 |
+| Per-item average, whole batch | 1.19s | 32 |
+| Auto-verified share | 56.3% (18 of 32) | 32 |
+| Disposition | 18 auto-verified (11 pass, 7 fail) · 5 resolved by Sonnet · 9 needs a person · 0 failed | 32 |
+| Escalation cap | 8 of 8 Sonnet calls — the cap (`ceil(0.25×32)`) was hit | 32 |
+| Derived cost | $0.2371 | 32 |
+
+**Host: local dev workstation, not deployed.** Apple M4 Pro, 14 CPU, Darwin arm64, Node
+v23.2.0. Worker concurrency: 5 extract, 2 resolve, 1 single-label resolve. These are the
+unchanged `scripts/batch-worker/run.ts` defaults. Models: `claude-haiku-4-5` (extractor),
+`claude-sonnet-5` (resolver). Full artifact:
+`scripts/batch-throughput/results/local-batch-run.json`.
+
+**The escalation cap was hit.** CP-3 §6.1 caps Sonnet calls at `ceil(0.25 * totalCount)`. For
+32 items, that cap is 8. This run made exactly 8 Sonnet call attempts, then stopped. The
+remaining REVIEW-bound labels went straight to `needsHumanCount`, with no Sonnet call
+(`resolverSkipReason: "ESCALATION_CAP_EXCEEDED"`). A batch whose escalation demand stays
+below the cap makes fewer Sonnet calls, so it spends less on Sonnet, not more. It also
+shows a different `resolvedBySonnetCount`/`needsHumanCount` split: nothing is cap-skipped
+to a human.
+
+**Cost is derived, not measured.** The batch worker records no per-call token usage. That
+seam exists only in the eval harness. The $0.2371 total multiplies each call count by the
+eval harness's own measured mean per-call cost. This run counted 32 Haiku attempts and 8
+Sonnet calls. The two counts come from different sources. The Sonnet count is
+`batch_jobs.sonnet_call_count`, a real reserved-before-the-call counter. The Haiku count
+sums `batch_queue_items.attempts` for this batch's own EXTRACT items. That sum is an upper
+bound, not a certainty. `attempts` increments at claim time, before the real API call
+happens. A retried call counts once per attempt either way. Haiku averages $0.004668 per
+call. The resolver averages $0.010969 per call. Both means come from
+`scripts/eval/results/eval-report.json`, measured 2026-08-12T13:26:45.488Z. `pnpm
+batch:throughput` reads that file fresh on every run. This figure moves if a newer eval run
+changes the means.
+
+**Verdict correctness is a separate, already-tracked concern.** The golden set's ground truth
+expects 8 PASS / 10 FAIL / 14 REVIEW for these 32 cases. This run produced 11 PASS / 7 FAIL /
+14 REVIEW. The REVIEW count matches exactly. The PASS/FAIL split does not — the same reason
+already documented in `docs/diagnostics/2026-08-12-verdict-miss-triage.md` (21/32 measured
+verdict accuracy). This ticket reports throughput on whatever the cascade actually decides. It
+does not change what the cascade decides.
+
+**Not measured: deployed throughput.** This run predates TRO-518's storage fix and ran
+against a local instance only. At measurement time, `local-file-storage.ts` wrote each
+uploaded image to the saving process's own disk. A deployed batch run would therefore have
+failed on every image. TRO-518 has since landed and moved that storage to Postgres; this branch
+carries it. Deployed throughput is still not measured. No claim about it appears anywhere
+in this entry, the code, or the artifact.
+
+**How to run it.** Source `.factory-env` in every terminal first (or keep `.env.local`
+present in a plain checkout). `pnpm batch:fixture` once. Then, in three terminals: `pnpm
+dev`, `pnpm worker`, `pnpm batch:throughput`. Output lands at
+`scripts/batch-throughput/results/local-batch-run.json`. This costs real money — about
+$0.15-0.30 for the full 32-case fixture, at the eval harness's measured per-call rates.
+
+**Regression tests.** `src/lib/utils/batch-throughput.test.ts` covers both null-input states
+and both `RangeError` paths. It also covers exact arithmetic on known inputs. One case proves
+an impossible `(1, 0)` pair throws, instead of silently reading as "not measured yet" (a local
+review finding). `src/lib/utils/format.test.ts` gained `formatPercent` coverage.
+`get-batch-progress.test.ts` and the `/api/batch/:id` route test each gained real-database
+cases. Those cases prove `throughput` and `autoVerifiedShare` compute correctly from a live
+`batch_jobs` row. They also prove both fields serialize correctly over the wire.
+`BatchProgressSummary.test.tsx` gained six cases
+for the two new tiles. One is a regression case: a genuine 0% share must render as "0.0%,"
+never as "Not measured yet." A naive truthy check on the fraction would get this wrong.
+`scripts/batch-throughput/args.test.ts` and `cost.test.ts` cover the harness's own pure
+CLI-parsing and cost-derivation logic, including its own new boundary checks.
+
+**Confirmed in a real browser, not just a component test.** `/batch/124` loaded in a real
+headless Chromium session against the running app. Every new tile rendered with its real
+value. "AUTO-VERIFIED SHARE 56.3%" appeared. So did "ITEMS PER MINUTE 50.48" with its "1.19s
+per label" sub-note. Both sat in the same stat-tile grid as the five existing tiles.
+
+**Local CodeRabbit review triage, three rounds, 15 findings total.** Fourteen were fixed.
+One was skipped, with a documented reason below. The INITIAL triage stopped after round 3.
+Each round found smaller issues than the round before, and the gate passed clean twice in a
+row. Rounds 4 and beyond, described after the round list, ran later, during the
+orchestrator's own merge-and-gate pass.
+
+Round 1, four findings, all fixed or skipped:
+- `computeAutoVerifiedShare` checked `processedCount <= 0` before validating
+  `autoVerifiedCount`'s own bound. An impossible `(1, 0)` pair read as unmeasured instead of
+  throwing. Fixed: the checks now run in the other order.
+- This entry's own prose ran over ASD-STE100's 25-word sentence cap in several places. Fixed:
+  every long sentence split into shorter ones.
+- Skipped: reading worker concurrency live from the worker process itself.
+  `scripts/batch-worker/run.ts` has no HTTP server or IPC channel today. Building one only to
+  report a diagnostic field would be new production surface, not a fix to an existing gap.
+  The limitation is already stated plainly, in the type and in the artifact's own `notes`
+  field.
+
+Round 2, seven findings, all fixed:
+- The harness's poll loop bounded each request's own fetch timeout to the time left in
+  `--max-wait-ms`, but not the sleep BETWEEN polls. Fixed: the sleep is now bounded the same
+  way.
+- `--poll-interval-ms`/`--max-wait-ms` accepted any integer, including one large enough to
+  overflow `setTimeout`'s 32-bit delay and silently fire almost immediately. Fixed: both now
+  reject a value above that ceiling.
+- `cost.ts`'s `meanCost`/`deriveBatchCostUsd` accepted negative or non-finite inputs without
+  complaint. Fixed: both now throw `RangeError` on a bad value.
+- The harness assumed one real Haiku call per label (`totalCount`). A retried extraction
+  makes a second real call that assumption would miss. Fixed: the harness now sums
+  `batch_queue_items.attempts` for this batch's own EXTRACT items instead. This run's own
+  number does not change — a direct query confirmed zero retries occurred. The harness is
+  now correct for a future run that does retry.
+- `measure.ts` created its database pool without checking `DATABASE_URL` first, risking a
+  confusing raw `pg` error. Fixed: it now checks and throws a clear message first, matching
+  `scripts/eval/check.ts`'s own established pattern.
+- This entry's own lead-in to the results table was a sentence fragment, with no verb. Fixed:
+  it now reads as two complete sentences.
+- Two more sentences elsewhere in this entry ran over the 25-word cap. Fixed: both split.
+
+Round 3, four findings, all fixed:
+- `deriveBatchCostUsd`'s round-2 validation used a bare `< 0` check on the call counts. `NaN`
+  is never `< 0`, so a `NaN` call count still slipped through and produced a `NaN` total.
+  Fixed: both counts now go through `Number.isSafeInteger` first.
+- `measure.ts` validated `DATABASE_URL` and the eval-report artifact only after a real batch
+  had already run and spent real money. Fixed: both checks now run first, before `pnpm dev`
+  even gets a health-check request.
+- The harness described `haikuCallCount` (an attempts sum) as the real call count. It can
+  overcount. `attempts` increments the moment an item is claimed — before the real Haiku
+  call happens. A claim that fails reading or resizing the image still counts as one attempt,
+  even with zero real calls made. Fixed: every doc comment, the artifact's own `notes` field,
+  and this entry now call it an upper bound, not a certainty.
+- This entry's own cost paragraph did not say WHERE the Haiku and Sonnet call counts each
+  came from. Fixed: it now names both sources and the upper-bound caveat above.
+
+Round 4 ran after the `origin/main` merge, by the orchestrator's own gate run. Three
+findings: this section's total said 19 findings where the rounds themselves sum to 15
+(fixed above); the run artifact's `notes` still called `haikuCallCount` a real call count
+despite round 3's own caveat (fixed — the note now says OBSERVED for Sonnet, UPPER BOUND
+for Haiku); and one false positive that read the scorecard's historical fail row as an
+unresolved failure (dismissed — the row records a stale worktree database, fixed by
+applying migration 0004, and the gate now passes).
+
+Round 5 ran on the orchestrator's next gate pass, after the round-4 fixes. Twelve findings.
+Eleven were fixed: the "Not measured" paragraph above no longer claims TRO-518 is unlanded;
+the `measure.ts` header, `args.ts`, and `types.ts` doc comments now use short, single-claim
+sentences; `cost.ts` and its test now call `haikuCallCount` an upper bound on real calls;
+`readWorkerConcurrency` now rejects a non-positive-integer override instead of recording
+`NaN`, and labels each value's origin (override vs. run.ts default) accurately, in the
+generated notes too; the artifact's own concurrency note now says CONFIGURED ASSUMPTION,
+because this run set no override; and the completed-batch fixtures in
+`get-batch-progress.test.ts` and `BatchProgressSummary.test.tsx` now carry counts a real
+completed batch would have. The twelfth was half-accepted: the auto-verified-share fixtures
+keep their RUNNING status, because `get-batch-progress.ts` serves that share mid-run — the
+state is reachable, so only the throughput fixture needed the completed shape.
+
+Round 6 found four issues, all fixed. The biggest: round 5 made `readWorkerConcurrency`
+throw on a bad override, but the call ran only after the batch had spent real money — it
+now runs in the fail-fast preflight, before any request. The rest: this section's "stopped
+after round 3" now says INITIAL triage; the cost paragraph above got its own STE split; and
+"same sourced shell" became "both terminals sourced the same environment configuration,"
+which is what actually happens.
+
+Round 7 found five issues. Four were fixed: the escalation-cap example inverted the cost
+direction (under-cap batches spend LESS on Sonnet); the `measure.ts` header over-promised
+exactly one Haiku call per item; `cost.ts`'s file header still said "real call counts"; and
+both cost functions now throw on a non-finite RESULT, because `JSON.stringify(Infinity)`
+writes `null` into the artifact — a silent "no cost." Two regression tests cover the new
+guards. One was dismissed: a request to re-bullet these triage paragraphs — the sentences
+are already single-claim, and reformatting bookkeeping changes no reported fact. The triage
+stops when a round changes no shipped behavior and no factual claim; this round's
+follow-ups will be judged by that rule.
+
+Round 8 still found substance, so it did not stop the triage. Six fixed: the harness now
+proves the database answers `SELECT 1` before any spend-inducing request; the post-run
+cross-check now requires status and both timestamps to match, so a same-ID row in a
+mispointed database cannot pass on counts alone; logged and persisted URLs are stripped of
+userinfo and query strings; this "How to run it" now names the `source .factory-env`
+prerequisite; a cost-test title stopped calling the Haiku figure a real call count; and the
+scorecard's first fail row now names its cause (stale worktree database) in the row itself.
+Two dismissed: a repeat of the re-bullet request (same reason as round 7), and a request to
+replace the scorecard's one approximate timestamp — no measured value exists for it, and
+inventing one is banned.
+
+Round 9: two fixed, two dismissed. Fixed: the generated haiku note now says the attempts
+sum is the observed quantity and the call count is only bounded; the DATABASE_URL log mask
+now parses with `new URL` and clears username, password, search, and hash, instead of a
+regex. Dismissed: a third re-bullet request (stop rule), and a false positive that read a
+UTC timestamp as future-dated. Review triage for this entry ends here unless a later round
+changes shipped behavior or a factual claim.
+
+Round 10 met that bar once: `postForm` returned an unchecked cast, so a malformed 200 body
+could drive the whole run. It now takes a required validator, and both call sites check
+named invariants (`batchJobId` positive, counts non-negative safe integers). Also fixed:
+one overlong sentence in the deployment-history note. Dismissed: a fourth re-bullet
+request, same stop rule.
+
+Round 11 met the bar once more, then ended: poll responses — the values the artifact
+persists — still crossed an unchecked cast. `validateProgressResponse` now checks the
+status enum, every counter, both timestamps, throughput, and the share on every poll. A
+fifth re-bullet request was dismissed under the same stop rule.
+
+Round 12: four fixed. The cost docs no longer claim the estimate cannot understate — the
+bound covers the call count, not the dollars, because the means are historical. The
+artifact's `deployment` field is now derived from the real target host, never hard-coded.
+The progress validator now requires `autoVerifiedCount <= processedCount <= totalCount`.
+One sentence above was split. The validator's requested standalone tests were not added:
+`measure.ts` spends money at import by design, so its internals are not importable.
+
+**Do NOT.** No column was added to `batch_jobs` — every input already existed. No claim was
+extrapolated past this run's real 32 items to TH-R4's 200-300 label reference.
+
+**Rollback.** Revert this ticket's commits. `throughput` and `autoVerifiedShare` are additive
+response fields. Nothing before this ticket reads or depends on them. Removing them touches no
+other ticket's code.
+
 ## TRO-518 — Batch image storage now survives the web/worker split (2026-08-12)
 
 **The bug.** `src/server/storage/local-file-storage.ts` saved every uploaded label image

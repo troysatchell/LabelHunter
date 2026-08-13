@@ -28,7 +28,8 @@
     "eval:ocr-floor-sweep": "tsx scripts/eval/ocr-floor-sweep.ts",
     "worker": "tsx scripts/batch-worker/run.ts",
     "e2e:fake-model": "tsx scripts/e2e/fake-anthropic-server.ts",
-    "batch:fixture": "tsx scripts/golden/batchFixture.ts"
+    "batch:fixture": "tsx scripts/golden/batchFixture.ts",
+    "batch:throughput": "tsx scripts/batch-throughput/measure.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",

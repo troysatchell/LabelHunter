@@ -2,10 +2,10 @@
  * `GET /api/batch/:batchJobId` (LH-042 / TRO-475) — HTTP-handler-level
  * tests, this repo's established convention (no live browser).
  */
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { db } from "../../../../lib/db";
-import { verifications } from "../../../../lib/db/schema";
+import { batchJobs, verifications } from "../../../../lib/db/schema";
 import { cleanupBatchJobFixture, createApplicationAndImageFixture, createBatchJobFixture } from "../../../../server/batch-queue/test-support";
 import { handleBatchProgressRequest } from "./route";
 import type { BatchProgressErrorResponse, BatchProgressResponse } from "./types";
@@ -54,6 +54,29 @@ describe("handleBatchProgressRequest", () => {
     const response = await handleBatchProgressRequest(String(batchJobId));
     const body = (await response.json()) as BatchProgressResponse;
     expect(body.latency).toBeNull();
+  });
+
+  it("returns throughput: null and autoVerifiedShare: null for a batch that has not finished (TRO-544)", async () => {
+    const batchJobId = await trackBatch();
+    const response = await handleBatchProgressRequest(String(batchJobId));
+    const body = (await response.json()) as BatchProgressResponse;
+    expect(body.throughput).toBeNull();
+    expect(body.autoVerifiedShare).toBeNull();
+  });
+
+  it("serializes real throughput and autoVerifiedShare figures once the batch has data (TRO-544, PRD §3.8)", async () => {
+    const batchJobId = await trackBatch({ totalCount: 4 });
+    await db
+      .update(batchJobs)
+      .set({ processedCount: 4, autoVerifiedCount: 3, status: "COMPLETED" })
+      .where(eq(batchJobs.id, batchJobId));
+    await db.execute(sql`UPDATE batch_jobs SET started_at = now() - interval '1 minute', completed_at = now() WHERE id = ${batchJobId}`);
+
+    const response = await handleBatchProgressRequest(String(batchJobId));
+    const body = (await response.json()) as BatchProgressResponse;
+    expect(body.throughput).not.toBeNull();
+    expect(body.throughput?.itemsPerMinute).toBeCloseTo(4, 0);
+    expect(body.autoVerifiedShare).toBe(0.75);
   });
 
   it("returns 404 NOT_FOUND for a batch job id that does not exist", async () => {

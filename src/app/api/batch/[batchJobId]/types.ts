@@ -5,6 +5,7 @@
  * discipline in this codebase.
  */
 import type { BatchJobStatus, FieldVerdict } from "../../../../lib/db/enums";
+import type { BatchThroughputStats } from "../../../../lib/utils/batch-throughput";
 import type { LatencyStats } from "../../../../lib/utils/latency-stats";
 import type { BatchResultStatusTone } from "../../../../server/batch-progress/types";
 
@@ -52,6 +53,18 @@ export interface BatchProgressResponse {
   startedAt: string | null;
   completedAt: string | null;
   latency: LatencyStats | null;
+  /** Items/minute + per-item average for the whole batch (PRD §3.8, TH-R4)
+   * — `null` until the batch reaches a terminal state. See
+   * `BatchProgressSummary`'s (server-side) own doc comment. No `Date`
+   * field, so — unlike `startedAt`/`completedAt` above — this type is
+   * structurally identical to its server-side twin; kept as its own
+   * pass-through anyway, matching this file's own established wire/server
+   * split (see this file's header comment on `BatchResultRowWire`). */
+  throughput: BatchThroughputStats | null;
+  /** The share of processed labels finished without a resolver call
+   * (CP-1 §4.5 step 3) — a `0..1` fraction, `null` until at least one
+   * label has processed. */
+  autoVerifiedShare: number | null;
   rateLimitBackoff: BatchRateLimitBackoffWire;
   results: BatchResultRowWire[];
 }

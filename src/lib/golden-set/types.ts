@@ -96,6 +96,24 @@ export interface GoldenLabelFields {
   governmentWarningText: string;
   /** True when "GOVERNMENT WARNING:" is printed all-caps, as the statute requires (TH-R9). False (including when the warning is absent) otherwise. */
   governmentWarningPrefixAllCaps: boolean;
+  /**
+   * True when "GOVERNMENT WARNING:" (the prefix, through the colon) prints
+   * in bold type, as 27 CFR 16.22(a)(2) requires (TH-R9; TRO-527 / LH-022).
+   * False (including when the warning is absent) when it does not.
+   * `"unknown"` records a real photograph where a careful human reader
+   * cannot tell either way — never `false` there, because `false` would be
+   * a fabricated compliance claim against a shipped product. Every case in
+   * this manifest is a rendered image this repo controls, so none of them
+   * needs `"unknown"` yet; LH-024's hand-transcribed real-label cases will.
+   */
+  governmentWarningPrefixBold: boolean | "unknown";
+  /**
+   * True when the warning body (everything after the prefix's colon)
+   * prints in bold type. 27 CFR 16.22(a)(2) forbids this — a compliant
+   * label is `false` here. Same `false`-including-absent and `"unknown"`
+   * rules as `governmentWarningPrefixBold` above (TRO-527 / LH-022).
+   */
+  governmentWarningBodyBold: boolean | "unknown";
 }
 
 /** The Validation Router's expected verdict for one field. */

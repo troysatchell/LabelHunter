@@ -61,3 +61,23 @@ function getPool(): Pool {
 }
 
 export const db = drizzle(getPool(), { schema });
+
+/**
+ * Closes the shared pool and forgets it (TRO-524).
+ *
+ * For short-lived processes that must exit on their own — Playwright's
+ * global setup is the first one — an open pool keeps idle sockets alive
+ * and the process with them. Long-lived callers (the Next.js server, the
+ * batch worker) never call this: their pool lives as long as they do.
+ *
+ * `db` above stays bound to the closed pool, so a caller that closes the
+ * pool and then queries gets a clear "pool ended" error rather than a
+ * silent reconnect. The `globalThis` handle is cleared so a later
+ * `getPool()` in a fresh module graph builds a new one.
+ */
+export async function closePool(): Promise<void> {
+  const pool = globalThis.__lhPgPool;
+  if (!pool) return;
+  globalThis.__lhPgPool = undefined;
+  await pool.end();
+}

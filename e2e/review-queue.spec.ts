@@ -18,6 +18,14 @@
  * review queue (`playwright.config.ts`'s `fullyParallel: true`) — each
  * test looks up "the row containing MY tag", never "the only row" or "the
  * first row".
+ *
+ * That tag is also what makes the items below disposable (TRO-524).
+ * Approving or rejecting an item, as these two tests do, takes it out of
+ * the unresolved queue — but a run that fails before it reaches the
+ * Approve button does not, and neither does the batch spec's own
+ * deliberately-escalated row. `e2e/global-setup.ts` deletes every
+ * tagged application before each run, so unresolved rows cannot pile up
+ * across runs toward the queue's page ceiling.
  */
 import { expect, test, type Page } from "@playwright/test";
 import { readDefaultGoldenImage, uniqueTag } from "../scripts/e2e/fixtures";

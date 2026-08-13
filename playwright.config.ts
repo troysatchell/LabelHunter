@@ -61,6 +61,9 @@ const modelEnv: Record<string, string> = E2E_LIVE
 
 export default defineConfig({
   testDir: "./e2e",
+  // TRO-524: every run starts from a queue with no leftovers from earlier
+  // runs. See `e2e/global-setup.ts` for why this is setup, not teardown.
+  globalSetup: "./e2e/global-setup.ts",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

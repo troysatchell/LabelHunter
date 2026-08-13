@@ -4,6 +4,63 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-568 — The latency harness could not reach the gated deployment (2026-08-13)
+
+**The bug.** `scripts/latency/measure.ts`'s `--url` path built its POST as
+`fetch(verifyUrl, { method: "POST", body: formData, signal })`. There was no
+`headers` object at all.
+
+TRO-482 put a shared access-code gate in front of every non-exempt route,
+including `/api/verify`. So every request this harness made to a deployed
+instance returned 401 before any pipeline stage ran. The harness would have
+reported the gate rejecting it as a latency measurement.
+
+The script predates the gate. Nothing failed loudly, because a 401 is a
+perfectly valid HTTP response — it just is not the thing being measured.
+
+**Why it mattered now.** TRO-486's sweep downgraded TH-R2 to PARTIAL. The
+committed p50 3834 ms and p95 4458 ms figures predate TRO-546. That ticket
+changed `region-detect.ts`, which sits on the measured path. The
+remeasurement fixes the downgrade. It could not run.
+
+**The fix.** `scripts/latency/access-code.ts` builds the credential headers
+from `ACCESS_CODE`. It sends the value as `x-access-code`. PRD §8 provides
+that header so non-browser callers can skip the browser sign-in flow.
+
+Two decisions worth naming:
+
+1. **Built once, before the first request.** A per-request build would turn
+   a missing credential into `runs` identical 401s. That reads as a broken
+   deployment, not a missing variable. It also spends the target's per-IP
+   rate-limit budget. A later honest attempt can then be locked out.
+2. **Whitespace-only is treated as absent, and a real value is trimmed.** A
+   code pasted out of a dashboard often carries a trailing newline. Sent
+   verbatim it fails the server's constant-time comparison and is
+   indistinguishable from a wrong code.
+
+The gate is not weakened or bypassed. The harness authenticates as a real
+caller does, which is the only way the number describes the shipped path.
+
+**Confirmed.** `scripts/latency/access-code.test.ts` covers 6 cases. The
+header goes out under its exact server-side name. A missing variable throws
+a named error instead of sending nothing. Empty and whitespace-only values
+are refused. A padded value is trimmed. `render-target.ts` and
+`target-info.ts` were checked for the same gap. Neither makes an outbound
+request.
+
+**Not done here.** The remeasurement itself. That needs a real run against
+the deployed instance and belongs with the session that owns TH-R2.
+
+**How to run it.**
+
+```bash
+pnpm test -- scripts/latency/access-code.test.ts
+ACCESS_CODE=<the deployed value> pnpm latency:measure -- --url=<origin>
+```
+
+**Rollback.** Revert this commit. The harness returns to sending no
+credential, and `--url` mode returns to measuring 401s.
+
 ## TRO-558 / TRO-559 — measurement scripts stop clobbering evidence; the stale OCR floor numbers are re-measured (2026-08-13)
 
 **TRO-559.** `pnpm eval:ocr-floor-sweep` used to overwrite its own committed evidence file in

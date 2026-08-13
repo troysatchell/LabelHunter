@@ -123,6 +123,7 @@ import { saveLabelImage } from "../../src/server/storage/db-image-storage";
 import { compareGovernmentWarningFromImage } from "../../src/server/warning";
 import { parseArgs } from "./args";
 import { cleanupScratchDirAndPool } from "./cleanup";
+import { buildAccessCodeHeaders } from "./access-code";
 import { computeExitCode } from "./exit-status";
 import { describeHttpError } from "./http-error";
 import { summarizeLatencies, type LatencySummary } from "./percentile";
@@ -322,6 +323,11 @@ async function runOnceHttp(
   mediaType: string,
   caseSpec: GoldenSetCase,
   verifyUrl: string,
+  /** TRO-568: the access credential the gated target requires. Built once by
+   * the caller before the first run, never here — a per-request build would
+   * turn a missing credential into `runs` identical failures instead of one
+   * immediate error. */
+  accessCodeHeaders: Record<string, string>,
 ): Promise<RunResult> {
   const formData = buildFormData(imageBytes, imagePath, mediaType, caseSpec);
   const start = performance.now();
@@ -333,7 +339,7 @@ async function runOnceHttp(
   const signal = AbortSignal.timeout(HTTP_REQUEST_TIMEOUT_MS);
   let response: Response;
   try {
-    response = await fetch(verifyUrl, { method: "POST", body: formData, signal });
+    response = await fetch(verifyUrl, { method: "POST", body: formData, signal, headers: accessCodeHeaders });
   } catch (cause) {
     const durationMs = Math.round(performance.now() - start);
     return {
@@ -651,7 +657,13 @@ async function main(): Promise<void> {
       throw new Error("measure.ts: internal invariant violated — http mode reached with no target URL");
     }
     const targetUrl = verifyUrl;
-    requestRunner = (i) => runOnceHttp(i, imageBytes, imagePath, mediaType, caseSpec, targetUrl);
+    // TRO-568: built ONCE, before the first request, so a missing credential
+    // fails immediately instead of producing `runs` identical 401s. The
+    // target is gated (TRO-482); an unauthenticated run measures the gate
+    // rejecting it, not the cascade — and spends the target's per-IP
+    // rate-limit budget doing so.
+    const accessCodeHeaders = buildAccessCodeHeaders();
+    requestRunner = (i) => runOnceHttp(i, imageBytes, imagePath, mediaType, caseSpec, targetUrl, accessCodeHeaders);
   }
 
   const runResults: RunResult[] = [];

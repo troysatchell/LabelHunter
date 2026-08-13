@@ -112,9 +112,15 @@ function isAccuracyBand(value: unknown): value is { min: number; max: number; sp
   return isFiniteUnitRate(candidate.min) && isFiniteUnitRate(candidate.max) && isFiniteUnitRate(candidate.spread);
 }
 
-/** Light shape check for one `BaselineRepeatAccuracy` row (TRO-561). */
+/** Light shape check for one `BaselineRepeatAccuracy` row (TRO-561). Rejects
+ * an EMPTY array explicitly (defect-gate: `vacuous-empty-quantifier`) — an
+ * empty `repeats` would otherwise pass `.every()` vacuously, and a K-repeat
+ * band with zero recorded repeats is not a legal band (`buildBaselineBand`,
+ * `baseline-band.ts`, enforces the identical non-empty rule at construction
+ * time; this is the same invariant checked again at the file-read
+ * boundary). */
 function isBaselineRepeatAccuracyArray(value: unknown): boolean {
-  if (!Array.isArray(value)) return false;
+  if (!Array.isArray(value) || value.length === 0) return false;
   return value.every((entry) => {
     if (!entry || typeof entry !== "object") return false;
     const candidate = entry as Record<string, unknown>;
@@ -132,10 +138,16 @@ function isBaselineRepeatAccuracyArray(value: unknown): boolean {
  * against `LabelVerdict`'s own enum — the same "only what a caller reads"
  * scope this file's own module comment already applies to
  * `warningSegmentation`/the per-field breakdowns; nothing downstream
- * branches on a specific verdict string here. */
+ * branches on a specific verdict string here. Rejects an EMPTY object
+ * explicitly (defect-gate: `vacuous-empty-quantifier`) — a real band always
+ * measures at least one case, so zero entries is a malformed file, not a
+ * legal edge case; `.every()` over an empty `Object.values()` would
+ * otherwise pass vacuously. */
 function isPerCaseVerdictSets(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  return Object.values(value as Record<string, unknown>).every((v) => Array.isArray(v) && v.every((entry) => typeof entry === "string"));
+  const entries = Object.values(value as Record<string, unknown>);
+  if (entries.length === 0) return false;
+  return entries.every((v) => Array.isArray(v) && v.length > 0 && v.every((entry) => typeof entry === "string"));
 }
 
 /** Light shape check for `EvalBaseline.costUsd` (TRO-561's `BaselineCost`) —

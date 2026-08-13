@@ -109,6 +109,18 @@ describe("validateEvalBaseline", () => {
     expect(() => validateEvalBaseline(validBaseline({ repeats: badRepeats }), "baseline.json")).toThrow(/repeats/);
   });
 
+  it("rejects an EMPTY repeats array — a K-repeat band with zero repeats is not legal (defect-gate: vacuous-empty-quantifier)", () => {
+    expect(() => validateEvalBaseline(validBaseline({ repeats: [] }), "baseline.json")).toThrow(/repeats/);
+  });
+
+  it("rejects an EMPTY perCaseVerdictSets object (defect-gate: vacuous-empty-quantifier)", () => {
+    expect(() => validateEvalBaseline(validBaseline({ perCaseVerdictSets: {} }), "baseline.json")).toThrow(/perCaseVerdictSets/);
+  });
+
+  it("rejects a perCaseVerdictSets entry whose own verdict array is empty", () => {
+    expect(() => validateEvalBaseline(validBaseline({ perCaseVerdictSets: { "case-01": [] } }), "baseline.json")).toThrow(/perCaseVerdictSets/);
+  });
+
   it("rejects a missing extractionAccuracyBand", () => {
     const { extractionAccuracyBand: _drop, ...rest } = validBaseline();
     expect(() => validateEvalBaseline(rest, "baseline.json")).toThrow(/extractionAccuracyBand/);

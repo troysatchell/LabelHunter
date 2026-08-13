@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileAtRef } from "./baseline";
-import type { ReplayCorpusEntry, Rule } from "./types";
+import type { Finding, ReplayCorpusEntry, Rule } from "./types";
 
 export interface LedgerRow {
   ticket: string;
@@ -14,6 +14,13 @@ export interface LedgerRow {
 
 export interface ReplayOutcome {
   ticket: string;
+  /**
+   * The ledger row's own file. A ticket alone does not name a row — one
+   * ticket can carry several calibration rows, one per file, and without
+   * this field their outcomes are indistinguishable in the written
+   * artifact.
+   */
+  file: string;
   resolved: boolean;
   hit: boolean;
 }
@@ -29,30 +36,6 @@ export interface ReplayReport {
 function git(repoRoot: string, args: string[]): { status: number; stdout: string } {
   const r = spawnSync("git", args, { cwd: repoRoot, encoding: "utf8" });
   return { status: r.status ?? 1, stdout: (r.stdout ?? "").trim() };
-}
-
-/**
- * Finds the commit that fixed a ledger row.
- *
- * The ledger records ticket, pr, and file, but no commit SHA. Measured
- * 2026-08-12: only 163 of 406 retained rows carry a pr. The ticket-id grep is
- * therefore the fallback, not the exception.
- */
-export function resolveFixCommit(repoRoot: string, row: LedgerRow): string | null {
-  if (row.pr) {
-    const merge = git(repoRoot, [
-      "log",
-      "--format=%H",
-      "-n",
-      "1",
-      "--grep",
-      `Merge pull request #${row.pr}`,
-    ]);
-    if (merge.status === 0 && merge.stdout) return merge.stdout;
-  }
-  const byTicket = git(repoRoot, ["log", "--format=%H", "-n", "1", "--grep", row.ticket]);
-  if (byTicket.status === 0 && byTicket.stdout) return byTicket.stdout;
-  return null;
 }
 
 /**
@@ -135,9 +118,14 @@ export function replayRule(
   outcomes: ReplayOutcome[];
   report: ReplayReport;
 } {
-  const withSource = rule as unknown as {
-    checkSource?: (f: string, t: string, c: unknown) => unknown[];
-  };
+  // Rule is typed with a required checkSource, but replay-cli.ts loads a
+  // rule module through a dynamic import and an `as unknown as Rule` cast
+  // — the type system cannot verify that cast at runtime. Fail loudly and
+  // by name here, rather than let a missing method surface later as a
+  // generic "not a function" error with no rule id attached.
+  if (typeof rule.checkSource !== "function") {
+    throw new Error(`rule ${rule.meta.id} has no checkSource; replay cannot measure recall`);
+  }
   const outcomes: ReplayOutcome[] = rows.map((row) => {
     const candidates = resolveFixCandidates(repoRoot, row);
     let resolved = false;
@@ -147,15 +135,22 @@ export function replayRule(
       const text = fileAtRef(repoRoot, before, row.file);
       if (text === null) continue;
       resolved = true;
-      const found = withSource.checkSource
-        ? withSource.checkSource(row.file, text, { files: [], repoRoot, registries: {} })
-        : [];
+      let found: Finding[];
+      try {
+        found = rule.checkSource(row.file, text, { files: [], repoRoot, registries: {} });
+      } catch {
+        // One historical snapshot failing to parse (a syntax the current
+        // TypeScript version rejects, a shape the rule does not expect)
+        // makes only that candidate unusable. It must not abort replay
+        // for the remaining candidates or the remaining rows.
+        continue;
+      }
       if (found.length > 0) {
         hit = true;
         break;
       }
     }
-    return { ticket: row.ticket, resolved, hit };
+    return { ticket: row.ticket, file: row.file, resolved, hit };
   });
   return { outcomes, report: summariseReplay(outcomes) };
 }

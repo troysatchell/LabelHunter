@@ -11,11 +11,13 @@
   "outcomes": [
     {
       "ticket": "TRO-464",
+      "file": "src/server/resolver/response.ts",
       "resolved": true,
       "hit": true
     },
     {
       "ticket": "TRO-464",
+      "file": "src/server/resolver/queue.ts",
       "resolved": true,
       "hit": true
     }

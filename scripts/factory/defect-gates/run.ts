@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PinDecision } from "./activation";
@@ -8,7 +8,7 @@ import { runRules } from "./engine";
 import quantifierRule from "./rules/vacuous-empty-quantifier";
 import type { Finding, Rule, RuleResult } from "./types";
 
-const RULES: Rule[] = [quantifierRule as unknown as Rule];
+const RULES: Rule[] = [quantifierRule];
 
 export interface BuildInput {
   results: RuleResult[];
@@ -59,8 +59,22 @@ export function buildDocument(input: BuildInput) {
   };
 }
 
-function sh(cmd: string, cwd: string): string {
-  return execSync(cmd, { cwd, encoding: "utf8" }).trim();
+/**
+ * Runs `git` with an argument array, never a shell string.
+ *
+ * `execSync` hands its whole command string to `/bin/sh -c`, so a `baseRef`
+ * value (from `FACTORY_BASE_REF`, or any future caller) interpolated into
+ * that string is parsed by the shell — metacharacters in it change what
+ * actually runs. `spawnSync` with an argument array passes each value to
+ * `git` literally; no shell ever sees it.
+ */
+function sh(args: string[], cwd: string): string {
+  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+  if (result.status !== 0) {
+    const detail = result.stderr || result.error?.message || `exit code ${result.status}`;
+    throw new Error(`git ${args.join(" ")} failed: ${detail}`);
+  }
+  return (result.stdout ?? "").trim();
 }
 
 /**
@@ -74,13 +88,13 @@ function sh(cmd: string, cwd: string): string {
  * Renamed, so it stays in the list under its current content.
  */
 export function changedTsFiles(repoRoot: string, baseRef: string): string[] {
-  return sh(`git diff --diff-filter=ACMR ${baseRef}...HEAD --name-only`, repoRoot)
+  return sh(["diff", "--diff-filter=ACMR", `${baseRef}...HEAD`, "--name-only"], repoRoot)
     .split("\n")
     .filter((f) => /\.tsx?$/.test(f) && !f.endsWith(".d.ts"));
 }
 
 function main(): void {
-  const repoRoot = sh("git rev-parse --show-toplevel", process.cwd());
+  const repoRoot = sh(["rev-parse", "--show-toplevel"], process.cwd());
   const baseRef = process.env.FACTORY_BASE_REF ?? "main";
   const outDir = join(repoRoot, ".factory");
   mkdirSync(outDir, { recursive: true });
@@ -98,9 +112,6 @@ function main(): void {
   const baselines: Record<string, Finding[]> = {};
   const pins: Record<string, PinDecision> = {};
   for (const rule of RULES) {
-    const withSource = rule as unknown as {
-      checkSource: (f: string, t: string, c: unknown) => Finding[];
-    };
     // Use fileAtRef, never a raw `git show`. A file this branch ADDED does not
     // exist at BASE_REF, and that is the common case, not the edge case.
     // fileAtRef returns null there; a raw git show would throw and take the
@@ -108,7 +119,7 @@ function main(): void {
     baselines[rule.meta.id] = changed.flatMap((f) => {
       const before = fileAtRef(repoRoot, baseRef, f);
       if (before === null) return [];
-      return withSource.checkSource(f, before, ctx);
+      return rule.checkSource(f, before, ctx);
     });
     let facts: { mergeBaseIsAfterActivation: boolean; mainCommitsElapsed: number | null } = {
       mergeBaseIsAfterActivation: true,
@@ -142,8 +153,8 @@ function main(): void {
     baselines,
     pins,
     baseRef,
-    baseSha: sh(`git rev-parse ${baseRef}`, repoRoot),
-    mergeBase: sh(`git merge-base HEAD ${baseRef}`, repoRoot),
+    baseSha: sh(["rev-parse", baseRef], repoRoot),
+    mergeBase: sh(["merge-base", "HEAD", baseRef], repoRoot),
   });
 
   writeFileSync(join(outDir, "defect-gate.json"), JSON.stringify(doc, null, 2) + "\n");

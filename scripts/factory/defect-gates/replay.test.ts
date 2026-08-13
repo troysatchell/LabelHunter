@@ -1,47 +1,29 @@
 import { describe, expect, it } from "vitest";
 import { execSync } from "node:child_process";
 import type { LedgerRow } from "./replay";
-import {
-  replayRule,
-  resolveFixCandidates,
-  resolveFixCommit,
-  selectCorpusRows,
-  summariseReplay,
-} from "./replay";
+import { replayRule, resolveFixCandidates, selectCorpusRows, summariseReplay } from "./replay";
 import rule from "./rules/vacuous-empty-quantifier";
+import type { Rule } from "./types";
 
 const repoRoot = execSync("git rev-parse --show-toplevel", { encoding: "utf8" }).trim();
 
-describe("resolveFixCommit", () => {
-  it("finds a commit by ticket id when no pr is recorded", () => {
-    const sha = resolveFixCommit(repoRoot, {
-      ticket: "TRO-511",
-      file: "src/x.ts",
-      disposition: "fixed",
-      category: "c",
-      summary: "s",
-    });
-    expect(sha).toMatch(/^[0-9a-f]{7,40}$/);
-  });
-
-  it("returns null for a ticket that appears in no commit", () => {
-    const sha = resolveFixCommit(repoRoot, {
-      ticket: "TRO-000000",
-      file: "src/x.ts",
-      disposition: "fixed",
-      category: "c",
-      summary: "s",
-    });
-    expect(sha).toBeNull();
-  });
-});
+// resolveFixCandidates and replayRule below replay REAL commit history for
+// two specific tickets (TRO-511, TRO-464) in this repo, not a synthetic
+// scratch repo — that is the point: they prove the harness against actual
+// git archaeology. A shallow checkout truncates that history, which would
+// fail every assertion below for an environment reason, not a code bug.
+// Skip with a named reason instead of a confusing failure; a full clone
+// (this repo's normal state, and CI's `fetch-depth: 0`) always runs them.
+const isShallowRepo =
+  execSync("git rev-parse --is-shallow-repository", { cwd: repoRoot, encoding: "utf8" }).trim() ===
+  "true";
 
 describe("summariseReplay", () => {
   it("computes recall over resolvable rows only", () => {
     const report = summariseReplay([
-      { ticket: "A", resolved: true, hit: true },
-      { ticket: "B", resolved: true, hit: false },
-      { ticket: "C", resolved: false, hit: false },
+      { ticket: "A", file: "a.ts", resolved: true, hit: true },
+      { ticket: "B", file: "b.ts", resolved: true, hit: false },
+      { ticket: "C", file: "c.ts", resolved: false, hit: false },
     ]);
     expect(report.resolvable).toBe(2);
     expect(report.hits).toBe(1);
@@ -50,13 +32,13 @@ describe("summariseReplay", () => {
   });
 
   it("reports zero recall rather than dividing by zero", () => {
-    const report = summariseReplay([{ ticket: "A", resolved: false, hit: false }]);
+    const report = summariseReplay([{ ticket: "A", file: "a.ts", resolved: false, hit: false }]);
     expect(report.recall).toBe(0);
     expect(report.resolvable).toBe(0);
   });
 });
 
-describe("resolveFixCandidates", () => {
+describe.skipIf(isShallowRepo)("resolveFixCandidates", () => {
   it("lists every commit touching the file that names the ticket, oldest first", () => {
     const shas = resolveFixCandidates(repoRoot, {
       ticket: "TRO-511",
@@ -114,7 +96,7 @@ describe("selectCorpusRows", () => {
   });
 });
 
-describe("replayRule", () => {
+describe.skipIf(isShallowRepo)("replayRule", () => {
   it("counts a hit when any candidate snapshot triggers the rule, not only the most recent one", () => {
     // Measured on this repo 2026-08-12: the most recent commit naming
     // TRO-464 and touching queue.ts is not the fix. Its own parent does
@@ -146,5 +128,39 @@ describe("replayRule", () => {
     const { outcomes } = replayRule(repoRoot, rule, rows);
     expect(outcomes[0].resolved).toBe(false);
     expect(outcomes[0].hit).toBe(false);
+  });
+
+  it("throws immediately, naming the rule, when checkSource is missing", () => {
+    // Simulates the one path the Rule type cannot guard: replay-cli.ts
+    // loads a rule module through a dynamic import and casts it to Rule.
+    // A malformed module reaches replayRule at runtime with no checkSource
+    // at all, despite the type saying it must have one.
+    const bareRule = { ...rule, checkSource: undefined } as unknown as Rule;
+    expect(() => replayRule(repoRoot, bareRule, [])).toThrow(/vacuous-empty-quantifier/);
+  });
+
+  it("treats a candidate whose checkSource throws as unusable, and keeps trying the rest", () => {
+    let calls = 0;
+    const flaky: Rule = {
+      ...rule,
+      checkSource: (f, t, c) => {
+        calls += 1;
+        if (calls === 1) throw new Error("simulated parse failure on this snapshot");
+        return rule.checkSource(f, t, c);
+      },
+    };
+    const rows: LedgerRow[] = [
+      {
+        ticket: "TRO-464",
+        file: "src/server/resolver/queue.ts",
+        disposition: "fixed",
+        category: "boundary-validation",
+        summary: "isResolverResolution accepted a stored row with fields: []",
+      },
+    ];
+    const { outcomes } = replayRule(repoRoot, flaky, rows);
+    expect(calls).toBeGreaterThan(1);
+    expect(outcomes[0].resolved).toBe(true);
+    expect(outcomes[0].hit).toBe(true);
   });
 });

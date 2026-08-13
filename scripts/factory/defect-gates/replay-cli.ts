@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { loadLedger, replayRule, selectCorpusRows } from "./replay";
 import type { Rule } from "./types";
 
@@ -60,11 +60,12 @@ async function main(): Promise<void> {
     rule: rule.meta.id,
     version: rule.meta.version,
     report,
-    outcomes: outcomes.map((o) => ({ ticket: o.ticket, resolved: o.resolved, hit: o.hit })),
+    outcomes: outcomes.map((o) => ({ ticket: o.ticket, file: o.file, resolved: o.resolved, hit: o.hit })),
   };
 
   const outPath =
     argAfter("--out") ?? join(repoRoot, "factory/replay", `${rule.meta.id}.v${rule.meta.version}.json`);
+  mkdirSync(dirname(outPath), { recursive: true });
   writeFileSync(outPath, JSON.stringify(doc, null, 2) + "\n");
   console.log(`wrote ${outPath}`);
   console.log(JSON.stringify(report, null, 2));

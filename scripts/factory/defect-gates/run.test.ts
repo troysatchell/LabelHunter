@@ -88,7 +88,7 @@ describe("changedTsFiles", () => {
       const baseSha = scratchGit(dir, "rev-parse HEAD");
 
       // Branch: delete a.ts (the ENOENT trigger — Critical 1), add b.ts.
-      execSync(`rm ${join(dir, "a.ts")}`);
+      rmSync(join(dir, "a.ts"));
       writeFileSync(join(dir, "b.ts"), "export const b = 1;\n");
       scratchGit(dir, "add -A");
       scratchGit(dir, 'commit -q -m "delete a, add b"');

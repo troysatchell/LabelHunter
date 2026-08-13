@@ -55,6 +55,16 @@ export interface RuleContext {
 export interface Rule {
   meta: RuleMeta;
   check(ctx: RuleContext): Finding[];
+  /**
+   * Checks one file's source text directly, without reading the working
+   * tree. The baseline pass and the replay harness both call this against
+   * historical text read from a git ref — `check` alone cannot serve
+   * either, since it reads files from disk by path. Required, not
+   * optional: an optional method here previously let a rule silently
+   * contribute an empty baseline and an empty replay result instead of a
+   * visible error.
+   */
+  checkSource(filePath: string, text: string, ctx: RuleContext): Finding[];
 }
 
 export interface RuleResult {

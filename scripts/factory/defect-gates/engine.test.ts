@@ -16,6 +16,7 @@ function stubRule(id: string, findings: Finding[]): Rule {
       replayCorpus: [],
     },
     check: () => findings,
+    checkSource: () => findings,
   };
 }
 
@@ -65,5 +66,21 @@ describe("runRules", () => {
     };
     const results = runRules([broken, stubRule("quiet", [])], ctx);
     expect(results.map((r) => r.status)).toEqual(["error", "pass"]);
+  });
+
+  it("reports error, and still runs later rules, when the thrown value has no usable toString", () => {
+    // Object.create(null) has no prototype, so String() on it throws
+    // TypeError: Cannot convert object to primitive value. That throw
+    // must not escape runRules and abort the remaining rules.
+    const broken: Rule = {
+      ...stubRule("broken", []),
+      check: () => {
+        throw Object.create(null);
+      },
+    };
+    const results = runRules([broken, stubRule("quiet", [])], ctx);
+    expect(results[0].status).toBe("error");
+    expect(typeof results[0].error).toBe("string");
+    expect(results[1].status).toBe("pass");
   });
 });

@@ -18,10 +18,11 @@ design reasoning, tools, assumptions, and trade-offs in full.
 
 A deployed instance exists, but this README does not name its address yet.
 [PR #43](https://github.com/troysatchell/LabelHunter/pull/43) — the access-code gate, rate
-limits, and daily spend budget — has not merged. Until it merges, that instance has no
-protection against uninvited use, and it makes real, billed calls to the Anthropic API.
-Publishing its address here would invite exactly that use before the protection lands. Once
-PR #43 merges, this section carries the URL and the access code.
+limits, and daily spend budget — has merged into `main`. Render redeploys automatically from a
+green `main`, but a merge is not the same claim as a live, protected deployment. This section
+waits for that redeploy to be independently confirmed against the live URL, not assumed from
+the merge alone. Publishing an address before that confirmation would invite unprotected use.
+Once confirmed, this section carries the URL and the access code.
 
 Until then, run LabelHunter locally with the steps below.
 
@@ -155,10 +156,11 @@ verdict accuracy, cost per label, and a cascade-vs-single-model comparison.
   choice, not an oversight.
 - **The Anthropic API key never enters the repo.** It lives in `.env.local`, which is
   git-ignored. Once deployed, it also lives in Render's environment configuration.
-- **Access control is in progress.** A shared access-code gate, per-IP and global rate limits,
-  and a daily spend budget are ready and in review
-  ([PR #43](https://github.com/troysatchell/LabelHunter/pull/43)). None of it has merged yet.
-  Until it does, treat any deployed instance of this app as unprotected.
+- **Access control is merged, not yet confirmed live.** A shared access-code gate, per-IP and
+  global rate limits, and a daily spend budget merged into `main`
+  ([PR #43](https://github.com/troysatchell/LabelHunter/pull/43)). A merge is not the same
+  claim as a live deployment — treat any deployed instance of this app as unprotected until
+  that is independently confirmed against the live URL.
 
 ## What LabelHunter does not call
 

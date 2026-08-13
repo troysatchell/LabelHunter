@@ -28,8 +28,9 @@ warning placement. The renderer's own labels do not. This ticket adds that varie
 4. `scripts/golden/wildLabelEval.ts` is new (`pnpm golden:wild-eval`). It runs each candidate
    through the real cascade (`runOneCase`, unmodified) and writes
    `golden-set/wild-labels/results/wild-eval-report.json`. Real result: 24/25 extraction fields
-   correct (the one miss is the intentionally-uncertain garbled-warning case), 5/5 label
-   verdicts matching the corrected expected values.
+   correct (the one miss is the intentionally-uncertain garbled-warning case), and 5/5 ROUTER
+   label verdicts matching the corrected expected values (`expected` predicts the router's
+   decision, not the cascade's post-resolver end state — see the README's own scope note).
 5. `verified` stays `false` on all 5 candidate cases. That flag is Troy's decision alone
    (this repo's standing rule) — this ticket never sets it. The 5 cases stay OUT of
    `golden-set/manifest.json` on purpose: `src/lib/golden-set/loader.ts` refuses to load ANY
@@ -49,13 +50,17 @@ that corrected, evidence-backed ground truth, not the first guess.
 
 | What | Amount |
 |---|---|
-| 5 committed wild-label images (`golden-set/wild-labels/*.meta.json`) | $0.341443 |
+| 5 committed wild-label images (`golden-set/wild-labels/*.meta.json`) | $0.3414435 |
 | Final `pnpm golden:wild-eval` run (committed `wild-eval-report.json`) | $0.088572 |
 | One earlier `pnpm golden:wild-eval` run, superseded by the corrected re-run above | ~$0.0925 |
 | One discarded probe call during development (image not committed) | $0.068096 |
 | **Total** | **~$0.591** |
 
-Design doc §5 estimates the full set under $5. The measured total is about 12% of that budget.
+The two `~` rows are rounded: read from this terminal's own printed per-case lines (4 decimal
+places each), not from a saved exact-precision report — the first `wild-eval-report.json` was
+overwritten by the corrected re-run before this entry was written. Every other figure is the
+exact value a real API response (or its sidecar) reported. Design doc §5 estimates the full set
+under $5. The measured total is about 12% of that budget.
 
 **Rollback.** Revert the PR. `golden-set/wild-labels/` and its two new scripts disappear;
 `golden-set/manifest.json` never changed, so nothing else is affected.
@@ -85,12 +90,31 @@ of relying on the SDK's documented (and, across 6 real calls, consistently obser
 default. 1 trivial fixed alongside it (the same `imageConfig` change covers both). 6 new test
 cases (46 → 52).
 
+**Review, round 3.** 14 findings: 8 minor prose-style re-flags — dismissed per rule 31 again.
+1 dismissed after verification, not just judgment: a finding claimed `review-ledger.mjs`'s
+`report` command uses a finding's `file` field to resolve a "replay corpus," and asked for
+round 2's grouped-dismissal entries to use real paths for that reason. Reading
+`review-ledger.mjs` itself shows `report` only ever prints `file` as free text — no path
+resolution, no replay mechanism exists in this file. 5 fixed, all real: `extractWildLabelUsage`
+now folds in `thoughtsTokenCount` when present — the SDK's own type documents it as separate
+from `candidatesTokenCount`, so a reasoning-model call that used it would otherwise
+under-report real spend; a misplaced doc comment now sits directly above the function it
+describes; `loadWildLabelCandidates` now validates each `cases[]` entry is a well-shaped object
+with a string `caseId`/`imagePath` before reading either, instead of crashing with a raw,
+confusing error; one test's own name and comment claimed to prove containment survives a
+"maliciously-constructed caseId" that (given `assertSafeSlug` runs first, unlike job 1's
+`generateOne`) can never actually reach that code path — renamed to describe what it actually
+verifies; `CHANGES.md` now marks the eval harness's 5/5 result as router-level explicitly, and
+its cost table shows the 5-image total's real, exact precision, with a footnote naming the two
+figures that are honestly rounded (read from terminal output, not a saved report). 7 new test
+cases (52 → 59).
+
 **Confirmed.** `scripts/golden/wildLabelPrompt.test.ts`, `wildLabelImagen.test.ts`, and
-`wildLabelCandidates.test.ts` are new — 52 test cases across both triage rounds, red first
+`wildLabelCandidates.test.ts` are new — 59 test cases across three triage rounds, red first
 every round, green after each implementation. The candidates' schema shape is checked against
 the real, current `GoldenSetCase` validator (`verified`/`imagePath` patched to their
 post-fold-in values for that one check only, never written to disk) — both in the test suite
-and now in `loadWildLabelCandidates` itself. `pnpm typecheck` is clean. The full 2407-test unit
+and in `loadWildLabelCandidates` itself. `pnpm typecheck` is clean. The full 2414-test unit
 suite and the existing `imagen.test.ts`/`imagenPrompt.test.ts` job-1 suites still pass
 unchanged.
 

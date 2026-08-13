@@ -113,6 +113,49 @@ describe("loadWildLabelCandidates — error handling", () => {
     }
   });
 
+  // A malformed cases[] entry must produce THIS file's own clear,
+  // wildLabelEval-prefixed error -- not a raw TypeError from reading
+  // .caseId (or similar) off something that isn't the shape it's assumed
+  // to be (CodeRabbit finding, round 3; lessons.md rule 13: "validate at
+  // the boundary where a value's shape is only assumed, not guaranteed").
+  it("throws a clear error when a cases[] entry is null", () => {
+    const file = writeTempFile({ cases: [null] });
+    try {
+      expect(() => loadWildLabelCandidates(file)).toThrow(/wildLabelEval:.*must be an object/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("throws a clear error when a cases[] entry is not an object", () => {
+    const file = writeTempFile({ cases: ["not-a-case"] });
+    try {
+      expect(() => loadWildLabelCandidates(file)).toThrow(/wildLabelEval:.*must be an object/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("throws a clear error when a cases[] entry has no string caseId", () => {
+    const file = writeTempFile({
+      cases: [{ provenance: "ai-generated", verified: false, imagePath: "golden-set/wild-labels/case-43-odd-typography-wild-highcontrast-gin.png" }],
+    });
+    try {
+      expect(() => loadWildLabelCandidates(file)).toThrow(/must have a string caseId/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("throws a clear error when a cases[] entry has no string imagePath", () => {
+    const file = writeTempFile({ cases: [{ caseId: "x", provenance: "ai-generated", verified: false }] });
+    try {
+      expect(() => loadWildLabelCandidates(file)).toThrow(/must have a string imagePath/);
+    } finally {
+      cleanup();
+    }
+  });
+
   it("throws when a case's provenance is not ai-generated", () => {
     const file = writeTempFile({ cases: [{ caseId: "x", provenance: "rendered", verified: false, imagePath: "golden-set/images/case-01-clean-match-spirits.jpg" }] });
     try {

@@ -185,6 +185,44 @@ describe("extractWildLabelUsage", () => {
       }),
     ).toThrow(/non-negative integer/);
   });
+
+  // The SDK's own GenerateContentResponseUsageMetadata type documents
+  // totalTokenCount as "the sum of prompt_token_count, candidates_token_count,
+  // ..., and thoughts_token_count" -- thoughtsTokenCount is NOT included
+  // in candidatesTokenCount. A model that reasons before generating (this
+  // is a "3.1"-generation model) can report a nonzero thoughtsTokenCount
+  // on some call, and it is billed at the same "text and thinking" output
+  // rate otherOutputTokenCount already uses. Missing it would silently
+  // under-report real spend (CodeRabbit finding, round 3).
+  it("adds a real thoughtsTokenCount into otherOutputTokenCount", () => {
+    const usage = extractWildLabelUsage({
+      promptTokenCount: 256,
+      candidatesTokenCount: 1120,
+      candidatesTokensDetails: [{ modality: "IMAGE", tokenCount: 1120 }],
+      thoughtsTokenCount: 40,
+    });
+    expect(usage).toEqual({ promptTokenCount: 256, imageOutputTokenCount: 1120, otherOutputTokenCount: 40 });
+  });
+
+  it("treats an absent thoughtsTokenCount as 0 -- the field is genuinely optional ('if applicable') per the SDK", () => {
+    const usage = extractWildLabelUsage({
+      promptTokenCount: 256,
+      candidatesTokenCount: 1120,
+      candidatesTokensDetails: [{ modality: "IMAGE", tokenCount: 1120 }],
+    });
+    expect(usage.otherOutputTokenCount).toBe(0);
+  });
+
+  it("throws when thoughtsTokenCount is present but not a non-negative integer", () => {
+    expect(() =>
+      extractWildLabelUsage({
+        promptTokenCount: 0,
+        candidatesTokenCount: 1120,
+        candidatesTokensDetails: [{ modality: "IMAGE", tokenCount: 1120 }],
+        thoughtsTokenCount: -3,
+      }),
+    ).toThrow(/non-negative integer/);
+  });
 });
 
 describe("computeWildLabelCostUsd", () => {
@@ -258,18 +296,26 @@ describe("generateWildLabelOne", () => {
     }
   });
 
-  it("refuses to write outside outDir even given a maliciously-constructed caseId", async () => {
+  it("resolves the written image and sidecar paths inside the given outDir", async () => {
+    // NOT a test of resolveWithinDir surviving a bypassed assertSafeSlug --
+    // that scenario is unconstructible through this public function.
+    // Unlike job 1's generateOne (whose assertSafeSlug call lives in the
+    // separate enumerateTargets, so generateOne itself CAN be reached with
+    // an unvalidated target — imagen.test.ts's own "generateOne refuses to
+    // write outside outDir" test relies on exactly that gap),
+    // generateWildLabelOne calls assertSafeSlug on its OWN first line, so
+    // no caseId that reaches resolveWithinDir below can ever contain a "/"
+    // in the first place. This test instead confirms the ordinary,
+    // expected behavior: a normal call's output paths land inside the
+    // resolved outDir, not the process's cwd or some other default.
     const outDir = mkdtempSync(path.join(tmpdir(), "wild-label-test-contain-"));
     try {
-      // Passes assertSafeSlug (letters/digits/hyphen/underscore only) but
-      // could still resolve outside outDir if resolveWithinDir were ever
-      // skipped -- the same second, independent containment layer
-      // imagen.test.ts already proves for the backdrop path.
       const png = await makeSolidPng();
       const generate: WildLabelGenerator = async () => ({ image: png, usage: fakeUsage() });
       const request: WildLabelRequest = { ...SAMPLE_REQUEST, caseId: "case-fixture-wild-label" };
       const result = await generateWildLabelOne(request, generate, outDir);
       expect(path.dirname(result.imagePath)).toBe(path.resolve(outDir));
+      expect(path.dirname(result.metaPath)).toBe(path.resolve(outDir));
     } finally {
       rmSync(outDir, { recursive: true, force: true });
     }

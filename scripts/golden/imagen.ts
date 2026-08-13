@@ -313,6 +313,25 @@ interface RawWildLabelUsageMetadata {
   readonly promptTokenCount?: number;
   readonly candidatesTokenCount?: number;
   readonly candidatesTokensDetails?: ReadonlyArray<{ readonly modality?: string; readonly tokenCount?: number }>;
+  /** The SDK's own `GenerateContentResponseUsageMetadata` type documents
+   * `totalTokenCount` as the sum of `promptTokenCount`, `candidatesTokenCount`,
+   * `toolUsePromptTokenCount`, AND `thoughtsTokenCount` — this field is
+   * genuinely separate from `candidatesTokenCount`, not a subset of it. A
+   * reasoning-capable model can report a nonzero value here on some calls;
+   * billed at the same "text and thinking" output rate `otherOutputTokenCount`
+   * already uses. Optional ("if applicable" per the SDK's own doc comment)
+   * — absent reads as 0, not an error. */
+  readonly thoughtsTokenCount?: number;
+}
+
+/** Real Gemini token counts are always non-negative integers — a
+ * fractional or negative count is itself a signal of bad data (CodeRabbit
+ * finding, round 2), not a value worth silently feeding into a cost
+ * calculation. One shared check, so every call site (`promptTokenCount`,
+ * `candidatesTokenCount`, each IMAGE detail's `tokenCount`,
+ * `thoughtsTokenCount`) applies the exact same rule. */
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
 /**
@@ -324,21 +343,14 @@ interface RawWildLabelUsageMetadata {
  * as "spent $0", and a fractional or negative count is itself bad data,
  * not a value to feed into a cost calculation. CLAUDE.md's "never
  * fabricate a number" applies to a fabricated zero exactly as much as to
- * a fabricated positive one). `generateWildLabelWithGemini`'s generator
- * does not catch this — a thrown error here aborts the whole call before
- * `generateWildLabelOne` ever writes an image or a sidecar with a wrong
- * cost.
+ * a fabricated positive one). Also folds in `thoughtsTokenCount` when
+ * present (CodeRabbit finding, round 3 — see `RawWildLabelUsageMetadata`'s
+ * own comment on why this is a real, separate cost component, not covered
+ * by `candidatesTokenCount`). `generateWildLabelWithGemini`'s generator
+ * does not catch any of this — a thrown error here aborts the whole call
+ * before `generateWildLabelOne` ever writes an image or a sidecar with a
+ * wrong cost.
  */
-/** Real Gemini token counts are always non-negative integers — a
- * fractional or negative count is itself a signal of bad data (CodeRabbit
- * finding, round 2), not a value worth silently feeding into a cost
- * calculation. One shared check, so every call site (`promptTokenCount`,
- * `candidatesTokenCount`, each IMAGE detail's `tokenCount`) applies the
- * exact same rule. */
-function isNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0;
-}
-
 export function extractWildLabelUsage(usageMetadata: RawWildLabelUsageMetadata | undefined): WildLabelUsage {
   if (!usageMetadata) {
     throw new Error("imagen: wild-label response carried no usageMetadata -- cannot compute its real cost");
@@ -352,6 +364,15 @@ export function extractWildLabelUsage(usageMetadata: RawWildLabelUsageMetadata |
     throw new Error(
       `imagen: wild-label response usageMetadata's candidatesTokenCount must be a non-negative integer (got ${JSON.stringify(usageMetadata.candidatesTokenCount)}) -- cannot compute its real cost`,
     );
+  }
+  let thoughtsTokenCount = 0;
+  if (usageMetadata.thoughtsTokenCount !== undefined) {
+    if (!isNonNegativeInteger(usageMetadata.thoughtsTokenCount)) {
+      throw new Error(
+        `imagen: wild-label response usageMetadata's thoughtsTokenCount must be a non-negative integer when present (got ${JSON.stringify(usageMetadata.thoughtsTokenCount)}) -- cannot compute its real cost`,
+      );
+    }
+    thoughtsTokenCount = usageMetadata.thoughtsTokenCount;
   }
   const imageDetails = (usageMetadata.candidatesTokensDetails ?? []).filter((detail) => detail.modality === "IMAGE");
   if (imageDetails.length === 0) {
@@ -368,13 +389,23 @@ export function extractWildLabelUsage(usageMetadata: RawWildLabelUsageMetadata |
     }
     imageOutputTokenCount += detail.tokenCount;
   }
-  const otherOutputTokenCount = usageMetadata.candidatesTokenCount - imageOutputTokenCount;
-  if (otherOutputTokenCount < 0) {
+  // Checked BEFORE folding in thoughtsTokenCount: a large thoughtsTokenCount
+  // could otherwise push the final sum back to non-negative and mask a
+  // genuine candidatesTokenCount/imageOutputTokenCount inconsistency —
+  // thoughtsTokenCount is a real, separate cost component (this
+  // function's own doc comment), never a fudge factor for a different
+  // field's bad data.
+  const otherFromCandidates = usageMetadata.candidatesTokenCount - imageOutputTokenCount;
+  if (otherFromCandidates < 0) {
     throw new Error(
       `imagen: wild-label response usageMetadata is internally inconsistent -- candidatesTokenCount (${usageMetadata.candidatesTokenCount}) is less than its own IMAGE token count (${imageOutputTokenCount})`,
     );
   }
-  return { promptTokenCount: usageMetadata.promptTokenCount, imageOutputTokenCount, otherOutputTokenCount };
+  return {
+    promptTokenCount: usageMetadata.promptTokenCount,
+    imageOutputTokenCount,
+    otherOutputTokenCount: otherFromCandidates + thoughtsTokenCount,
+  };
 }
 
 /**

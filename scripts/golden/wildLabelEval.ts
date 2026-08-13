@@ -92,7 +92,25 @@ export function loadWildLabelCandidates(candidatesPath: string = CANDIDATES_PATH
     throw new Error(`wildLabelEval: ${candidatesPath} has zero cases`);
   }
   const seenIds = new Set<string>();
-  for (const c of cases) {
+  for (const rawCase of cases) {
+    // A cases[] entry's shape is only ASSUMED (the `GoldenSetCase[]` cast
+    // above), never guaranteed -- candidates.json is a committed, reviewed
+    // file, but not a runtime-validated one at the point this loop reads
+    // it. Check the two fields this loop's own error messages read
+    // (`caseId`, `imagePath`) before reading either, so a malformed entry
+    // produces this file's own clear, wildLabelEval-prefixed error instead
+    // of a raw TypeError or a confusing "provenance undefined" message
+    // (CodeRabbit finding, round 3; lessons.md rule 13).
+    if (typeof rawCase !== "object" || rawCase === null) {
+      throw new Error(`wildLabelEval: a cases[] entry in ${candidatesPath} must be an object, got ${JSON.stringify(rawCase)}`);
+    }
+    const c = rawCase as GoldenSetCase;
+    if (typeof c.caseId !== "string" || c.caseId.length === 0) {
+      throw new Error(`wildLabelEval: a cases[] entry in ${candidatesPath} must have a string caseId`);
+    }
+    if (typeof c.imagePath !== "string" || c.imagePath.length === 0) {
+      throw new Error(`wildLabelEval: ${c.caseId}: must have a string imagePath`);
+    }
     if (seenIds.has(c.caseId)) {
       throw new Error(`wildLabelEval: duplicate caseId "${c.caseId}" in ${candidatesPath}`);
     }

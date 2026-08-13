@@ -4,6 +4,33 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-484 — LH-063: README (2026-08-13)
+
+**What changed.** Added `README.md` at the repo root — TH-R14's graded deliverable, previously
+MISSING (three sweeps running). Assembled from material that already existed: what LabelHunter
+is (`docs/PRD.md` §1), setup/run steps (`.env.local.example`, `package.json`'s scripts block),
+the cascade architecture diagram and cost table (`docs/PRD.md` §3.1, §4), the outbound-dependency
+list (`docs/error-states.md`), and the data-handling posture (`src/lib/db/schema.ts`,
+`src/server/review-queue/record-disposition.ts:11`) — sourced from
+`audit/requirements/gaps.md`'s TH-R14 and TH-R6 suggested scope (TRO-486).
+
+**The deployed URL is deliberately not published yet.** PR #43 (TRO-482, key protection: access
+code, rate limits, daily spend budget) is open and unmerged. The live instance has no
+protection against uninvited use and makes real, billed Anthropic API calls. The README says so
+plainly instead of silently omitting the URL or publishing it unguarded. Once #43 merges, add
+the URL and access code to the "Try it" section.
+
+**Observed, not derived.** Every command in the Setup and Running the tests sections was run
+against a fresh worktree this ticket: `pnpm install`, `pnpm db:migrate` (8 migrations, exit 0),
+`pnpm typecheck` (exit 0), `pnpm lint` (0 errors, 1 pre-existing warning), `pnpm test`, `pnpm
+build` (15 routes) — see this PR's own gate run for exact output.
+
+**How to run it.** Follow the README itself: `pnpm install`, start the Postgres container it
+documents, `cp .env.local.example .env.local` and set `ANTHROPIC_API_KEY`, `pnpm db:migrate`,
+`pnpm dev`.
+
+**Rollback.** Delete `README.md`. No other file changed; no schema, no app code.
+
 ## TRO-486 — LH-065: requirements-audit compare sweep at commit 876a295 (2026-08-13)
 
 **One row moved, and it moved down.** TH-R2 (single-label latency) held VERIFIED at the last

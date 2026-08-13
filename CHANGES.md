@@ -54,6 +54,74 @@ changelog entry. The seeded verification/application rows stay in the deployed d
 are real, useful demo data, not a defect to revert. Truncating them is a separate, deliberate
 choice for whoever runs the demo next.
 
+## TRO-485 — LH-064: approach.md (2026-08-13)
+
+**What changed.** This ticket adds `docs/approach.md`. It closes TH-R15, a graded deliverable
+that was MISSING across three sweeps. It also closes TH-R7's and TH-R19's written halves, and
+half of TH-R21 and TH-R23. Each of those traces to real content that lived only in internal
+working documents until now. This ticket assembles the content from six existing sources:
+`docs/PRD.md`, `docs/error-states.md`, `docs/deploy.md`,
+`audit/requirements/interpretations.md`, `scripts/eval/baseline.json`, and
+`scripts/eval/results/benchmark-report.json`. `audit/requirements/gaps.md`'s TH-R15 suggested
+scope (TRO-486) names these same six sources.
+
+**The accuracy figures are a band, not a point value.** Extraction 87.2%-87.8%, cascade-verdict
+80.6%-83.3% (K=3, N=36, `scripts/eval/baseline.json`, TRO-561). TRO-561 exists specifically
+because an earlier practice pinned a single number to one end of a measured spread; this
+document does not repeat that.
+
+**The latency figure is deliberately withheld, at first.** TRO-486's sweep downgraded TH-R2 to
+PARTIAL. The last deployed-latency measurement predates commits that touch its own measured
+path. PR #43 changes that same path again. A fresh measurement waits until the redeploy is
+confirmed live, not just merged. Measuring against a stale build would repeat the exact defect
+this document exists to avoid.
+
+**Names two gaps found during PR #43's own review, before merge.** The batch workers do not
+re-check the spend budget mid-run. A database failure during the budget check 500s instead of
+returning the designed 503. Both are real. Both are already tracked. Naming them here is a
+better answer at interview than an unexamined system would be.
+
+**Updated after PR #43 merged, mid-ticket.** The first commit on this branch said PR #43 was
+"not yet merged." It merged shortly after. A second commit corrects that claim. It does not
+claim the deployed instance is protected. That needs its own independent check against the
+live URL, which had not happened by this commit.
+
+**Updated again once the deploy was confirmed live, a third time.** `GET /` now redirects to
+`/access-code`, an unauthenticated API request returns 401, and the real code returns 200 with
+a session cookie — all checked directly. The trade-offs section now describes access control
+as live, not merged-only, and adds the daily-budget-was-inert story PR #43's own review caught:
+a missing client binding meant spend was never recorded and the guard could never trip, fixed
+and now proven by a real regression test. Cites TRO-565, TRO-566, and TRO-567 for the follow-up
+gaps instead of describing them loosely. The latency figure is still withheld, but for a
+different reason now: `scripts/latency/measure.ts`'s `--url` mode sends no access-code
+credential, so it cannot pass the gate at all until that script is updated — a small,
+out-of-scope tooling gap, not a deploy-confirmation question anymore.
+
+**Updated a fourth time: the real latency number, and a bold-detection correction.**
+TRO-568 (merged) fixed the tooling gap named above. 20 real HTTP verify round-trips against the
+live deployed instance, past the access-code gate, measured p50 3618 ms / p95 4197 ms / mean
+3738 ms, 20 of 20 PASS — inside the brief's ~5-second bar. Also corrects a real gap this
+document's own earlier drafts described too gently: the government warning's bold-prefix
+requirement is captured by the extractor (`formatting.bold`) but never read anywhere in the
+router or the warning comparator — verified by grepping `src/server/router/` and
+`src/server/warning/` for any use of the field before writing this down, not assumed. A
+correctly worded, correctly capitalized, non-bold prefix passes today. Filed
+[TRO-569](https://linear.app/troysatchell/issue/TRO-569), Urgent. Named in three places now:
+"The government warning gets a stricter check," "Trade-offs and limitations," and "What was
+not built, and why" — the same discipline this document already applies to cascade-verdict
+accuracy.
+
+**Observed, not derived.** This ticket ran these commands against a fresh worktree:
+`pnpm install`; `pnpm db:migrate` (8 migrations, exit 0); `pnpm typecheck` (exit 0); `pnpm lint`
+(exit 0); `pnpm test` (exit 0); `pnpm build` (exit 0). No application code changed, so
+`pnpm test:e2e` did not run.
+
+**How to run it.** Read `docs/approach.md`. No command runs it.
+
+**Rollback.** Delete `docs/approach.md`. Remove this changelog entry. No schema or application
+code changed. `factory/review-findings.jsonl`'s entries for this ticket stay — that ledger is
+append-only, and a revert should not be read as erasing the record of what was reviewed.
+
 ## TRO-484 — LH-063: README (2026-08-13)
 
 **What changed.** This ticket adds `README.md` at the repo root. It closes TH-R14, a graded

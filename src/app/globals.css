@@ -825,6 +825,15 @@ fieldset.field legend {
   font-size: 0.95rem;
 }
 
+/* LH-025/LH-026 (TRO-532/TRO-533) — the bold advisory line. Muted and
+   smaller than `.detail-field__reason`: this is a secondary, advisory
+   note about the government warning row, never a second verdict. */
+.detail-field__bold-signal {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
 /* ---- Batch (LH-042 / TRO-475, PRD §3.5, §5) --------------------------- */
 
 /* A results table with six columns and up to a few hundred rows does not

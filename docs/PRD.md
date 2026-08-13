@@ -37,9 +37,11 @@ exact warning enforcement (TH-R9), and a UI Sarah's mother could use (TH-R3).
 
 **Explicitly bounded:**
 
-- **Bold detection on the warning (TH-R9):** attempted via Sonnet vision judgment, reported as
-  low-confidence signal (`formatting.bold: true/false/uncertain`), and documented as a
-  prototype limitation. Caps check is deterministic and hard-enforced.
+- **Bold detection on the warning (TH-R9):** measured directly from the image's pixels — a
+  stroke-width comparison (`measureBoldSignal`, LH-025/LH-026), not a model judgment. It reports
+  a three-valued advisory signal (bold/not-bold/uncertain) that never changes a verdict, and the
+  eval harness scores it against real ground truth. Caps check is deterministic and
+  hard-enforced.
 - **Field set:** the 5 example fields + a beverage-type selector (beer/wine/spirits) that
   adjusts rules (e.g., ABV optionality where TTB allows). Bottler address / country of origin
   are OUT — noted in docs as v2.

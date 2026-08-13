@@ -4,6 +4,73 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-533 — LH-026 · Surface the bold signal; fix the bold doc drift (2026-08-13)
+
+Advances TH-R9, TH-R15, TH-R20. TRO-532 built `measureBoldSignal` — a pixel measurement, not a
+model call — and nothing called it. Two documentation claims did not match the code: PRD §2
+said bold detection was "attempted via Sonnet vision judgment" (the flag sits on the Haiku
+schema, and Sonnet is told not to judge the warning at all), and the eval harness scored the
+warning on folded text only, never bold. This ticket wires the signal in, corrects both
+claims, and turns "bold detection attempted" into a measured number.
+
+**What changed.**
+
+- `src/server/warning/index.ts` — `compareGovernmentWarningFromImage` now also calls
+  `measureBoldSignal` on the SAME crop the OCR channel already reads (`runOcrChannel`), before
+  `deps.ocr` even runs. The return type changes from a bare `WarningComparatorResult` to
+  `{ comparator, boldSignal }` — two separate fields, never merged into one object, so the type
+  system itself keeps the bold signal off `routeLabel`'s only input from this module. Also
+  re-exports `measureBoldSignal`/`BoldSignal`/`BoldSignalResult` (bold-detect.ts itself is
+  untouched — TRO-532's file, out of this ticket's scope to edit).
+- `src/lib/db/schema.ts` + `drizzle/migrations/0009_tro_533_bold_signal.sql` — a new, nullable
+  `verifications.bold_signal` jsonb column, storing `BoldSignalResult` as-is (not five separate
+  columns — the type's own "reason always present, numeric fields null together" shape already
+  matches standing rule 19's discriminated-union guidance, so a second re-derivation in SQL
+  would add nothing).
+- `src/app/api/verify/route.ts` and `src/server/batch-queue/extract-worker.ts` — both persist
+  `boldSignal` for EVERY verification (single-label and batch), not only escalated ones.
+  `warningResult.comparator` is the only piece either file ever passes to `routeLabel`.
+- `src/server/verification-detail/types.ts` + `get-verification-detail.ts` — a new
+  `VerificationBoldSignalDetail { signal, reason }` (never the numeric fields — standing rule
+  12, no bare confidence number) on `VerificationDetail`, read from the persisted jsonb column
+  through a boundary check (`parsePersistedBoldSignal`) that degrades a malformed shape to
+  `null` rather than trusting an untyped column.
+- `src/app/_components/DetailView.tsx` — an advisory line on the government_warning row,
+  ASD-STE100 prose, stating plainly it never changes the verdict. Renders nothing when
+  `boldSignal` is `null` (no crop was ever measured).
+- `scripts/eval/bold-signal-sweep.ts` (new) + `pnpm eval:bold-signal-sweep` — a read-only sweep
+  mirroring `ocr-floor-sweep.ts`'s own shape: replays `preprocessImage` ->
+  `detectWarningRegion` -> `cropForOcr` -> `measureBoldSignal` against every committed
+  golden-set image, no API call, scored against `governmentWarningPrefixBold` ground truth
+  (TRO-527 / LH-022). Committed artifact: `scripts/eval/results/bold-signal-sweep.json`.
+- Docs: `docs/PRD.md` §2 line 40 (names the pixel-measurement technique, not Sonnet);
+  `docs/checkpoints/cp2-warning-subsystem.md` §7.2/§7.3 (rewritten: the signal now comes from
+  pixel measurement, and it DOES check the statute's first bold rule, advisorily — the second
+  rule is still unchecked); `docs/approach.md` and `README.md` (the §7.3 limitation paragraph
+  now appears identically, word for word, in all three documents). `golden-set/README.md` was
+  checked against the current 36-case manifest and found accurate — not touched.
+
+**Measured, not fabricated.** `pnpm eval:bold-signal-sweep`, 2026-08-13: 25 of 30 scoreable
+golden-set cases correct, 83.3% (36 cases total; 6 excluded — 2 with no government warning, 4
+where `governmentWarningPrefixBold` is `"unknown"`, the golden set's own honest "no ground
+truth supports a call here" state for three real-photo cases and the two live-trademark cases).
+
+**The single most important test in this ticket.** `route.test.ts` and
+`extract-worker.test.ts` each carry a test that deliberately sets the bold signal to the
+"wrong" value relative to the comparator's own verdict — bold prefix paired with a comparator
+MISMATCH, not-bold paired with a comparator MATCH — and assert the label verdict is
+unaffected. Both were confirmed failing for the right reason before the fix (a design that
+threaded `boldSignal` into the router would have flipped these).
+
+**How to run it.** `pnpm vitest run src/server/warning/index.test.ts
+src/app/api/verify/route.test.ts src/server/batch-queue/extract-worker.test.ts
+src/server/verification-detail/get-verification-detail.test.ts
+src/app/_components/DetailView.test.tsx` (DATABASE_URL pointed at your own worktree database
+first). `pnpm eval:bold-signal-sweep` for the accuracy figure — read-only, no API call.
+
+**Rollback.** Revert this commit range and run `drizzle-kit migrate` against a checkout before
+migration 0009 — the new column is additive and nullable; nothing downstream requires it.
+
 ## TRO-532 — LH-025 · Stroke-width bold advisory check (2026-08-13)
 
 Advances TH-R9. CP-2 §7.2 named a technique for bold detection and did not try it: binarize

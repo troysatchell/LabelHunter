@@ -395,20 +395,111 @@ export interface EvalCaseFailure {
   error: string;
 }
 
-/** The committed regression floor (`scripts/eval/baseline.json`).
- * Deliberately narrower than `EvalReport` — a baseline is a comparison
- * target, not a full evidence record; the full record for the run that
- * produced it lives in the paired `eval-report.json`. */
+/** One repeat's aggregate accuracy for the two metrics the band baseline
+ * bands (TRO-561): extraction accuracy and cascade-verdict accuracy — the
+ * two headline rates TRO-561's own bug report showed failing on two of
+ * three honest re-runs of unchanged code, because the old baseline pinned
+ * its floor to a single historical draw instead of a measured range.
+ * `repeatIndex` is 1-based, matching `RepeatedVerdict`'s own convention
+ * (`variance-analysis.ts`). */
+export interface BaselineRepeatAccuracy {
+  readonly repeatIndex: number;
+  readonly extractionAccuracy: AccuracySummary;
+  readonly cascadeVerdictAccuracy: AccuracySummary;
+}
+
+/** The observed `[min, max]` range for one banded metric across the
+ * baseline's K repeats (TRO-561). `min` is the gate floor
+ * (`baseline-compare.ts`'s `compareToBaseline`) — "at or above the band's
+ * own bottom," never "at or above the single highest draw the K repeats
+ * happened to produce." `spread` restates `max - min` so a reader never
+ * has to subtract two rates by hand. */
+export interface AccuracyBand {
+  readonly min: number;
+  readonly max: number;
+  readonly spread: number;
+}
+
+/** Real, measured USD cost recorded on the baseline band (TRO-561) — the
+ * same "never fabricate a number" discipline `MeasuredCost` already
+ * enforces per API call, rolled up across the whole K x N sweep that
+ * established this baseline. `meanSonnetCallUsd` is `null` when the sweep's
+ * router never escalated any case to the resolver (TH-R19: Sonnet only
+ * runs on a real escalation) — never a fabricated `0`. */
+export interface BaselineCost {
+  readonly totalUsd: number;
+  readonly meanHaikuCallUsd: number;
+  readonly meanSonnetCallUsd: number | null;
+}
+
+/**
+ * The committed regression floor (`scripts/eval/baseline.json`) — TRO-561's
+ * band redesign of the earlier single-point `EvalBaseline` (LH-030 /
+ * TRO-470). A single fresh run is one draw from the pipeline's own real
+ * call-to-call model variance (TRO-543 / LH-038 measured a 3.2-point spread
+ * on unchanged code against unchanged images) — pinning the floor to one
+ * historical draw's number means two of three honest re-runs of unchanged
+ * code can fail the gate (TRO-561's own bug report: the committed baseline
+ * sat at 81.3%, the exact TOP of the measured band). The fix: measure K
+ * repeats over the FULL golden set once (the re-baseline protocol,
+ * `scripts/eval/variance.ts`'s `--establish-baseline`, extending the
+ * existing `eval:variance` sweep rather than a second cascade path), and
+ * set the floor at the observed MINIMUM across those K repeats — the
+ * band's own bottom, not its top.
+ *
+ * Bands exactly the two headline rates TRO-561's own bug report named:
+ * extraction accuracy and cascade-verdict accuracy (`repeats`,
+ * `extractionAccuracyBand`, `cascadeVerdictAccuracyBand`).
+ * `routerVerdictAccuracy` and `reviewReasonAccuracy`
+ * (`EvalReportSummary`'s other two headline rates) are NOT banded here.
+ * `cascadeVerdictAccuracy` is already documented (TRO-538 / LH-033, see
+ * `EvalReportSummary.cascadeVerdictAccuracy`'s own comment) as the
+ * cascade's real END STATE — the number to trust; `routerVerdictAccuracy`
+ * is an earlier, diagnostic-only stage (the auto-verified-rate
+ * denominator), and `reviewReasonAccuracy` is scored over a small subset
+ * (only the REVIEW-expected cases) — the same "real diagnostic detail, not
+ * gated" treatment `baseline-compare.ts`'s own module comment already gives
+ * the per-field breakdowns, for the identical small-sample-noise reason.
+ * Both stay in every `EvalReportSummary` and print on every run — reported,
+ * never silently dropped — just not banded or gated.
+ */
 export interface EvalBaseline {
-  ticket: string;
-  establishedAt: string;
-  manifestVersion: string;
+  readonly ticket: string;
+  readonly establishedAt: string;
+  /** K — how many repeats this band was measured from. */
+  readonly k: number;
+  /** One entry per repeat, `repeatIndex` 1..k. */
+  readonly repeats: readonly BaselineRepeatAccuracy[];
+  readonly extractionAccuracyBand: AccuracyBand;
+  readonly cascadeVerdictAccuracyBand: AccuracyBand;
+  /** Every case ID this band's sweep completed every repeat for, mapped to
+   * the DISTINCT label verdicts observed across those repeats — e.g.
+   * `["PASS"]` for a fully stable case, `["PASS", "REVIEW"]` for one that
+   * split (case-17's own known behavior, LH-038 / TRO-543). Reported
+   * evidence, not itself gated. */
+  readonly perCaseVerdictSets: Readonly<Record<string, readonly LabelVerdict[]>>;
+  readonly manifestVersion: string;
   /** SHA-256 of `golden-set/manifest.json`'s raw content when this baseline
-   * was established (TRO-538 / LH-033) — see `EvalReport.manifestContentHash`'s
-   * own doc comment. `baseline-compare.ts` rejects a comparison whose
-   * current run's hash disagrees with this one, catching a golden-set edit
-   * `manifestVersion` alone would miss. */
-  manifestContentHash: string;
-  caseIds: string[];
-  summary: EvalReportSummary;
+   * band was established (TRO-538 / LH-033) — see
+   * `EvalReport.manifestContentHash`'s own doc comment. `baseline-compare.ts`
+   * rejects a comparison whose current run's hash disagrees with this one,
+   * naming it the `"stale-baseline"` problem class — never conflated with
+   * an accuracy regression (TRO-561's own Do item 4). */
+  readonly manifestContentHash: string;
+  /** The commit that last touched `golden-set/` as of this band's
+   * measurement (`git log -1 -- golden-set/`) — TRO-561's own requirement:
+   * "the corpus SHA point is a design requirement, not decoration." A hash
+   * proves WHAT changed; this SHA names WHEN and by which commit, so a
+   * reader can find the exact corpus state this band measured without
+   * reverse-engineering it from the hash alone. */
+  readonly goldenSetCommitSha: string;
+  /** Every case ID the sweep that established this band ran (sorted) — the
+   * coverage `compareToBaseline`'s `"coverage-mismatch"` problem class
+   * checks a fresh run against. */
+  readonly caseIds: readonly string[];
+  readonly haikuModel: string;
+  readonly sonnetModel: string;
+  /** `git rev-parse HEAD` of the code that ran this band's sweep. */
+  readonly codeCommitSha: string;
+  readonly costUsd: BaselineCost;
 }

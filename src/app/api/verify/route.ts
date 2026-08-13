@@ -101,6 +101,7 @@ import { db as defaultDb } from "../../../lib/db";
 import { applications, fieldResults, labelImages, reviewQueue, verifications } from "../../../lib/db/schema";
 import {
   extractLabel as defaultExtractLabel,
+  getDefaultExtractorClient,
   HaikuExtractionError,
   type ExtractLabelOptions,
   type HaikuExtractionResult,
@@ -197,7 +198,14 @@ export interface VerifyRouteDeps {
   recordSpend?: (usd: number) => Promise<void>;
 }
 
-const defaultDeps: VerifyRouteDeps = {
+/**
+ * The production wiring. Exported so `route.test.ts` can run the real
+ * object — not a hand-rebuilt copy of it — and prove each guard is really
+ * bound. A test that rebuilds this object cannot detect a binding this
+ * object loses, which is the exact failure that shipped a budget nothing
+ * ever wrote to (TRO-482, merge review round 1).
+ */
+export const defaultDeps: VerifyRouteDeps = {
   db: defaultDb,
   preprocessImage: defaultPreprocessImage,
   extractLabel: defaultExtractLabel,
@@ -207,6 +215,28 @@ const defaultDeps: VerifyRouteDeps = {
   checkRateLimit: checkVerifyRateLimit,
   checkBudget: () => checkDailyBudget(defaultDb),
   recordSpend: (usd) => recordSpendUsd(usd, defaultDb),
+  /**
+   * TRO-482, merge review round 1. This binding is what makes the daily
+   * budget real, and it was missing until that review found it.
+   *
+   * Without it, `deps.anthropicClient` was `undefined` in production.
+   * `wrapAnthropicClientForUsageCapture(undefined)` then returned a
+   * capture whose `takeLastUsage()` always answers `null`, so
+   * `recordSpend` below was never reached, `daily_spend` was never
+   * written, and `checkDailyBudget` read 0 forever. The guard could not
+   * trip. Binding the same shared client `extractLabel` would have
+   * fallen back to gives the wrapper something real to read usage from.
+   *
+   * A getter, not a plain value: `getDefaultExtractorClient()` builds the
+   * client on first use, so importing this route never constructs one.
+   * The call memoizes, so every request after the first reuses it.
+   *
+   * Sharing that one client across concurrent requests is safe. The
+   * wrapper does not mutate it — see `anthropic-usage.ts`'s own header.
+   */
+  get anthropicClient(): ExtractLabelOptions["client"] {
+    return getDefaultExtractorClient();
+  },
 };
 
 /** Used only when a caller's `deps` does not set `checkRateLimit` — see

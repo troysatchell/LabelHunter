@@ -73,6 +73,18 @@ Applied to the two routes PRD §8 names as expensive: `/api/verify` and `/api/ba
 A rejected request gets a friendly message naming a wait time in seconds. It never gets a
 bare 429 with no explanation.
 
+**`/api/access-code` is rate limited too, added by the merge review.** That endpoint is the
+one path `src/proxy.ts` exempts from the gate, so anyone can reach it with no credential.
+That is exactly what makes it the place to guess the shared code. The constant-time compare
+above is worth nothing against an attacker who may guess without limit. The endpoint now
+takes 10 attempts per IP per 15 minutes, and 100 across all IPs in the same window. A person
+who knows the code needs one attempt, and a person fumbling it needs two or three, so ten
+leaves real headroom. Ten per 15 minutes caps one address at 960 guesses a day. The window is
+15 minutes, not 60 seconds, because a 60-second window resets 1,440 times a day and would
+allow 14,400. Every attempt counts, including a correct one, so landing a guess does not buy
+an attacker a fresh budget. Each IP has its own bucket, so one attacker cannot lock out a
+real reviewer.
+
 ### 3. Daily spend budget
 
 Persisted in Postgres, not in-memory — the opposite tradeoff from the rate limiter above, on
@@ -103,6 +115,20 @@ usage of each call. `src/server/budget/anthropic-usage.ts` wraps whatever Anthro
 call already uses (transparently: same request, same response, same errors) to read that
 usage back, since neither `extractLabel` nor `resolveEscalatedLabel` returns it to its own
 caller today.
+
+**The spend recording was inert until the merge review found it. It is now proven by test.**
+The review that ran on the merge with `main` traced a real defect through this code. The
+route's production dependency object never set `anthropicClient`. So the usage wrapper
+received `undefined`, `takeLastUsage()` always answered `null`, the recording step never
+ran, and `daily_spend` was never written. The budget then read $0.00 on every request and
+could never trip. The daily budget was, in effect, a check that always passed.
+
+The fix binds the same shared Anthropic client the extractor already falls back to, so the
+wrapper has something real to read usage from. A new test runs the verify path through the
+real production dependency object — spread, not rebuilt — and asserts a `daily_spend` row
+exists afterward with a non-zero `total_usd`. Reverting the binding turns that test red with
+no row at all. This is written down because a guard that silently does nothing is worse than
+no guard: it ends the vigilance that was doing the real protecting.
 
 **A known, flagged limitation.** Real spend recording is wired into `/api/verify`'s one
 inline Haiku call only. Batch's own Haiku/Sonnet calls run later, in the background worker

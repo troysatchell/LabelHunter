@@ -5,7 +5,7 @@ import sharp from "sharp";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { db } from "../../../lib/db";
 import { applications, dailySpend, fieldResults, labelImages, reviewQueue, verifications } from "../../../lib/db/schema";
-import { extractLabel } from "../../../server/extractor";
+import { extractLabel, getDefaultExtractorClient } from "../../../server/extractor";
 import { makeMockMessage, WELL_FORMED_EXTRACTION_BODY } from "../../../server/extractor/test-support";
 import { MAX_UPLOAD_BYTES, preprocessImage } from "../../../server/preprocessing";
 import { productionComparators } from "../../../server/comparators";
@@ -15,7 +15,7 @@ import { deleteLabelImageBlobsWhere, saveLabelImage } from "../../../server/stor
 import { BUDGET_EXHAUSTED_MESSAGE, getTodaySpendUsd, recordSpendUsd } from "../../../server/budget/daily-budget";
 import { createFixedWindowLimiter } from "../../../server/rate-limit/fixed-window";
 import { checkRateLimitPair } from "../../../server/rate-limit/instances";
-import { handleVerifyRequest, POST as verifyPOST, type VerifyRouteDeps } from "./route";
+import { defaultDeps, handleVerifyRequest, POST as verifyPOST, type VerifyRouteDeps } from "./route";
 import { POST as batchStartPOST } from "../batch/start/route";
 import type { BatchStartErrorResponse } from "../batch/start/types";
 import { BATCH_START_IP_LIMIT, VERIFY_IP_LIMIT } from "../../../server/rate-limit/instances";
@@ -809,6 +809,67 @@ describe("POST /api/verify — the default (production) wiring is really bound",
     const body = (await rejected.json()) as VerifyErrorResponse;
     expect(body.error.kind).toBe("RATE_LIMITED");
     expect(body.error.message).not.toBe("");
+  });
+
+  it("records REAL spend into daily_spend through the production wiring — fails if defaultDeps loses anthropicClient", async () => {
+    // The test the merge review asked for, and the one that would have
+    // caught the original bug. Before `defaultDeps` bound
+    // `anthropicClient`, this route wrapped `undefined` for usage capture,
+    // `takeLastUsage()` always answered null, `recordSpend` never ran, and
+    // `daily_spend` stayed empty forever — so the budget guard read 0 and
+    // could never trip. A test that injects its own recorder proves
+    // nothing about that; it has to be THIS object.
+    //
+    // So this runs the real exported `defaultDeps`, spread rather than
+    // rebuilt, with exactly one field replaced: the warning comparator,
+    // whose real implementation runs OCR. That is not the wiring under
+    // test here, and skipping it keeps this test fast. `anthropicClient`,
+    // `checkBudget` and `recordSpend` are all the production bindings.
+    //
+    // No network call happens: the spy below intercepts the shared
+    // client's own `messages.create`, which is the same object
+    // `defaultDeps.anthropicClient` resolves to.
+    const ISOLATED_DAY = "2099-06-03";
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date(`${ISOLATED_DAY}T12:00:00Z`));
+    const createSpy = vi
+      .spyOn(getDefaultExtractorClient().messages, "create")
+      // makeMockMessage's own usage: 100 input tokens, 50 output tokens.
+      .mockResolvedValue(makeMockMessage(JSON.stringify(WELL_FORMED_EXTRACTION_BODY)) as never);
+    try {
+      await db.delete(dailySpend).where(eq(dailySpend.spendDate, ISOLATED_DAY));
+
+      const request = new Request("http://localhost/api/verify", {
+        method: "POST",
+        body: await buildFormData(),
+        headers: { "x-forwarded-for": "203.0.113.30" },
+      });
+      const response = await handleVerifyRequest(request, {
+        ...defaultDeps,
+        compareGovernmentWarning: warningNeedsReviewStub,
+      });
+
+      expect(response.status).toBe(200);
+      createdApplicationIds.push(((await response.json()) as VerifySuccessResponse).applicationId);
+      expect(createSpy).toHaveBeenCalledTimes(1);
+
+      const rows = await db
+        .select({ totalUsd: dailySpend.totalUsd })
+        .from(dailySpend)
+        .where(eq(dailySpend.spendDate, ISOLATED_DAY));
+
+      // The row must EXIST and carry a real, non-zero cost. Before the
+      // fix there was no row at all.
+      expect(rows).toHaveLength(1);
+      expect(rows[0].totalUsd).toBeGreaterThan(0);
+      // HAIKU_4_5_PRICING (scripts/eval/usage.ts): $1/MTok in, $5/MTok
+      // out. 100 * (1/1_000_000) + 50 * (5/1_000_000) = 0.00035.
+      expect(rows[0].totalUsd).toBeCloseTo(0.00035, 6);
+    } finally {
+      createSpy.mockRestore();
+      await db.delete(dailySpend).where(eq(dailySpend.spendDate, ISOLATED_DAY));
+      vi.useRealTimers();
+    }
   });
 
   it("enforces the REAL daily budget through POST — fails if defaultDeps loses checkBudget", async () => {

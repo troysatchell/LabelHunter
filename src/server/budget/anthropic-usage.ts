@@ -20,10 +20,18 @@
  * reentrancy guard would make one in-flight verify request fail a
  * DIFFERENT, unrelated concurrent request's call. `wrapAnthropicClientForUsageCapture`
  * below is non-mutating (returns a NEW client-shaped object; the original
- * is untouched) and carries no shared/global state — each call site builds
- * its own fresh, request-scoped wrapper around its own fresh, request-
- * scoped client instance (see `../../app/api/verify/route.ts`), so there is
- * nothing to race.
+ * is untouched) and carries no shared/global state.
+ *
+ * **The client it wraps IS shared; the wrapper is not.** Since TRO-482's
+ * merge review round 1, `../../app/api/verify/route.ts` binds the same
+ * long-lived `getDefaultExtractorClient()` singleton every request uses.
+ * That is safe here, and it is the whole point of the non-mutating
+ * design: each request calls `wrapAnthropicClientForUsageCapture` again
+ * and gets its own new wrapper object with its own `lastUsage` variable.
+ * Two concurrent requests never share that variable, and neither one
+ * changes the singleton they both call through. Before that binding
+ * existed the route passed `undefined` here, so `takeLastUsage()` always
+ * answered `null` and no spend was ever recorded.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { buildMeasuredCost, HAIKU_4_5_PRICING } from "../../../scripts/eval/usage";

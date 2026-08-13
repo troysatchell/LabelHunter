@@ -12,6 +12,7 @@ import {
   ACCESS_CODE_COOKIE_NAME,
   isValidAccessCode,
 } from "../../../server/auth/access-code";
+import { checkAccessCodeRateLimit, type RateLimitCheckResult } from "../../../server/rate-limit/instances";
 
 const INVALID_CODE_MESSAGE = "That code did not work. Check it and try again.";
 const UNREADABLE_BODY_MESSAGE = "LabelHunter could not read that submission. Try again.";
@@ -43,7 +44,27 @@ function readCandidateCode(body: unknown): string | null {
  * routes in this repo declare — this route's own tests need `.cookies` to
  * assert the real cookie attributes get set, and `NextResponse` is what
  * this function always actually constructs. */
-export async function POST(request: Request): Promise<NextResponse> {
+export async function POST(
+  request: Request,
+  /**
+   * TRO-482, merge review round 1. Injected only so this route's own
+   * tests can drive a limiter they control — production always uses the
+   * real shared limiter below. Unlike `/api/verify`'s guards, this one is
+   * NOT optional-with-an-allow-all-default: a dropped binding here would
+   * silently restore unlimited guessing, and this parameter's default IS
+   * the real check, so there is nothing to forget to wire.
+   */
+  checkRateLimit: (request: Request) => RateLimitCheckResult = checkAccessCodeRateLimit,
+): Promise<NextResponse> {
+  // Checked FIRST, before the body is read and before any comparison.
+  // This is the bound that makes guessing the shared code impractical;
+  // the constant-time compare in `isValidAccessCode` does nothing against
+  // an attacker allowed unlimited attempts.
+  const rateLimitResult = checkRateLimit(request);
+  if (!rateLimitResult.allowed) {
+    return errorResponse(429, rateLimitResult.message);
+  }
+
   let body: unknown;
   try {
     body = await request.json();

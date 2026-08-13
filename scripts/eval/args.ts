@@ -23,7 +23,7 @@
 import type { ReviewReason } from "../../src/server/router/types";
 
 /**
- * A fixed, deliberately small subset of the 32-case golden set
+ * A fixed, deliberately small subset of the 31-case golden set
  * (`golden-set/manifest.json`), chosen to span every `LabelVerdict` and a
  * spread of `GoldenSetCategory` values without running (and paying for)
  * the whole set on every `--live` invocation:
@@ -111,7 +111,7 @@ export const DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS: Readonly<Record<string, Revie
 
 /**
  * Hard ceiling on how many cases one `--live` invocation may run — the
- * golden set's own size (32 cases today). `--full` already reaches this
+ * golden set's own size (31 cases today). `--full` already reaches this
  * ceiling by design; this constant exists so a future larger golden set
  * cannot silently make one careless invocation far more expensive than any
  * operator intended, the same backstop role `scripts/latency/args.ts`'s

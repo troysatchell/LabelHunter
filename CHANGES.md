@@ -4,6 +4,190 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-542 — LH-037 · Record which LOW_IMAGE_QUALITY trigger fires (2026-08-13)
+
+Advances TH-R10 (stretch), TH-R19. Sequenced after TRO-538, which split `routerVerdict` from
+`cascadeVerdict` and gave this ticket the per-field confidence it measures.
+
+**The corpus moved before this ticket started.** TRO-527 rebuilt every warning-bearing image
+with a bold prefix. TRO-516's own C5 merged case-24 into case-23. The ticket's own tables
+describe a 32-case, pre-bold corpus that no longer exists. Every number below is re-derived
+from the current 31-case corpus, not copied from the ticket text.
+
+**What changed (steps 1-4, the deliverable).**
+
+1. `isLowImageQuality` (`src/server/router/label-blockers.ts:20-53`) now returns the CP-1 §5.3
+   rule that fired, not a boolean. Four names: `ILLEGIBLE`, `FIELD_CONFIDENCE`,
+   `PREPROCESSING`, `FIELDS_ABSENT`. Returns `null` when none fired.
+2. `router/index.ts:174-176`: `lowImageQuality` stays a plain boolean (`trigger !== null`).
+   The rollup and precedence logic at `router/index.ts:216` and `:288-292` read that boolean
+   exactly as before this ticket. Unchanged behavior, confirmed by the full unit and golden-set
+   suite staying green: 160 files, 1932 tests, 0 failures.
+3. `LabelRouterResult` (`router/types.ts`) gains `lowImageQualityTrigger: LowImageQualityTrigger
+   | null`. The eval harness carries it through from the ROUTER stage —
+   `scripts/eval/verdict-scoring.ts`'s `ActualVerdict.lowImageQualityTrigger` (optional, same
+   convention as `warningChannel`), `scripts/eval/types.ts`'s `VerdictCaseScore` (required,
+   same convention as `warningChannel`). `cascade-runner.ts`'s `mergeResolutionIntoActualVerdict`
+   always reports `null` — its own doc comment already established the router's label-level
+   blocker does not survive a resolver merge, so the trigger that named which rule produced
+   that blocker cannot survive it either.
+4. `image_quality.issues` decision: **the router reads it.** `routeLabel`
+   (`router/index.ts:298-307`) carries `extraction.image_quality.issues` through verbatim on
+   the new `LabelRouterResult.imageQualityIssues`. `grep -rn "image_quality\.issues"
+   src/server --include="*.ts"` now includes a router-side read (`router/index.ts:306`,
+   `router/types.ts:219`), not only the resolver's pre-existing bound check
+   (`resolver/input-validation.ts:187`). This is evidence, never a decision — no branch in
+   `label-blockers.ts` or `index.ts` tests `.issues`.
+   **This does not satisfy CP-1 §4.1.** `.issues` is one more self-report. The two unpaired
+   branches (`ILLEGIBLE`, `FIELD_CONFIDENCE`) are still unpaired. Do not read this change as
+   fixing that gap — it only stops the field being collected by the schema and silently
+   ignored by every module in `router/`.
+   Rejected: dropping `.issues` from `extractor/schema.ts:33-48`. The resolver already
+   serializes the whole extraction, `.issues` included, into Sonnet's prompt
+   (`resolver/user-message.ts:39`'s `buildExtractionBlock`) and validates its length at the
+   boundary (`resolver/input-validation.ts:187`). Dropping it from the schema would also drop
+   it from Sonnet's context — a real behavior change, for a field this ticket only needed to
+   stop ignoring, not remove.
+
+**G6 — red before, green after.** `label-blockers.test.ts` gained a dedicated four-test block
+(one per trigger name) and updated the nine pre-existing `isLowImageQuality` assertions from
+`toBe(true/false)` to `toBe("TRIGGER_NAME"/null)`.
+
+Red, run against the pre-ticket boolean-returning function (`git show HEAD:.../label-blockers.ts`
+swapped in temporarily, then restored — never committed):
+
+```
+ Test Files  1 failed (1)
+      Tests  14 failed | 9 passed (23)
+```
+
+Every failure was an `AssertionError` comparing a boolean (`true`/`false`) against the expected
+trigger name or `null` — the right reason, not an import error or a typo.
+
+Green, run against this ticket's trigger-returning function:
+
+```
+ Test Files  1 passed (1)
+      Tests  23 passed (23)
+```
+
+**The one authorized live run.** `pnpm eval:check -- --live --full`, measured
+`2026-08-13T13:39:02.626Z`. 31/31 cases scored, 0 failures. Cost: **$0.2661** (order of
+magnitude matches the ~$0.35 authorization).
+
+Case-20's recorded trigger, quoted directly from `eval-report.json`:
+
+```
+case-20-rotation-severe-upside-down: routerVerdict.lowImageQualityTrigger = "ILLEGIBLE"
+```
+
+Case-20's `image_quality` reading: `{"legible":"no","issues":["blur","low_resolution"],
+"confidence":0.05}`. `legible: "no"` short-circuits `isLowImageQuality` at its first branch.
+`FIELDS_ABSENT`'s own condition is also true here — all five fields returned "(not read)" —
+but the function never reaches that branch. The ticket's own text asked this exact question:
+"`ILLEGIBLE` may have fired alongside it [`FIELDS_ABSENT`]; nothing in the repo distinguishes
+them." Something now does: the recorded answer is `ILLEGIBLE`, not `FIELDS_ABSENT`, because
+`ILLEGIBLE` is checked first.
+
+**Re-derived measurement, current 31-case corpus** (the ticket's own table format, re-run
+here — not copied from the ticket):
+
+| Signal | Fired |
+| -- | -- |
+| `LOW_IMAGE_QUALITY`, label level | **1 case** (case-20) |
+| `LOW_MODEL_CONFIDENCE`, any field | **0 of 155 field rows** |
+| `LOW_MODEL_CONFIDENCE`, label level | **0 cases** |
+| cases expecting `LOW_IMAGE_QUALITY` | **5** (case-17, 18, 20, 21, 22) |
+
+The ticket's original table measured 7 expecting-cases on the pre-merge 32-case corpus —
+case-23 and case-24 both counted. The current manifest lists 5. Case-23/24's merge (TRO-516
+C5) changed which cases still expect this reason. This ticket did not investigate further; that
+question is out of scope here. The headline finding reproduces exactly: still only one case in
+the whole corpus needs a confidence-driven branch to reach `LOW_IMAGE_QUALITY` — 31 cases now,
+32 before. CP-1 called this outcome in advance (`cp1:1178-1181`): "If it turns out
+to be flat... that is a finding, not a failure."
+
+**Aggregate accuracy — read against TRO-543's own measured variance, not as a fixed number.**
+N=31 cases, K=1 run (this ticket's one authorized live run).
+
+- Extraction accuracy: 95.5% (148/155).
+- Router-verdict accuracy: 83.9% (26/31).
+- Cascade-verdict accuracy: 80.6% (25/31).
+- Review-reason accuracy: 54.5% (6/11).
+
+TRO-543 measured real run-to-run variance on the pre-rebuild 32-case corpus: 78.1%-81.3%
+across three repeats of unchanged code (this file's own TRO-543 entry below, "Accuracy
+spread"). That specific band has not been re-measured on this post-rebuild 31-case corpus
+(TRO-561, TRO-556 both track this open condition). Read every number above as one noisy draw,
+not this system's fixed accuracy — the same discipline TRO-543 already established, now
+stated for a corpus that band was never measured against.
+
+**⚠️ FLAGGED GATE EXCEPTION — `G8: eval-not-regressed` FAILS. Not a regression this ticket
+caused.** `pnpm eval:check` (cheap mode, reading the `eval-report.json` this run just wrote)
+against the still-committed, pre-rebuild `baseline.json`:
+
+```
+check.ts: FAIL — 5 problem(s) vs the committed baseline:
+  - manifest content changed: current run's manifest hash "2b27d156f6d00271168b965d9051c852af8b7f1fa5e5e6c0b17c8703cb5a1f46" does not match the baseline's "8c9fad3fe780d4ea059681473c793163664708be583c5f7200e75e5c67b21f8f" — golden-set/manifest.json's content moved since the baseline was established, even if manifestVersion did not; re-run --live --update-baseline to refresh it.
+  - stale coverage: current run did not include 1 case(s) the baseline was built from (case-24-tiny-warning-text-miniature-bottle) — run --live --full to cover the whole golden set before comparing.
+  - extraction accuracy regressed: 95.5% (current) < 96.3% (baseline)
+  - cascade-verdict accuracy regressed: 80.6% (current) < 81.3% (baseline)
+  - review-reason accuracy regressed: 54.5% (current) < 58.3% (baseline)
+```
+
+Attribution: **TRO-561** (Urgent, filed 2026-08-13). The committed baseline sits at 81.3% —
+the exact top of TRO-543's measured variance band. A single honest run of unchanged code fails
+this comparison most of the time. **TRO-556**: the committed baseline and report predate
+today's corpus changes — TRO-527's bold-prefix rebuild, TRO-516 C5's case-24 merge. The
+manifest-hash mismatch and the stale-coverage complaint are expected, not this ticket's own
+regression. `baseline.json` stays untouched by this ticket. No `--update-baseline` run; that
+decision is not this ticket's to make. This entry documents the failure instead of hiding it,
+the same pattern TRO-547 established for a G6 exception: flagged, attributed, escalated for
+sign-off, not routed around.
+
+**Committed artifact.** `scripts/eval/results/eval-report.json` — this run's real output,
+replacing the pre-rebuild committed report (TRO-556 already tracked that staleness before this
+ticket started). `scripts/eval/baseline.json` is NOT touched.
+
+**Step 5 — not shipped, and CP-1 blesses that as a real outcome.** The ticket's own contrast
+proposal is explicitly unsettled: formulation A (one ratio, whole brand box) provably fails —
+case-17 (glare) and case-01 (clean) both score 9.65 to two decimals. Formulation B (44px
+tiles) is not settled — two runs with different tile parameters reach opposite conclusions on
+case-17, and the ticket's own Do-NOT list forbids adopting a threshold from either table.
+Neither formulation was re-measured here — both tables already exist in the ticket text, and
+re-measuring them across the full corpus was not this ticket's step-1-through-4 deliverable.
+Shipping the measurement without a new signal is the outcome CP-1 itself blesses
+(`cp1:1178-1181`): "If it turns out to be flat... I would say so and lean entirely on the
+deterministic signals. That is a finding, not a failure." No new field on `PreprocessingSignal`
+(`router/types.ts:132-137`). No new branch in `isLowImageQuality`.
+
+**Do-NOT list, checked.**
+
+- `UNUSABLE_CEILING` (`router/confidence.ts:32`): untouched.
+- Case-17's manifest expectation: untouched.
+- No font-unusualness detector.
+- `golden-image-quality.test.ts`: every pre-existing assertion kept, 0 skips, 0 deleted cases —
+  confirmed by the full suite run above.
+- No contrast threshold adopted from either table.
+
+**Files changed.** `src/server/router/label-blockers.ts`, `label-blockers.test.ts`, `types.ts`,
+`index.ts`; `src/server/resolver/index.test.ts`, `test-support.ts`;
+`src/server/batch-queue/resolver-snapshot.test.ts`; `scripts/eval/types.ts`,
+`verdict-scoring.ts`, `cascade-runner.ts`, `cascade-runner.test.ts`, `flagged-fields.test.ts`,
+`benchmark.ts`, `variance-analysis.test.ts`, `summary.test.ts`, `warning-segmentation.test.ts`;
+`scripts/eval/results/eval-report.json`. No schema migration, no DB change, no HTTP response
+change — `route.ts` builds `VerifySuccessResponse` field-by-field from the router result
+(`route.ts:425-442`), never a spread of `LabelRouterResult`, so the two new fields never reach
+the API contract.
+
+**How to run it.** `pnpm test -- src/server/router/label-blockers.test.ts
+src/server/router/golden-image-quality.test.ts`. The committed `eval-report.json` already
+carries the live trigger evidence — `pnpm eval:check` (no flags) reads it back at zero cost.
+
+**Rollback.** `git revert` this ticket's commits. `eval-report.json` reverts to the pre-ticket,
+pre-rebuild committed value along with the code — the same staleness TRO-556 already tracked,
+unresolved either way.
+
 ## TRO-516 — C5 execution: merge case-24 into case-23 (2026-08-13)
 
 **Troy's ruling (TRO-516 comment, 2026-08-13):** merge case-24 into case-23. Both cases print

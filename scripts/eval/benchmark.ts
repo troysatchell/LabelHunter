@@ -110,6 +110,11 @@ function buildSonnetOnlyRouterInput(): LabelRouterResult {
       resolvedBy: null,
       reviewReason: SONNET_ONLY_PLACEHOLDER_REASON,
     })),
+    // This arm has no router pass of its own (this function's own doc
+    // comment) — no real LOW_IMAGE_QUALITY trigger or image_quality reading
+    // exists to report here.
+    lowImageQualityTrigger: null,
+    imageQualityIssues: ["none"],
   };
 }
 

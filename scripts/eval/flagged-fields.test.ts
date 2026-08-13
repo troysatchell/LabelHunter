@@ -73,6 +73,8 @@ describe("buildFlaggedFieldsForEscalatedLabel", () => {
         routerField("net_contents", null),
         routerField("government_warning", null),
       ],
+      lowImageQualityTrigger: null,
+      imageQualityIssues: ["none"],
     };
     const flagged = buildFlaggedFieldsForEscalatedLabel(routerResult);
     expect(flagged).toEqual([{ field: "alcohol_content", reviewReason: "AMBIGUOUS_ABV", trigger: "percent and proof disagree" }]);
@@ -89,6 +91,8 @@ describe("buildFlaggedFieldsForEscalatedLabel", () => {
         routerField("net_contents", null),
         routerField("government_warning", null),
       ],
+      lowImageQualityTrigger: "FIELDS_ABSENT",
+      imageQualityIssues: ["none"],
     };
     const flagged = buildFlaggedFieldsForEscalatedLabel(routerResult);
     expect(flagged).toHaveLength(5);
@@ -102,6 +106,8 @@ describe("buildFlaggedFieldsForEscalatedLabel", () => {
     const routerResult: LabelRouterResult = {
       labelVerdict: "REVIEW",
       headlineReason: null,
+      lowImageQualityTrigger: null,
+      imageQualityIssues: ["none"],
       fields: [
         routerField("brand_name", null),
         routerField("class_type", null),

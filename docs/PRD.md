@@ -216,8 +216,12 @@ never quoted as achieved numbers until measured.
 - **Designed error states (not toasts):** unreadable image, oversized file, malformed CSV,
   unpairable rows, API failure/timeout (retry affordance), partial batch failure, rate-limit
   backoff notice. Each has a ticket and a test.
-- Aesthetic: clean government-adjacent trust (think USWDS-influenced, not clip-art federal).
-  No purple-gradient AI slop.
+- Aesthetic (revised TRO-573, Troy-directed 2026-08-13; supersedes the prior USWDS-influenced
+  line): Notion-style clean — white page, warm near-black text, thin soft borders, generous
+  whitespace, one quiet accent color, light-only (no dark mode, no `prefers-color-scheme`
+  branching). Still no purple-gradient AI slop. TH-R3's bar is unchanged by this — large type,
+  high contrast, no hidden actions, judged against the 73-year-old/Dave benchmark — every color
+  pair is checked against WCAG AA by `src/app/globals-contrast.test.ts`, not eyeballed.
 
 ## 6. Testing & evidence (TH-R12, TH-R17, TH-R20)
 

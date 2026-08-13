@@ -20,6 +20,7 @@
  * value, standing in for two different real Claude Code sessions.
  */
 import { execFileSync, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -81,9 +82,10 @@ function discoverPgContainer(port: string): string {
 
 function uniqueTicket(): string {
   // Matches worktree.sh's own ^[A-Za-z][A-Za-z0-9]*-[A-Za-z0-9]+$ validation.
-  // Random per run so concurrent test runs (this suite, in two worktrees
-  // sharing one Postgres server) never race on the same fixture database.
-  const raw = `${Date.now().toString(36)}${process.pid.toString(36)}`.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  // randomUUID, not Date.now()+pid: two runners can share a pid and still
+  // start within the same millisecond, and a shared ticket id races two
+  // test runs onto the same fixture database. (CodeRabbit, this PR.)
+  const raw = randomUUID().replace(/-/g, "").toUpperCase();
   return `ZZOWN${raw.slice(0, 12)}-1`;
 }
 
@@ -246,6 +248,35 @@ describe("worktree.sh ownership stamp (TRO-557)", () => {
         expect(steal.status, `stderr: ${steal.stderr}`).toBe(0);
         expect(readFileSync(stampPath, "utf8")).toMatch(/^FACTORY_OWNER_SESSION=test-session-b$/m);
         await expect(queryDb(pg, fx.dbName, "SELECT 1 FROM tro_557_marker")).rejects.toThrow(/does not exist/);
+      } finally {
+        await cleanupFixture(fx, pg);
+      }
+    },
+    60_000,
+  );
+
+  it(
+    "treats a stamp missing FACTORY_OWNER_SESSION as an unknown owner, and refuses instead of crashing",
+    async () => {
+      // Regression for a real bug CodeRabbit caught in this same PR: under
+      // `set -euo pipefail`, grep finding no matching line exits 1, and that
+      // aborted the whole script before it could reach the refusal path --
+      // so a stamp from before this field existed, or a corrupted one, took
+      // provisioning down instead of just refusing it.
+      const pgConn = requirePgTargetFromEnv();
+      const pg: PgTarget = { ...pgConn, container: discoverPgContainer(pgConn.port) };
+      const fx = makeFixture();
+      try {
+        const first = runWorktreeSh(fx, pg, "test-session-a");
+        expect(first.status, `stderr: ${first.stderr}`).toBe(0);
+
+        const stampPath = join(fx.worktreeDir, ".factory-owner");
+        writeFileSync(stampPath, "FACTORY_OWNER_BRANCH=some-branch\n");
+
+        const second = runWorktreeSh(fx, pg, "test-session-b");
+        expect(second.status, `stderr: ${second.stderr}`).toBe(2);
+        expect(second.stderr).toContain("Re-provisioning resets a database another session may be using.");
+        expect(second.stderr).toContain("worktree.sh found no readable ownership stamp here.");
       } finally {
         await cleanupFixture(fx, pg);
       }

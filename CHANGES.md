@@ -54,6 +54,23 @@ pre-existing behavior, and this ticket must not remove it. `--steal` proceeds an
 stamp to the new session. Confirmed the test fails for the right reason first. Against the
 pre-fix script, the test fails because no `.factory-owner` file exists yet.
 
+A second test case covers a stamp file that exists but has no `FACTORY_OWNER_SESSION` line. See
+the CodeRabbit triage note below for what that case caught.
+
+**CodeRabbit review triage (2 findings, both fixed).**
+- `scripts/factory/worktree.sh` (major): the stamp-read pipeline, `grep | cut`, could abort the
+  whole script under `set -euo pipefail`. A stamp file present but missing the
+  `FACTORY_OWNER_SESSION` line made `grep` exit 1. `cut` still exited 0 on the empty input.
+  `pipefail` keeps `grep`'s non-zero status instead. `set -e` then killed the script before it
+  reached the refusal path. A legacy or corrupted stamp crashed provisioning outright, instead
+  of refusing it cleanly. Fixed with `|| true` on the substitution. Added a regression case: a
+  stamp file missing that one field. Confirmed it fails for the right reason first — exit 1, not
+  2, against the pre-fix code.
+- `scripts/factory/worktree-owner.test.ts` (minor): `uniqueTicket()` built its fixture ticket id
+  from `Date.now()` and `process.pid`. Two runners can share a pid within the same millisecond.
+  A shared ticket id would then race two test runs onto the same fixture database. Switched to
+  `crypto.randomUUID()`.
+
 **How to run it.** Run `pnpm test -- scripts/factory/worktree-owner.test.ts`. It needs no setup
 beyond the worktree's own `.factory-env`. That means the same `DATABASE_URL` and reachable
 Postgres container every other factory test already needs.

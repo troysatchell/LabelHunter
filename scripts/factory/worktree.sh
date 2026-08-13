@@ -105,7 +105,12 @@ if git worktree list --porcelain | grep -qx "worktree ${WT_PATH}"; then
   # grep, never `source` (lessons.md #13: validate at the boundary).
   STAMPED_SESSION=""
   if [ -f "$OWNER_STAMP" ]; then
-    STAMPED_SESSION="$(grep -m1 '^FACTORY_OWNER_SESSION=' "$OWNER_STAMP" | cut -d= -f2-)"
+    # `|| true`: under `set -o pipefail`, grep finding no matching line exits
+    # 1 even though cut still succeeds on empty input, and that non-zero
+    # status would abort the whole script here under `set -e` -- a stamp
+    # file missing this one field must fall through to "unknown owner", not
+    # crash provisioning outright. (CodeRabbit, this PR.)
+    STAMPED_SESSION="$(grep -m1 '^FACTORY_OWNER_SESSION=' "$OWNER_STAMP" | cut -d= -f2- || true)"
   fi
   if [ "$STEAL" -eq 1 ]; then
     echo "worktree already exists, reusing it (--steal: ownership reassigned to this session)"

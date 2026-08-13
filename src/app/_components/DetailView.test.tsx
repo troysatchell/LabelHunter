@@ -11,6 +11,7 @@ const PASS_DETAIL: VerificationDetail = {
   headlineMessage: null,
   resolvedBySonnet: false,
   resolverNote: null,
+  boldSignal: null,
   labelImage: { url: "/api/label-images/1", width: 1200, height: 1600, originalFilename: "front.jpg" },
   fields: [
     {
@@ -138,5 +139,71 @@ describe("DetailView", () => {
   it("renders no resolver-note section when resolverNote is null", () => {
     render(<DetailView detail={{ ...PASS_DETAIL, resolvedBySonnet: true, resolverNote: null }} />);
     expect(screen.queryByTestId("resolver-note")).not.toBeInTheDocument();
+  });
+
+  describe("bold advisory line (LH-025/LH-026, TRO-532/TRO-533, TH-R9, TH-R20)", () => {
+    it("shows an advisory line on the government warning row for a real BoldSignalResult, stating plainly it never changes the verdict", () => {
+      render(
+        <DetailView
+          detail={{
+            ...PASS_DETAIL,
+            boldSignal: { signal: "bold", reason: "the prefix's stroke width measures wider than the body's" },
+          }}
+        />,
+      );
+      const advisory = screen.getByTestId("bold-signal-advisory");
+      expect(advisory).toHaveTextContent("finds the prefix bold");
+      expect(advisory).toHaveTextContent("The prefix's stroke width measures wider than the body's.");
+      expect(advisory).toHaveTextContent("It never changes the verdict.");
+      // Lives on the government_warning row, not some other field's row.
+      expect(screen.getByTestId("detail-field-government_warning")).toContainElement(advisory);
+    });
+
+    it("shows plain language for a not-bold signal, still never a bare confidence number", () => {
+      render(
+        <DetailView
+          detail={{
+            ...PASS_DETAIL,
+            boldSignal: { signal: "not-bold", reason: "the prefix's stroke width does not measure wider than the body's" },
+          }}
+        />,
+      );
+      const advisory = screen.getByTestId("bold-signal-advisory");
+      expect(advisory).toHaveTextContent("does not find the prefix bold");
+      expect(advisory.textContent).not.toMatch(/\d+(\.\d+)?%/);
+    });
+
+    it("shows plain language, and the specific reason, for an uncertain signal — never a bare confidence number", () => {
+      render(
+        <DetailView
+          detail={{
+            ...PASS_DETAIL,
+            boldSignal: { signal: "uncertain", reason: "stroke width is below the reliable measurement floor" },
+          }}
+        />,
+      );
+      const advisory = screen.getByTestId("bold-signal-advisory");
+      expect(advisory).toHaveTextContent("could not measure whether the prefix is bold");
+      expect(advisory).toHaveTextContent("Stroke width is below the reliable measurement floor.");
+      expect(advisory.textContent).not.toMatch(/\d+(\.\d+)?%/);
+    });
+
+    it("renders no advisory line when boldSignal is null — no crop was ever measured for this verification", () => {
+      render(<DetailView detail={{ ...PASS_DETAIL, boldSignal: null }} />);
+      expect(screen.queryByTestId("bold-signal-advisory")).not.toBeInTheDocument();
+    });
+
+    it("never renders the advisory line on a non-warning field's row", () => {
+      render(
+        <DetailView
+          detail={{
+            ...PASS_DETAIL,
+            boldSignal: { signal: "bold", reason: "the prefix's stroke width measures wider than the body's" },
+          }}
+        />,
+      );
+      const brandRow = screen.getByTestId("detail-field-brand_name");
+      expect(brandRow.querySelector('[data-testid="bold-signal-advisory"]')).toBeNull();
+    });
   });
 });

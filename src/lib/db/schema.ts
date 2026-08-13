@@ -338,6 +338,34 @@ export const verifications = pgTable(
     }),
     verdict: labelVerdictEnum("verdict").notNull(),
     resolutionPath: resolutionPathEnum("resolution_path").notNull(),
+    // LH-025/LH-026 (TRO-532/TRO-533), CP-2 §7.2/§7.3, TH-R9. The pixel-
+    // measured bold advisory signal (`measureBoldSignal`,
+    // `../../server/warning/bold-detect.ts`) for this verification's
+    // government warning, stored exactly as that function returns it —
+    // `{ signal, reason, ratio, splitFraction, prefixStrokeWidthPx,
+    // bodyStrokeWidthPx }`. `null` means the signal was never measured for
+    // this verification (no warning-region crop existed — e.g. region
+    // detection found nothing), which is a DIFFERENT state from
+    // `signal: "uncertain"` (a crop existed; the measurement itself could
+    // not commit to bold or not-bold). A plain `jsonb` column, not five
+    // separate columns: `BoldSignalResult`'s own shape already carries the
+    // "reason is always present; the four numeric fields are null together
+    // when no split was found" discipline standing rule 19 asks for, so
+    // storing it as-is avoids re-deriving that same discriminated shape a
+    // second time in SQL. Read back through a boundary check
+    // (`get-verification-detail.ts`'s `parsePersistedBoldSignal`), never
+    // trusted as typed just because this column declares `jsonb` — the
+    // same "validate at the boundary" rule `reviewQueue.resolverOutput`
+    // already follows for an untyped jsonb column.
+    //
+    // ADVISORY ONLY. This column is written after `routeLabel` has already
+    // decided `verdict`, from the SAME `WarningComparatorResult`-adjacent
+    // pipeline call but a SEPARATE return value that never reaches
+    // `routeLabel` (`src/server/warning/index.ts`'s
+    // `CompareGovernmentWarningFromImageResult`). Nothing reads this column
+    // to decide a verdict, and nothing may ever be added that does
+    // (`bold-detect.ts`'s own header comment; standing rule 10).
+    boldSignal: jsonb("bold_signal"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

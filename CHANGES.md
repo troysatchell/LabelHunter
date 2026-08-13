@@ -89,7 +89,16 @@ Six of seven findings became changes. The seventh is dismissed below, with its m
   share this database. Enough sibling rows could fill the first page and hide the four fixtures.
 
 **Dismissed: the ACCESS EXCLUSIVE lock migrations 0006 and 0007 take.** The review asked for
-expand-and-backfill, or a scheduled maintenance window. Both migrations take that lock, and
+expand-and-backfill, or a scheduled maintenance window.
+
+First, the prior question: is 0006 needed at all? It is. Method: revert this worktree's column
+to the default microsecond precision, run the review-queue suites, then restore it. Reverted,
+`src/app/api/review-queue/route.test.ts` failed. It failed with the exact repeat the migration
+exists to stop. One queue id came back on page after page, and the walk never reached the next
+row. Restored, all 56 tests passed. Dropping 0006 would mean redesigning the cursor to carry
+microseconds, which means teaching the driver to return this column as text.
+
+Both migrations take that lock, and
 Render runs `pnpm db:migrate` as a pre-deploy step while the previous version still serves
 traffic. The lock is therefore real, and it blocks live reads of this one table while it is held.
 Measured on this worktree's Postgres, on the real `review_queue` table seeded to 20,000

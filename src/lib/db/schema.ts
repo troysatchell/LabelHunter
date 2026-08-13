@@ -486,6 +486,17 @@ export const reviewQueue = pgTable(
     // as a repeating page in `src/app/api/review-queue/route.test.ts`.
     // Storing exactly what a cursor can carry removes the mismatch instead
     // of papering over it in the query.
+    //
+    // Re-verified in the local review round 6, because "is this migration
+    // needed at all" is the cheapest thing to get wrong. Method: revert
+    // this worktree's column to the default microsecond precision, run
+    // `npx vitest run src/server/review-queue src/app/api/review-queue`,
+    // then restore it. Reverted, that route test failed, and it failed with
+    // the exact repeat: one queue id came back on page after page, and the
+    // walk never reached the next row. Restored, all 56 tests passed. The
+    // migration stands. The only way to drop it is to make the cursor carry
+    // microseconds, which means teaching the driver to hand this column
+    // back as text instead of a `Date`.
     createdAt: timestamp("created_at", { withTimezone: true, precision: 3 })
       .notNull()
       .defaultNow(),

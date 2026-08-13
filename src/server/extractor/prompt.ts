@@ -26,6 +26,10 @@ RULES
      sharp and has one possible reading.
 3. The value must appear inside the evidence. If you cannot copy evidence from
    the label, set value to null.
+   beverage_type is the one exception. Its value is your reading of the
+   product category. The category word does not have to appear in the
+   evidence. Copy the label text that supports your reading, for example the
+   class designation.
 4. If a field is not on the label, set value to null, evidence to "", and
    confidence to 0.00. An absent field is a normal result, not a failure.
 5. If the label shows two different readings for one field, put the clearest in

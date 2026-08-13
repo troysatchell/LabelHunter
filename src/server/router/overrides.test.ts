@@ -145,6 +145,60 @@ describe("applyFieldOverrides — rule 2 exemption for beverage_type (TRO-502)",
     expect(applyFieldOverrides(field({ value: "spirits", evidence: "" }), "exempt").rejected).toBe(true);
     expect(applyFieldOverrides(field({ value: "spirits", confidence: Number.NaN }), "exempt").rejected).toBe(true);
   });
+
+  it("rejects an exempt field whose evidence carries no label text — spaces only (TRO-502)", () => {
+    // Rule 1 is the ONLY evidence check left on an exempt field, so its
+    // "non-empty" test has to mean what CP-1 §3.2 rule 2 says evidence is:
+    // "the text on the label". A run of spaces is not label text. For every
+    // other field rule 2 catches this; for beverage_type nothing does.
+    const outcome = applyFieldOverrides(field({ value: "spirits", evidence: "   " }), "exempt");
+    expect(outcome.rejected).toBe(true);
+    expect(outcome.violation).toBe("evidence_missing");
+    expect(outcome.value).toBeNull();
+  });
+
+  it("rejects an exempt field whose evidence holds only zero-width characters (TRO-502)", () => {
+    // U+200B ZERO WIDTH SPACE is not JavaScript whitespace, so `trim()`
+    // leaves it standing and a length check passes. It prints nothing, so it
+    // cannot be text copied from a label.
+    const outcome = applyFieldOverrides(field({ value: "spirits", evidence: "​​" }), "exempt");
+    expect(outcome.rejected).toBe(true);
+    expect(outcome.violation).toBe("evidence_missing");
+  });
+
+  it("rejects an exempt field whose evidence holds only noncharacters (TRO-502)", () => {
+    // U+FDD0 and U+FFFE are permanently unassigned (`\p{Cn}`). They print
+    // nothing, and a deny-list built from whitespace and `\p{Cf}`/`\p{Cc}`
+    // would wave them through.
+    for (const evidence of ["﷐", "￾", "﷐￾"]) {
+      const outcome = applyFieldOverrides(field({ value: "spirits", evidence }), "exempt");
+      expect(outcome.rejected).toBe(true);
+      expect(outcome.violation).toBe("evidence_missing");
+    }
+  });
+
+  it("rejects a NON-exempt field with whitespace-only evidence as rule 1, not rule 2 (TRO-502)", () => {
+    // The tests above all use "exempt", where rule 1 is the only evidence
+    // check. A non-exempt field reaches both rules, and the order decides
+    // which violation it reports: rule 1 (evidence_missing) fires first, so
+    // blank evidence must never be classified as rule 2's
+    // evidence_does_not_support_value. Tightening rule 1 from a length test
+    // to a printable-character test must not silently move that boundary
+    // (CodeRabbit finding, PR #57).
+    const outcome = applyFieldOverrides(field({ value: "Old Tom Distillery", evidence: "   " }), "text");
+    expect(outcome.rejected).toBe(true);
+    expect(outcome.violation).toBe("evidence_missing");
+    expect(outcome.value).toBeNull();
+  });
+
+  it("accepts an exempt field whose evidence is padded label text", () => {
+    const outcome = applyFieldOverrides(
+      field({ value: "spirits", evidence: "  Kentucky Straight Bourbon Whiskey  " }),
+      "exempt",
+    );
+    expect(outcome.rejected).toBe(false);
+    expect(outcome.value).toBe("spirits");
+  });
 });
 
 describe("applyFieldOverrides — rule 3: confidence must be a real number in [0, 1]", () => {
@@ -189,6 +243,12 @@ describe("applyGovernmentWarningOverrides — field-shape-aware rejection payloa
     expect(outcome.rejected).toBe(false);
     expect(outcome.present).toBe(false);
     expect(outcome.transcription).toBeNull();
+  });
+
+  it("rejects a non-null transcription whose evidence carries no label text (TRO-502)", () => {
+    const outcome = applyGovernmentWarningOverrides(warning({ evidence: "   " }));
+    expect(outcome.rejected).toBe(true);
+    expect(outcome.violation).toBe("evidence_missing");
   });
 
   it("rejects a non-null transcription with empty evidence", () => {

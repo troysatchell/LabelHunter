@@ -832,6 +832,16 @@ describe("vacuous-empty-quantifier", () => {
     expect(findings).toEqual([]);
   });
 
+  it("flags a ternary used as a bare statement for its side effects", () => {
+    // Same decision as an if/else. The branches are the decision, not the value.
+    const findings = check(`
+      function act(items: I[]) {
+        items.every(p) ? doA() : doB();
+      }
+    `);
+    expect(findings).toHaveLength(1);
+  });
+
   it("reports the enclosing function in the identity, so two call sites differ", () => {
     const findings = check(`
       function one(xs: X[]) { return xs.every(p); }
@@ -961,7 +971,13 @@ function reachesDecisionSink(call: ts.CallExpression): boolean {
     current = current.parent;
     if (ts.isReturnStatement(current)) return true;
     if (ts.isIfStatement(current) && current.expression === child) return true;
-    if (ts.isConditionalExpression(current) && current.condition === child) return true;
+    if (ts.isConditionalExpression(current) && current.condition === child) {
+      // A ternary used as a bare statement decides by side effect, not by value.
+      // Its branches are the decision, so it is a sink.
+      if (current.parent && ts.isExpressionStatement(current.parent)) return true;
+      // Otherwise the ternary only passes a value along. Keep climbing.
+      continue;
+    }
     if (ts.isPropertyAssignment(current)) return true;
     if (ts.isFunctionLike(current)) return false;
   }

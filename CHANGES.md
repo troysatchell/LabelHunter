@@ -134,6 +134,81 @@ creates its fixture.
 slug alone. It stops writing `.factory-owner`. Any leftover stamp file elsewhere is inert and
 already gitignored.
 
+## TRO-571 — The deployed batch worker OOM-crash-looped under real load (2026-08-13)
+
+**What happened.** TRO-483's 36-case batch against the deployed instance stalled
+at 2 of 36. It stayed there for over 35 minutes: 15 items held in `CLAIMED`, 19
+never claimed, `failedCount: 0`.
+
+`render logs` for `labelhunter-worker` showed the process restarting every few
+minutes with no deploy and no new commit behind it. Each cycle logged one line:
+
+```text
+[batch-worker] starting — 5 extract worker(s), 2 resolve worker(s), 1 single-label resolve worker(s)
+```
+
+Then silence, until the next restart.
+
+**The silence was the evidence.** A JavaScript exception logs something. The only
+errors anywhere in the worker's logs were from the previous day. A process that
+vanishes with no stack trace, no exit code and no last line was killed from
+outside. `SIGKILL` leaves no last words.
+
+**Cause: concurrency against plan size, not a leak.** `src/server/warning/ocr.ts`
+was checked first. It terminates its tesseract worker on every path, including
+the timeout branch TRO-519 added. Nothing leaks.
+
+It creates a **fresh tesseract worker per item**, though. Each one loads the
+English trained-data model, and `sharp` decodes a full-size JPEG beside it.
+`render.yaml` asked for five of those at once on `plan: starter`. Single-label
+verification never hit the ceiling because it handles one image at a time. A
+batch is the first thing that ever ran five concurrently on the deployed box.
+
+**The fix.** `BATCH_WORKER_CONCURRENCY` 5 → 2, `BATCH_RESOLVE_WORKER_CONCURRENCY`
+2 → 1, in `render.yaml`. The service is Blueprint-managed, so a dashboard edit
+would be overwritten on the next sync. The change belongs in the file.
+
+The trade is throughput for completion. A 36-item batch takes roughly 90 seconds
+instead of 30. It finishes, which it previously never did.
+
+**Two theories this replaced, recorded so nobody re-runs them.**
+
+1. *Deploy churn from merge velocity.* Plausible — 14+ restarts did line up with
+   merges. A 35-minute merge freeze disproved it. The batch never recovered.
+2. *The worker is dead or absent.* The logs disproved it. It boots every time.
+
+The freeze is what falsified the first theory. Stop the suspected cause and see
+whether the symptom stops.
+
+**Not done here, deliberately.** This ticket did not upgrade the plan. An upgrade
+costs money. It also hides the shape of the trade-off TH-R23 asks us to document.
+This ticket also left the tesseract workers unpooled. Reuse instead of
+create-per-item is the real throughput fix. That change is larger than this
+ticket should carry.
+
+**Confirmed.** `scripts/deploy/render-yaml.test.ts` covers 27 cases. Two new cases
+pin a concurrency **ceiling** rather than an exact value. Tuning down therefore
+stays free. Tuning up has to come here and justify itself. A third assertion
+checks that the plan these limits were chosen for is still the plan in use.
+Proven red-first: restoring concurrency 5 fails with `expected 5 to be less than
+or equal to 2`.
+
+**How to run it.**
+
+```bash
+pnpm test -- scripts/deploy/render-yaml.test.ts
+```
+
+**Rollback — unsafe as-is, read before reverting.** A plain `git revert` of this
+commit restores `BATCH_WORKER_CONCURRENCY=5` and
+`BATCH_RESOLVE_WORKER_CONCURRENCY=2`, which is the configuration that
+OOM-crash-looped. Do not revert to undo something unrelated in this commit.
+
+To roll back the test or the prose while keeping the deployed worker alive,
+revert the commit and then re-apply the two values (2 and 1) in `render.yaml`.
+Raising them again is only safe behind a bigger plan or a pooled tesseract
+worker.
+
 ## TRO-568 — The latency harness could not reach the gated deployment (2026-08-13)
 
 **The bug.** `scripts/latency/measure.ts`'s `--url` path built its POST as

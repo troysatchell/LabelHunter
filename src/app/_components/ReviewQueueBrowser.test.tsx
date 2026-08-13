@@ -172,6 +172,36 @@ describe("ReviewQueueBrowser", () => {
     expect(screen.getByText(/More items are waiting\./)).toBeInTheDocument();
   });
 
+  it("retrying Load more after a failed page load asks for the same cursor again", async () => {
+    // The failed page load left the phase at "refresh-error", and
+    // loadMore() only ran from "success" — so the Load more button rendered,
+    // stayed enabled, and did nothing. The cursor was already held; only
+    // the guard refused to use it (CodeRabbit finding, local review round 6).
+    const user = userEvent.setup();
+    const second: ReviewQueueListItemWire = { ...ITEM, id: 43, brandName: "Second Winery" };
+    const fetchItems = vi
+      .fn()
+      .mockResolvedValueOnce(page([ITEM], "cursor-for-page-two"))
+      .mockRejectedValueOnce(new ReviewQueueClientError("SERVICE", "LabelHunter could not load the review queue. Try again."))
+      .mockResolvedValueOnce(page([second]));
+    render(<ReviewQueueBrowser fetchItems={fetchItems} />);
+
+    await screen.findByTestId("review-queue-row-42");
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+    await screen.findByRole("alert");
+
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+
+    expect(await screen.findByTestId("review-queue-row-43")).toBeInTheDocument();
+    // The retry reuses the cursor of the page that failed. Advancing it, or
+    // dropping it, would skip the page the reviewer never received.
+    expect(fetchItems).toHaveBeenNthCalledWith(3, "cursor-for-page-two");
+    expect(fetchItems).toHaveBeenCalledTimes(3);
+    // The rows already read stay on screen, and the error clears.
+    expect(screen.getByTestId("review-queue-row-42")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("retrying after a failed refresh keeps the list mounted too, not only after a successful one", async () => {
     // refresh() checked only current.status === "success" before deciding
     // whether to keep rows mounted; retrying from "refresh-error" fell

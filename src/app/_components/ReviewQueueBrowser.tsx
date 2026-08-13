@@ -108,8 +108,17 @@ export function ReviewQueueBrowser({ fetchItems = defaultFetchItems }: ReviewQue
   // being the one in flight, so a refresh started while a page was loading
   // wins and the late page is discarded rather than appended to a list it
   // no longer belongs to.
+  //
+  // "refresh-error" runs this too, not only "success". That state holds a
+  // real cursor — a failed page load keeps the cursor it failed on, and a
+  // failed refresh keeps the last good page's cursor — and the UI already
+  // renders "Load more" for it. Accepting only "success" left that button
+  // on screen, enabled, doing nothing (CodeRabbit finding, local review
+  // round 6). The retry reuses the same cursor, so the page the reviewer
+  // never received is the page that is asked for again.
   function loadMore() {
-    if (phase.status !== "success" || phase.nextCursor === null) return;
+    if (phase.status !== "success" && phase.status !== "refresh-error") return;
+    if (phase.nextCursor === null) return;
     const cursor = phase.nextCursor;
     setPhase({ status: "loading-more", items: phase.items, nextCursor: cursor });
     fetchItems(cursor).then(

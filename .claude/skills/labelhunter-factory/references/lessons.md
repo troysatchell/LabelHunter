@@ -89,8 +89,10 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     paragraph doesn't get counted by `review-ledger.mjs report`.
 22. **A hardened `pg.Pool` doesn't protect a second `new Pool(...)` created elsewhere.** Reuse
     the existing hardened client from `src/lib/db`. If a script genuinely needs its own
-    short-lived pool, copy both settings (the error listener, `connectionTimeoutMillis`), not
-    just the constructor call.
+    short-lived pool, copy every hardened setting — the error listener,
+    `connectionTimeoutMillis`, and `query_timeout` — not just the constructor call.
+    `connectionTimeoutMillis` bounds only connection establishment; an established query
+    needs `query_timeout` or it can hang forever (TRO-544 post-merge finding).
 23. **An `AbortController` timeout must stay live through the whole request, including the body
     read** — `clearTimeout` in the `finally` after `fetch()` resolves, before `.json()` runs,
     leaves a hanging body parse with no timeout at all. Scope one timer across every `await` in

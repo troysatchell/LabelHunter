@@ -205,16 +205,95 @@ export async function applyGlare(
     .toBuffer();
 }
 
+/** Mid-gray reference point for `contrastFactor` below — the exact
+ * midpoint of an 8-bit channel (0-255). */
+const MID_GRAY = 128;
+
+/**
+ * Deterministic pseudo-random generator (mulberry32), seeded with a fixed
+ * constant. Never `Math.random()`, `Date.now()`, or any other real entropy
+ * source — same seed, same output sequence, every run. `addSensorNoise`
+ * below is the only caller; this keeps that function's grain field inside
+ * this file's own determinism contract (module header comment, proven by
+ * `degrade.test.ts`'s "byte-identical output" suite).
+ */
+function mulberry32(seed: number): () => number {
+  let state = seed;
+  return function nextRandom(): number {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Fixed seed for `addSensorNoise`'s grain field. Determinism, not
+ * unpredictability, is the property that matters here, so any constant
+ * works — this one has no significance beyond being fixed. */
+const NOISE_SEED = 0xc0ffee;
+
+/**
+ * Composites a deterministic grayscale grain field over `regionImage`,
+ * simulating a real camera sensor's noise floor — visible exactly when the
+ * signal is weak, the same low-light condition `contrastFactor` (below)
+ * targets. Every byte comes from `mulberry32`, clamped to a valid pixel
+ * value, never `Math.random()`. `blend: "overlay"` centers the no-op point
+ * at mid-gray: per the CSS/W3C overlay-blend formula, a source value of
+ * exactly 128 leaves the backdrop pixel unchanged for any backdrop value,
+ * so `amplitude` alone controls how far the grain pushes a pixel either
+ * direction.
+ */
+async function addSensorNoise(
+  regionImage: Buffer,
+  width: number,
+  height: number,
+  amplitude: number,
+): Promise<Buffer> {
+  const nextRandom = mulberry32(NOISE_SEED);
+  const channels = 3;
+  const noise = Buffer.alloc(width * height * channels);
+  for (let pixel = 0; pixel < width * height; pixel += 1) {
+    const value = Math.min(
+      255,
+      Math.max(0, Math.round(MID_GRAY + (nextRandom() * 2 - 1) * amplitude)),
+    );
+    const offset = pixel * channels;
+    noise[offset] = value;
+    noise[offset + 1] = value;
+    noise[offset + 2] = value;
+  }
+  return sharp(regionImage)
+    .composite([{ input: noise, raw: { width, height, channels }, blend: "overlay" }])
+    .toBuffer();
+}
+
 /**
  * Darkens a named region in place, simulating underexposure.
  * `brightnessFactor` follows sharp's `modulate` scale: 1 leaves the region
  * unchanged, below 1 darkens it.
+ *
+ * Two more parameters are optional and off by default — `contrastFactor: 1`,
+ * `noiseAmplitude: 0` — so every existing caller (case-22's own low-light
+ * degradation, and every test that omits them) takes the exact same code
+ * path as before this change, byte for byte.
+ *
+ * `contrastFactor`, in `(0, 1]`: below 1, pulls the region's pixel values
+ * toward `MID_GRAY` BEFORE the exposure scale above runs — simulating a
+ * real sensor's noise floor crushing shadow and highlight detail under low
+ * light, not just a proportionally darker copy of the same crisp edges
+ * (measured gap: `docs/diagnostics/2026-08-12-verdict-miss-triage.md` §3D
+ * — a hard-edged gray rectangle with crisp black type, not underexposure).
+ *
+ * `noiseAmplitude`, in `[0, 128]`: adds `addSensorNoise`'s deterministic
+ * grain field at this amplitude.
  */
 export async function applyLowLight(
   image: Buffer,
   params: {
     readonly region: unknown;
     readonly brightnessFactor: unknown;
+    readonly contrastFactor?: unknown;
+    readonly noiseAmplitude?: unknown;
   },
 ): Promise<Buffer> {
   await assertMatchesOriginalCanvas(image);
@@ -228,11 +307,33 @@ export async function applyLowLight(
       `degrade: "brightnessFactor" must be in (0, 1], got ${brightnessFactor}`,
     );
   }
+  const contrastFactor = assertFiniteNumber("contrastFactor", params.contrastFactor ?? 1);
+  if (contrastFactor <= 0 || contrastFactor > 1) {
+    throw new RangeError(`degrade: "contrastFactor" must be in (0, 1], got ${contrastFactor}`);
+  }
+  const noiseAmplitude = assertFiniteNumber("noiseAmplitude", params.noiseAmplitude ?? 0);
+  if (noiseAmplitude < 0 || noiseAmplitude > MID_GRAY) {
+    throw new RangeError(`degrade: "noiseAmplitude" must be in [0, ${MID_GRAY}], got ${noiseAmplitude}`);
+  }
 
-  const darkenedRegion = await sharp(image)
-    .extract({ left: region.x, top: region.y, width: region.width, height: region.height })
-    .modulate({ brightness: brightnessFactor })
-    .toBuffer();
+  let regionPipeline = sharp(image).extract({
+    left: region.x,
+    top: region.y,
+    width: region.width,
+    height: region.height,
+  });
+  // Skipped entirely, not just called with identity coefficients, when
+  // contrastFactor is 1 — an extra no-op `.linear()` call could still
+  // perturb output bytes by a rounding step libvips does not promise to
+  // skip, and case-22's own committed image must stay byte-identical.
+  if (contrastFactor !== 1) {
+    regionPipeline = regionPipeline.linear(contrastFactor, MID_GRAY * (1 - contrastFactor));
+  }
+  let darkenedRegion: Buffer = await regionPipeline.modulate({ brightness: brightnessFactor }).toBuffer();
+
+  if (noiseAmplitude > 0) {
+    darkenedRegion = await addSensorNoise(darkenedRegion, region.width, region.height, noiseAmplitude);
+  }
 
   return sharp(image)
     .composite([{ input: darkenedRegion, left: region.x, top: region.y }])
@@ -267,6 +368,8 @@ export async function applyDegradation(
       return applyLowLight(image, {
         region: degradation.params.region,
         brightnessFactor: degradation.params.brightnessFactor,
+        contrastFactor: degradation.params.contrastFactor,
+        noiseAmplitude: degradation.params.noiseAmplitude,
       });
     default: {
       const exhaustive: never = degradation.type;

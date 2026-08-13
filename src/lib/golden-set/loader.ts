@@ -263,7 +263,14 @@ const DEGRADATION_PARAM_SHAPE: Record<
     required: { region: "string" },
     optional: { angleDegrees: "number", opacity: "number" },
   },
-  "low-light": { required: { region: "string", brightnessFactor: "number" } },
+  "low-light": {
+    required: { region: "string", brightnessFactor: "number" },
+    // TRO-516 correction C3: optional dynamic-range compression toward
+    // mid-gray and deterministic sensor noise, matching
+    // `scripts/golden/degrade.ts`'s `applyLowLight` params exactly —
+    // absent, a case keeps the original brightness-only behavior.
+    optional: { contrastFactor: "number", noiseAmplitude: "number" },
+  },
 };
 
 /**

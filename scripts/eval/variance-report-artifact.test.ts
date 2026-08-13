@@ -95,8 +95,14 @@ describe("variance-report.json — the TRO-543 Part 2 authorized sweep artifact"
     // (CLAUDE.md: "never fabricate a number").
     expect(report.totalCostUsd).toBeGreaterThan(0);
 
-    // Exact model IDs, matching the cascade's own exported constants -- not
-    // a placeholder string.
+    // Exact model IDs -- literal strings on purpose, not
+    // HAIKU_EXTRACTOR_MODEL/SONNET_RESOLVER_MODEL imported from src/server.
+    // Importing them would make this assertion tautological against
+    // exactly the regression it should catch: if either constant's own
+    // value ever drifted (a wrong edit, an accidental downgrade), a
+    // same-constant comparison would silently drift with it and still
+    // pass. The literal string independently confirms the artifact records
+    // the real, intended model.
     expect(report.haikuModel).toBe("claude-haiku-4-5");
     expect(report.sonnetModel).toBe("claude-sonnet-5");
 

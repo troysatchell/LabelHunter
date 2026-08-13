@@ -349,7 +349,9 @@ describe("validateVarianceReport", () => {
     expect(() => validateVarianceReport(validVarianceReport({ commitSha: "  " }), "variance-report.json")).toThrow(/commitSha/);
   });
 
-  it("rejects a non-boolean requestedFull", () => {
+  it("rejects a missing or non-boolean requestedFull", () => {
+    const { requestedFull: _drop, ...rest } = validVarianceReport();
+    expect(() => validateVarianceReport(rest, "variance-report.json")).toThrow(/requestedFull/);
     expect(() => validateVarianceReport(validVarianceReport({ requestedFull: "true" }), "variance-report.json")).toThrow(/requestedFull/);
     expect(() => validateVarianceReport(validVarianceReport({ requestedFull: null }), "variance-report.json")).toThrow(/requestedFull/);
   });

@@ -62,4 +62,67 @@ describe("parseArgs", () => {
   it("names the received value in the safety-cap error", () => {
     expect(() => parseArgs(["--runs=2000"])).toThrow(/--runs=2000/);
   });
+
+  // TRO-539: --url (real HTTP mode) and --out (redirect the report path so
+  // a --url run never silently overwrites the committed in-process
+  // evidence file). Every existing case above keeps passing unmodified —
+  // url/outPath are `undefined` when absent, and vitest's `toEqual`
+  // ignores `undefined` properties, so those assertions need no edit.
+
+  it("url and outPath default to undefined", () => {
+    const result = parseArgs([]);
+    expect(result.url).toBeUndefined();
+    expect(result.outPath).toBeUndefined();
+  });
+
+  it("parses --url=<origin>", () => {
+    expect(parseArgs(["--url=http://localhost:3874"])).toEqual({
+      runs: DEFAULT_RUNS,
+      caseId: DEFAULT_CASE_ID,
+      url: "http://localhost:3874",
+    });
+  });
+
+  it("parses --out=<path>", () => {
+    expect(parseArgs(["--out=scripts/latency/results/foo.json"])).toEqual({
+      runs: DEFAULT_RUNS,
+      caseId: DEFAULT_CASE_ID,
+      outPath: "scripts/latency/results/foo.json",
+    });
+  });
+
+  it("parses --url, --out, --runs, and --case together, in any order", () => {
+    expect(
+      parseArgs(["--out=out.json", "--runs=3", "--url=http://localhost:3874", "--case=case-02-clean-match-beer-no-abv"]),
+    ).toEqual({
+      runs: 3,
+      caseId: "case-02-clean-match-beer-no-abv",
+      url: "http://localhost:3874",
+      outPath: "out.json",
+    });
+  });
+
+  it("rejects a malformed --url", () => {
+    expect(() => parseArgs(["--url=not-a-url"])).toThrow(/not a valid absolute URL/);
+  });
+
+  it("rejects an empty --url", () => {
+    expect(() => parseArgs(["--url="])).toThrow(/unrecognized argument/);
+  });
+
+  it("accepts a --url with a path and trailing slash — measure.ts decides how to append /api/verify, this layer only validates absoluteness", () => {
+    expect(() => parseArgs(["--url=https://labelhunter-web.onrender.com/"])).not.toThrow();
+  });
+
+  it("parses --note=<text>, including embedded spaces (one argv token)", () => {
+    expect(parseArgs(["--note=fake-model validation, not a TH-R2 number"])).toEqual({
+      runs: DEFAULT_RUNS,
+      caseId: DEFAULT_CASE_ID,
+      note: "fake-model validation, not a TH-R2 number",
+    });
+  });
+
+  it("note defaults to undefined", () => {
+    expect(parseArgs([]).note).toBeUndefined();
+  });
 });

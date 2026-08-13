@@ -32,16 +32,43 @@ export const MAX_RUNS = 50;
 export interface CliArgs {
   runs: number;
   caseId: string;
+  /** Set only by `--url=<origin>` (TRO-539). When present, the harness
+   * sends a real multipart POST to `${url}/api/verify` instead of calling
+   * `handleVerifyRequest` in-process — see `measure.ts`'s own module
+   * comment and `target-info.ts`. `undefined`, not `null`, when the flag
+   * is absent — an omitted CLI flag, not an explicit "no target". */
+  url?: string;
+  /** Set only by `--out=<path>`, resolved relative to the repo root by
+   * `measure.ts` (this module does no filesystem work). Lets a `--url`
+   * run write to a path OTHER than the default
+   * `scripts/latency/results/single-label-verify.json` — the committed
+   * evidence file for the real, in-process, billed measurement — so a
+   * fake-model or deployed `--url` run can never silently overwrite it.
+   * `undefined` when the flag is absent, same reasoning as `url` above. */
+  outPath?: string;
+  /** Set only by `--note=<text>`, written verbatim into the committed
+   * report's own `validationNote` field. Exists so a run whose numbers
+   * are NOT a real TH-R2 measurement — a fake-model or otherwise
+   * non-representative run — can say so loudly INSIDE the artifact
+   * itself, not only in its filename or in CHANGES.md (a reader who opens
+   * the JSON directly, with neither in view, must still see it). `undefined`
+   * when the flag is absent, same reasoning as `url` above. */
+  note?: string;
 }
 
 /**
- * Parses `process.argv.slice(2)`-shaped CLI args into `{ runs, caseId }`.
- * Throws `Error` on an unrecognized argument, a non-positive-integer
- * `--runs`, or a `--runs` above `MAX_RUNS`.
+ * Parses `process.argv.slice(2)`-shaped CLI args into a `CliArgs`. Throws
+ * `Error` on an unrecognized argument, a non-positive-integer `--runs`, a
+ * `--runs` above `MAX_RUNS`, or a `--url` that is not a valid absolute
+ * URL. `--note` text with spaces needs shell quoting (one argv token),
+ * e.g. `--note="fake-model validation, not a TH-R2 number"`.
  */
 export function parseArgs(argv: readonly string[]): CliArgs {
   let runs = DEFAULT_RUNS;
   let caseId = DEFAULT_CASE_ID;
+  let url: string | undefined;
+  let outPath: string | undefined;
+  let note: string | undefined;
   // `pnpm run latency:check -- --runs=5` forwards the literal `--` token
   // into argv (npm strips it, pnpm does not — the same quirk
   // `scripts/run-tests.cjs` works around for `pnpm test`). Skip it rather
@@ -59,7 +86,25 @@ export function parseArgs(argv: readonly string[]): CliArgs {
       caseId = caseMatch[1];
       continue;
     }
-    throw new Error(`measure.ts: unrecognized argument "${arg}" (expected --runs=<n> or --case=<caseId>)`);
+    const urlMatch = /^--url=(.+)$/.exec(arg);
+    if (urlMatch) {
+      url = urlMatch[1];
+      continue;
+    }
+    const outMatch = /^--out=(.+)$/.exec(arg);
+    if (outMatch) {
+      outPath = outMatch[1];
+      continue;
+    }
+    const noteMatch = /^--note=(.+)$/.exec(arg);
+    if (noteMatch) {
+      note = noteMatch[1];
+      continue;
+    }
+    throw new Error(
+      `measure.ts: unrecognized argument "${arg}" (expected --runs=<n>, --case=<caseId>, ` +
+        `--url=<origin>, --out=<path>, or --note=<text>)`,
+    );
   }
   if (!Number.isInteger(runs) || runs < 1) {
     throw new Error(`measure.ts: --runs must be a positive integer, got ${runs}`);
@@ -70,5 +115,15 @@ export function parseArgs(argv: readonly string[]): CliArgs {
         `API money — see this file's MAX_RUNS comment). Edit MAX_RUNS if you genuinely need more.`,
     );
   }
-  return { runs, caseId };
+  if (url !== undefined) {
+    try {
+      new URL(url);
+    } catch {
+      throw new Error(
+        `measure.ts: --url=${JSON.stringify(url)} is not a valid absolute URL ` +
+          `(expected e.g. --url=http://localhost:3874 — the harness appends /api/verify itself)`,
+      );
+    }
+  }
+  return { runs, caseId, url, outPath, note };
 }

@@ -14,6 +14,10 @@ const ERROR_TITLE: Record<VerifyErrorKind, string> = {
   IMAGE: "LabelHunter can't use this photo",
   EXTRACTION: "LabelHunter could not read this label",
   SERVICE: "Something went wrong",
+  // TRO-482 / LH-061, PRD §8 — the key-protection guard's two rejection
+  // states. Neither is the requester's fault, so neither title implies one.
+  RATE_LIMITED: "Too many requests right now",
+  BUDGET_EXHAUSTED: "LabelHunter has reached today's limit",
 };
 
 export interface ErrorPanelProps {

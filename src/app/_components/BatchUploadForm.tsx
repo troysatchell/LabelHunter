@@ -54,6 +54,11 @@ const PREVIEW_ERROR_TITLE: Record<string, string> = {
   MALFORMED_ZIP: "LabelHunter can't read this zip file",
   NO_READY_ROWS: "Nothing is ready to start",
   SERVICE: "Something went wrong",
+  // TRO-482 / LH-061, PRD §8 — the key-protection guard's two rejection
+  // states, matching src/app/_components/ErrorPanel.tsx's own titles for
+  // the same two kinds on the verify screen.
+  RATE_LIMITED: "Too many requests right now",
+  BUDGET_EXHAUSTED: "LabelHunter has reached today's limit",
 };
 
 function errorInfo(error: unknown): ErrorInfo {

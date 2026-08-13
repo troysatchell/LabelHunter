@@ -312,6 +312,55 @@ describe("validateVarianceReport", () => {
     expect(() => validateVarianceReport(validVarianceReport({ manifestContentHash: 7 }), "variance-report.json")).toThrow(/manifestContentHash/);
   });
 
+  // TRO-543 Part 2 (a review finding, triaged): haikuModel/sonnetModel/
+  // commitSha/requestedFull used to pass through this validator with no
+  // check at all — a caller reading them off the "validated" return value
+  // was trusting the cast, not a real check. These cases prove the fix:
+  // each field now fails loudly on an absent, empty, or wrongly-typed
+  // value. The absent-key case (destructured out, not merely set to a
+  // falsy value) proves a field genuinely MISSING from a hand-edited or
+  // truncated JSON file is caught the same way — `candidate.haikuModel`
+  // reads as `undefined` either way, but only the destructured case proves
+  // the check does not depend on the key being present at all.
+  it("rejects a missing, empty, or wrongly-typed haikuModel", () => {
+    const { haikuModel: _drop, ...rest } = validVarianceReport();
+    expect(() => validateVarianceReport(rest, "variance-report.json")).toThrow(/haikuModel/);
+    expect(() => validateVarianceReport(validVarianceReport({ haikuModel: "" }), "variance-report.json")).toThrow(/haikuModel/);
+    expect(() => validateVarianceReport(validVarianceReport({ haikuModel: 7 }), "variance-report.json")).toThrow(/haikuModel/);
+  });
+
+  it("rejects a missing, empty, or wrongly-typed sonnetModel", () => {
+    const { sonnetModel: _drop, ...rest } = validVarianceReport();
+    expect(() => validateVarianceReport(rest, "variance-report.json")).toThrow(/sonnetModel/);
+    expect(() => validateVarianceReport(validVarianceReport({ sonnetModel: "" }), "variance-report.json")).toThrow(/sonnetModel/);
+    expect(() => validateVarianceReport(validVarianceReport({ sonnetModel: null }), "variance-report.json")).toThrow(/sonnetModel/);
+  });
+
+  it("rejects a missing, empty, or wrongly-typed commitSha", () => {
+    const { commitSha: _drop, ...rest } = validVarianceReport();
+    expect(() => validateVarianceReport(rest, "variance-report.json")).toThrow(/commitSha/);
+    expect(() => validateVarianceReport(validVarianceReport({ commitSha: "" }), "variance-report.json")).toThrow(/commitSha/);
+    expect(() => validateVarianceReport(validVarianceReport({ commitSha: 12345 }), "variance-report.json")).toThrow(/commitSha/);
+  });
+
+  it("rejects a whitespace-only haikuModel, sonnetModel, or commitSha — non-empty means real content, not just a non-zero length", () => {
+    expect(() => validateVarianceReport(validVarianceReport({ haikuModel: "   " }), "variance-report.json")).toThrow(/haikuModel/);
+    expect(() => validateVarianceReport(validVarianceReport({ sonnetModel: "\t\n" }), "variance-report.json")).toThrow(/sonnetModel/);
+    expect(() => validateVarianceReport(validVarianceReport({ commitSha: "  " }), "variance-report.json")).toThrow(/commitSha/);
+  });
+
+  it("rejects a missing or non-boolean requestedFull", () => {
+    const { requestedFull: _drop, ...rest } = validVarianceReport();
+    expect(() => validateVarianceReport(rest, "variance-report.json")).toThrow(/requestedFull/);
+    expect(() => validateVarianceReport(validVarianceReport({ requestedFull: "true" }), "variance-report.json")).toThrow(/requestedFull/);
+    expect(() => validateVarianceReport(validVarianceReport({ requestedFull: null }), "variance-report.json")).toThrow(/requestedFull/);
+  });
+
+  it("accepts requestedFull as either boolean value", () => {
+    expect(() => validateVarianceReport(validVarianceReport({ requestedFull: true }), "variance-report.json")).not.toThrow();
+    expect(() => validateVarianceReport(validVarianceReport({ requestedFull: false }), "variance-report.json")).not.toThrow();
+  });
+
   it("collects multiple problems in one error rather than stopping at the first", () => {
     try {
       validateVarianceReport({}, "variance-report.json");
@@ -325,6 +374,10 @@ describe("validateVarianceReport", () => {
       expect(message).toContain("runs");
       expect(message).toContain("failures");
       expect(message).toContain("totalCostUsd");
+      expect(message).toContain("haikuModel");
+      expect(message).toContain("sonnetModel");
+      expect(message).toContain("commitSha");
+      expect(message).toContain("requestedFull");
     }
   });
 });

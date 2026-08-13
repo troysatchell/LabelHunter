@@ -129,9 +129,13 @@ describe("golden-set degradations recorded on the manifest (design doc §3)", ()
   });
 
   it("carries no degradations for tiny-warning-text or odd-typography cases (render-time print choices, not degrade.ts transforms)", () => {
+    // case-24-tiny-warning-text-miniature-bottle is gone (TRO-516 C5:
+    // merged into case-23, 2026-08-13) — not listed here on purpose.
+    // degradationsOf() falls back to `[]` for a caseId the manifest does
+    // not have, so a removed ID would still pass this loop silently and
+    // stop proving anything for it.
     const renderTimeOnly = [
       "case-23-tiny-warning-text-standard-bottle",
-      "case-24-tiny-warning-text-miniature-bottle",
       "case-25-odd-typography-script-brand",
       "case-26-odd-typography-blackletter-class-type",
     ];

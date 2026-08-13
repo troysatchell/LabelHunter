@@ -4,6 +4,58 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-554 — defect-gate engine hardening: 15 review-round-3 findings, batched (2026-08-13)
+
+**The source.** PR #48 (TRO-508)'s local gate review, round 3, found 15 real hardening gaps
+in the defect-gate engine — the tool that checks every other branch, not label-verification
+code. Round 2 already fixed every substantive defect that round found. Round 3's findings
+changed no shipped behavior: recall stayed 1.0, G11 still classified a real diff correctly,
+and the 74-test suite was green. Per lessons rule 31, they land here as one batch instead of
+fix-iterating forever.
+
+**The fixes, by file.**
+
+- `ast.ts`: an anonymous class expression assigned to a variable or property now takes that
+  name. `const x = class { validate() {} }` reports `x.validate`, not `<anonymous>.validate`.
+  A class expression with no owner (a bare call argument) still falls back to `<anonymous>`.
+- `baseline.ts`: `fileAtRef` validates the ref before it reads the path. A bad `BASE_REF` now
+  throws by name. Before this fix, it read as "no baseline" for every file in the diff. A
+  `git show` failure that is not a missing path (a corrupt object, a permissions error) now
+  throws too, instead of silently returning null.
+- `rules/vacuous-empty-quantifier.ts`: the preceding-guard scan now matches the receiver
+  against the real AST node, not a substring of the guard's source text. The old check read
+  `wxs.length` as a guard on `xs`. `reachesSinkThroughVariable` now walks its own function
+  scope only. A nested function's own shadowed variable, same name, can no longer read as the
+  outer variable reaching a decision. The finding message now names `.reduce()`'s real failure
+  — it throws on an empty collection, it does not return a vacuously-true value — instead of
+  reusing `.every()`'s wording for both.
+- `run.ts`: the console report now prints a rule's own error detail when its status is
+  `"error"`, even with no introduced findings to point to. A pin-resolution failure used to
+  exit 1 with a blank report. `buildDocument` now throws a named error when a result's rule id
+  has no matching `pins` entry, instead of a bare "Cannot read properties of undefined."
+- `replay.ts`: the `--grep` ticket pattern is now word-boundary anchored. An unanchored
+  "TRO-464" is a leading substring of "TRO-4640" — a commit naming the wrong, longer ticket
+  could read as a match for the shorter one. `loadLedger` now names the file and the 1-based
+  line number when a row fails to parse.
+- `replay-cli.ts`: the entrypoint guard now recognizes both `.ts` (the dev path) and `.js` (a
+  compiled build). A `.ts`-only check let a built CLI exit 0 and do nothing. The loaded rule
+  module's shape is validated before anything reads `.meta` off it, naming the rule id and the
+  exact missing piece. Its `sh` helper now runs `spawnSync` with an argument array, matching
+  `run.ts` — never a shell string.
+
+**Not included.** Five doc/prose-only findings from the same review round. Lessons rule 31
+already dismissed them. This ticket does not reopen them.
+
+**Confirmed.** All 15 items landed with a test; none needed rejection. 102 tests pass across
+the 9 `scripts/factory/defect-gates/*.test.ts` files, up from 74 before this ticket (`pnpm
+vitest run scripts/factory/defect-gates/`, observed 2026-08-13). `pnpm typecheck` and `pnpm
+lint` are clean. The word-boundary fix caught a real regression before it shipped: an early
+draft paired the anchor with `--extended-regexp`, which compiles `\b` as a literal backspace
+in this git version (2.50.1) and silently matched nothing. Caught against this repo's own real
+TRO-464/TRO-511 commit history, not only a synthetic fixture. Replay recall stays 1.0
+(`factory/replay/vacuous-empty-quantifier.v1.json`, unchanged). G11 passes on this branch's
+own diff.
+
 ## TRO-572 — worktree.sh: a per-ticket lock serializes truly concurrent invocations (2026-08-13)
 
 **The gap.** TRO-557 refuses a worktree reuse from a DIFFERENT session. It checks a

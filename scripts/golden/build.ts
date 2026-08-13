@@ -6,7 +6,16 @@
  * `rendered+degraded` case — every degradation recorded in that case's
  * `degradations` list (`degrade.ts`), applied in order. `ai-generated`
  * cases are LH-005's job; this script skips them and leaves their (still
- * absent) image files alone.
+ * absent) image files alone. `photographed` cases (TRO-529 / LH-024) are
+ * skipped too, for a sharper reason than "no image yet": their image
+ * already exists and is a real camera photograph — running it through this
+ * renderer would silently overwrite that photograph with synthetic
+ * `<html>`-drawn text at the same file path, destroying the one thing the
+ * case exists to test. `resolveImagePath` below would also refuse the
+ * write (a `photographed` case's `imagePath` lives under
+ * `assets/golden/references/`, outside `golden-set/images/`), but skipping
+ * up front means one `photographed` case in the manifest cannot abort the
+ * whole build for every other case behind it.
  *
  * Run: `pnpm golden:build`. Deterministic on one machine with one
  * toolchain: the same committed `golden-set/manifest.json` produces the
@@ -132,7 +141,9 @@ async function buildCase(
 
 async function main(): Promise<void> {
   const manifest = loadGoldenSetManifest();
-  const renderable = manifest.cases.filter((c) => c.provenance !== "ai-generated");
+  const renderable = manifest.cases.filter(
+    (c) => c.provenance !== "ai-generated" && c.provenance !== "photographed",
+  );
 
   const renderer = await createLabelRenderer();
   const results: BuildResult[] = [];
@@ -152,9 +163,15 @@ async function main(): Promise<void> {
     console.log(`  ${r.caseId}: ${r.bytes} bytes`);
   }
 
-  const skipped = manifest.cases.length - renderable.length;
-  if (skipped > 0) {
-    console.log(`Skipped ${skipped} ai-generated case(s) — LH-005's job.`);
+  const aiGeneratedSkipped = manifest.cases.filter((c) => c.provenance === "ai-generated").length;
+  const photographedSkipped = manifest.cases.filter((c) => c.provenance === "photographed").length;
+  if (aiGeneratedSkipped > 0) {
+    console.log(`Skipped ${aiGeneratedSkipped} ai-generated case(s) — LH-005's job.`);
+  }
+  if (photographedSkipped > 0) {
+    console.log(
+      `Skipped ${photographedSkipped} photographed case(s) — real photographs, never rendered (TRO-529 / LH-024).`,
+    );
   }
 }
 

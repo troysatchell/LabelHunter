@@ -115,6 +115,17 @@ function buildSonnetOnlyRouterInput(): LabelRouterResult {
       resolvedBy: null,
       reviewReason: SONNET_ONLY_PLACEHOLDER_REASON,
     })),
+    // This arm has no router pass of its own (this function's own doc
+    // comment) — no real LOW_IMAGE_QUALITY trigger or image_quality reading
+    // exists to report here. Empty, not `["none"]` — `"none"` is one of
+    // Haiku's own real self-reported enum values (`ImageQualityIssue`,
+    // `extractor/types.ts`); using it here would misrepresent a synthetic,
+    // never-called arm as an honest "Haiku checked and found no issues"
+    // report, contradicting this function's own "never present fabricated
+    // router output as if a real decision produced it" rule above
+    // (CodeRabbit finding).
+    lowImageQualityTrigger: null,
+    imageQualityIssues: [],
   };
 }
 

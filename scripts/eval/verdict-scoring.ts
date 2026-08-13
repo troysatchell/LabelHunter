@@ -22,7 +22,13 @@
  */
 import type { GoldenExpectedResult, GoldenSetCase } from "../../src/lib/golden-set/types";
 import type { HaikuExtractionResult } from "../../src/server/extractor/types";
-import type { LabelVerdict, ReviewReason, RouterFieldKey, WarningComparatorChannel } from "../../src/server/router/types";
+import type {
+  LabelVerdict,
+  LowImageQualityTrigger,
+  ReviewReason,
+  RouterFieldKey,
+  WarningComparatorChannel,
+} from "../../src/server/router/types";
 import type { VerdictCaseScore, VerdictFieldScore } from "./types";
 
 /** `RouterFieldKey` -> the matching confidence on `HaikuExtractionResult`
@@ -89,6 +95,18 @@ export interface ActualVerdict {
    * so `VerdictCaseScore.warningChannel` is always present (never
    * `undefined`) in the committed report. */
   warningChannel?: WarningComparatorChannel | null;
+  /**
+   * TRO-542: `LabelRouterResult.lowImageQualityTrigger`, carried through
+   * from the ROUTER stage. Optional for the same reason `warningChannel`
+   * is — the Sonnet-only benchmark arm (`resolver-rollup.ts`) has no
+   * router pass to take a trigger FROM, and the cascade end-state merge
+   * (`cascade-runner.ts`'s `mergeResolutionIntoActualVerdict`) already
+   * documents that the router's own label-level blocker does not survive
+   * a resolver merge — so neither caller sets this, and `scoreVerdict`
+   * below normalizes the absence to `null`, the same convention
+   * `warningChannel` uses.
+   */
+  lowImageQualityTrigger?: LowImageQualityTrigger | null;
 }
 
 /** Maps the golden set's `expected.fields` keys (`GoldenExpectedResult`,
@@ -168,6 +186,7 @@ export function scoreVerdict(caseSpec: GoldenSetCase, actual: ActualVerdict, ext
     actualReviewReason: actual.headlineReason,
     reviewReasonCorrect,
     warningChannel: actual.warningChannel ?? null,
+    lowImageQualityTrigger: actual.lowImageQualityTrigger ?? null,
     fields,
   };
 }

@@ -56,7 +56,9 @@ describe("resolveEscalatedLabel — never on the happy path (TH-R19)", () => {
   it("throws ResolverNotEscalatedError when the router result is PASS", async () => {
     const client = fakeClient(async () => makeMockMessage(JSON.stringify(WELL_FORMED_RESOLVER_BODY)));
     const { db } = fakeDb();
-    const input = makeResolverInput({ router: { labelVerdict: "PASS", headlineReason: null, fields: [] } });
+    const input = makeResolverInput({
+      router: { labelVerdict: "PASS", headlineReason: null, fields: [], lowImageQualityTrigger: null, imageQualityIssues: ["none"] },
+    });
     await expect(resolveEscalatedLabel(input, { client, db })).rejects.toThrow(ResolverNotEscalatedError);
     expect(client.messages.create).not.toHaveBeenCalled();
   });
@@ -64,7 +66,9 @@ describe("resolveEscalatedLabel — never on the happy path (TH-R19)", () => {
   it("throws ResolverNotEscalatedError when the router result is FAIL", async () => {
     const client = fakeClient(async () => makeMockMessage(JSON.stringify(WELL_FORMED_RESOLVER_BODY)));
     const { db } = fakeDb();
-    const input = makeResolverInput({ router: { labelVerdict: "FAIL", headlineReason: null, fields: [] } });
+    const input = makeResolverInput({
+      router: { labelVerdict: "FAIL", headlineReason: null, fields: [], lowImageQualityTrigger: null, imageQualityIssues: ["none"] },
+    });
     await expect(resolveEscalatedLabel(input, { client, db })).rejects.toThrow(/labelVerdict "FAIL", not "REVIEW"/);
     expect(client.messages.create).not.toHaveBeenCalled();
   });

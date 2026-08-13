@@ -45,6 +45,7 @@ function verdictScore(caseId: string, actualLabelVerdict: LabelVerdict, override
     actualReviewReason,
     reviewReasonCorrect: expectedLabelVerdict !== "REVIEW" || expectedReviewReason === actualReviewReason,
     warningChannel: null,
+    lowImageQualityTrigger: null,
     fields: [
       { field: "government_warning", expectedVerdict: "MATCH", actualVerdict: "MATCH", correct: true, confidence: 0.95, actualReviewReason: null },
     ],

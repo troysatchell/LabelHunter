@@ -6,10 +6,11 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
 ## TRO-483 — LH-062: seeded demo deployment (2026-08-13)
 
-**What changed.** This ticket submits the full 36-case golden set as one real batch job
-against the live deployed instance. This seeds it, so an evaluator lands on real results
-instead of an empty app. Adds `scripts/golden/results/seeded-demo-batch-2026-08-13.json`, the
-completed batch's own progress response, as evidence. No application code changed.
+**What changed.** This ticket submits the full 36-case golden set as one real batch job. The
+target is the live deployed instance. This seeds it. An evaluator lands on real results
+instead of an empty app. This ticket adds
+`scripts/golden/results/seeded-demo-batch-2026-08-13.json` as evidence — the completed batch's
+own progress response. No application code changed.
 
 **The run found a real production defect, not just a demo.** The batch stalled at 2 of 36 items
 for over 30 minutes. `render logs` on `labelhunter-worker` showed a genuine OOM crash loop.

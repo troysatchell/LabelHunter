@@ -47,6 +47,8 @@ function aiBackdropCase(overrides: Partial<GoldenSetCase> = {}): GoldenSetCase {
       governmentWarningPresent: true,
       governmentWarningText: "GOVERNMENT WARNING: test text.",
       governmentWarningPrefixAllCaps: true,
+      governmentWarningPrefixBold: true,
+      governmentWarningBodyBold: false,
     },
     expected: {
       labelVerdict: "PASS",

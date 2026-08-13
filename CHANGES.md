@@ -13,7 +13,7 @@ never claimed, `failedCount: 0`.
 `render logs` for `labelhunter-worker` showed the process restarting every few
 minutes with no deploy and no new commit behind it. Each cycle logged one line:
 
-```
+```text
 [batch-worker] starting — 5 extract worker(s), 2 resolve worker(s), 1 single-label resolve worker(s)
 ```
 
@@ -50,16 +50,18 @@ instead of 30. It finishes, which it previously never did.
 The freeze is what falsified the first theory. Stop the suspected cause and see
 whether the symptom stops.
 
-**Not done here, deliberately.** The plan was not upgraded: that costs money and
-hides the shape of the trade-off TH-R23 asks to be documented. Tesseract workers
-were not pooled: reuse instead of create-per-item is the real fix for throughput,
-and it is a larger change to the OCR path than this ticket should carry.
+**Not done here, deliberately.** This ticket did not upgrade the plan. An upgrade
+costs money. It also hides the shape of the trade-off TH-R23 asks us to document.
+This ticket also left the tesseract workers unpooled. Reuse instead of
+create-per-item is the real throughput fix. That change is larger than this
+ticket should carry.
 
-**Confirmed.** `scripts/deploy/render-yaml.test.ts`, 27 cases. Two new ones pin a
-concurrency **ceiling** rather than an exact value — tuning down stays free,
-tuning up has to come here and justify itself — and assert the plan these limits
-were chosen for is still the plan in use. Proven red-first: restoring
-concurrency 5 fails both with `expected 5 to be less than or equal to 2`.
+**Confirmed.** `scripts/deploy/render-yaml.test.ts` covers 27 cases. Two new cases
+pin a concurrency **ceiling** rather than an exact value. Tuning down therefore
+stays free. Tuning up has to come here and justify itself. A third assertion
+checks that the plan these limits were chosen for is still the plan in use.
+Proven red-first: restoring concurrency 5 fails with `expected 5 to be less than
+or equal to 2`.
 
 **How to run it.**
 
@@ -67,8 +69,15 @@ concurrency 5 fails both with `expected 5 to be less than or equal to 2`.
 pnpm test -- scripts/deploy/render-yaml.test.ts
 ```
 
-**Rollback.** Revert this commit. Concurrency returns to 5/2 and the deployed
-worker returns to crash-looping under any real batch.
+**Rollback — unsafe as-is, read before reverting.** A plain `git revert` of this
+commit restores `BATCH_WORKER_CONCURRENCY=5` and
+`BATCH_RESOLVE_WORKER_CONCURRENCY=2`, which is the configuration that
+OOM-crash-looped. Do not revert to undo something unrelated in this commit.
+
+To roll back the test or the prose while keeping the deployed worker alive,
+revert the commit and then re-apply the two values (2 and 1) in `render.yaml`.
+Raising them again is only safe behind a bigger plan or a pooled tesseract
+worker.
 
 ## TRO-568 — The latency harness could not reach the gated deployment (2026-08-13)
 

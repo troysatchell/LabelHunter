@@ -229,8 +229,13 @@ describe("render.yaml — worker service", () => {
     // scripts/batch-worker/run.ts's own envPositiveInt() calls — these three
     // names, and only these three, are the tunable knobs that file reads.
     const byKey = Object.fromEntries((worker.envVars ?? []).map((v) => [v.key, v]));
-    expect(byKey.BATCH_WORKER_CONCURRENCY?.value).toBe("2");
-    expect(byKey.BATCH_RESOLVE_WORKER_CONCURRENCY?.value).toBe("1");
+    // The two concurrency knobs are asserted by the TRO-571 ceiling test
+    // below, not pinned to an exact value here. Pinning both would
+    // contradict that test's whole point: tuning DOWN is meant to stay
+    // free, and an exact assertion would fail on a safe reduction
+    // (CodeRabbit finding, TRO-571 review round 1).
+    expect(byKey.BATCH_WORKER_CONCURRENCY?.value).toBeDefined();
+    expect(byKey.BATCH_RESOLVE_WORKER_CONCURRENCY?.value).toBeDefined();
     expect(byKey.BATCH_WORKER_SHUTDOWN_TIMEOUT_MS?.value).toBe("30000");
   });
 

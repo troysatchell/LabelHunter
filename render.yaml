@@ -99,9 +99,10 @@ services:
       # Pool-size knobs scripts/batch-worker/run.ts already reads via
       # envPositiveInt() — that file's own header comment: "the one lever
       # available to correct a wrong default is a config change, not a
-      # redeploy." Values below match its in-code defaults exactly; edit
-      # in the Render dashboard to tune either pool with no code change and
-      # no redeploy.
+      # redeploy." Values below are deliberate overrides, NOT a copy of that
+      # file's in-code defaults — see the TRO-571 note directly beneath.
+      # This service is Blueprint-managed, so these values come from this
+      # file: a dashboard edit is overwritten on the next blueprint sync.
       #
       # TRO-571: these are DELIBERATELY BELOW `run.ts`'s in-code defaults
       # (5 and 2). The deployed worker OOM-crash-looped under the first

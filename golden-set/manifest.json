@@ -1392,69 +1392,7 @@
           }
         }
       },
-      "notes": "Photo itself is clean and well-lit \u2014 the defect is print size, not capture quality. CP-2 \u00a79.2 finding 1 (docs/checkpoints/cp2-warning-subsystem.md): WarningComparatorResult can only return LOW_IMAGE_QUALITY, WARNING_MISMATCH, or MISSING_REQUIRED_FIELD, never LOW_MODEL_CONFIDENCE. Fixed by TRO-469 / LH-021; the prior expected.reviewReason (LOW_MODEL_CONFIDENCE) was a value this field can never actually carry. TRO-469 predicted LOW_IMAGE_QUALITY as the replacement value, reasoning tiny print reaching this comparator would route there by default. TRO-535 (2026-08-12) swept OCR_CONFIDENCE_FLOOR from 60 to 50 and let the OCR channel's real reading reach the reconciler. Measured, live (eval-report.json, measuredAt 2026-08-12T22:15:52.776Z): the OCR channel now reads this print at distance 47 from the statute, the two channels disagree, and the comparator returns WARNING_MISMATCH \u2014 one of the same three legal values CP-2 \u00a79.2 finding 1 already named, just not the one TRO-469 predicted. TRO-516 (correction C4) corrects expected.reviewReason to match this measured result.",
-      "vectors": [
-        "V4"
-      ],
-      "provenance": "rendered+degraded",
-      "verified": false
-    },
-    {
-      "caseId": "case-24-tiny-warning-text-miniature-bottle",
-      "description": "A 50 mL miniature bottle forces the warning into extremely small print.",
-      "category": "tiny-warning-text",
-      "beverageType": "spirits",
-      "imagePath": "golden-set/images/case-24-tiny-warning-text-miniature-bottle.jpg",
-      "application": {
-        "brandName": "Pocketful Spirits",
-        "classType": "Bourbon Whiskey",
-        "abvPercent": 40,
-        "netContentsValue": 50,
-        "netContentsUnit": "mL"
-      },
-      "label": {
-        "brandName": "Pocketful Spirits",
-        "classType": "Bourbon Whiskey",
-        "abvPresent": true,
-        "abvText": "40% Alc./Vol. (80 Proof)",
-        "abvPercent": 40,
-        "proof": 80,
-        "netContentsText": "50 mL",
-        "netContentsValue": 50,
-        "netContentsUnit": "mL",
-        "governmentWarningPresent": true,
-        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true,
-        "governmentWarningPrefixBold": true,
-        "governmentWarningBodyBold": false
-      },
-      "expected": {
-        "labelVerdict": "REVIEW",
-        "reviewReason": "WARNING_MISMATCH",
-        "fields": {
-          "brandName": {
-            "verdict": "MATCH",
-            "reason": "Label brand matches the application exactly."
-          },
-          "classType": {
-            "verdict": "MATCH",
-            "reason": "Label class/type matches the application exactly."
-          },
-          "abv": {
-            "verdict": "MATCH",
-            "reason": "Label states 40% ABV, matching the application."
-          },
-          "netContents": {
-            "verdict": "MATCH",
-            "reason": "Label states 50 mL, matching the application."
-          },
-          "governmentWarning": {
-            "verdict": "NEEDS_REVIEW",
-            "reason": "Bottle is a 50 mL miniature; the warning text is legible but very small. The OCR channel disagrees with the extracted text, so a reviewer must confirm the exact wording."
-          }
-        }
-      },
-      "notes": "CP-2 \u00a79.2 finding 1 (docs/checkpoints/cp2-warning-subsystem.md): same correction as case-23 \u2014 WarningComparatorResult cannot return LOW_MODEL_CONFIDENCE. Fixed by TRO-469 / LH-021, which predicted LOW_IMAGE_QUALITY as the replacement value. TRO-535 (2026-08-12) swept OCR_CONFIDENCE_FLOOR from 60 to 50; measured, live (eval-report.json, measuredAt 2026-08-12T22:15:52.776Z), the OCR channel now reads this print at distance 42 from the statute and the two channels disagree. TRO-516 (correction C4) corrects expected.reviewReason to the measured WARNING_MISMATCH.",
+      "notes": "Photo itself is clean and well-lit \u2014 the defect is print size, not capture quality. CP-2 \u00a79.2 finding 1 (docs/checkpoints/cp2-warning-subsystem.md): WarningComparatorResult can only return LOW_IMAGE_QUALITY, WARNING_MISMATCH, or MISSING_REQUIRED_FIELD, never LOW_MODEL_CONFIDENCE. Fixed by TRO-469 / LH-021; the prior expected.reviewReason (LOW_MODEL_CONFIDENCE) was a value this field can never actually carry. TRO-469 predicted LOW_IMAGE_QUALITY as the replacement value, reasoning tiny print reaching this comparator would route there by default. TRO-535 (2026-08-12) swept OCR_CONFIDENCE_FLOOR from 60 to 50 and let the OCR channel's real reading reach the reconciler. Measured, live (eval-report.json, measuredAt 2026-08-12T22:15:52.776Z): the OCR channel now reads this print at distance 47 from the statute, the two channels disagree, and the comparator returns WARNING_MISMATCH \u2014 one of the same three legal values CP-2 \u00a79.2 finding 1 already named, just not the one TRO-469 predicted. TRO-516 (correction C4) corrects expected.reviewReason to match this measured result. Merged case-24-tiny-warning-text-miniature-bottle into this case per TRO-516 C5 (Troy's ruling, 2026-08-13). Both cases printed the warning at the same 9px font size on the same canvas. The pair sampled one print size twice, not two. case-24 measured OCR distance 42 from the statute at confidence 56; this case measured distance 47 at confidence 58 \u2014 both readings corroborate the same WARNING_MISMATCH pattern. The freed corpus slot goes to a genuinely different sample later.",
       "vectors": [
         "V4"
       ],

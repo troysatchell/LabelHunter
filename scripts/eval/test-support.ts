@@ -48,6 +48,8 @@ export function testGoldenCase(overrides: Partial<GoldenSetCase> = {}): GoldenSe
       governmentWarningPresent: true,
       governmentWarningText: CANONICAL_WARNING_TEXT_FIXTURE,
       governmentWarningPrefixAllCaps: true,
+      governmentWarningPrefixBold: true,
+      governmentWarningBodyBold: false,
     },
     expected: {
       labelVerdict: "PASS",

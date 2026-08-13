@@ -142,24 +142,40 @@ model or careful stroke-width measurement. This prototype has neither at product
 reliability. LabelHunter reports a bold signal instead — `true`, `false`, or `uncertain` —
 rather than silently dropping the check or reporting false confidence.
 
-**Runtime access control is merged, not yet confirmed live.** The brief's own guidance ("just
-don't do anything crazy... not storing anything sensitive") sets a light bar for a prototype.
-The data model meets that bar: no PII, no reviewer identity, no secrets in the repo. A separate
-concern is runtime cost — the deployed URL calls a real, billed Anthropic API key.
-[PR #43](https://github.com/troysatchell/LabelHunter/pull/43) merged into `main` to address
-this. It adds three things: a shared access-code gate, per-IP and global rate limits, and a
-persisted daily spend budget. Its own review already found two follow-up gaps, before merge:
+**Runtime access control is live, confirmed against the deployed instance.** The brief's own
+guidance ("just don't do anything crazy... not storing anything sensitive") sets a light bar
+for a prototype. The data model meets that bar: no PII, no reviewer identity, no secrets in the
+repo. A separate concern is runtime cost — the deployed URL calls a real, billed Anthropic API
+key. [PR #43](https://github.com/troysatchell/LabelHunter/pull/43) merged into `main` to
+address this. It adds three things: a shared access-code gate, per-IP and global rate limits,
+and a persisted daily spend budget. Merged code is not the same claim as a live, protected
+deployment, so this document does not assert protection from the merge alone. Three checks
+against the live URL confirmed it directly: `GET /` redirects to the code page, an
+unauthenticated request to a protected API route returns 401, and the real code returns 200
+with a session cookie. `README.md`'s "Try it" section carries the URL and the code, kept in
+sync with this document deliberately.
 
-1. The batch workers check the spend budget only when a batch starts, not again while it runs.
-   A long-running batch is not budget-capped mid-run.
-2. A database failure during the budget check currently surfaces as a generic server error,
-   not the designed "budget unavailable" response.
+**The daily budget shipped inert, and PR #43's own review caught it before merge.** The route
+wiring that binds a real Anthropic client to the budget's usage capture was missing. Every
+gate passed and every test was green while it was missing, because nothing exercised that one
+binding. Without it, spend was never recorded, so the budget read zero forever and could never
+trip. The fix is one binding, and it now has its own regression test that asserts a real,
+priced row lands in the ledger — not just that the code runs without throwing. Three follow-up
+gaps in the same subsystem are ticketed, not fixed, and named here rather than left to be
+discovered later:
 
-Merged code is not the same claim as a live, protected deployment. Render redeploys
-automatically from a green `main`, but this document does not assert the deployed instance is
-protected until that redeploy is independently confirmed — a probe against the live URL, not
-an assumption from the merge alone. Check `README.md`'s "Try it" section for the current,
-verified state; the two documents are kept in sync on this point deliberately.
+- Batch workers do not check or record the budget once a batch is admitted, so a running batch
+  is not capped mid-run ([TRO-566](https://linear.app/troysatchell/issue/TRO-566)).
+- The budget check reads, then the spend write lands after the model call — a narrow
+  check-then-act race under concurrent requests, bounded but not eliminated
+  ([TRO-566](https://linear.app/troysatchell/issue/TRO-566)).
+- A database failure during the budget check surfaces as a generic server error, not the
+  designed response ([TRO-566](https://linear.app/troysatchell/issue/TRO-566)). Two more
+  findings from the same review sit outside the budget subsystem: an open-redirect and a
+  spoofable client-IP header in the access-control layer
+  ([TRO-565](https://linear.app/troysatchell/issue/TRO-565)), and a test-quality gap plus a
+  documentation hazard — `.env.local.example`'s placeholder access code is a working value if
+  copied verbatim ([TRO-567](https://linear.app/troysatchell/issue/TRO-567)).
 
 **No batch has run at the brief's own named scale yet.** Sarah Chen's interview names 200–300
 labels as the real peak-season number. The code caps batch size at 1000. Durable Postgres image
@@ -172,11 +188,17 @@ proven it at that scale yet.
 **The deployed instance's latency is not being quoted right now.** A prior measurement — p50
 3834 ms, p95 4458 ms, against the live deployed instance — exists but is stale. It predates
 several commits that changed the exact pipeline it measured, among them the deterministic
-router's field-evidence check and the warning comparator's region-detection threshold. A
-latency figure has to describe the code that ships, not a close ancestor of it. Publishing the
-old number would repeat the mistake `audit/requirements/gaps.md`'s TH-R2 entry exists to name.
-A fresh measurement is pending. See `scripts/latency/results/` for whichever run is most recent
-by the time you read this.
+router's field-evidence check, the warning comparator's region-detection threshold, and now
+PR #43's rate-limit check and budget read at the front of every request. A latency figure has
+to describe the code that ships, not a close ancestor of it. Publishing the old number would
+repeat the mistake `audit/requirements/gaps.md`'s TH-R2 entry exists to name.
+
+A fresh measurement needs one more thing first: `scripts/latency/measure.ts`'s `--url` mode
+sends no credential on its request, so every attempt would now fail at the access-code gate
+before any stage ran. The script predates PR #43 and has not been updated for it. This is a
+small, separate change in measurement tooling, not in the application, and is not part of this
+ticket's scope. See `scripts/latency/results/` for whichever run is most recent by the time you
+read this.
 
 ## Measured results
 

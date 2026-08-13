@@ -36,6 +36,17 @@ a better answer at interview than an unexamined system would be.
 claim the deployed instance is protected — that needs its own independent check against the
 live URL, which had not happened by this commit.
 
+**Updated again once the deploy was confirmed live, a third time.** `GET /` now redirects to
+`/access-code`, an unauthenticated API request returns 401, and the real code returns 200 with
+a session cookie — all checked directly. The trade-offs section now describes access control
+as live, not merged-only, and adds the daily-budget-was-inert story PR #43's own review caught:
+a missing client binding meant spend was never recorded and the guard could never trip, fixed
+and now proven by a real regression test. Cites TRO-565, TRO-566, and TRO-567 for the follow-up
+gaps instead of describing them loosely. The latency figure is still withheld, but for a
+different reason now: `scripts/latency/measure.ts`'s `--url` mode sends no access-code
+credential, so it cannot pass the gate at all until that script is updated — a small,
+out-of-scope tooling gap, not a deploy-confirmation question anymore.
+
 **Observed, not derived.** This ticket ran these commands against a fresh worktree:
 `pnpm install`; `pnpm db:migrate` (8 migrations, exit 0); `pnpm typecheck` (exit 0); `pnpm lint`
 (exit 0); `pnpm test` (exit 0); `pnpm build` (exit 0). No application code changed, so

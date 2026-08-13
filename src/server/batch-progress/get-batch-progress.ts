@@ -25,6 +25,7 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { db as defaultDb } from "../../lib/db";
 import type { FieldName, FieldVerdict } from "../../lib/db/enums";
 import { applications, batchJobs, batchQueueItems, fieldResults, labelImages, reviewQueue, verifications } from "../../lib/db/schema";
+import { computeAutoVerifiedShare, computeBatchThroughput } from "../../lib/utils/batch-throughput";
 import { computeLatencyStats } from "../../lib/utils/latency-stats";
 import { buildFieldReasonText } from "../router/reason-text";
 import type { BatchProgressSummary, BatchResultRow, BatchResultStatusTone, GetBatchProgressResult } from "./types";
@@ -220,6 +221,8 @@ export async function getBatchProgress(db: Db, batchJobId: number): Promise<GetB
     startedAt: job.startedAt,
     completedAt: job.completedAt,
     latency: computeLatencyStats(durationsMs),
+    throughput: computeBatchThroughput({ totalCount: job.totalCount, startedAt: job.startedAt, completedAt: job.completedAt }),
+    autoVerifiedShare: computeAutoVerifiedShare(job.autoVerifiedCount, job.processedCount),
     rateLimitBackoff: { active: rateLimitBackoffCount > 0, itemCount: rateLimitBackoffCount },
     results,
   };

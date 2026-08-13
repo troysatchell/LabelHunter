@@ -19,7 +19,7 @@ import sharp from "sharp";
 import { db as defaultDb } from "../../lib/db";
 import { applications, batchJobs, batchQueueItems, labelImages, verifications } from "../../lib/db/schema";
 import type { BatchJobStatus, BatchQueueItemKind, BatchQueueItemStatus } from "../../lib/db/enums";
-import { saveLabelImage } from "../storage/local-file-storage";
+import { deleteLabelImageBlobsWhere, saveLabelImage } from "../storage/db-image-storage";
 
 type Db = typeof defaultDb;
 
@@ -112,12 +112,14 @@ export interface ApplicationOverrides {
 }
 
 /**
- * Same as `createApplicationAndImageFixture`, but writes a REAL JPEG to
- * `scratchDir` via the real `saveLabelImage`/`readLabelImage` pair — for
- * tests that exercise the extract/resolve workers' own image pipeline, not
- * just DB round-tripping. `overrides` lets a test build a deliberately
- * malformed `applications` row (e.g. a null `netContentsValue`) to prove
- * the worker rejects it rather than silently coercing it.
+ * Same as `createApplicationAndImageFixture`, but writes a REAL JPEG
+ * through the real `saveLabelImage`/`readLabelImage` pair (TRO-518:
+ * `label_image_blobs`, the same worktree Postgres database every other
+ * fixture in this file already writes to — no separate scratch location
+ * needed) — for tests that exercise the extract/resolve workers' own image
+ * pipeline, not just DB round-tripping. `overrides` lets a test build a
+ * deliberately malformed `applications` row (e.g. a null `netContentsValue`)
+ * to prove the worker rejects it rather than silently coercing it.
  *
  * `brandName`/`classType` default to a value unique to this ticket, NOT
  * `../extractor/test-support.ts`'s `WELL_FORMED_EXTRACTION_BODY` brand
@@ -136,11 +138,10 @@ export async function createApplicationAndSavedImageFixture(
   db: Db = defaultDb,
   batchJobId: number,
   filename: string,
-  scratchDir: string,
   overrides: ApplicationOverrides & { brandName?: string; classType?: string } = {},
 ): Promise<ApplicationAndImageFixture> {
   const bytes = await makeTestJpeg();
-  const saved = await saveLabelImage(bytes, filename, { baseDir: scratchDir });
+  const saved = await saveLabelImage(bytes, filename);
 
   const [application] = await db
     .insert(applications)
@@ -239,8 +240,16 @@ export async function enqueueResolveItemFixture(
   return row.id;
 }
 
-/** Deletes the fixture batch job, cascading to every row it owns. */
+/** Deletes the fixture batch job, cascading to every row it owns.
+ *
+ * TRO-518: `label_image_blobs` rows are NOT reached by that cascade —
+ * `label_images.storage_path` is deliberately not a declared foreign key
+ * into that table (see its own `schema.ts` comment). Any real saved image
+ * this batch's fixtures created (`createApplicationAndSavedImageFixture`)
+ * is deleted explicitly first, via `deleteLabelImageBlobsWhere`, while the
+ * `label_images` rows that name its `storage_path` still exist. */
 export async function cleanupBatchJobFixture(db: Db = defaultDb, batchJobId: number): Promise<void> {
+  await deleteLabelImageBlobsWhere(eq(labelImages.batchJobId, batchJobId), { db });
   await db.delete(batchJobs).where(eq(batchJobs.id, batchJobId));
 }
 

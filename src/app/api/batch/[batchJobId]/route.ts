@@ -57,6 +57,8 @@ export async function handleBatchProgressRequest(rawId: string, deps: BatchProgr
       startedAt: progress.startedAt ? progress.startedAt.toISOString() : null,
       completedAt: progress.completedAt ? progress.completedAt.toISOString() : null,
       latency: progress.latency,
+      throughput: progress.throughput,
+      autoVerifiedShare: progress.autoVerifiedShare,
       rateLimitBackoff: progress.rateLimitBackoff,
       results: progress.results,
     };

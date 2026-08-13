@@ -91,22 +91,32 @@ Marked plainly so nobody mistakes a default for a verified fact.
   (see the TRO-481 entry in `CHANGES.md`). No Render account was available
   to this ticket to run a real deploy end to end. Troy's first walk through
   the steps above is the real test.
-- **Batch image storage does not yet survive the web/worker split.**
-  `src/server/storage/local-file-storage.ts` saves an uploaded label image to
-  a directory on disk. That directory belongs to whichever single process
-  saved it. That module's own header comment already calls this "a
-  prototype-appropriate stand-in, not a durable object store."
-  `POST /api/batch/start` (LH-042/TRO-475) saves a batch's images this way,
-  on `labelhunter-web`. `labelhunter-worker` (`extract-worker.ts`,
-  `resolve-worker.ts`) later reads them back the same way. This ticket's
-  `render.yaml` makes `labelhunter-web` and `labelhunter-worker` two
-  separate Render services, so they are two separate disks. A real batch
-  run will fail to read every image once it runs against the deployed
-  instance. Single-label verify is unaffected: one process saves the image
-  and, later, reads that same file back. Fixing this needs a shared or
-  durable store — S3-compatible object storage is the natural fit, and the
-  module's own comment already names it. That is a new ticket, not fixed
-  here.
+- **Batch image storage now survives the web/worker split (TRO-518,
+  fixed).** `src/server/storage/local-file-storage.ts` used to save an
+  uploaded label image to a directory on disk — a directory that belonged
+  to whichever single process wrote it. `labelhunter-web` and
+  `labelhunter-worker` are two separate Render services with two separate
+  disks, so `labelhunter-worker` could never read back an image
+  `labelhunter-web` saved. `db-image-storage.ts` replaces that module:
+  `saveLabelImage`/`readLabelImage` now write and read through
+  `label_image_blobs`, a Postgres table both services already reach
+  through the one `DATABASE_URL` `render.yaml` gives them — no new
+  external dependency, no new credential, no new account. See
+  `CHANGES.md`'s TRO-518 entry for the full option A (Postgres) vs.
+  option B (S3-compatible bucket) comparison and the size/scale/quota
+  numbers behind picking A.
+
+  **Not verified: a real batch run against two actually-deployed Render
+  services.** TRO-518's own test suite proves two INDEPENDENT database
+  connections (two separate `pg.Pool`s against the same `DATABASE_URL`,
+  never two references to one shared pool) read back what one wrote —
+  the property that matters here, since `web` and `worker` share nothing
+  but that connection string. No Render account was available to run an
+  actual batch against two real deployed services end to end.
+  `scripts/golden/batchFixture.ts` builds a small, cheap batch upload from
+  the golden set for exactly that check, once a real deploy exists
+  (TRO-483) — run it and confirm every item completes, not just that the
+  job starts.
 - **Plan tiers are a default, not a Troy-confirmed budget decision.**
   `render.yaml`'s own comment explains the reasoning (a `worker` service has
   no free tier at all; a free Postgres database expires in 30 days). Change

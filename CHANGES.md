@@ -42,8 +42,9 @@ checks five things:
 - The job that runs the suite has its own Postgres service, with a `DATABASE_URL` that
   matches it, migrated before the suite runs.
 
-Confirmed failing first, for the right reason. 4 of 6 cases failed with "no step anywhere in
-ci.yml runs `pnpm test:e2e`" before the workflow change. 0 failed after.
+Confirmed failing first, for the right reason. Before the workflow change, 4 of the 6 cases
+failed with "no step anywhere in ci.yml runs `pnpm test:e2e`". After the change, no case
+failed.
 
 ### TRO-521 — the `E2E_LIVE` skip is now structural isolation, not an in-place skip
 
@@ -66,9 +67,9 @@ the test body.
 **Confirmed both directions, observed, no live API call made.**
 - Default mode: `pnpm exec playwright test --list` reports 12 tests in 5 files, and a full
   `pnpm test:e2e` run passes all 12.
-- `E2E_LIVE=1 pnpm exec playwright test --list` reports 11 tests in 4 files —
-  `verify-fake-only.spec.ts` is gone from the list entirely, confirmed without spending real
-  API money (`--list` collects tests; it never runs them).
+- `E2E_LIVE=1 pnpm exec playwright test --list` reports 11 tests in 4 files.
+  `verify-fake-only.spec.ts` is gone from the list entirely. This check spends no real API
+  money. `--list` collects the tests. It never runs them.
 
 No `test.skip(` or `.todo(` call remains anywhere under `e2e/` for this scenario. The
 retry affordance is the behavior the skip existed to protect. That behavior stays fully
@@ -117,8 +118,9 @@ pnpm test -- scripts/deploy/ci-workflow.test.ts   # the new CI regression test, 
 pnpm typecheck
 ```
 
-**Rollback.** `git revert` this ticket's commits. Reverting the CI job (`.github/workflows/
-ci.yml`) returns CI to never running `pnpm test:e2e` — the original gap. Reverting the
+**Rollback.** `git revert` this ticket's commits. Reverting the CI job
+(`.github/workflows/ci.yml`) returns CI to never running `pnpm test:e2e` — the original gap.
+Reverting the
 `e2e/verify-fake-only.spec.ts` split restores the in-place `test.skip(` in
 `e2e/verify.spec.ts`. Troy already approved that shape (lessons.md rule 30), so reverting is
 safe if a real reason to prefer it ever turns up.

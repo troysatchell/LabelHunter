@@ -12,62 +12,67 @@ single wave. No test was weakened and no quarantine entry was widened to reach g
 
 **Critical 1 — a deleted file crashed the gate.** `run.ts`'s changed-file list came from `git
 diff ${baseRef}...HEAD --name-only`, which includes deleted and renamed-away paths. A deleted
-path reached `readFileSync` downstream and threw `ENOENT`; `engine.ts` correctly reported
-`status: "error"`, which failed the gate on any branch that only deleted a `.ts` file — a false
-failure this engine must never produce. Fix: `--diff-filter=ACMR` on the diff, keeping only
-Added, Copied, Modified, and Renamed paths. The list-building logic is now the exported
-`changedTsFiles(repoRoot, baseRef)`, with two new tests in `run.test.ts` against a real scratch
-git repo: one commits a delete-and-add and confirms the deleted path is excluded and nothing
-throws, the other confirms a modified path is still kept.
+path reached `readFileSync` downstream and threw `ENOENT`. `engine.ts` correctly reported
+`status: "error"`. That failed the gate on any branch that only deleted a `.ts` file. This
+engine must never produce that false failure. Fix: `--diff-filter=ACMR` on the diff, keeping
+only Added, Copied, Modified, and Renamed paths. The list-building logic is now the exported
+`changedTsFiles(repoRoot, baseRef)`. Two new tests in `run.test.ts` check it against a real
+scratch git repo. One test commits a delete-and-add. It confirms the deleted path is excluded
+and nothing throws. The other test confirms a modified path stays in the list.
 
 **Critical 2 — the gate fabricated "no introduced violations" over real findings.** `gate.sh`'s
 G11 block computed `DG_N` from the run log and then discarded it, hardcoding the pass message.
-A rule running `report-only` exits 0 *with findings*, so the gate recorded a clean pass while
-violations existed — the exact defect this subsystem exists to eliminate, shipped inside the
-tool that eliminates it. It also compounds: `vacuous-empty-quantifier`'s `activatedAt` is a
-commit on this branch, so every branch already in flight at merge time runs report-only, and
-would have hit this exact silent case. Fix: G11 now reads real per-rule counts from
-`.factory/defect-gate.json` (`mode`, `introduced`, `pin.activatedAt`) via a small `node -e`
-script — the same idiom the `tests` gate already uses for JSON parsing — and reports one of
-four honest outcomes: blocking/no-findings (pass, "no introduced violations"), report-only/
-findings (pass, but names the count and the activation pin), blocking/findings (fail, names the
-count), or a rule that errored (fail, names it — an error must never read as zero violations,
-the fourth outcome the old code also got wrong: it would have reported "0 introduced
-violation(s)" for a crashed rule too).
+A rule running `report-only` exits 0 *with findings*. The gate recorded a clean pass while
+violations existed. That is the exact defect this subsystem exists to eliminate. It shipped
+inside the tool that eliminates it. It also compounds. `vacuous-empty-quantifier`'s
+`activatedAt` is a commit on this branch. Every branch already in flight at merge time runs
+report-only. Each one would have hit this exact silent case. Fix: G11 now reads real per-rule
+counts from `.factory/defect-gate.json` (`mode`, `introduced`, `pin.activatedAt`). It uses a
+small `node -e` script — the same idiom the `tests` gate already uses for JSON parsing. G11
+now reports one of four honest outcomes. Blocking with no findings reports pass, "no introduced
+violations." Report-only with findings reports pass, but names the count and the activation
+pin. Blocking with findings reports fail, and names the count. A rule that errored reports
+fail, and names it. An error must never read as zero violations — the fourth outcome the old
+code also got wrong. The old code would have reported "0 introduced violation(s)" for a crashed
+rule too.
 
 **Important 3 — identity comparison ignored multiplicity.** `baseline.ts`'s
-`introducedFindings` used a `Set` of identities. A function with one existing violation that
-grows a second, structurally identical one reported zero introduced findings — the second copy
-matched the same `Set` entry as the first, and the gate stayed silent on a real new defect. Fix:
-`introducedFindings`/`preExistingFindings` now compare as a multiset — a per-identity count,
-decremented as each head finding is matched against the baseline, so a surplus occurrence is
-correctly reported as introduced. New test in `baseline.test.ts`: two identical-identity
-findings in head, one in base, asserts exactly one introduced and one pre-existing.
+`introducedFindings` used a `Set` of identities. A function can have one existing violation,
+then grow a second, structurally identical one. That function then reported zero introduced
+findings. The second copy matched the same `Set` entry as the first. The gate stayed silent
+on a real new defect. Fix: `introducedFindings`/`preExistingFindings` now compare as a
+multiset — a per-identity count. The count decrements as each head finding matches the
+baseline. A surplus occurrence is then correctly reported as introduced. New test in
+`baseline.test.ts`: two identical-identity findings in head, one in base, asserts exactly one
+introduced and one pre-existing.
 
 **Important 4 (with deferred item 6) — a guard that did not guard.** `isProvablyNonEmpty` in
 `vacuous-empty-quantifier.ts` walked the *entire* enclosing function for any `if` mentioning
-`<receiver>.length`, with no check that the guard came before the quantifier call and no scope
-check. Two real false negatives: a guard written *after* the decision, and a guard inside a
-sibling nested arrow function (its exit guards that function, not the outer one). The doc
-comment always said "preceding"; the code never checked position. Fix: the guard search
-(`hasPrecedingLengthGuard`) now requires the `if` to start before the call and walks with a new
-`walkOwnScope` helper that prunes at nested function boundaries, so a sibling function's guard
-is never counted. Deferred item 6 (the `pairing.ts` `else if`-branch shape) is fixed alongside
-it: `hasEnclosingLengthGuard` climbs from the call to its enclosing `if`, and recognizes a
-branch condition like `else if (xs.length > 1) { ... }` as proof the receiver is non-empty
-inside that branch — the mechanism the old code lacked entirely for this shape (it only
-happened to pass `pairing.ts` itself because `.some` was already excluded from the checked
-method set for an unrelated reason). Four new tests: guard-before (must not flag, pre-existing
-test), guard-after (must flag), guard-in-nested-function (must flag), `else if` guard (must not
-flag).
+`<receiver>.length`. It never checked that the guard came before the quantifier call. It never
+checked scope either. Two real false negatives followed. One: a guard written *after* the
+decision. Two: a guard inside a sibling nested arrow function — its exit guards that function,
+not the outer one. The doc comment always said "preceding"; the code never checked position.
+Fix: the guard search (`hasPrecedingLengthGuard`) now requires the whole `if` — condition and
+body — to end before the call starts, not merely start before it. A call nested inside the
+`if`'s own then-block also starts after the `if` starts, but the `if` has not finished. It
+also walks with a new `walkOwnScope` helper that prunes at nested function boundaries.
+A sibling function's guard is never counted. Deferred item 6 (the `pairing.ts` `else if`-branch
+shape) is fixed alongside it. `hasEnclosingLengthGuard` climbs from the call to its enclosing
+`if`. It recognizes a branch condition — `else if (xs.length > 1) { ... }` — as proof the
+receiver is non-empty inside that branch. The old code lacked this mechanism entirely for this
+shape. It only happened to pass `pairing.ts` itself because `.some` was already excluded from
+the checked method set, for an unrelated reason. Four new tests: guard-before (must not flag,
+pre-existing test), guard-after (must flag), guard-in-nested-function (must flag), `else if`
+guard (must not flag).
 
 **Re-measured repo-wide count: 4, unchanged from the round-3 measurement.** Same four sites,
 same lines: `scripts/eval/report-validation.ts:95`, `:100`, `src/app/_lib/review-queue-
 client.ts:108`, `src/server/resolver/response.ts:186`. The position/scope/`else-if` fix did not
-change the count — this codebase has no guard-after, nested-function, or bare `else if`-guarded
-`.every`/`.reduce` site today outside the rule's own test fixtures. This is a real measurement,
-not an assumption: hand-verified by re-running the same `pnpm exec tsx -e` scan used in round 3,
-excluding `scripts/factory/defect-gates/` per the standing self-exclusion policy.
+change the count. This codebase has no guard-after, nested-function, or bare `else if`-guarded
+`.every`/`.reduce` site today, outside the rule's own test fixtures. This is a real measurement,
+not an assumption. It is hand-verified by re-running the same `pnpm exec tsx -e` scan used in
+round 3. That scan excludes `scripts/factory/defect-gates/` per the standing self-exclusion
+policy.
 
 **Important 5 — the replay harness had no entrypoint.** Nothing outside `replay.test.ts` called
 `replayRule` or `loadLedger`. `factory/replay/vacuous-empty-quantifier.v1.json` was committed as
@@ -81,41 +86,44 @@ source .factory-env && pnpm exec tsx scripts/factory/defect-gates/replay-cli.ts 
 It loads `factory/review-findings.jsonl` (override with `--ledger`), selects the rule's own
 `replayCorpus`, replays it, and writes `factory/replay/<rule>.v<version>.json` (override with
 `--out`). Run against this repo, the regenerated file is **byte-identical** to the committed
-one (`git diff` on the file is empty after running it) — the file and the command that produces
+one. `git diff` on the file is empty after running it. The file and the command that produces
 it are now confirmed to agree.
 
 **Important 6 (with deferred item 2) — a git failure degraded to permanent, silent
 report-only.** `activation.ts`'s `resolvePinFacts` swallowed any git failure into
-`{ mergeBaseIsAfterActivation: false, mainCommitsElapsed: 0 }` — indistinguishable from "branch
-predates activation," so an unknown or rewritten `activatedAt` disabled the rule forever with no
-signal. It also conflated `git merge-base --is-ancestor`'s real "no" answer (exit 1) with a
-process failure (any other nonzero exit, e.g. 128 for an invalid ref) by collapsing both into
-`status !== 0`. Fix: `resolvePinFacts` now returns `{ ok: true, facts }` or `{ ok: false, error
-}`, distinguishing a real "no" from a git failure at each of its three git calls. `run.ts`'s
-caller treats `ok: false` the same as a crashed rule check — it forces that rule's result
-`status` to `"error"`, which fails the gate loudly with the real reason, never a quiet permanent
-report-only mode. Three new tests in `activation.test.ts` against a scratch git repo:
-`resolvePinFacts` resolving real facts on the success path, reporting `ok: false` for an
-unresolvable (fake) `activatedAt`, and reporting `ok: false` for an unresolvable `baseRef`.
+`{ mergeBaseIsAfterActivation: false, mainCommitsElapsed: 0 }`. That result is
+indistinguishable from "branch predates activation." An unknown or rewritten `activatedAt`
+then disabled the rule forever, with no signal. It also conflated two different things into
+`status !== 0`. One is `git merge-base --is-ancestor`'s real "no" answer (exit 1). The other is
+a process failure — any other nonzero exit, e.g. 128 for an invalid ref. Fix: `resolvePinFacts`
+now returns `{ ok: true, facts }` or `{ ok: false, error }`. This return shape distinguishes a
+real "no" from a git failure, at each of its three git calls. `run.ts`'s caller treats
+`ok: false` the same as a crashed rule check. It forces that rule's result `status` to
+`"error"`. The gate then fails loudly with the real reason, never a quiet permanent
+report-only mode. Three new tests in `activation.test.ts` run against a scratch git repo. One
+test confirms `resolvePinFacts` resolves real facts on the success path. Another confirms it
+reports `ok: false` for an unresolvable (fake) `activatedAt`. The third confirms it reports
+`ok: false` for an unresolvable `baseRef`.
 
 **Documentation accuracy correction.** The round-3 entry below states "Precision on this
 measurement: 4/4 among reported findings." Read on its own, that can be misread as spec §12.3's
 "≥ 80% true-positive or exemptible" ship criterion having been *measured* and met. It was not.
-What exists is 4 hand-verified sites (read by hand, not adjudicated against an independent
-reviewer), two of the four (`report-validation.ts`'s `isStringArray`/`isReviewQueueListResponse`
-shape check sites) carrying disclosed doubt rather than a settled genuine/false-positive call,
-over a replay corpus of 2 rows — both from the same ticket, `TRO-464`. That is a real, useful
+What exists is 4 hand-verified sites, read by hand, not adjudicated against an independent
+reviewer. Two of the four (`report-validation.ts`'s `isStringArray`/`isReviewQueueListResponse`
+shape check sites) carry disclosed doubt, not a settled genuine/false-positive call. The replay
+corpus behind this is 2 rows, both from the same ticket, `TRO-464`. That is a real, useful
 measurement. It is not the rigorous adjudicated-corpus precision figure §12.3 describes, and
 this entry should not be read as claiming it is.
 
 **Follow-up, recorded explicitly rather than left as only a code comment: restore `.some`
 detection under a negating context.** Round 3 removed `.some` from `QUANTIFIERS` entirely to
-close a false positive (a bare `.some()` returning `false` on empty is the safe default, not a
-vacuous-truth defect). That also removed the only path to detecting `!xs.some(bad)` — a real
+close a false positive. A bare `.some()` returning `false` on empty is the safe default, not a
+vacuous-truth defect. That also removed the only path to detecting `!xs.some(bad)` — a real
 vacuous assertion, since "no bad items" holds trivially over zero items. That ruling was mine;
 the final review found it over-broad, and I accept the correction. Future work: detect a
-`.some()` call specifically when it sits under a `!` (or `=== false`) at its decision sink,
-re-admitting the negated case without reopening the bare-`.some()` false positive round 3 fixed.
+`.some()` call specifically when it sits under a `!` (or `=== false`) at its decision sink.
+This re-admits the negated case, without reopening the bare-`.some()` false positive round 3
+fixed.
 
 **Negative-tested, both directions, on the real `gate.sh`** (`--skip-review` used only to stay
 inside the working timeout; every other gate ran for real in both runs):
@@ -163,8 +171,8 @@ gate exit: 0
 ```
 
 **A third case, tested directly since neither run above exercises it: report-only with
-findings.** Neither negative-test run above puts the one shipped rule into `report-only` mode
-(its `activatedAt` already predates `HEAD`'s merge-base on this branch), so the case Critical 2
+findings.** Neither negative-test run above puts the one shipped rule into `report-only` mode.
+Its `activatedAt` already predates `HEAD`'s merge-base on this branch. So the case Critical 2
 actually fixes — a report-only rule with real findings — needed a direct check. Ran the G11
 `node -e` summary script from `gate.sh` against a synthetic `.factory/defect-gate.json` with one
 `report-only` rule carrying 2 introduced findings. Output:
@@ -180,10 +188,10 @@ pnpm typecheck && pnpm lint
 pnpm exec tsx scripts/factory/defect-gates/replay-cli.ts vacuous-empty-quantifier
 ```
 
-**Test execution.** 7 test files, 63 tests, all pass (up from 54 before this wave — 9 new
-tests: 1 in `baseline.test.ts`, 2 in `run.test.ts`, 3 in `activation.test.ts`, 4 in
-`vacuous-empty-quantifier.test.ts`). `pnpm typecheck` — clean. `pnpm lint` — 0 errors, 1
-pre-existing unrelated warning in `DetailView.tsx`.
+**Test execution.** 7 test files, 63 tests, all pass. That is up from 54 before this wave — 9
+new tests: 1 in `baseline.test.ts`, 2 in `run.test.ts`, 3 in `activation.test.ts`, 3 in
+`vacuous-empty-quantifier.test.ts`. `pnpm typecheck` reports clean. `pnpm lint` reports 0
+errors, and 1 pre-existing unrelated warning in `DetailView.tsx`.
 
 **Files changed:** `scripts/factory/defect-gates/run.ts`, `run.test.ts`, `baseline.ts`,
 `baseline.test.ts`, `activation.ts`, `activation.test.ts`,
@@ -195,24 +203,91 @@ byte-identical:** `factory/replay/vacuous-empty-quantifier.v1.json`.
 contract except `activation.ts`'s `resolvePinFacts`, whose only caller (`run.ts`) was updated in
 the same commit.
 
+**Review round 2 (2026-08-12).** A local CodeRabbit review of this branch reported 22
+findings. All 22 got a triage disposition. All 22 were fixed; none were dismissed.
+
+**Correctness fixes.** `ast.ts`'s `enclosingFunctionName` named only the method, so
+`A.validate()` and `B.validate()` collided on one identity. It now qualifies a method name
+with its enclosing class or object scope. `vacuous-empty-quantifier.ts`'s
+`hasPrecedingLengthGuard` checked only that a guard `if` started before the call, not that it
+ended before it. A call nested inside its own empty-branch guard read as guarded, when that
+branch proved the opposite. It now requires the whole `if` to end before the call starts.
+`lengthComparisonProvesNonEmpty` matched a length check as a substring, so a disjunctive or
+negated test like `xs.length > 1 || force` wrongly proved non-emptiness. The regex is now
+anchored to the whole test.
+
+**Type and process safety.** `Rule.checkSource` was optional. That forced unsafe `as unknown
+as` casts in `run.ts` and `replay.ts`. A rule missing it silently contributed an empty
+baseline and an empty replay result. `checkSource` is now required on the `Rule` interface;
+both casts are gone. `replay.ts` now throws immediately, naming the rule, when a loaded
+module still lacks `checkSource` at runtime. A `checkSource` exception on one historical
+snapshot is now caught per candidate, so one bad snapshot no longer aborts the whole replay
+run.
+
+**Robustness fixes.** `run.ts`'s `sh()` interpolated `baseRef` into an `execSync` shell
+string. It now uses `spawnSync` with an argument array instead. `baseRef` is never parsed by
+a shell. `engine.ts`'s `catch` converted a thrown value with `String(cause)`, which itself
+throws on an `Object.create(null)` cause; it now falls back to a safe message instead.
+`replay-cli.ts` assumed `factory/replay/` already existed before writing to it; it now creates
+the directory first.
+
+**Evidence and cleanup.** The committed replay artifact recorded two `TRO-464` outcomes with
+no field to tell them apart. `ReplayOutcome` now carries `file`; the artifact was regenerated
+for real, not hand-edited. The unused `resolveFixCommit` function and its two tests are
+removed; nothing in `run.ts` or `replay-cli.ts` ever called it.
+
+**Test-environment robustness.** `replay.test.ts`'s `resolveFixCandidates` and `replayRule`
+tests replay this repo's real commit history for `TRO-511` and `TRO-464`. A shallow checkout
+would fail them for an environment reason, not a code bug. The three history-dependent
+`describe` blocks now skip under `git rev-parse --is-shallow-repository`; this repo, and CI's
+`fetch-depth: 0`, are never shallow, so they still run.
+
+**Prose and documentation.** This entry, and the two entries below it, got an ASD-STE100
+sentence-length pass — no sentence over 25 words. The **Test execution** line above
+undercounted. It said 4 new tests landed in `vacuous-empty-quantifier.test.ts` for the prior
+round. The real count, measured from `git diff` on that commit, is 3. Both design specs'
+`Status` fields were stale. One said "design, not yet built" after the engine shipped. The
+other did not note it was superseded. Both are corrected. The plan's `introducedFindings`
+code sample used a `Set`; the shipped `baseline.ts` uses a multiset. The sample is now marked
+historical, pointing at the real file.
+
+**Test execution.** 74 tests across 8 test files, all pass — up from 63 across 7 files. 11 new
+tests: a new `ast.test.ts` (8), `engine.test.ts` (+1), `vacuous-empty-quantifier.test.ts`
+(+2). `replay.test.ts` stays at 10: 2 tests removed with `resolveFixCommit`, 2 added for
+`checkSource` robustness. `pnpm typecheck` — clean. `pnpm lint` — 0 errors, the same 1
+pre-existing unrelated warning in `DetailView.tsx`.
+
+**Files changed this round:** `ast.ts`, `types.ts`, `run.ts`, `engine.ts`, `replay.ts`,
+`replay-cli.ts`, `rules/vacuous-empty-quantifier.ts`, `run.test.ts`, `engine.test.ts`,
+`replay.test.ts`, `rules/vacuous-empty-quantifier.test.ts`. **File added:** `ast.test.ts`.
+**File regenerated (content changed, not byte-identical this time):**
+`factory/replay/vacuous-empty-quantifier.v1.json`. **Docs touched:**
+`docs/superpowers/specs/2026-08-12-factory-defect-gates-design.md`,
+`docs/superpowers/specs/2026-08-12-defect-class-extraction-design.md`,
+`docs/superpowers/plans/2026-08-12-factory-defect-gates-engine.md`.
+
+**Rollback (round 2).** Each fix is independently revertible per-file. `types.ts`'s
+`checkSource` requirement is the one contract change; its only two callers (`run.ts`,
+`replay.ts`) were updated in the same wave.
+
 ## TRO-508 — Wire the defect gate in as G11, before review capture (2026-08-12)
 
-**What changed.** `scripts/factory/defect-gates/run.ts` runs every registered rule, compares
-findings against a baseline read from `BASE_REF` with `fileAtRef` (never a raw `git show` —
-a file this branch added does not exist at `BASE_REF`, `fileAtRef` returns `null` there, and
-that baseline correctly stays empty), and writes `.factory/defect-gate.json`. `scripts/factory/gate.sh`
-now runs it as `G11`, placed after `G9` (scope) and before `G10` (review capture), so a
-defect this factory can catch never spends external review budget. `G11` is BLOCKING: a rule
-in `blocking` mode with an introduced finding fails the gate; a rule in `report-only` mode
-(a newly-activated rule, on a branch cut before activation) never does.
+**What changed.** `scripts/factory/defect-gates/run.ts` runs every registered rule. It compares
+findings against a baseline read from `BASE_REF` with `fileAtRef` — never a raw `git show`. A
+file this branch added does not exist at `BASE_REF`. `fileAtRef` returns `null` there, so that
+baseline correctly stays empty. `run.ts` writes `.factory/defect-gate.json`. `scripts/factory/gate.sh`
+now runs it as `G11`, placed after `G9` (scope) and before `G10` (review capture). A defect
+this factory can catch never spends external review budget that way. `G11` is BLOCKING. A rule
+in `blocking` mode with an introduced finding fails the gate. A rule in `report-only` mode
+never does — for example, a newly-activated rule, on a branch cut before activation.
 
 **Negative-tested — the factory does not trust a gate it has not seen fail.** A probe file
 (`src/lib/__dg-probe.ts`, a real `.every()` vacuous-quantifier violation) was committed, the
 full gate was run, and `defect-gate` FAILED with the gate exiting non-zero. The probe was
 then removed, the gate was run again, and `defect-gate` PASSED with the gate exiting zero.
-Both runs used `scripts/factory/gate.sh --skip-review` (CodeRabbit's own step is unrelated to
-this check and was skipped only to keep the run inside the working timeout; every other gate
-ran for real in both cases). Observed output, both directions:
+Both runs used `scripts/factory/gate.sh --skip-review`. CodeRabbit's own step is unrelated to
+this check. It was skipped only to keep the run inside the working timeout. Every other gate
+ran for real in both cases. Observed output, both directions:
 
 Run 1 — probe present, gate exit 1:
 ```
@@ -270,17 +345,18 @@ real `defect-gate` failure. Fix: drop the unused import. Confirmed with a standa
 that combination would block every branch on merge, including ones cut before the rule
 existed. That is retroactive blocking, exactly what the pin exists to prevent. Fixed in a
 second commit: `activatedAt` is now stamped to the SHA of the commit that lands `run.ts` and
-the `G11` wiring — the first commit at which the rule is actually reachable by the gate.
-Verified after the stamp: `grep -rn 'severity: "fail"' -A0 scripts/factory/defect-gates/rules/*.ts`
-plus a manual read of every rule module's `meta` shows no rule with `severity: "fail"` and
-`activatedAt: null` remaining (one rule module exists in this repo today,
-`vacuous-empty-quantifier`, and it now carries a real SHA).
+the `G11` wiring. That is the first commit at which the rule is actually reachable by the
+gate. Verified after the stamp, two ways: a `grep -rn 'severity: "fail"' -A0
+scripts/factory/defect-gates/rules/*.ts`, and a manual read of every rule module's `meta`.
+Neither shows a rule with `severity: "fail"` and `activatedAt: null` remaining. One rule
+module exists in this repo today, `vacuous-empty-quantifier`, and it now carries a real SHA.
 
 ## TRO-508 — First defect-gate rule: vacuous-empty-quantifier (2026-08-12)
 
-**What it detects.** A call to `.every()`, `.some()`, or `.reduce()` over a collection that
-is not provably non-empty, whose result reaches a decision sink: a return, an `if`
-condition, a ternary condition, or a property assignment. An empty collection makes
+**What it detects.** It detects a call to `.every()`, `.some()`, or `.reduce()` over a
+collection that is not provably non-empty. That call's result must also reach a decision
+sink — a return, an `if` condition, a ternary condition, or a property assignment. An empty
+collection makes
 `.every()` true and `.some()` false without checking anything. That is a defect only when
 the boolean result decides something — a display-only use is not flagged.
 
@@ -294,30 +370,32 @@ the boolean result decides something — a display-only use is not flagged.
 treated a ternary's condition as an immediate sink. It never checked where the ternary's
 own result went next. Under that code, `items.every(done) ? "all done" : "in progress"`
 counted as a decision, even when the chosen string only built a display label. The test
-for exactly that case failed against the brief's own reference code — 1 finding, expected
-0 (`does not flag a quantifier used only for display`). The fix: a ternary's condition is
-not itself a sink. The walk now passes through the `ConditionalExpression` node and keeps
-climbing. A ternary counts as a decision only when its own result later reaches a real
-sink — a return, an outer `if`, or a property assignment. The walk already treats every
+for exactly that case failed against the brief's own reference code. It found 1 finding,
+expected 0 — `does not flag a quantifier used only for display`. The fix: a ternary's
+condition is not itself a sink. The walk now passes through the `ConditionalExpression` node
+and keeps climbing. A ternary counts as a decision only when its own result later reaches a
+real sink. That sink is a return, an outer `if`, or a property assignment. The walk already
+treats every
 other non-sink node this way: a `BinaryExpression` in an `||` chain, for example, gets
 climbed through, not stopped at.
 
-**Round 1 review fix — a bare-statement ternary is also a sink.** That first fix over-
-corrected: it made every `ConditionalExpression` a pure pass-through, so a ternary used
-only for its side effects — `items.every(p) ? doA() : doB();` — went unflagged, even
-though `if (items.every(p)) { doA(); } else { doB(); }` is the same decision and was
-already flagged. A bare-statement ternary decides by side effect, not by value, so it is
-now a sink too: when the `ConditionalExpression`'s own parent is an `ExpressionStatement`,
-the rule flags it before climbing further. A display ternary (its value feeds a variable,
+**Round 1 review fix — a bare-statement ternary is also a sink.** That first fix
+over-corrected. It made every `ConditionalExpression` a pure pass-through. So a ternary used
+only for its side effects — `items.every(p) ? doA() : doB();` — went unflagged. That is
+wrong: `if (items.every(p)) { doA(); } else { doB(); }` is the same decision, and it was
+already flagged. A bare-statement ternary decides by side effect, not by value. It is now a
+sink too. When the `ConditionalExpression`'s own parent is an `ExpressionStatement`, the rule
+flags it before climbing further. A display ternary (its value feeds a variable,
 not a statement) still passes through unflagged. Added a regression test for the
 bare-statement case. All 7 tests pass.
 
 **Measured backlog, not a target.** The plan's own spec predicted about 4 sites on `main`.
 The measured count, run over `src/**/*.ts` and `scripts/**/*.ts` excluding test files, is
 7 — unchanged by the round-1 fix. A repo-wide grep for `.every(`/`.some(`/`.reduce(`
-followed directly by `?` found no bare-statement-ternary use of a quantifier anywhere in
-this codebase outside the rule's own test file, so the new sink type had nothing to catch
-here. The number is not adjusted toward the plan's prediction; it is what was measured:
+followed directly by `?` found no bare-statement-ternary use of a quantifier. None exists
+anywhere in this codebase outside the rule's own test file. So the new sink type had nothing
+to catch here. The number is not adjusted toward the plan's prediction; it is what was
+measured:
 
 - `scripts/eval/report-validation.ts:95` — `.every(isReliabilityBucket)`
 - `scripts/eval/report-validation.ts:100` — `.every((v) => typeof v === "string")`
@@ -332,24 +410,24 @@ whose non-emptiness the code never proves inline. None looked like a false posit
 
 **Round 2 review fix — a quantifier's result assigned to a local variable is now traced
 one hop.** Replay calibration against a historical review finding (TRO-464,
-`factory/replay/vacuous-empty-quantifier.v1.json`) found a real miss: `deriveOutcome`'s
-`.every()` in `response.ts` assigns its ternary result to `const outcome`, then returns it
-as `return { outcome, fields }`. `reachesDecisionSink` only climbed the call's own AST
+`factory/replay/vacuous-empty-quantifier.v1.json`) found a real miss. `deriveOutcome`'s
+`.every()` in `response.ts` assigns its ternary result to `const outcome`. It then returns
+that as `return { outcome, fields }`. `reachesDecisionSink` only climbed the call's own AST
 ancestry. It never followed a value through a variable. `const ok = xs.every(p); return
 ok;` went unflagged, even though `return xs.every(p);` already was — the same decision,
 spelled two ways.
 
-The fix, bounded to one hop: when a quantifier's result (directly, or through a
-pass-through ternary) is the initializer of a `const`/`let` with a plain identifier name,
+The fix is bounded to one hop. A quantifier's result, directly or through a pass-through
+ternary, can be the initializer of a `const`/`let` with a plain identifier name. When it is,
 the rule now looks in the same function for a later read of that variable. A read counts
-only when it is a direct decision use: the whole expression of a `return`, the whole test
-of an `if`, the whole value of a property assignment — explicit `{ x: v }` or shorthand
-`{ v }`, two different TypeScript node kinds, both covered — or a bare-statement ternary
-condition. `text.length` is not a direct use of `text`: a derived value is not the same
-decision as the value itself, so a display-only assignment still passes. A variable never
-read again decides nothing, so it is never a sink. The hop does not chain: a read that
-itself only feeds a second variable is not followed further. 4 new tests, 11 total, all
-pass.
+only when it is a direct decision use. That means the whole expression of a `return`, the
+whole test of an `if`, or the whole value of a property assignment. A property assignment
+covers both forms — explicit `{ x: v }` and shorthand `{ v }` — two different TypeScript
+node kinds. A bare-statement ternary condition also counts. `text.length` is not a direct
+use of `text`. A derived value is not the same decision as the value itself, so a
+display-only assignment still passes. A variable never read again decides nothing, so it is
+never a sink. The hop does not chain: a read that itself only feeds a second variable is not
+followed further. 4 new tests, 11 total, all pass.
 
 **Re-measured backlog: 12, up from 7.** All 5 new sites were read by hand:
 
@@ -369,21 +447,21 @@ pass.
   not an enclosing branch condition — a second pre-existing gap, also newly visible only
   through the variable hop.
 
-None of the 5 new sites is a genuine defect, and none breaks the fix's own bound — one
+None of the 5 new sites is a genuine defect. None breaks the fix's own bound either — one
 hop, `const`/`let` only, same function, read afterward, no chaining. Each traces to a
 separate, already-existing gap elsewhere in the rule, exposed only now that the variable
 hop can see past a local assignment. Recorded as measured; not fixed this round.
 
 **Replay recall: 1.0 (2/2), up from 0.5.** Both `TRO-464` corpus rows (`response.ts`,
-`queue.ts`) now hit. The corpus is still 2 rows, so this recall is corroboration, not a
-statistically meaningful result on its own — see `factory/replay/
+`queue.ts`) now hit. The corpus is still 2 rows. This recall is corroboration, not a
+statistically meaningful result on its own. See `factory/replay/
 vacuous-empty-quantifier.v1.json` and the task-6 report for the full analysis.
 
 **Round 3 review fix — three precision exemptions, encoded in the rule.** Round 2 raised
 the repo-wide count from 7 to 12 and judged all 5 new sites non-genuine. That put precision
 at 7/12 (58%), below the plan's own 80% bar for a rule to ship blocking (spec §12.3). Each
-non-genuine class is now an exemption encoded in the rule itself, not an allowlist entry —
-an exemption helps every future site; an allowlist entry helps only the one it names (spec
+non-genuine class is now an exemption encoded in the rule itself, not an allowlist entry.
+An exemption helps every future site. An allowlist entry helps only the one it names (spec
 §12.2).
 
 1. **Seeded `.reduce()` is exempt.** `.reduce(fn, seed)` with 2 or more arguments cannot be
@@ -397,25 +475,25 @@ an exemption helps every future site; an allowlist entry helps only the one it n
    `false`: it claims "no matching element found," the safe, usually correct default for an
    empty collection. A bare `.some()` is not a vacuous-truth defect, so it no longer
    qualifies. **Known gap, recorded and not covered:** the negated form, `if
-   (!xs.some(bad))`, IS a vacuous assertion — "no bad items" holds trivially when there are
+   (!xs.some(bad))`, IS a vacuous assertion. "No bad items" holds trivially when there are
    no items. This rule does not detect a negated `.some()`. Closes 3 of the original 7
-   sites (`field-resolution.ts` ×2, `label-blockers.ts` ×1) plus 2 of round 2's 5
-   (`pairing.ts`'s `else if` branch — TRO-464-request, see below — and the rule's own
-   internal `.some()`).
-3. **The rule's own directory is excluded from the repo-wide backlog measurement**
-   (`scripts/factory/defect-gates/` — a linter does not lint itself; its own `.some()` over
-   internal AST data is not a target-code defect). Already redundant with (2) for today's
-   one self-referential site, but this is the standing policy for any future rule this
-   directory adds.
+   sites (`field-resolution.ts` ×2, `label-blockers.ts` ×1). It also closes 2 of round 2's
+   5: `pairing.ts`'s `else if` branch (TRO-464-request, see below) and the rule's own
+   internal `.some()`.
+3. **The rule's own directory is excluded from the repo-wide backlog measurement.** A
+   linter does not lint itself, so `scripts/factory/defect-gates/` is out of scope. Its own
+   `.some()` over internal AST data is not a target-code defect. This is already redundant
+   with (2) for today's one self-referential site. It is still the standing policy for any
+   future rule this directory adds.
 
-**A second known gap, also recorded and not covered this round:** an unguarded quantifier
-guarded only by an *enclosing* branch condition — `else if (xs.length > 1) { ... xs.some(p)
-... }` — is provably safe (the branch already establishes non-emptiness), but
-`isProvablyNonEmpty` only recognizes a *preceding* early-exit guard in the same block, not
-an enclosing branch condition. `pairing.ts:70` was this shape; removing `.some` closes it
-as a side effect, but the underlying gap in `isProvablyNonEmpty` is unfixed — a plain `if
-(xs.length > 1) { return xs.every(p); }` (no `else`) is already handled correctly today; the
-`else if` variant is not.
+**A second known gap, also recorded and not covered this round.** An unguarded quantifier
+can be guarded only by an *enclosing* branch condition — for example, `else if (xs.length >
+1) { ... xs.some(p) ... }`. That shape is provably safe, since the branch already
+establishes non-emptiness. But `isProvablyNonEmpty` only recognizes a *preceding* early-exit
+guard in the same block. It does not recognize an enclosing branch condition. `pairing.ts:70`
+was this shape. Removing `.some` closes it as a side effect. The underlying gap in
+`isProvablyNonEmpty` stays unfixed. A plain `if (xs.length > 1) { return xs.every(p); }`,
+with no `else`, is already handled correctly today. The `else if` variant is not.
 
 4 new tests (seeded reduce not flagged, unseeded reduce still flagged, `.some` not flagged,
 `.every` still flagged as a regression guard). 15 tests total, all pass.
@@ -443,14 +521,15 @@ the guard sits in the same branch as the call, one fact, inseparable from the si
 `deriveOutcome`, no — its safety depends on every caller staying disciplined, and its own
 code cannot guarantee that. Two sites, one standard, two different answers.
 
-Two of the four (`isStringArray`, `isReviewQueueListResponse`) validate array *shape*,
-where an empty array trivially and arguably-correctly satisfies "every element has type X"
-— flagged here as an honest, disclosed doubt, not resolved, and not exempted: unlike seeded
-`.reduce()` or `.some()`, whether an empty `caseIds`/`items` array should be accepted is a
-caller-specific business question this AST rule cannot settle, so both stay reported for
-human triage rather than silently auto-exempted. Precision on this measurement: 4/4 among
-reported findings — one of the four (`response.ts:186`) genuine as a defence-in-depth gap
-rather than a live defect.
+Two of the four (`isStringArray`, `isReviewQueueListResponse`) validate array *shape*. An
+empty array trivially, and arguably correctly, satisfies "every element has type X" for
+these two. That is flagged here as an honest, disclosed doubt — not resolved, and not
+exempted. Unlike seeded `.reduce()` or `.some()`, this is different: whether an empty
+`caseIds`/`items` array should be accepted is a caller-specific business question. This AST
+rule cannot settle that question. So both sites stay reported for human triage, rather than
+silently auto-exempted. Precision on this measurement: 4/4 among reported findings. One of
+the four (`response.ts:186`) is genuine as a defence-in-depth gap, rather than a live
+defect.
 
 **Correction (final review fix wave, see the top-of-file entry with this same date): this "4/4"
 figure is not spec §12.3's adjudicated ship-criterion precision.** It is 4 sites read by hand,

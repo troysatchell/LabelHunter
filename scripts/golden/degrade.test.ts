@@ -334,6 +334,38 @@ describe("applyDegradation dispatcher", () => {
       params: { region: "warning", brightnessFactor: 0.6, contrastFactor: 0.45, noiseAmplitude: 22 },
     });
     expect(withExtraParams.equals(brightnessOnly)).toBe(false);
+
+    // Not just "different" — exactly what a direct applyLowLight call with
+    // the identical params produces. A dispatcher bug that forwarded the
+    // wrong value, or swapped contrastFactor and noiseAmplitude, would
+    // still satisfy the not-equal check above while failing this one.
+    const direct = await applyLowLight(base, {
+      region: "warning",
+      brightnessFactor: 0.6,
+      contrastFactor: 0.45,
+      noiseAmplitude: 22,
+    });
+    expect(withExtraParams.equals(direct)).toBe(true);
+  });
+
+  it("forwards contrastFactor alone through the dispatcher (isolated from noiseAmplitude)", async () => {
+    const base = await makeSyntheticLabel();
+    const viaDispatcher = await applyDegradation(base, {
+      type: "low-light",
+      params: { region: "warning", brightnessFactor: 0.6, contrastFactor: 0.4 },
+    });
+    const direct = await applyLowLight(base, { region: "warning", brightnessFactor: 0.6, contrastFactor: 0.4 });
+    expect(viaDispatcher.equals(direct)).toBe(true);
+  });
+
+  it("forwards noiseAmplitude alone through the dispatcher (isolated from contrastFactor)", async () => {
+    const base = await makeSyntheticLabel();
+    const viaDispatcher = await applyDegradation(base, {
+      type: "low-light",
+      params: { region: "warning", brightnessFactor: 0.6, noiseAmplitude: 20 },
+    });
+    const direct = await applyLowLight(base, { region: "warning", brightnessFactor: 0.6, noiseAmplitude: 20 });
+    expect(viaDispatcher.equals(direct)).toBe(true);
   });
 
   it("throws for an unrecognized degradation type", async () => {

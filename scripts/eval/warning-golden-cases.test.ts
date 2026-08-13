@@ -98,6 +98,56 @@ describe("case-23/case-24 (tiny warning text) — CP-2 §9.2 finding 1: WARNING_
       expect(goldenCase.expected.reviewReason, `${caseId} expected.reviewReason`).toBe("WARNING_MISMATCH");
     }
   });
+
+  /**
+   * The manifest-only check above proves the expectation is internally
+   * consistent; it does not exercise the real comparator, because tiny
+   * print's actual defect (the OCR channel misreads it) has no golden-set
+   * text field to read from — `reconcileCase`'s "both channels read the
+   * ground truth" simulation is the wrong one here on purpose (this file's
+   * own header comment). This test instead builds the case the diagnosis
+   * measured directly: a correct VLM read, and an OCR reading garbled by
+   * tiny print, at the OCR confidence `scripts/eval/ocr-floor-sweep.ts`
+   * actually recorded for each case (58 and 56 — both above
+   * `OCR_CONFIDENCE_FLOOR`, 50, so the dual-channel path runs). The two
+   * channels disagree, so `reconcileWarningChannels` should return the
+   * same `WARNING_MISMATCH` the manifest now expects.
+   */
+  it("reconcileWarningChannels returns WARNING_MISMATCH when a correct VLM read meets an OCR read garbled by tiny print", () => {
+    const tinyPrintOcrMisreads: Record<string, { caseId: string; ocrConfidence: number; ocrText: string }> = {
+      "case-23-tiny-warning-text-standard-bottle": {
+        caseId: "case-23-tiny-warning-text-standard-bottle",
+        ocrConfidence: 58,
+        ocrText:
+          "GOVERNMENT WARNXNG (1) Aecordlng ta the Surgcon Genoral, wamen shquld nat drlnk alcohollc " +
+          "boverages durlng prognancy bocause af the rlsk af blrih dofocts (2) Consumptlon af alcohollc " +
+          "boverages impalrs yaur abllity ta drlve a car ar operate machlnery, and may cause hoalth problems.",
+      },
+      "case-24-tiny-warning-text-miniature-bottle": {
+        caseId: "case-24-tiny-warning-text-miniature-bottle",
+        ocrConfidence: 56,
+        ocrText:
+          "GOVERNMENT WARNXNG (1) Aecordlng ta the Surgcon Genoral, wamen shquld nat drlnk alcohollc " +
+          "boverages durlng prognancy bocause af the rlsk af blrih dofocts (2) Consumptlon af alcohollc " +
+          "boverages impalrs yaur abllity ta drlve a car ar operate machlnery, and may cause hoalth problems.",
+      },
+    };
+
+    for (const { caseId, ocrConfidence, ocrText } of Object.values(tinyPrintOcrMisreads)) {
+      const goldenCase = findCase(caseId);
+      const canonicalText = goldenCase.label.governmentWarningText;
+      const vlm: VlmWarningCandidate = { transcription: canonicalText, prefixCasing: "ALL_CAPS", confidence: 0.98 };
+      const result = reconcileWarningChannels(vlm, { available: true, text: ocrText, confidence: ocrConfidence });
+
+      expect(result.channel, `${caseId} channel`).toBe("dual");
+      expect(result.verdict, `${caseId} verdict`).toBe(goldenCase.expected.fields.governmentWarning.verdict);
+      expect(result.verdict, `${caseId} verdict`).toBe("NEEDS_REVIEW");
+      if (result.verdict === "NEEDS_REVIEW") {
+        expect(result.reviewReason, `${caseId} reviewReason`).toBe(goldenCase.expected.reviewReason);
+        expect(result.reviewReason, `${caseId} reviewReason`).toBe("WARNING_MISMATCH");
+      }
+    }
+  });
 });
 
 describe("case-31 (new) — CP-2 §9.2 finding 5 / §11 open question 9: surgeon general in lower case", () => {

@@ -14,9 +14,9 @@
  *      testing, evaluator scripts) — PRD §8's own design mandate: "do not
  *      force everything through a browser flow."
  *
- * `src/middleware.ts` calls `hasValidAccessCode` on every request to a
- * protected route/page; this module owns only the credential check, not
- * the redirect/401 decision (middleware's own job).
+ * `src/proxy.ts` calls `hasValidAccessCode` on every request to a
+ * protected route/page. This module owns only the credential check. It
+ * does not decide the redirect or the 401 — that is `src/proxy.ts`'s job.
  *
  * **Untrusted input (standing rule 18).** Both the header and the cookie
  * are adversarial input from outside the trust boundary — validated

@@ -31,7 +31,15 @@ verify:
   e2e: "pnpm test:e2e"
   dbMigrate: "pnpm db:migrate"
 verify_urls:
-  app: null   # TBD — Render deploy is TRO-481/LH-060, still Backlog
+  # Updated 2026-08-13: TRO-481 (Render deploy) merged, and TRO-482 (key protection)
+  # now gates every route except /api/health, /access-code and /api/access-code.
+  # An unauthenticated GET / returns 307 -> /access-code; an unauthenticated
+  # /api/* returns 401. Both are CORRECT responses from a live app, not outages.
+  # A probe that needs past the gate must send the x-access-code header; the value
+  # lives ONLY in Render's dashboard (render.yaml declares it sync: false), never
+  # in this repo. Verified live 2026-08-13 in both directions.
+  app: "https://labelhunter-web.onrender.com"
+  health: "https://labelhunter-web.onrender.com/api/health"   # exempt from the gate by design
 
 tickets:
   provider: linear

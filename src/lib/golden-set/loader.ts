@@ -128,6 +128,11 @@ function isBoolean(value: unknown): value is boolean {
   return typeof value === "boolean";
 }
 
+/** Checks `value` is `boolean | "unknown"` — the shape `governmentWarningPrefixBold` / `governmentWarningBodyBold` require (TRO-527 / LH-022). */
+function isBooleanOrUnknown(value: unknown): value is boolean | "unknown" {
+  return typeof value === "boolean" || value === "unknown";
+}
+
 /**
  * Checks `value` is a string in the exact canonical format
  * `Date.prototype.toISOString()` produces (e.g.
@@ -485,6 +490,22 @@ function checkLabel(problems: string[], where: string, raw: unknown): void {
     "governmentWarningPrefixAllCaps",
     isBoolean,
     "a boolean",
+  );
+  checkField(
+    problems,
+    w,
+    raw,
+    "governmentWarningPrefixBold",
+    isBooleanOrUnknown,
+    'a boolean or "unknown"',
+  );
+  checkField(
+    problems,
+    w,
+    raw,
+    "governmentWarningBodyBold",
+    isBooleanOrUnknown,
+    'a boolean or "unknown"',
   );
 }
 

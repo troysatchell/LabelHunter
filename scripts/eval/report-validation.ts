@@ -262,6 +262,29 @@ export function validateVarianceReport(parsed: unknown, filePath: string): Varia
   if (typeof candidate.totalCostUsd !== "number" || !Number.isFinite(candidate.totalCostUsd)) {
     problems.push('"totalCostUsd" must be a finite number');
   }
+  // TRO-543 Part 2 (a review finding, triaged): these four fields were cast
+  // through with no check at all — a caller that trusts the return type
+  // (this file's own test suite included, until this fix) reads
+  // `report.haikuModel`/`sonnetModel`/`commitSha`/`requestedFull` on faith.
+  // Standing rule 13: validate at the boundary where a value's shape is only
+  // assumed, not guaranteed — a committed JSON file, hand-editable, is
+  // exactly that boundary.
+  // .trim().length, not .length: a whitespace-only string ("   ") passes a
+  // bare length check while carrying no real model ID or SHA — the same
+  // "check the real invariant, not just the type" standing rule the rest of
+  // this file already follows (a PR review finding, TRO-543 Part 2).
+  if (typeof candidate.haikuModel !== "string" || candidate.haikuModel.trim().length === 0) {
+    problems.push('"haikuModel" must be a non-empty string');
+  }
+  if (typeof candidate.sonnetModel !== "string" || candidate.sonnetModel.trim().length === 0) {
+    problems.push('"sonnetModel" must be a non-empty string');
+  }
+  if (typeof candidate.commitSha !== "string" || candidate.commitSha.trim().length === 0) {
+    problems.push('"commitSha" must be a non-empty string');
+  }
+  if (typeof candidate.requestedFull !== "boolean") {
+    problems.push('"requestedFull" must be a boolean');
+  }
   if (problems.length > 0) {
     throw new Error(`report-validation: ${filePath} is not a valid VarianceReport — ${problems.join("; ")}.`);
   }

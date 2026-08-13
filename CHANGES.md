@@ -4,6 +4,330 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-539 — LH-034 · Fix the latency harness's provenance trap, add a per-stage breakdown, add a real-HTTP `--url` mode (2026-08-12)
+
+Advances TH-R2, TH-R15, TH-R19. This entry covers the code-side steps only (ticket steps 1-4,
+plus a zero-cost local validation). The real deployed measurement stays blocked on Troy. See
+"What stays blocked on Troy" below.
+
+**Four defects. Four fixes.**
+
+1. **The provenance trap.** Commit `c5e49f8` (TRO-514) wired the warning comparator into
+   `route.ts`. It fixed `measure.ts`'s header comment. It never touched the `pipelineScope`
+   string the harness writes into every report. The next run would record correct new timings
+   under an old, false claim: "No OCR/warning-subsystem comparator (LH-020 not merged)." Fixed
+   first, before anything else. `pipelineScope` is no longer a string literal.
+   `buildPipelineScope(boundary)` (`scripts/latency/target-info.ts`) builds it fresh every run.
+   It names the warning comparator, the OCR deadline (TRO-519), and TH-R19's cascade rule. It
+   cannot go stale silently again. The next pipeline change must change what this function
+   returns, not a separate string someone can forget.
+2. **Wrong machine.** The committed artifact measures an in-process call on a developer's own M4
+   Pro. It does not measure Render's `starter` plan (0.5 CPU / 512 MB, `render.yaml:29`). Still
+   true after this PR. Closing it needs a real deployed run, which needs Troy (see below). This
+   PR adds the tool to close it — `--url` mode — without spending money or needing Render
+   access itself.
+3. **Wrong boundary.** The harness only ever measured `handleVerifyRequest` in-process. It never
+   measured a real HTTP round-trip. That excludes the Next.js framing layer and the network path
+   the real user waits on. Fixed: `scripts/latency/measure.ts` now supports `--url=<origin>`. It
+   sends a real multipart `fetch` POST to `${url}/api/verify` instead (`runOnceHttp`). The
+   in-process mode stops its clock before `response.json()` on purpose — that parse is the
+   harness's own bookkeeping, not server time (see that function's own comment). `--url` mode
+   stops its clock AFTER the full response body arrives. A real client's wait includes that time.
+4. **No stage breakdown.** `POST /api/verify` now returns a `Server-Timing` response header on
+   every 200 response. It carries one `name;dur=<ms>` entry per PRD §3.8 stage: preprocess, ocr,
+   haiku, router, db (`src/app/api/verify/server-timing.ts`, wired into
+   `src/app/api/verify/route.ts`). `ocr` times the whole warning-comparator call: region
+   detection, OCR, and reconciliation. PRD §3.8's table has one row named "OCR", not three. `db`
+   times `saveLabelImage` (TRO-518) together with the verification-tables transaction, as one
+   combined figure. `haiku` and `ocr` run concurrently (CP-2 §4.4) but are measured
+   independently. Their reported durations can overlap. They are not meant to sum to the total.
+   A non-200 response carries no header — an early error means at least one stage never ran. The
+   harness parses this header off the `Response` object either mode produces
+   (`parseServerTimingHeader`) — the in-process mode reads it off the same object
+   `handleVerifyRequest` returns; `--url` mode reads it off the real HTTP response. Either way,
+   every successful run's samples roll into a per-stage `stageBreakdownMs` summary
+   (`scripts/latency/stage-breakdown.ts`), reusing the same `summarizeLatencies` the overall
+   p50/p95 already uses. Only a successful run's samples ever count.
+
+**New artifact fields (ticket step 4).** Every report now carries a `target` object: `boundary`
+(`"in-process"` or `"http"`), `host`, `url`, and `renderPlan`. `renderPlan` is read from this
+repo's own `render.yaml` at measurement time (`scripts/latency/render-target.ts`, `js-yaml` —
+the same library and pattern `scripts/deploy/render-yaml.test.ts` already uses). It is never a
+hard-coded `"starter"`. It is non-null only when the run's own target hostname matches the
+hostname Render's naming convention (`<service-name>.onrender.com`) would give `render.yaml`'s
+`web` service. A `--url` run against `localhost`, or any other host, gets `renderPlan: null` —
+never a false Render claim. This script has no Render API credentials. CLAUDE.md's own
+non-negotiables keep the real key out of this repo. "The Render plan" is always this repo's own
+committed config, read fresh, never a live query.
+
+**Two more honesty fixes, found while wiring the above.**
+
+- `model` used to always report `HAIKU_EXTRACTOR_MODEL`, even in `--url` mode. This script
+  cannot back that claim in `--url` mode — it never observes what the target server runs. Fixed:
+  `--url` mode now says so plainly instead of repeating the constant as if confirmed.
+- Added `--note=<text>`, written verbatim into a new `validationNote` report field. A run whose
+  numbers are not a real TH-R2 measurement can now say so loudly inside the artifact itself —
+  not only in its filename, not only in this changelog. See the fake-server validation below.
+
+**How to run `--url` mode.**
+
+```bash
+pnpm latency:check -- --url=http://localhost:3874 --runs=5
+```
+
+`--out=<path>` redirects the report path. The default for `--url` mode is
+`scripts/latency/results/single-label-verify-url-mode.json` — deliberately NOT the in-process
+default, `single-label-verify.json`. The committed real-measurement evidence file must never be
+overwritten by a different-boundary or fake-model run just because `--out` was forgotten.
+`--note=<text>` stamps a `validationNote` into the report. `ANTHROPIC_API_KEY` is not required in
+`--url` mode — the target server holds its own key.
+
+`DATABASE_URL` is optional in `--url` mode. Cleanup against it needs TWO explicit signals, even
+when it is set: the `--cleanup-db` flag, AND a loopback target
+(`localhost`/`127.0.0.1/8`/`::1`). A real deployed target's own database has no reliable link to
+whatever `DATABASE_URL` a shell happens to export. Deleting by ID against the wrong database
+risks a cross-database collision. A loopback hostname alone is not enough proof of "same
+database" either — this repo's own factory workflow runs several worktree-scoped databases on
+one localhost Postgres server (round 2 below). Skipped cleanup is never silent:
+`cleanupSkippedReason` in the report names why, and it is never counted as a `cleanupFailure`
+(skipped is not failed).
+
+Every real network request is bounded by one 30-second timeout. It covers the request and the
+body read together. TRO-519 already applied the same "no request hangs forever" rule to the OCR
+channel; this applies it client-side too.
+
+**Zero-cost local validation — not a TH-R2 number.** Ran the local app
+(`ANTHROPIC_BASE_URL=http://localhost:4874`, pointed at `scripts/e2e/fake-anthropic-server.ts`,
+the same fake server `playwright.config.ts` already uses for E2E). Drove 5 sequential requests
+through `--url` mode:
+
+```bash
+pnpm latency:check -- --url=http://localhost:3874 --runs=5 --cleanup-db \
+  --out=scripts/latency/results/single-label-verify-fake-server-validation.json \
+  --note="TRO-539 harness validation ONLY. Target ran scripts/e2e/fake-anthropic-server.ts via \
+ANTHROPIC_BASE_URL, not the real Anthropic API. This is a zero-cost, local-machine, \
+in-memory-canned-response run that proves the --url mode, Server-Timing capture, \
+--cleanup-db-gated loopback cleanup, and the request timeout all work end to end. It is NOT a \
+TH-R2 measurement, NOT a deployed-instance measurement, and must never be quoted as either."
+```
+
+Committed at `scripts/latency/results/single-label-verify-fake-server-validation.json`. Real
+numbers, from a real run, conditions named: 5/5 succeeded, all `PASS`. Wall-clock p50 381 ms, p95
+688 ms, mean 443 ms. Per-stage p50, from the real `Server-Timing` header:
+
+- `ocr` 328.8 ms — real tesseract OCR against the real golden-set photo; this channel is not faked
+- `haiku` 2.4 ms — the fake server's canned, near-instant response; nothing like a real Haiku call
+- `preprocess` 34.4 ms
+- `router` 0.6 ms
+- `db` 10.1 ms
+
+Confirmed by direct query afterward, not just "no error thrown": all 5 `applications` rows this
+run created were deleted. 0 rows of that table remained in the worktree database. `target.boundary`
+read `"http"`. `target.host` read `"localhost:3874"`. `target.renderPlan` read `null` — correct,
+since localhost does not match `render.yaml`'s expected host. `pipelineScope` named the warning
+comparator and the `http` boundary, with no "LH-020 not merged" claim, and no unconditional "real
+API call" claim either (round 2 below). This proves the `--url` mechanism, the `Server-Timing`
+capture, the `--cleanup-db`-gated loopback cleanup path, the request timeout, and the provenance
+fields all work end to end.
+
+**It is not a latency number for TH-R2.** The `haiku` stage timing alone — a canned local HTTP
+response, not a ~2.5s live model call — makes the whole run's wall-clock total unrepresentative
+of anything real. The artifact's own `validationNote` and `model` fields say so explicitly.
+
+**Corrected the already-false 4232 ms figure.** This is a provenance-trap cleanup, not a new
+measurement. `audit/requirements/REPORT.md` and this file's own TRO-471 entry both quoted 4232
+ms as if it were the committed artifact's number. It never was.
+`scripts/latency/results/single-label-verify.json` was overwritten the same day by a second run
+(commit `5a16263`). That run recorded p50 3690 ms, p95 4339 ms — the number the file holds
+today. This changelog never recorded that second run at all, until now. (A real gap: a grep for
+`3690` across this file's history returned 0 matches before this entry.) Both figures are
+corrected in place. The original 4232 ms figures stay, clearly marked as the FIRST run's own
+historical record — not deleted. See the "Correction (TRO-539, 2026-08-12)" note inside the
+TRO-471 entry below. Neither 4232 ms nor 3690 ms is a valid current TH-R2 figure. Both predate
+commit `c5e49f8`'s warning comparator. TH-R2 stays PARTIAL.
+
+**What this PR makes satisfiable, and what stays blocked on Troy.** The code-side steps are
+done and tested: fix the string, add `Server-Timing`, add `--url` mode, add the provenance
+fields. What TH-R2 still needs, and cannot get from this worktree: a real run of
+`pnpm latency:check -- --url=<the deployed Render URL>` against the actual `starter`-plan
+instance. That needs two things from Troy. First, provisioning the deployed environment — a
+real `ANTHROPIC_API_KEY` in Render's env config, a hard-stop credential action
+(`docs/deploy.md`). Second, Troy's go-ahead — a real run against a real deployed instance spends
+real money end to end (preprocessing, Haiku, OCR — not the fake server's near-instant
+stand-ins). Until that run happens and its artifact is committed, TH-R2 stays PARTIAL. This PR
+does not raise it to VERIFIED, and does not claim to.
+
+**Tests.** `src/app/api/verify/server-timing.test.ts` (20 cases): `buildServerTimingHeader`
+round-trips through `parseServerTimingHeader`. Malformed, negative, non-numeric, and
+unknown-stage header entries are dropped, never trusted. A quoted `desc` param containing a
+comma no longer mis-splits the entry (round 1), an unmatched quote on a `dur` value is rejected
+(round 2), and a backslash-escaped quote inside a `desc` value no longer ends the quoted span
+early (round 3) — all three below.
+
+`src/app/api/verify/route.test.ts` gained two cases in a "Server-Timing header (TRO-539, PRD
+§3.8)" describe block. A 200 response carries all five stage entries with non-negative
+durations. A non-200 response carries no header at all. The first case fails for the right
+reason before this change: `expected null not to be null`, since no header existed at all. That
+was confirmed by running it against `HEAD`'s own copy of `route.ts` (`git show HEAD:... >
+scratch-file`, never `git stash` — lessons.md rule 4), then restoring.
+
+`scripts/latency/render-target.test.ts` (12 cases) and `scripts/latency/target-info.test.ts` (23
+cases) cover the provenance-derivation logic directly. Two different `render.yaml` texts for the
+same host produce two different plans — proof this is read, not hard-coded. A `localhost` target
+always gets `renderPlan: null`. The two boundaries produce two different `pipelineScope` strings.
+Neither contains "LH-020 not merged".
+
+`scripts/latency/args.test.ts` gained 18 cases in total, for `--url`/`--out`/`--note`/
+`--cleanup-db` parsing and validation (both this ticket's own new flags and the two review
+rounds below). Every pre-existing case is unchanged — the new fields are `undefined` when
+absent, and vitest's `toEqual` ignores `undefined` properties.
+
+`scripts/latency/stage-breakdown.test.ts` (7 cases, new) and `scripts/latency/http-error.test.ts`
+(6 cases, new) cover the two modules the review rounds below extracted. Full suite: 1822 tests,
+all pass (`pnpm test`).
+
+**Local CodeRabbit review, round 1 (9 findings, 9 fixed, 0 dismissed).**
+
+- (major) `parseServerTimingHeader` split on every comma, so a quoted `desc` param containing
+  its own comma (`haiku;desc="crop, v2";dur=2500.0`) mis-split into two unparseable pieces.
+  Fixed: a real tokenizer that respects `"`-quoted spans (`splitOutsideQuotes`,
+  `server-timing.ts`). New regression tests cover the exact reported shape.
+- (minor) Added the suggested regression test for that same case.
+- (major) The stage-breakdown accumulation would have counted a FAILED run's own
+  `serverTimingMs`, if one were ever present. Today's `route.ts` never attaches the header to a
+  non-200 response, so this was latent, not live — but `--url` mode can point at any server.
+  Fixed: extracted into `scripts/latency/stage-breakdown.ts`'s `buildStageBreakdown`, which only
+  ever reads a successful run's samples. That is now a structural guarantee, not a behavioral
+  coincidence. New tests prove a failed run's timing data is excluded even when present.
+- (major) This changelog's sentences ran well past CLAUDE.md's ASD-STE100 length limit. Fixed:
+  this whole entry, rewritten short and active-voice.
+- (major) The cleanup delete-by-ID in `--url` mode trusted `DATABASE_URL` to be the SAME
+  database the target server itself used, with no check. Against a real deployed target that is
+  not a safe assumption — a stale local `DATABASE_URL` and a real remote `applicationId` could
+  collide and delete an unrelated row. Fixed: cleanup now only deletes when the target host is a
+  loopback address (`isLoopbackHostname`, `scripts/latency/target-info.ts`). Every other `--url`
+  target skips the delete and records why.
+- (major) `audit/requirements/REPORT.md`'s TH-R2 paragraph had the same sentence-length issue.
+  Fixed the same way.
+- (major) `buildPipelineScope`'s detailed pipeline description was stated with full confidence
+  even for an arbitrary `--url` target this script never confirms is running this exact commit.
+  Fixed: added an explicit caveat to the `http` boundary's own text, matching the `model`
+  field's existing honesty pattern. Kept the detailed description itself, unlike CodeRabbit's
+  own suggested code change (removing it). It is still real, useful context for this harness's
+  actual intended use: measuring this repo's own deployment.
+- (minor) `--url` accepted any URL scheme `new URL()` parses, including non-HTTP ones. A typo
+  would surface as a confusing `fetch` error partway through a run, not an immediate CLI error.
+  Fixed: `args.ts` now requires `http:` or `https:`.
+- (major) `runOnceHttp` had no timeout on its `fetch` call or its `response.json()` read — the
+  same "no deadline, can hang forever" defect class TRO-519 had just fixed server-side,
+  reintroduced client-side. Fixed: one shared `AbortSignal.timeout(30_000)` bounds both,
+  extracted into `scripts/latency/http-error.ts`'s `describeHttpError` for a clear message and a
+  dedicated, fast unit test.
+
+**Local CodeRabbit review, round 2 (9 findings, 8 fixed, 1 dismissed).** Ran after round 1's
+fixes landed — the gate's review step re-reviews the whole branch every run, so a new round can
+find real, different issues (lessons.md rule 31).
+
+- (minor) `--url` accepted a value with a real path, query string, or fragment. `measure.ts`
+  builds the actual request with `new URL("/api/verify", url)` — a leading slash there REPLACES
+  the whole path, so a `--url` with its own path component would have that path silently
+  dropped, hitting the wrong endpoint with no error. Fixed: `args.ts` now requires a bare
+  origin.
+- (major) `--url` accepted embedded credentials (`http://user:pass@host`). `fetch` already
+  rejects a request URL carrying a non-empty username or password, so this was reachable only as
+  a confusing mid-run `fetch` error. Fixed: `args.ts` now rejects it at parse time with a clear,
+  specific message.
+- (major) The stage-breakdown accumulation and the cleanup-eligibility check both trusted
+  `dbCleanupEligible` from round 1's own loopback check alone. That check is real, but not
+  sufficient. This repo's own factory workflow runs several worktree-scoped Postgres databases
+  on ONE localhost Postgres server. A loopback `--url` target and a stale, differently-scoped
+  `DATABASE_URL` can coexist on one machine. That is the exact cross-database collision round 1
+  set out to prevent — just relabeled from "remote" to "local but wrong". Fixed: added
+  `--cleanup-db`, an explicit operator opt-in. Cleanup now needs BOTH the flag AND a loopback
+  target. CodeRabbit's own suggested fix removed the loopback check entirely; this PR kept it as
+  a second, independent safety check instead, since the flag alone still trusts one signal.
+- (minor) The already-committed fake-server-validation artifact's `pipelineScope` field said
+  "Haiku extraction (claude-haiku-4-5, real API call)" unconditionally, even in http mode —
+  directly contradicting that SAME artifact's own `model` field, which correctly said this
+  script never confirms a real call happened. Fixed: the Haiku clause is now boundary-specific.
+  In-process states it as fact (this script itself made the call). Http states this script never
+  observes it. Re-ran the fake-server validation after the fix and re-committed the artifact;
+  the contradiction no longer exists in either field.
+- (minor) `isLoopbackHostname` only recognized the literal `127.0.0.1`, not the full
+  `127.0.0.0/8` loopback range (RFC 5735) — `127.0.0.2` and `127.255.255.255` are just as much
+  "this machine". Fixed: matches any valid IPv4 address in that block.
+- (minor) `describeHttpError`'s `String(cause)` fallback was not itself guaranteed safe. An
+  `Object.create(null)` value has no `toString` anywhere in its (empty) prototype chain.
+  `String()` on it throws a real `TypeError` — confirmed directly in the new test, not assumed.
+  Fixed: wrapped in its own `try`/`catch` with a fixed fallback message.
+- (minor) `DUR_PARAM_PATTERN`'s two `"?` markers were independently optional, so an UNMATCHED
+  quote (`dur="123.4`, opening only) still matched and produced a number. Fixed: two mutually
+  exclusive branches — fully unquoted, or fully quoted with a matching close — replace the two
+  independent optionals.
+- (major) The changelog entry still had several sentences over CLAUDE.md's ASD-STE100 length
+  limit, mostly semicolon-chained multi-fact sentences. Fixed the worst offenders: split into
+  short sentences, and converted the per-stage validation numbers into a list (STE100's own
+  recommended fix for a sequence of 3+ items). Some sentences naming a file path plus a number
+  plus a reason still run a little long. This entry does not chase the limit to the letter at
+  the cost of dropping a fact, per this project's own writing-discipline skill.
+- (dismissed) `audit/requirements/REPORT.md`'s TH-R2 paragraph was flagged again for the same
+  sentence-length issue round 1 already fixed. Checked directly, sentence by sentence, by word
+  count: every real sentence in that paragraph is at or under 27 words, and the one apparent
+  27-word outlier is a quoted statutory-style fragment a splitter miscounts as one sentence with
+  the sentence before it. No further split would remove a real violation — it would only
+  fragment single facts. Dismissed as already-addressed, not a new issue.
+
+**Local CodeRabbit review, round 3 (5 findings, 4 fixed, 1 dismissed).**
+
+- (minor) `splitOutsideQuotes` did not honor a backslash-escaped quote inside a quoted span (RFC
+  7230's own `quoted-pair`, e.g. `desc="a \" b, c"`). An escaped quote would have closed the
+  quoted span early, letting the comma right after it wrongly split the entry. Fixed: a
+  backslash inside a quoted span now consumes the next character literally, without toggling
+  quote state. New test covers the exact shape.
+- (minor) This changelog's own `--note=...` example command used a literal `...` in place of the
+  real note text — not copy-pasteable, and not what the validation run actually used. Fixed:
+  replaced with the artifact's own real `validationNote` text, verbatim, confirmed to still be
+  valid, runnable bash (the backslash-newline continuations stay inside one double-quoted
+  string).
+- (minor) `cleanupSkippedReason`'s own doc comment described only some of the three conditions
+  that set it. Fixed: names all three — no `DATABASE_URL`, `DATABASE_URL` set but `--cleanup-db`
+  not passed, or `--cleanup-db` passed but the host is not loopback.
+- (major) The pool-close closure narrowed the outer `let pool` inside a ternary — correct today,
+  by TypeScript's own control-flow analysis, but fragile: a later refactor inserting an `await`
+  between the check and the closure could silently break that narrowing. Fixed: captured `pool`
+  into its own fresh `const` first, so the non-null guarantee no longer depends on the ternary's
+  specific shape.
+- (dismissed) A finding asked this ticket's own review-ledger entry for round 1's REPORT.md fix
+  to be corrected, since that paragraph's SAME edit also corrected 4232 ms to 3690 ms — a fact
+  change, not just style. The ledger is append-only; an old line cannot be edited. Checked the
+  history directly: the 4232 → 3690 correction landed in an earlier, separate commit, before
+  round 1's review ever ran. Round 1's own fix, in isolation, really did change no fact — it
+  only shortened sentences of an already-corrected paragraph. The ledger summary is accurate for
+  what that specific commit did. Recorded a new, clarifying ledger entry alongside the original
+  rather than editing it, so a future reader sees the full sequence.
+
+**Local CodeRabbit review, round 4 (1 finding, 1 fixed).** This entry's own item 4, above,
+said `--url` mode parses the `Server-Timing` header and builds `stageBreakdownMs` — true, but
+incomplete. Both modes do: `route.ts` attaches the header to any 200 response, and `main`
+builds `stageBreakdownMs` from whichever mode's `runResults` ran, unconditionally. `measure.ts`'s
+own code comment already said so correctly; this entry's prose did not. Fixed: reworded item 4
+above to name both modes.
+
+**How to run it.** `pnpm latency:check` runs the in-process mode, unchanged — real billed API
+calls. `pnpm latency:check -- --url=<origin> [--runs=N] [--out=path] [--note=text]
+[--cleanup-db]` runs the real-HTTP mode — `ANTHROPIC_API_KEY` not required, `DATABASE_URL`
+optional (`--cleanup-db` additionally needed, alongside a loopback target, for this script to
+delete the rows it created). Source
+`.factory-env` first in a factory worktree, either way. Run `pnpm db:migrate` once before either
+mode if the worktree database is unmigrated.
+
+**Rollback.** Revert this commit. `scripts/latency/results/single-label-verify.json` — the real,
+committed, in-process TH-R2 evidence file — is untouched by this PR. Only the new
+`single-label-verify-fake-server-validation.json`, and the new (previously nonexistent)
+`single-label-verify-url-mode.json` default path, are affected. Neither is quoted anywhere as a
+TH-R2 number. `route.ts`'s `Server-Timing` header is additive — a new response header, no
+existing field changed. Reverting it costs nothing else.
+
 ## TRO-516 — Golden-set corpus calibration (2026-08-12)
 
 Advances TH-R12, TH-R17. Diagnosis: `docs/diagnostics/2026-08-12-verdict-miss-triage.md`. That
@@ -4680,13 +5004,30 @@ spirits label, every field matching, no glare/rotation/degradation — the reali
 | min | 3459 ms |
 | max | 5277 ms |
 
+**Correction (TRO-539, 2026-08-12).** The table above is the FIRST run's own real numbers. It
+is not the number in the committed artifact today. A second run the same day, commit `5a16263`
+("re-measure TH-R2 after Wave 1/2 changes"), overwrote
+`scripts/latency/results/single-label-verify.json`. That run recorded different numbers: p50
+3690 ms, p95 4339 ms, mean 3766 ms, min 3418 ms, max 4662 ms, over 20 runs (all `REVIEW` /
+`LOW_MODEL_CONFIDENCE`, same as below). This entry never recorded that second run — a real gap.
+The 2026-08-12 requirements audit found it first (`audit/requirements/gaps.md:11`); this
+correction confirms it. Read the table above, and the prose below it, as a record of the FIRST
+run, not as today's artifact. Both runs measure the SAME wrong pipeline. Both predate commit
+`c5e49f8` (TRO-514), which wired the warning comparator into the live route about an hour after
+the LATER of the two runs. **Do not quote 4232 ms as this project's TH-R2 figure.** It is not
+even the number the committed file holds anymore. Neither number reflects the pipeline that
+ships today. TH-R2 stays PARTIAL (`audit/requirements/REPORT.md`) until a real measurement of
+the shipping pipeline exists. See this file's own TRO-539 entry, at the top of this file, for
+what that still needs and who it is blocked on.
+
 Machine: Apple M4 Pro, macOS (darwin/arm64), Node v23.2.0, local development machine — not
 Render's deployed infrastructure, and not the same network path a real evaluator's browser
 would use. Model: `claude-haiku-4-5`. Ran sequentially, one call at a time, same local network,
 2026-08-11 afternoon.
 
 **Reading the number against the two PRD targets.** TH-R2's own acceptance bar is "about 5
-seconds," PRD §3.8's ~5s p50. This measurement meets it: 4232 ms p50 is under 5000 ms. PRD
+seconds," PRD §3.8's ~5s p50. This measurement (4232 ms p50 — the FIRST run; see the TRO-539
+correction above, and do not quote this figure elsewhere) meets that bar: under 5000 ms. PRD
 §3.8's stage table also names a more optimistic internal sub-target: "~3s p50 · ≤5s p95" for
 the fast path. The measured p50 runs about 1.2s over that internal figure. The measured p95
 (4763 ms) still clears the ≤5s p95 ceiling. One run of 20 — the max, 5277 ms — landed just

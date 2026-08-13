@@ -73,8 +73,29 @@
  * for exactly this: a `review_queue` row with `resolverInput` set and no
  * resolution yet, and calls `resolveEscalatedLabel` for it off the request
  * path, in the SAME background-worker process PRD §3.6 names (singular).
+ *
+ * **Per-stage timing (TRO-539, PRD §3.8).** Every 200 response carries a
+ * `Server-Timing` header with one measured entry per PRD §3.8 stage --
+ * preprocess, ocr, haiku, router, db (`./server-timing.ts`). `ocr` times
+ * `deps.compareGovernmentWarning` as a whole (region detection + OCR +
+ * reconciliation, CP-2 §4.4) -- PRD §3.8's table names the row "OCR"; this
+ * is the closest single number this route can attribute to it without
+ * instrumenting inside the warning subsystem's own internals. `db` times
+ * `deps.saveLabelImage` (TRO-518: image bytes to Postgres) together with
+ * the transaction below, as one combined figure -- PRD §3.8's table has no
+ * separate row for "save the image" versus "write the verification
+ * tables". `haiku` and `ocr` run concurrently (rule 1 above); their
+ * reported durations can overlap in wall-clock time and are not meant to
+ * sum to the total. A non-200 response carries no `Server-Timing` header --
+ * an early error means at least one stage never ran, and a header with a
+ * missing entry is worse than no header (a reader could mistake "absent"
+ * for "0ms"). `scripts/latency/measure.ts`'s `--url` mode
+ * (`parseServerTimingHeader`) reads this header off a real network
+ * response to get the same per-stage breakdown a browser's own DevTools
+ * Network panel already shows for any request.
  */
 import { NextResponse } from "next/server";
+import { performance } from "node:perf_hooks";
 import type { FieldName } from "../../../lib/db/enums";
 import { db as defaultDb } from "../../../lib/db";
 import { applications, fieldResults, labelImages, reviewQueue, verifications } from "../../../lib/db/schema";
@@ -108,6 +129,7 @@ import {
 } from "../../../server/warning";
 import { saveLabelImage as defaultSaveLabelImage, type SavedLabelImage } from "../../../server/storage/db-image-storage";
 import { parseVerifyFormData } from "./parse-request";
+import { buildServerTimingHeader, SERVER_TIMING_STAGES, type ServerTimingStage, type StageTimingsMs } from "./server-timing";
 import { FIELD_LABELS, type VerifyErrorKind, type VerifyErrorResponse, type VerifyFieldResult, type VerifySuccessResponse } from "./types";
 
 const ROUTER_FIELD_TO_DB_FIELD_NAME: Record<RouterFieldKey, FieldName> = {
@@ -179,7 +201,45 @@ async function resolveWarningOrDegrade(
   }
 }
 
+/** One `handleVerifyRequest` call's own stage clock (TRO-539). `null` until
+ * that stage completes — a local, per-request value, never shared across
+ * requests, so concurrent requests to this route never see one another's
+ * timings. */
+type MutableStageTimingsMs = Record<ServerTimingStage, number | null>;
+
+function newStageTimings(): MutableStageTimingsMs {
+  return { preprocess: null, ocr: null, haiku: null, router: null, db: null };
+}
+
+/**
+ * Turns a `MutableStageTimingsMs` into the `StageTimingsMs`
+ * `buildServerTimingHeader` needs, once every stage has actually run.
+ * Throws if any stage is still `null` — this route only calls it right
+ * before building the 200 response, by which point preprocess, haiku, ocr,
+ * router, and db have all necessarily completed (every earlier `return`
+ * is an error response, built before this function is ever reached).
+ * Naming this invariant here, rather than trusting it silently, is
+ * standing rule 13 — the same posture the REVIEW/headlineReason check
+ * below already takes.
+ */
+function requireCompleteStageTimings(timings: MutableStageTimingsMs): StageTimingsMs {
+  const complete = {} as StageTimingsMs;
+  for (const stage of SERVER_TIMING_STAGES) {
+    const value = timings[stage];
+    if (value === null) {
+      throw new Error(`handleVerifyRequest: reached a 200 response with no "${stage}" stage timing recorded`);
+    }
+    complete[stage] = value;
+  }
+  return complete;
+}
+
 export async function handleVerifyRequest(request: Request, deps: VerifyRouteDeps = defaultDeps): Promise<Response> {
+  // TRO-539: this request's own stage clock — see this file's header
+  // comment ("Per-stage timing") and `./server-timing.ts`. Local to this
+  // call; never shared across concurrent requests.
+  const stageTimingsMs = newStageTimings();
+
   let formData: FormData;
   try {
     formData = await request.formData();
@@ -194,6 +254,7 @@ export async function handleVerifyRequest(request: Request, deps: VerifyRouteDep
   const input = parsed.value;
   const imageBytes = Buffer.from(await input.imageFile.arrayBuffer());
 
+  const preprocessStart = performance.now();
   let preprocessed: PreprocessedImage;
   try {
     preprocessed = await deps.preprocessImage(imageBytes);
@@ -203,12 +264,16 @@ export async function handleVerifyRequest(request: Request, deps: VerifyRouteDep
     }
     return errorResponse(503, "SERVICE", "LabelHunter could not process this photo. Try again.");
   }
+  stageTimingsMs.preprocess = performance.now() - preprocessStart;
 
   const extractorImage: PreprocessedLabelImage = {
     data: preprocessed.haikuVariant.toString("base64"),
     mediaType: preprocessed.mediaType,
   };
-  const extractionPromise = deps.extractLabel(extractorImage, { client: deps.anthropicClient });
+  const haikuStart = performance.now();
+  const extractionPromise = deps.extractLabel(extractorImage, { client: deps.anthropicClient }).finally(() => {
+    stageTimingsMs.haiku = performance.now() - haikuStart;
+  });
 
   // `.then`, not `await` — this is what starts the warning check in the
   // same tick as the Haiku call instead of after it resolves (this file's
@@ -220,11 +285,14 @@ export async function handleVerifyRequest(request: Request, deps: VerifyRouteDep
   // with.
   const governmentWarningExtraction = extractionPromise.then((result) => result.government_warning);
   governmentWarningExtraction.catch(() => {});
+  const ocrStart = performance.now();
   const warningPromise = resolveWarningOrDegrade(deps.compareGovernmentWarning, {
     extracted: governmentWarningExtraction,
     // The ORIGINAL, full-resolution image — never `haikuVariant`. See this
     // file's header comment.
     originalImage: preprocessed.original,
+  }).finally(() => {
+    stageTimingsMs.ocr = performance.now() - ocrStart;
   });
 
   let extraction: HaikuExtractionResult;
@@ -256,10 +324,12 @@ export async function handleVerifyRequest(request: Request, deps: VerifyRouteDep
     HAIKU_MAX_LONG_EDGE_PX,
   );
 
+  const routerStart = performance.now();
   const result = routeLabel(extraction, application, deps.comparators, warningResult, {
     rejected: false,
     longEdgePx: Math.max(haikuDims.width, haikuDims.height),
   });
+  stageTimingsMs.router = performance.now() - routerStart;
 
   // Defensive: `routeLabel`'s own contract guarantees a REVIEW verdict
   // always carries a headline reason (every field-level or label-level
@@ -270,6 +340,10 @@ export async function handleVerifyRequest(request: Request, deps: VerifyRouteDep
     throw new Error("routeLabel returned REVIEW with no headlineReason — router invariant violated");
   }
 
+  // TRO-539: starts the "db" stage clock — see this file's header comment.
+  // Covers both the label-image write below (TRO-518, saveLabelImage) and
+  // the transactional writes further down, as one combined figure.
+  const dbStart = performance.now();
   let saved: SavedLabelImage;
   try {
     saved = await deps.saveLabelImage(preprocessed.original, input.imageFile.name);
@@ -368,8 +442,12 @@ export async function handleVerifyRequest(request: Request, deps: VerifyRouteDep
       };
       return responseBody;
     });
+    stageTimingsMs.db = performance.now() - dbStart;
 
-    return NextResponse.json(body, { status: 200 });
+    return NextResponse.json(body, {
+      status: 200,
+      headers: { "Server-Timing": buildServerTimingHeader(requireCompleteStageTimings(stageTimingsMs)) },
+    });
   } catch {
     return errorResponse(503, "SERVICE", "LabelHunter could not save this verification. Try again.");
   }

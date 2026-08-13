@@ -14,6 +14,7 @@ import {
   isDiffBoring,
   isFileChangeBoring,
   isRateLimitError,
+  isWorkingTreeDirty,
   MAX_REASONABLE_ATTEMPTS,
   normalizeReviewMode,
   parseCoderabbitOutput,
@@ -342,6 +343,14 @@ describe("isCaptureMeta", () => {
     expect(isCaptureMeta({ sha: "abc1234", capturedAt: "2026-08-13T00:00:00Z", findings: 3 })).toBe(true);
   });
 
+  it("accepts a CaptureMeta carrying TRO-548's optional scopedFrom", () => {
+    expect(
+      isCaptureMeta({ sha: "abc1234", capturedAt: "2026-08-13T00:00:00Z", findings: 3, scopedFrom: "def5678" }),
+    ).toBe(true);
+    // A record written before this field existed has no scopedFrom key at all — still valid.
+    expect(isCaptureMeta({ sha: "abc1234", capturedAt: "2026-08-13T00:00:00Z", findings: 3 })).toBe(true);
+  });
+
   it("rejects a missing sha", () => {
     expect(isCaptureMeta({ capturedAt: "2026-08-13T00:00:00Z", findings: 3 })).toBe(false);
   });
@@ -436,6 +445,37 @@ describe("isCommentOrBlankLine", () => {
   it("is false for a line mixing code and a trailing comment", () => {
     // Starts with code, not a comment marker — real content changed here.
     expect(isCommentOrBlankLine("const x = 2; // was 1")).toBe(false);
+  });
+
+  // CodeRabbit finding (first full review, round 1): a bare `#` matched ANY
+  // line starting with `#`, including a TS/JS private class field —
+  // `#cache = new Map();` IS real code in this repo's own language, and
+  // would have silently skipped review. `#` now must be followed by
+  // whitespace, `!` (a shebang), or end-of-line.
+  it("is false for a TS/JS private class field — # with no space after it", () => {
+    expect(isCommentOrBlankLine("#cache = new Map();")).toBe(false);
+    expect(isCommentOrBlankLine("#privateMethod() {")).toBe(false);
+  });
+
+  it("is still true for a shebang line", () => {
+    expect(isCommentOrBlankLine("#!/usr/bin/env node")).toBe(true);
+  });
+
+  it("is false for a no-space #comment — the safe direction: an occasional missed skip, never a hidden change", () => {
+    expect(isCommentOrBlankLine("#comment")).toBe(false);
+  });
+
+  it("is false for a bare * glued to a value with no space — no longer misread as a comment continuation", () => {
+    expect(isCommentOrBlankLine("*2")).toBe(false);
+  });
+
+  it("documents the known remaining gap: a space-separated multiplication continuation still reads as a JSDoc line", () => {
+    // `* 2` is textually identical to a real JSDoc continuation ("* some
+    // text"); telling them apart needs block-comment STATE across lines,
+    // out of scope for a per-line classifier. Prettier's own line-break
+    // style never produces this shape in practice (operators stay at the
+    // end of the previous line) — documented here, not silently assumed.
+    expect(isCommentOrBlankLine("* 2")).toBe(true);
   });
 });
 
@@ -623,55 +663,134 @@ describe("formatCarriedForwardDetail", () => {
   });
 });
 
+// CodeRabbit finding (first full review, round 1): the fixture relied on
+// repo/environment setup alone to avoid a global commit-signing prompt or a
+// global hook interfering with `git commit`. Each git invocation below now
+// passes -c overrides so the fixture cannot depend on the host's global git
+// config at all. Each `it()` also wraps its body in try/finally so the temp
+// directory is removed even when an assertion throws mid-test, not only on
+// a clean run.
+const GIT_FIXTURE_CONFIG = [
+  "-c",
+  "commit.gpgsign=false",
+  "-c",
+  "tag.gpgsign=false",
+  "-c",
+  "core.hooksPath=/dev/null",
+  "-c",
+  "init.templateDir=",
+];
+
+function initGitFixture(): string {
+  const dir = mkdtempSync(join(tmpdir(), "lh-review-scope-"));
+  const run = (args: string[]) => execFileSync("git", [...GIT_FIXTURE_CONFIG, ...args], { cwd: dir, encoding: "utf8" });
+  run(["init", "-q", "-b", "main"]);
+  run(["config", "user.email", "test@example.com"]);
+  run(["config", "user.name", "Test"]);
+  return dir;
+}
+
+function gitFixtureCommit(dir: string, msg: string): string {
+  const run = (args: string[]) => execFileSync("git", [...GIT_FIXTURE_CONFIG, ...args], { cwd: dir, encoding: "utf8" });
+  run(["add", "-A"]);
+  run(["commit", "-q", "-m", msg]);
+  return run(["rev-parse", "HEAD"]).trim();
+}
+
 describe("diffSince (real git integration)", () => {
-  function initFixture(): { dir: string; sha: (rev: string) => string } {
-    const dir = mkdtempSync(join(tmpdir(), "lh-review-scope-"));
-    const run = (args: string[]) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
-    run(["init", "-q", "-b", "main"]);
-    run(["config", "user.email", "test@example.com"]);
-    run(["config", "user.name", "Test"]);
-    return {
-      dir,
-      sha: (rev: string) => execFileSync("git", ["rev-parse", rev], { cwd: dir, encoding: "utf8" }).trim(),
-    };
-  }
-
-  function commit(dir: string, msg: string): string {
-    execFileSync("git", ["add", "-A"], { cwd: dir });
-    execFileSync("git", ["commit", "-q", "-m", msg], { cwd: dir });
-    return execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
-  }
-
   it("classifies a real sequence of boring and real commits correctly end-to-end", () => {
-    const { dir } = initFixture();
-    writeFileSync(join(dir, "CHANGES.md"), "# Changes\n");
-    writeFileSync(join(dir, "foo.ts"), "export const x = 1;\n// a note\n");
-    const c0 = commit(dir, "c0: initial");
+    const dir = initGitFixture();
+    try {
+      writeFileSync(join(dir, "CHANGES.md"), "# Changes\n");
+      writeFileSync(join(dir, "foo.ts"), "export const x = 1;\n// a note\n");
+      const c0 = gitFixtureCommit(dir, "c0: initial");
 
-    writeFileSync(join(dir, "CHANGES.md"), "# Changes\n\n### TRO-548\n\nMore prose.\n");
-    const c1 = commit(dir, "c1: CHANGES.md only");
-    expect(isDiffBoring(diffSince(dir, c0, c1)!)).toBe(true);
+      writeFileSync(join(dir, "CHANGES.md"), "# Changes\n\n### TRO-548\n\nMore prose.\n");
+      const c1 = gitFixtureCommit(dir, "c1: CHANGES.md only");
+      expect(isDiffBoring(diffSince(dir, c0, c1)!)).toBe(true);
 
-    writeFileSync(join(dir, "foo.ts"), "export const x = 1;\n// an updated note\n");
-    const c2 = commit(dir, "c2: comment-only");
-    expect(isDiffBoring(diffSince(dir, c1, c2)!)).toBe(true);
+      writeFileSync(join(dir, "foo.ts"), "export const x = 1;\n// an updated note\n");
+      const c2 = gitFixtureCommit(dir, "c2: comment-only");
+      expect(isDiffBoring(diffSince(dir, c1, c2)!)).toBe(true);
 
-    writeFileSync(join(dir, "foo.ts"), "export const x = 2;\n// an updated note\n");
-    const c3 = commit(dir, "c3: real code change");
-    expect(isDiffBoring(diffSince(dir, c2, c3)!)).toBe(false);
+      writeFileSync(join(dir, "foo.ts"), "export const x = 2;\n// an updated note\n");
+      const c3 = gitFixtureCommit(dir, "c3: real code change");
+      expect(isDiffBoring(diffSince(dir, c2, c3)!)).toBe(false);
 
-    // Across the whole span (c0..c3), the real change still makes it non-boring.
-    expect(isDiffBoring(diffSince(dir, c0, c3)!)).toBe(false);
-
-    rmSync(dir, { recursive: true, force: true });
+      // Across the whole span (c0..c3), the real change still makes it non-boring.
+      expect(isDiffBoring(diffSince(dir, c0, c3)!)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("returns null, never a false boring read, when the SHA cannot be resolved", () => {
-    const { dir } = initFixture();
-    writeFileSync(join(dir, "CHANGES.md"), "# Changes\n");
-    commit(dir, "c0");
-    expect(diffSince(dir, "0000000000000000000000000000000000000000", "HEAD")).toBeNull();
-    rmSync(dir, { recursive: true, force: true });
+    const dir = initGitFixture();
+    try {
+      writeFileSync(join(dir, "CHANGES.md"), "# Changes\n");
+      gitFixtureCommit(dir, "c0");
+      expect(diffSince(dir, "0000000000000000000000000000000000000000", "HEAD")).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("isWorkingTreeDirty (real git integration)", () => {
+  // CodeRabbit finding (first full review, round 1): planReview's
+  // same-SHA carry-forward compares committed SHAs only. It has no
+  // visibility into UNCOMMITTED content — a real gap when
+  // review-capture.ts runs standalone, outside gate.sh's own full-mode
+  // precondition (which already refuses on a dirty tree before G10 is
+  // ever reached). main() now checks this directly and treats a dirty
+  // tree as "no trustworthy previous capture" — see the dirty-tree branch
+  // in main()'s own comment.
+  it("is false right after a clean commit", () => {
+    const dir = initGitFixture();
+    try {
+      writeFileSync(join(dir, "a.txt"), "one\n");
+      gitFixtureCommit(dir, "c0");
+      expect(isWorkingTreeDirty(dir)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("is true with an unstaged modification to a tracked file", () => {
+    const dir = initGitFixture();
+    try {
+      writeFileSync(join(dir, "a.txt"), "one\n");
+      gitFixtureCommit(dir, "c0");
+      writeFileSync(join(dir, "a.txt"), "two\n");
+      expect(isWorkingTreeDirty(dir)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("is true with a staged-but-uncommitted change", () => {
+    const dir = initGitFixture();
+    try {
+      writeFileSync(join(dir, "a.txt"), "one\n");
+      gitFixtureCommit(dir, "c0");
+      writeFileSync(join(dir, "a.txt"), "two\n");
+      execFileSync("git", [...GIT_FIXTURE_CONFIG, "add", "a.txt"], { cwd: dir });
+      expect(isWorkingTreeDirty(dir)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("is true with an untracked file present", () => {
+    const dir = initGitFixture();
+    try {
+      writeFileSync(join(dir, "a.txt"), "one\n");
+      gitFixtureCommit(dir, "c0");
+      writeFileSync(join(dir, "untracked.txt"), "new\n");
+      expect(isWorkingTreeDirty(dir)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

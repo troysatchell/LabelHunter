@@ -80,6 +80,14 @@ export interface CaptureMeta {
   sha: string;
   capturedAt: string;
   findings: number;
+  /**
+   * TRO-548: set when this capture was a SCOPED review (`--base-commit
+   * <scopedFrom>`), not a full-branch one — `findings` then counts only
+   * the diff-since-`scopedFrom` slice, not the whole branch. Undefined for
+   * an ordinary full-branch capture, and for any meta.json written before
+   * this field existed — always optional, never assumed present.
+   */
+  scopedFrom?: string | null;
 }
 
 export type ReviewGateStatus = "pass" | "warn";
@@ -203,13 +211,30 @@ export function isBoringPath(path: string): boolean {
   return path.startsWith("factory/") && path.endsWith(".jsonl");
 }
 
-const COMMENT_MARKER = /^(\/\/|\/\*|\*\/?|#|<!--|-->)/;
+// `#` and a bare `*` both need a boundary check, not a bare prefix match:
+//   - `#` alone matched a TS/JS PRIVATE CLASS FIELD ("#cache = new Map();")
+//     as a comment — real code, in this repo's own language. `#` now must
+//     be followed by whitespace, `!` (a shebang), or end-of-line. This also
+//     means a real but unspaced `#comment` (no space after `#`) no longer
+//     matches — the safe direction: an occasional missed skip, never a
+//     hidden change.
+//   - A bare `*` with nothing required after it matched `*2` (a glued
+//     multiplication) as a JSDoc continuation. `*` now must be followed by
+//     `/` (a close, `*/`) or whitespace/end-of-line (a JSDoc line's actual
+//     shape). KNOWN REMAINING GAP: `* 2` (multiplication, WITH a space) is
+//     textually identical to a real JSDoc continuation line — telling them
+//     apart needs block-comment state across lines, out of scope for a
+//     per-line classifier. Prettier's own line-break style does not
+//     produce this shape in practice (operators stay at the end of the
+//     previous line, not the start of the next).
+const COMMENT_MARKER = /^(\/\/|\/\*|\*(?:\/|(?=\s|$))|#(?=[\s!]|$)|<!--|-->)/;
 
 /**
  * True for a blank line, or a line whose real content starts with a
  * comment marker: `//`, `/*`, a block-comment continuation (`*`) or close
  * (`*​/`), `#`, or an HTML/Markdown comment delimiter. Checked against a
- * diff line with its `+`/`-` prefix already stripped.
+ * diff line with its `+`/`-` prefix already stripped. See `COMMENT_MARKER`
+ * above for the exact boundary rules and the one documented gap.
  *
  * Deliberately conservative: a line that mixes code and a trailing comment
  * ("const x = 2; // was 1") does NOT match — it starts with code, not a
@@ -545,6 +570,21 @@ function gitHead(cwd: string): string {
 }
 
 /**
+ * True when `git status --porcelain` reports anything at all — staged,
+ * unstaged, or untracked.
+ *
+ * TRO-548's same-SHA carry-forward path compares COMMITTED SHAs; it has no
+ * visibility into uncommitted content. gate.sh's own full run already
+ * refuses on a dirty tree before G10 is ever reached, but review-capture.ts
+ * can also run standalone, outside that guarantee — this check enforces
+ * the same safety here too, rather than assuming the caller always did.
+ */
+export function isWorkingTreeDirty(cwd: string): boolean {
+  const r = spawnSync("git", ["status", "--porcelain"], { cwd, encoding: "utf8" });
+  return (r.stdout ?? "").trim().length > 0;
+}
+
+/**
  * Parses a positive-integer environment override, falling back to `fallback`
  * on anything that is not a finite positive number.
  *
@@ -580,12 +620,22 @@ function main(): void {
 
     const repoRoot = process.cwd();
     const currentSha = gitHead(repoRoot);
-    const previous = loadPreviousMeta(outDir);
+    const storedPrevious = loadPreviousMeta(outDir);
 
     if (mode === "off") {
       process.stdout.write(JSON.stringify({ status: "skip", detail: "review disabled (--review=off)" }));
       return;
     }
+
+    // A dirty tree means real, uncommitted content exists that no captured
+    // SHA can vouch for — planReview's SHA-based classification cannot see
+    // it. gate.sh's own full run already refuses before G10 on a dirty
+    // tree; this is the same safety net for a standalone invocation.
+    // Treating `previous` as absent forces planReview's unconditional
+    // full-run branch (mode "full", or "carry" with no previous) — never a
+    // carry-forward built on a comparison the dirty tree has invalidated.
+    const dirty = isWorkingTreeDirty(repoRoot);
+    const previous = dirty ? null : storedPrevious;
 
     // Only ever computed in carry mode, with a previous capture at a
     // DIFFERENT sha to diff against — full mode always runs full (below),
@@ -625,7 +675,11 @@ function main(): void {
       baseArgs: plan.baseArgs,
       scopedFromSha: plan.scopedFromSha,
       currentSha,
-      previous,
+      // The real stored capture, dirty tree or not: this is only ever read
+      // by decideCapture's rc!=0 STALE-FALLBACK messaging ("N finding(s)
+      // from an earlier run"), a different question from whether the
+      // carry-forward shortcut above was safe to take.
+      previous: storedPrevious,
       runner: defaultRunner(bin),
       maxAttempts,
       timeoutMs,
@@ -659,6 +713,10 @@ function main(): void {
         sha: currentSha,
         capturedAt: new Date().toISOString(),
         findings: result.attempts[result.attempts.length - 1]?.findings ?? 0,
+        // TRO-548: names this capture as a scoped slice, not a full-branch
+        // review, so `findings` is never misread as the whole branch's
+        // count on a later read of this file.
+        scopedFrom: plan.scopedFromSha,
       };
       writeFileSync(join(outDir, "coderabbit.meta.json"), JSON.stringify(meta, null, 2) + "\n");
     }

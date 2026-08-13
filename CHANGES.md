@@ -16,20 +16,33 @@ capped this by orchestrator discipline. This ticket makes the cap mechanical.
 **What changed.**
 
 1. `scripts/factory/review-capture.ts` adds a `ReviewMode` (`off` | `carry` | `full`) and a
-   `planReview` function. In `carry` mode (the default), a re-review inside one gate run skips
-   CodeRabbit when the diff since the last real capture touches only `CHANGES.md`,
-   `factory/*.jsonl`, or comment-only hunks. No CodeRabbit process runs on this path — the
-   skip saves real time, not just a relabeled result. `gate-result.json`'s `review` entry
-   records the skip honestly: `carried-forward from <sha> — <reason> (<N> finding(s) from
-   that review still stand)`.
+   `planReview` function. `carry` mode (the default) skips a re-review when the diff since the
+   last real capture touches only `CHANGES.md`, `factory/*.jsonl`, or comment-only hunks. No
+   CodeRabbit process runs on this path — the skip saves real time, not just a relabeled
+   result. `gate-result.json`'s `review` entry records the skip honestly: `carried-forward
+   from <sha> — <reason> (<N> finding(s) from that review still stand)`.
 2. `gate.sh` gets a `--review=off|carry|full` flag. `off` never invokes CodeRabbit (an alias
    for the old `--skip-review`, kept working). `carry` is the default. `full` always runs a
-   genuine whole-branch review, ignoring any carried-forward history.
+   genuine whole-branch review, ignoring any carried-forward history. `--fast`/`--skip-review`
+   combined with an explicit, conflicting `--review=` value is now a hard error. The old
+   single-pass loop let the two silently override each other, based on argument order.
 3. When a real, non-boring change exists since the last review, `review-capture.ts` scopes
    CodeRabbit's own diff to `--base-commit <last-reviewed-sha>` instead of `--base
    <BASE_REF>`. The installed CodeRabbit CLI (`coderabbit review --help`, v0.7.2) supports
-   this override directly. CodeRabbit then reviews only what changed since the last real
-   review, not the whole branch again.
+   this override directly. `coderabbit.meta.json` now records `scopedFrom`, so a scoped
+   capture's `findings` count is never misread as the whole branch's total.
+4. A dirty working tree defeats the SHA-based carry-forward check: real, uncommitted content
+   exists that no captured SHA can vouch for. `review-capture.ts` now checks `git status
+   --porcelain` itself and treats a dirty tree as no trustworthy previous capture, forcing a
+   real review. `gate.sh`'s own full run already refused on a dirty tree before G10 ran. This
+   is the same guarantee for a standalone invocation.
+5. `isCommentOrBlankLine`'s `#`/`*` markers now check a boundary, not just a bare prefix. A
+   bare `#` matched a TS/JS private class field (`#cache = new Map();`) as a comment — real
+   code, in this repo's own language. `#` now requires whitespace, `!` (a shebang), or
+   end-of-line after it. A bare `*` now requires `/` or whitespace/end-of-line after it, ruling
+   out a glued multiplication like `*2`. Documented remaining gap: `* 2` (with a space) still
+   reads as a JSDoc continuation line. Telling the two apart needs block-comment state across
+   lines — out of scope for a per-line classifier.
 
 **Never weakened.** The FIRST review a ticket branch gets is always a full `--base
 <BASE_REF>` review, in every mode but `--review=off`. `planReview` returns a full run
@@ -40,11 +53,20 @@ inside one orchestrator pass, matching lessons rule 31's own scope note.
 re-review with `--review=full`. Skip review capture entirely with `--review=off` or the
 existing `--skip-review`.
 
-**Tests.** `scripts/factory/review-capture.test.ts` adds 35 new cases: pure classification
+**Tests.** `scripts/factory/review-capture.test.ts` adds 45 new cases: pure classification
 (`isBoringPath`, `isCommentOrBlankLine`, `parseUnifiedDiff`, `isFileChangeBoring`,
-`isDiffBoring`), the `planReview` decision across every mode and history combination, and one
-real-git-repo integration test (`diffSince`) proving the classification against actual `git
-diff` output, not just hand-built diff text.
+`isDiffBoring`), the `planReview` decision across every mode and history combination, two
+real-git-repo integration suites (`diffSince`, `isWorkingTreeDirty`), and the `#`/`*` boundary
+cases items 4 and 5 above depend on.
+
+**Review round 1 (this ticket's own first full gate review).** CodeRabbit reported 7
+findings. 4 were fixed: items 2's conflict check, 3's `scopedFrom` field, 4's dirty-tree
+guard, and 5's marker-boundary fix all trace to this round. 2 were corrections to this
+entry's own prose: item 1's sentence length, and this section's test count. 1 was dismissed:
+CodeRabbit asked to merge each scoped review's findings back into the stored
+`coderabbit.json` baseline across runs. Declined — that would resurface a prior round's
+already-triaged findings on the very next capture, the exact repeated-review problem this
+ticket exists to stop.
 
 **Rollback.** Run `scripts/factory/gate.sh --review=full` to force the old always-full-review
 behavior on any one run, with no code change. To remove the feature entirely, revert this

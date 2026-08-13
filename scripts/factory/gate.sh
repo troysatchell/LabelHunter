@@ -25,18 +25,45 @@
 #
 set -uo pipefail
 
+# CodeRabbit finding (this ticket's own first full review, round 1): the
+# original single-pass loop let --fast (implies --review=off) and an
+# explicit --review=X silently override one another based on ARGUMENT
+# ORDER — `--review=full --fast` and `--fast --review=full` disagreed on
+# the resulting mode, with nothing to say so. Parsed in two passes now:
+# collect every flag first, THEN resolve — order no longer matters, and a
+# genuine conflict (--fast/--skip-review alongside an explicit
+# --review=<anything but off>) is rejected outright instead of guessed at.
 FAST=0
-REVIEW_MODE="carry"
+SKIP_REVIEW_FLAG=0
+REVIEW_FLAG=""
 for a in "$@"; do
   case "$a" in
-    --fast) FAST=1; REVIEW_MODE="off" ;;
-    --skip-review) REVIEW_MODE="off" ;;
-    --review=off) REVIEW_MODE="off" ;;
-    --review=carry) REVIEW_MODE="carry" ;;
-    --review=full) REVIEW_MODE="full" ;;
+    --fast) FAST=1 ;;
+    --skip-review) SKIP_REVIEW_FLAG=1 ;;
+    --review=off) REVIEW_FLAG="off" ;;
+    --review=carry) REVIEW_FLAG="carry" ;;
+    --review=full) REVIEW_FLAG="full" ;;
     *) echo "unknown arg: $a" >&2; exit 2 ;;
   esac
 done
+
+IMPLIES_OFF=0
+[ "$FAST" = 1 ] && IMPLIES_OFF=1
+[ "$SKIP_REVIEW_FLAG" = 1 ] && IMPLIES_OFF=1
+
+if [ "$IMPLIES_OFF" = 1 ] && [ -n "$REVIEW_FLAG" ] && [ "$REVIEW_FLAG" != off ]; then
+  echo "ERROR: --fast/--skip-review (implies --review=off) conflicts with --review=${REVIEW_FLAG}." >&2
+  echo "       Pass only one: drop --fast/--skip-review, or pass --review=off explicitly." >&2
+  exit 2
+fi
+
+if [ -n "$REVIEW_FLAG" ]; then
+  REVIEW_MODE="$REVIEW_FLAG"
+elif [ "$IMPLIES_OFF" = 1 ]; then
+  REVIEW_MODE="off"
+else
+  REVIEW_MODE="carry"
+fi
 
 WT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
   echo "ERROR: not inside a git repository." >&2; exit 2; }

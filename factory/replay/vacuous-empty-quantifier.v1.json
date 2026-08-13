@@ -1,0 +1,25 @@
+{
+  "rule": "vacuous-empty-quantifier",
+  "version": 1,
+  "report": {
+    "total": 2,
+    "resolvable": 2,
+    "unresolvable": 0,
+    "hits": 2,
+    "recall": 1
+  },
+  "outcomes": [
+    {
+      "ticket": "TRO-464",
+      "file": "src/server/resolver/response.ts",
+      "resolved": true,
+      "hit": true
+    },
+    {
+      "ticket": "TRO-464",
+      "file": "src/server/resolver/queue.ts",
+      "resolved": true,
+      "hit": true
+    }
+  ]
+}

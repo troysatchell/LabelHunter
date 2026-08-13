@@ -77,5 +77,5 @@
 {"ticket": "TRO-544", "attempt": 9, "verdict": "pass", "failedGates": [], "ts": "2026-08-13T00:21:58Z", "note": "orchestrator gate after round-10 triage commit; ts from gate-result ranAt"}
 {"ticket": "TRO-544", "attempt": 10, "verdict": "pass", "failedGates": [], "ts": "2026-08-13T00:26:43Z", "note": "orchestrator gate after round-11 triage commit; ts from gate-result ranAt"}
 {"ticket": "TRO-544", "attempt": 11, "verdict": "pass", "failedGates": [], "ts": "2026-08-13T00:32:43Z", "note": "orchestrator gate after round-12 triage commit; ts from gate-result ranAt"}
-{"ticket": "TRO-544", "attempt": 12, "verdict": "fail", "failedGates": ["regression-test"], "ts": "2026-08-13T01:2x:xxZ-approx", "note": "follow-up branch first gate: config-only change had no test yet; ts APPROXIMATE \u2014 between the two follow-up commits"}
+{"ticket": "TRO-544", "attempt": 12, "verdict": "fail", "failedGates": ["regression-test"], "ts": "2026-08-12T20:20:17-05:00", "note": "follow-up branch first gate: config-only change had no test yet; ts APPROXIMATE \u2014 commit time immediately before the run"}
 {"ticket": "TRO-544", "attempt": 13, "verdict": "pass", "failedGates": [], "ts": "2026-08-13T01:25:51Z", "note": "post-merge follow-up branch (query_timeout hardening); prior attempt on this branch failed regression-test before the pool-config test existed"}

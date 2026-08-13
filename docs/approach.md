@@ -50,6 +50,29 @@ same 32 cases. This is a separate, earlier measurement from the K=3, 36-case acc
 "Measured results" below. That band scores the cascade alone, on the current larger golden set.
 It is not a like-for-like comparison against a Sonnet-only arm.
 
+### Outbound dependencies and degradation
+
+LabelHunter calls one public vendor API while it runs: Anthropic, for label extraction and
+resolution. Its own Postgres database is a private, same-network dependency, not a public
+endpoint behind a firewall allow-list. This distinction matters for TH-R7's exact scenario from
+the interview: a blocked ML endpoint broke half a vendor's features, with no warning to the
+user.
+
+| Dependency | When it is called | Required? | If blocked or unreachable |
+|---|---|---|---|
+| Anthropic API (`api.anthropic.com`) | Every verify request (Haiku extraction). Escalated labels get a second call (Sonnet resolution) — never the per-label happy path. | Yes — the core function. | One designed `SERVICE` state: "LabelHunter could not reach the verification service. Try again." No raw SDK error name reaches the response. No partial record is written. |
+| Postgres database | Every verify request, once extraction succeeds. | Yes — nothing persists without it. | 503, "LabelHunter could not save this verification. Try again." Same-network in production, `localhost` in local dev — not a firewall-allow-list concern in TH-R7's sense. |
+| Google Generative Language API (Gemini/Imagen) | Dev-time only: generating the test-label image set (`pnpm golden:build`). | No — build-time tooling, not part of the deployed app. | Irrelevant at runtime. The running app has no code path that calls Google. |
+
+**If a deployer's firewall blocks `api.anthropic.com`, every verify request fails the same
+honest way.** The Anthropic SDK raises `APIConnectionError` (or `APIConnectionTimeoutError` for
+a connect-level timeout). `src/app/api/verify/route.ts` catches it, along with every other
+extraction failure, and returns the same `SERVICE` panel — a plain message, a retry button, no
+stack trace, no SDK error name. The database transaction only starts after a successful
+extraction, so an unreachable endpoint leaves nothing half-saved. There is exactly one address
+to allow through the firewall, and exactly one honest failure state for when that has not been
+done. Full test and code citations: `docs/error-states.md`.
+
 ### The government warning gets a stricter check
 
 Jenny Park's clearest catch in the brief is the government warning check. It has to be exact:

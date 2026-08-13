@@ -11,8 +11,10 @@ that vendor's features, with no warning to the user.
 
 This document covers the single-label verify flow (`POST /api/verify`). It
 is the error-path walkthrough TH-R20 asks for, and the dependency list
-TH-R7 asks for. LH-064 (`docs/approach.md`, not yet written) will fold this
-into the submission's trade-offs section. This file is the working source.
+TH-R7 asks for. `docs/approach.md`'s "Outbound dependencies and
+degradation" section folds the TH-R7 half of this into the submission's
+graded trade-offs. This file stays the working source and the fuller
+error-path walkthrough for TH-R20.
 
 ## Outbound dependencies (TH-R7)
 

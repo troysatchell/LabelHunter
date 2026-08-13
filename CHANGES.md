@@ -7,25 +7,26 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 ## TRO-574 — TH-R7's dependency degradation table now lives in a graded deliverable (2026-08-13)
 
 **The gap.** TH-R7 asks docs to name every outbound dependency and what the app does when one
-is blocked. README.md named the dependencies but pointed the reader at `docs/error-states.md`
-for the degradation behavior — an internal working document, not a graded deliverable.
-INT-003/INT-004 already ruled that placement matters: a requirement satisfied by content an
-evaluator never opens is not satisfied. Found by the `2026-08-13-postmerge` requirements-audit
-sweep, TH-R7 row.
+is blocked. README.md named the dependencies. It pointed the reader at `docs/error-states.md`
+for the degradation behavior instead of stating it. `docs/error-states.md` is an internal
+working document, not a graded deliverable. INT-003 and INT-004 already ruled that placement
+matters: a requirement satisfied by content an evaluator never opens is not satisfied. The
+`2026-08-13-postmerge` requirements-audit sweep found this gap in the TH-R7 row.
 
-**The fix.** Added an "Outbound dependencies and degradation" section to `docs/approach.md`
-with the full table (Anthropic API, Postgres, the dev-only Google API) and the
-unreachable-endpoint failure behavior, reproduced rather than linked. Repointed README.md's one
-reference at the new section. A CodeRabbit review round caught a real inconsistency in the
-first draft — the Postgres row described one uniform "if blocked" behavior, but the database is
-actually read twice per request (a budget check before extraction, a write after), and only the
-post-extraction write has the designed 503 response; the budget-check read's own failure mode
-is a separate, already-tracked gap (TRO-566). The table now says so. Also corrected a stale
-"not yet written" note in `docs/error-states.md` now that `docs/approach.md` exists.
+**The fix.** This fix adds an "Outbound dependencies and degradation" section to
+`docs/approach.md`. The section has the full table: Anthropic API, Postgres, and the dev-only
+Google API. It states the unreachable-endpoint failure behavior directly, instead of linking to
+it. The fix repoints README.md's one reference at the new section. A CodeRabbit review round
+found a real inconsistency in the first draft: the Postgres row described one uniform "if
+blocked" behavior. The database is actually read twice per request — a budget check before
+extraction, and a write after. Only the post-extraction write has the designed 503 response.
+The budget-check read's own failure mode is a separate, already-tracked gap, TRO-566. The table
+now states this distinction. The fix also corrects a stale "not yet written" note in
+`docs/error-states.md`, since `docs/approach.md` now exists.
 
-**Docs-only.** No code change, no test added — this ticket does not change runtime behavior. Gate
-exception for the regression-test check follows the same G6 docs-only path TRO-483/484/485/570
-used, Troy-confirmed per ticket.
+**Docs-only.** This ticket makes no code change and adds no test. It does not change runtime
+behavior. The regression-test check gets a gate exception, following the same G6 docs-only path
+TRO-483, TRO-484, TRO-485, and TRO-570 used. Troy confirmed the exception for this ticket.
 
 **Confirmed.** `pnpm typecheck`/`pnpm lint`/`pnpm build`/`pnpm test`/`pnpm eval:check` all clean
 at this commit — no code touched, so no behavior to regress.

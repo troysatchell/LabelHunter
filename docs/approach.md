@@ -60,18 +60,18 @@ user.
 
 | Dependency | When it is called | Required? | If blocked or unreachable |
 |---|---|---|---|
-| Anthropic API (`api.anthropic.com`) | Every verify request (Haiku extraction). Escalated labels get a second call (Sonnet resolution) — never the per-label happy path. | Yes — the core function. | One designed `SERVICE` state: "LabelHunter could not reach the verification service. Try again." No raw SDK error name reaches the response. No partial record is written. |
-| Postgres database | Twice per verify request: a budget-check read before extraction, then a write after extraction succeeds. | Yes — nothing persists without it. | The post-extraction write has a designed response: 503, "LabelHunter could not save this verification. Try again." The pre-extraction budget-check read does not yet — a database failure there surfaces as a generic server error, tracked as [TRO-566](https://linear.app/troysatchell/issue/TRO-566). Same-network in production, `localhost` in local dev — not a firewall-allow-list concern in TH-R7's sense either way. |
+| Anthropic API (`api.anthropic.com`) | Every verify request (Haiku extraction). Escalated labels get a second call (Sonnet resolution) — never the per-label happy path. | Yes — the core function. | LabelHunter shows one designed `SERVICE` state: "LabelHunter could not reach the verification service. Try again." No raw SDK error name reaches the response. LabelHunter writes no partial record. |
+| Postgres database | Twice per verify request: a budget-check read before extraction, then a write after extraction succeeds. | Yes — nothing persists without it. | The post-extraction write has a designed response: 503, "LabelHunter could not save this verification. Try again." The pre-extraction budget-check read does not have one yet. A database failure there surfaces as a generic server error, tracked as [TRO-566](https://linear.app/troysatchell/issue/TRO-566). The database runs same-network in production and as `localhost` in local dev — neither is a firewall-allow-list concern in TH-R7's sense. |
 | Google Generative Language API (Gemini/Imagen) | Dev-time only: generating the test-label image set (`pnpm golden:build`). | No — build-time tooling, not part of the deployed app. | Irrelevant at runtime. The running app has no code path that calls Google. |
 
 **If a deployer's firewall blocks `api.anthropic.com`, every verify request fails the same
-honest way.** The Anthropic SDK raises `APIConnectionError` (or `APIConnectionTimeoutError` for
-a connect-level timeout). `src/app/api/verify/route.ts` catches it, along with every other
-extraction failure, and returns the same `SERVICE` panel — a plain message, a retry button, no
-stack trace, no SDK error name. The database transaction only starts after a successful
-extraction, so an unreachable endpoint leaves nothing half-saved. There is exactly one address
-to allow through the firewall, and exactly one honest failure state for when that has not been
-done. Full test and code citations: `docs/error-states.md`.
+honest way.** The Anthropic SDK raises `APIConnectionError` for this case, or
+`APIConnectionTimeoutError` for a connect-level timeout. `src/app/api/verify/route.ts` catches
+it along with every other extraction failure. It returns the same `SERVICE` panel every time: a
+plain message, a retry button, no stack trace, no SDK error name. The database transaction only
+starts after a successful extraction. An unreachable endpoint leaves nothing half-saved. There
+is exactly one address to allow through the firewall. There is exactly one honest failure state
+for when that has not been done. `docs/error-states.md` has the full test and code citations.
 
 ### The government warning gets a stricter check
 

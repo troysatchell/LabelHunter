@@ -265,12 +265,30 @@ function sanitizeUrlForRecord(raw: string): string {
   }
 }
 
+/** Same goal as `sanitizeUrlForRecord`, for the DATABASE_URL log line.
+ * Parses with `new URL` and clears username, password, search, and hash
+ * instead of pattern-matching (review finding, local review round 9) —
+ * a regex misses credential shapes it never anticipated. Keeps the
+ * `***@` marker so a masked log line still shows credentials existed. */
+function sanitizeDatabaseUrlForLog(raw: string): string {
+  try {
+    const u = new URL(raw);
+    const hadCredentials = u.username !== "" || u.password !== "";
+    u.username = "";
+    u.password = "";
+    u.search = "";
+    u.hash = "";
+    return u.toString().replace("://", hadCredentials ? "://***@" : "://");
+  } catch {
+    return "unparseable-database-url-redacted";
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   console.log(`measure.ts: base URL ${sanitizeUrlForRecord(args.baseUrl)}`);
-  console.log(
-    `measure.ts: DATABASE_URL host/db = ${(process.env.DATABASE_URL ?? "unset").replace(/:\/\/[^@]*@/, "://***@").replace(/\?.*$/, "")}`,
-  );
+  const dbUrlRaw = process.env.DATABASE_URL;
+  console.log(`measure.ts: DATABASE_URL host/db = ${dbUrlRaw === undefined ? "unset" : sanitizeDatabaseUrlForLog(dbUrlRaw)}`);
 
   // Everything below this point is validated BEFORE the first real,
   // spend-inducing request (review finding, local review round 3) — a
@@ -480,10 +498,11 @@ async function main(): Promise<void> {
         "computed by the same computeBatchThroughput/computeAutoVerifiedShare the product's batch-results screen uses.",
       "sonnetCallCount is OBSERVED: read directly from the batch_jobs row after the batch reached COMPLETED, and cross-checked " +
         "against the polled API response's totalCount/processedCount.",
-      "cost.haikuCallCount is OBSERVED, not assumed equal to totalCount: it sums batch_queue_items.attempts over this batch's " +
-        "own EXTRACT items, so a retried extraction counts as more than one call. This is an UPPER BOUND on real Haiku calls, " +
-        "not a certainty — attempts increments at claim time, before the real API call happens, so a claim that fails " +
-        "reading or resizing the image before ever reaching Haiku still counts as one attempt.",
+      "cost.haikuCallCount sums batch_queue_items.attempts over this batch's own EXTRACT items. The attempts sum is the " +
+        "OBSERVED quantity; the real Haiku call count is not observed anywhere. Treat cost.haikuCallCount as an UPPER BOUND " +
+        "on real Haiku calls: attempts increments at claim time, before the real API call happens, so a claim that fails " +
+        "reading or resizing the image before ever reaching Haiku still counts as one attempt. A retried extraction also " +
+        "adds one attempt per retry.",
       "cost.derivedTotalUsd is DERIVED: cost.sonnetCallCount is OBSERVED and cost.haikuCallCount is an UPPER BOUND (see the " +
         "note above), each multiplied by the eval harness's measured MEAN per-call cost from scripts/eval/results/eval-report.json " +
         "(see cost.meanCostSource for that file's own measuredAt). " +

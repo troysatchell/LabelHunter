@@ -66,3 +66,4 @@
 {"ticket": "TRO-544", "attempt": 4, "verdict": "fail", "failedGates": ["tests"], "ts": "2026-08-12T23:55:08+00:00", "note": "BatchProgressBrowser poll-flight flake (TRO-547 signature, 6th occurrence); passed standalone"}
 {"ticket": "TRO-544", "attempt": 5, "verdict": "pass", "failedGates": [], "ts": "2026-08-12T18:55:46-05:00", "note": "orchestrator gate after round-6 triage commit; ts APPROXIMATE \u2014 commit time immediately before the run (exact ranAt overwritten by the next gate run)"}
 {"ticket": "TRO-544", "attempt": 6, "verdict": "fail", "failedGates": ["tests"], "ts": "2026-08-13T00:08:59+00:00", "note": "single load-sensitive failure in api/batch/[batchJobId]/route.test.ts, passed standalone \u2014 same load-sensitivity class as TRO-547, different file"}
+{"ticket": "TRO-544", "attempt": 7, "verdict": "pass", "failedGates": [], "ts": "2026-08-13T00:12:40Z", "note": "orchestrator gate after round-8 triage commit; ts from gate-result ranAt"}

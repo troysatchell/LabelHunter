@@ -211,6 +211,13 @@ Two dismissed: a repeat of the re-bullet request (same reason as round 7), and a
 replace the scorecard's one approximate timestamp — no measured value exists for it, and
 inventing one is banned.
 
+Round 9: two fixed, two dismissed. Fixed: the generated haiku note now says the attempts
+sum is the observed quantity and the call count is only bounded; the DATABASE_URL log mask
+now parses with `new URL` and clears username, password, search, and hash, instead of a
+regex. Dismissed: a third re-bullet request (stop rule), and a false positive that read a
+UTC timestamp as future-dated. Review triage for this entry ends here unless a later round
+changes shipped behavior or a factual claim.
+
 **Do NOT.** No column was added to `batch_jobs` — every input already existed. No claim was
 extrapolated past this run's real 32 items to TH-R4's 200-300 label reference.
 

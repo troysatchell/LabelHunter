@@ -113,6 +113,13 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     doesn't repeat what assistive tech already announces (not "The uploaded label photo" — a
     screen reader already says "image"). (`ux-copy`, 2 tickets: TRO-462, TRO-466.)
 
+26b. **Never union-interleave a CHANGES.md merge conflict — rebuild it.** CHANGES.md is
+    append-at-top, so both sides add at the same offset and a union splices entries together
+    (a five-fence corrupted entry shipped this way once; G7 caught it). Resolution: take
+    `origin/main`'s file whole, then insert your branch's own new entry after the preamble.
+    Union-keep-both stays correct for `factory/scorecard.jsonl` and
+    `factory/review-findings.jsonl` — line-oriented, no structure to corrupt.
+    (Second factory session, 2026-08-13, bitten twice.)
 27. **After merging `origin/main` into a ticket branch, run `pnpm install` even when
     `package.json`/`pnpm-lock.yaml` auto-merge with no conflict markers.** A clean auto-merge
     still doesn't touch `node_modules` on disk — a dependency the merge pulled in from a

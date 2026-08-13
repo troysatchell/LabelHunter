@@ -113,6 +113,331 @@ Expand-and-backfill removes the lock. It costs a second column, a backfill, and 
 deploys. That price buys nothing at this table size. `0007`'s own SQL comment carries this
 reasoning. It names roughly one million rows as the point to revisit the decision. That row
 count is derived from the measurements above, not measured.
+## TRO-553 / TRO-560 — gate trust: G6 exception path, honest stale-review reporting (2026-08-13)
+
+Both tickets share one root cause: the gate reported states it could not back with evidence.
+G6 failed every docs-only and test-only ticket even when no red-first case was possible. G10
+could report a `pass`-looking `warn` on a diff nobody had actually reviewed. This PR fixes
+both without weakening either gate.
+
+**Which gate certified this branch.** `scripts/factory/gate.sh` itself changed in this PR.
+Every run quoted below as "green" used the MODIFIED gate — the one this PR ships, not the
+gate that shipped on `main` at `96d59f4`. The final full-gate run at the end of this entry
+uses this PR's own gate to certify this PR's own branch. That is correct, not a conflict of
+interest. It is itself evidence the new code path works.
+
+### TRO-553 — G6 human-approved exception path
+
+**What was found.** `G6: regression-test` in `gate.sh` counted added `it(`/`test(` lines and
+failed the gate at zero. Three real tickets have no such line to add:
+
+1. TRO-547 (test-repair): no production change exists to write a red-first case against.
+2. TRO-472 (CP-3 checkpoint walkthrough): docs only, no test code.
+3. TRO-544 (config-only): resolved differently, by writing a real test. Named here because it
+   is the third occurrence, not because it needed this mechanism.
+
+Three occurrences crossed the factory's own recurrence threshold
+(`factory/config.yaml`'s `recurrenceLadder.gateCheck: 3`).
+
+**What changed.**
+- `scripts/factory/gate-exceptions.ts` (new): `resolveException(ticket, gate, file)` reads
+  `factory/gate-exceptions.json` and returns one of three states — `none` (no matching
+  record), `unapproved` (a record exists but its `approver` field is empty or missing), or
+  `approved` (a record exists with a named approver). Only `approved` lets G6 pass. A CLI at
+  the bottom (`gate-exceptions.ts check --ticket T --gate G`) prints the outcome as one JSON
+  line for `gate.sh` to read.
+- `factory/gate-exceptions.json` (new): the exception record. Each entry names a ticket, a
+  gate id, a reason, an approver, a date, and (for provenance) a PR number. A `$comment` block
+  states the rule in the file itself: only the orchestrator writes an entry, and only after
+  Troy's approval already exists on the named Linear ticket. An agent must never add its own
+  entry — the code enforces only the mechanical half of that (a non-empty approver), not the
+  provenance behind it.
+- `scripts/factory/gate.sh` G6: when zero test cases are added, it now checks
+  `gate-exceptions.ts` before failing. A `none` or `unapproved` result falls straight through
+  to the exact same fail text G6 has always produced. An `approved` result produces a NEW
+  status, `pass-with-exception`, with a detail line naming the approver, the date, and the
+  reason — written to both the console line and `gate-result.json`'s `detail` field, since
+  they share one variable.
+- `scripts/factory/gate.sh` `record()`: added an icon (`ok*`) for `pass-with-exception`, so
+  the console output reads honestly instead of showing a plain `ok` for a gate that did not
+  pass on its own merits.
+
+**Fixture data.** `factory/gate-exceptions.json` encodes three real approved instances (a
+third, TRO-542, arrived mid-PR — see review round 3 below for the G8 wiring it needed):
+- TRO-547 (G6/regression-test, test-only, PR #50): approved by Troy, 2026-08-13. This date
+  and approver are the same fact TRO-553's own ticket description states as pending sign-off
+  — OBSERVED from the ticket text, not inferred.
+- TRO-472 (G6/regression-test, docs-only, PR #18, LH-CP3 checkpoint): approver Troy, date
+  2026-08-12. The date is DERIVED from the ticket's `completedAt` timestamp
+  (2026-08-12T03:12:37Z) — Linear's comment list on TRO-472 is empty, so no explicit dated
+  approval comment exists to cite directly. Flagging this rather than presenting it as equally
+  certain as TRO-547's record.
+- TRO-542 (G8/eval-not-regressed): approver Troy, date 2026-08-13. OBSERVED — supplied directly
+  by the orchestrator mid-PR, with the reason quoted verbatim in review round 3 below.
+
+**Byte-identical behavior for ordinary tickets.** A ticket with no record in
+`gate-exceptions.json` gets `state: "none"` from `resolveException`, and G6 falls through to
+literally the same fail string as before this PR. `gate-exceptions.test.ts` proves this
+directly, including for TRO-553 itself (this ticket's own branch has no exception record —
+it earns G6 the ordinary way, by adding real test cases).
+
+### TRO-560 — honest stale-review reporting, kept error detail
+
+**What was found.** G10 (review capture) fell back to a previous run's findings on `rc!=0`.
+Nothing signaled the fallback was stale. The line read like a clean pass on a diff nobody had
+actually reviewed. TRO-508's comment (2026-08-13) traced a real occurrence: the coderabbit CLI
+reports its error as a `{"type":"error",...}` JSON line on STDOUT, not stderr. `gate.sh`
+pointed readers at `.factory/coderabbit.err` instead — the exact file the CLI leaves empty on
+this failure. The real diagnostic sat unread, one file over.
+
+**What changed.**
+- `scripts/factory/review-capture.ts` (new): the full G10 orchestration, extracted out of
+  `gate.sh` so its decision logic is unit-tested, matching the pattern
+  `scripts/factory/defect-gates/run.ts` already established for G11.
+  - `parseCoderabbitOutput` reads the CLI's JSONL stdout directly and keeps the last
+    `type: "error"` line. This is the fix for the empty-`.err` defect.
+  - `decideCapture` returns one of three states:
+    1. Fresh `pass` (rc=0).
+    2. `warn` — no fallback exists. Names the real failure reason.
+    3. `warn` — a stale fallback exists. Names the SHA the old findings were captured at,
+       names current `HEAD`, and says "this diff has NOT been reviewed", verbatim, so grep
+       or a human eye catches it immediately.
+
+    A re-run at the SAME sha (nothing changed since the last real capture) says "still
+    current" instead. Genuinely reviewed content must never read as stale.
+  - `runCapture` retries only a `rate_limit`-typed error. Retries are bounded by
+    `CR_MAX_ATTEMPTS` (default 3 total attempts, 2 retries), with exponential backoff
+    (`backoffMs`, default 2s/4s, capped at 20s). Any other failure type does not retry.
+    Unbounded retries were explicitly out of scope for this ticket.
+  - The CLI writes `.factory/coderabbit-capture.json` on every run, success or failure. It
+    records each attempt's rc, timeout flag, finding count, and parsed error, plus the final
+    attempt's raw stderr. Nothing is thrown away.
+  - `.factory/coderabbit.meta.json` (new) records the SHA and finding count of the last
+    SUCCESSFUL capture. `decideCapture` compares this against `HEAD` to decide fresh vs.
+    stale.
+- `scripts/factory/gate.sh` G10: replaced with a single call to
+  `review-capture.ts`, parsing its one-line JSON result the same way G11 already parses
+  `defect-gate.json`. G10 stays advisory — `record review "${CR_STATUS}" ...` only ever
+  receives `pass` or `warn` from `decideCapture`, never `fail`.
+
+**Forced-failure run (real, not simulated in this prose).** Ran `review-capture.ts` against a
+fake `coderabbit` binary reproducing TRO-508's exact artifact (rate_limit error on stdout,
+empty stderr, rc=1). Run outside this repo; output not committed.
+
+```console
+$ PATH=<fake-bin>:$PATH CR_MAX_ATTEMPTS=2 CR_BACKOFF_BASE_MS=50 CR_TIMEOUT_MS=5000 \
+    tsx scripts/factory/review-capture.ts --base main --out-dir <tmp>
+```
+
+```json
+{"status":"warn","detail":"review did not complete (capture failed: rc=1, rate_limit: Rate limit exceeded — see .factory/coderabbit-capture.json)"}
+```
+
+`coderabbit-capture.json` retained both attempts' full `rate_limit` diagnostic. `coderabbit.err`
+was empty, exactly as in the real TRO-508 report. It is no longer the only place a reader is
+told to look.
+
+A second run seeded `coderabbit.meta.json` with findings captured at a different SHA:
+
+```json
+{"status":"warn","detail":"5 finding(s) from an earlier run at a1b2c3d — HEAD is now 96d59f4; this diff has NOT been reviewed (capture failed: rc=1, rate_limit: Rate limit exceeded — see .factory/coderabbit-capture.json)"}
+```
+
+`coderabbit.json` and `coderabbit.meta.json` were left untouched. A failed attempt's empty
+output never overwrites the stale fallback.
+
+### Tests
+
+- `scripts/factory/gate-exceptions.test.ts` (15 cases): `resolveException` state transitions
+  (`none`/`unapproved`/`approved`); an empty, whitespace-only, or omitted approver field never
+  reads as approved; `parseExceptionsFile` rejects a document with no `exceptions` array;
+  `formatApprovedNote`'s exact output is pinned (with and without a PR number); five tests
+  load the REAL committed `factory/gate-exceptions.json` and assert both TRO-547 and TRO-472
+  resolve to `approved`, while an unlisted ticket (TRO-553 itself) resolves to `none`.
+- `scripts/factory/review-capture.test.ts` (29 cases): `parseCoderabbitOutput` against the
+  literal JSONL text TRO-508's comment quoted; `decideCapture`'s three states, including the
+  same-SHA "still current" case and a partial/truncated capture that must never persist;
+  `backoffMs` growth and cap; `parsePositiveIntEnv`'s fallback on an unset, empty, zero,
+  negative, or non-numeric value; `runCapture`'s retry bound, its refusal to retry a
+  non-rate-limit failure, and its clamp to at least one attempt.
+- Red confirmed for the right reason before implementation: both suites failed with
+  `Cannot find module` (the modules did not exist yet), not an assertion or import typo.
+  Green after implementation and after the review round below: 44/44 passing, confirmed
+  again inside the full gate run below.
+
+### Review round 1 — 12 findings, 8 fixed, 4 dismissed
+
+A completed (not rate-limited) `gate.sh` run against this branch surfaced 12 real findings.
+All 12 are in `factory/review-findings.jsonl`, tagged TRO-553 or TRO-560 by subject file.
+
+**Fixed:**
+- `gate-exceptions.ts`'s CLI arg parser read a following flag as a value when the value was
+  missing (`--ticket --gate x` would have set `ticket` to `"--gate"`). Now a value starting
+  with `--` reads as missing.
+- `formatApprovedNote` had no pinned test even though `gate.sh` now consumes its exact output.
+  Added two tests.
+- `gate.sh` reconstructed the pass-with-exception note a second time in an inline script,
+  instead of using `gate-exceptions.ts`'s own `formatApprovedNote` — two independent templates
+  for one string. The CLI now emits the formatted `note` field; `gate.sh` reads it directly.
+- `Number(process.env.CR_MAX_ATTEMPTS ?? 3)` resolves an empty-string env var to `0`, not
+  `NaN` — a `maxAttempts` of `0` would have skipped the retry loop's body entirely and
+  reported `warn` without ever invoking `coderabbit`. Added `parsePositiveIntEnv` and clamped
+  `maxAttempts >= 1` inside `runCapture` itself, so a direct caller cannot bypass it either.
+- `process.exit(0)` immediately after `process.stdout.write()` can truncate a pending pipe
+  write before `gate.sh`'s command substitution reads it. `main()` now returns naturally on
+  success; the catch path sets `process.exitCode = 1` instead of calling `process.exit(1)`.
+- No test asserted that a partial capture (rc != 0 with `findings > 0`) is never persisted.
+  This is not hypothetical: the full `gate.sh` run below hit exactly this case for real —
+  the CLI's own timeout killed a capture that had already streamed 3 finding-type lines.
+  Added the test.
+- Two CHANGES.md prose fixes: code fences gained language tags and blank-line spacing, and an
+  ellipsis in a command example was replaced with the real env vars (ASD-STE100's no-ellipsis
+  rule). Separately, the `decideCapture`/`runCapture` bullets exceeded the 25-word sentence
+  limit; split into shorter sentences and a numbered list.
+
+**Dismissed:**
+- A claim that `gate-exceptions.test.ts` has 12 cases and 32/32 pass overall. Wrong: the
+  authoritative count, from `vitest --reporter=verbose`, was 13 cases and 33/33 passing at
+  the time of the finding (now 15/44 after this round's additions). `false-positive-review`.
+- Writing `coderabbit.err` only when `persistFresh` is true or stderr is non-empty, to match
+  `coderabbit.json`'s freshness handling. The ORIGINAL gate.sh also overwrote `.err` on every
+  run, pass or fail — the suggestion would be a new behavior, not a restoration, and `.err` is
+  deliberately just "latest attempt's raw stderr," never read by decision logic.
+- Replacing `__dirname` with `fileURLToPath(import.meta.url)` in the test file. `__dirname`
+  already works under this repo's vitest+ESM setup, with two existing precedents
+  (`scripts/latency/deployed-artifact.test.ts`, `src/server/warning/ocr-startup.test.ts`).
+- Replacing the `spawnSync("sleep", ...)` backoff with `Atomics.wait`. A deliberate simplicity
+  and portability choice — retries are rare (at most 2), so the subprocess overhead is
+  negligible, and there is no functional defect.
+
+`node scripts/factory/review-ledger.mjs report`: every category these 12 findings landed in
+(`correctness`, `boundary-validation`, `test-coverage`, `prose-style`, `false-positive-review`,
+`resource-timeout`) was already past the 3-ticket gate-check threshold before this PR —
+TRO-508's existing backlog, not a new crossing this PR needs to escalate.
+
+### Review round 2 — 5 findings, 3 fixed, 2 dismissed per lessons rule 31
+
+A second completed review capture, against the round 1 commit, found 5 more. Two real bugs
+in round 1's own fixes, one real gap in `gate.sh`, and two prose nitpicks on already-edited
+CHANGES.md text.
+
+**Fixed:**
+- `parsePositiveIntEnv` checked `n > 0` before flooring. A positive fraction below 1 (for
+  example `CR_TIMEOUT_MS=0.5`) passed that check, then floored to `0` — the exact value the
+  function exists to refuse. Now checks the FLOORED value's sign. Added a `"0.5"` test.
+- `runCapture`'s `Math.max(1, Math.floor(opts.maxAttempts))` clamp does not handle `NaN` or
+  `Infinity` from a direct caller: `Math.max` with `NaN` is always `NaN` (the retry loop then
+  runs zero times — the exact bug this clamp exists to prevent), and `Infinity` produces an
+  unbounded retry loop, out of scope for this ticket. Added a `Number.isFinite` guard that
+  falls back to the default attempt count on either. Added `NaN` and `Infinity` tests.
+- `gate.sh`'s G6 had no branch for `gate-exceptions.ts`'s own `"error"` state (a malformed
+  `factory/gate-exceptions.json`). It silently fell through to the generic no-test-added
+  message instead of naming the real parse error. Added an `elif` branch; verified by hand
+  against a deliberately malformed file.
+
+**Dismissed, per lessons rule 31:** two more 25-word sentence-length findings against
+CHANGES.md prose already edited in round 1. Neither changes shipped behavior or a factual
+claim — the recurring nitpick-on-prose pattern rule 31 names by name (TRO-544: 13 rounds, real
+substance ending at round 12). Stopping the review loop here rather than fix-iterating prose a
+third time; the two real code findings in this same round were fixed above, so this is not a
+blanket "ignore round 2" — only the two prose items are deferred.
+
+Tests after round 2: 47/47 (44 from round 1, plus the 3 new cases above).
+
+### Review round 3 — 7 findings, 3 fixed, 4 dismissed per lessons rule 31
+
+A third live review capture, against the round 2 commit, found 7 more. Four were the same
+25-word sentence-length pattern on already-edited prose (dismissed, per rule 31 again). Three
+were real: one MAJOR finding on the mechanism's own core trust property.
+
+**Fixed:**
+- **`gate-exceptions.json` was read from the ticket branch's own working tree, not from
+  `BASE_REF`.** This meant an agent COULD self-approve: edit its own branch's copy, add an
+  entry naming itself `"approver": "Troy"`, and G6 would honor it — directly contradicting
+  this PR's own "agents must not be able to self-approve" requirement. Not hypothetical:
+  manually demonstrated an uncommitted, fabricated `TRO-9999` entry resolving `approved` when
+  read from the working tree, and `none` when read the fixed way. Fixed by materializing
+  `GATE_EXCEPTIONS` from `BASE_REF` before G1 runs — the exact discipline `gate.sh` already
+  uses for the quarantine baseline, with no working-tree fallback (unlike quarantine's, since
+  the trust property here matters more than quarantine's bootstrap convenience). An entry now
+  takes effect only once the commit adding it has already landed on the base branch.
+- `runCapture`'s `Number.isFinite` guard (round 2) blocked `NaN`/`Infinity` but had no upper
+  bound on a large finite value. `CR_MAX_ATTEMPTS=1000` would have been accepted as "bounded,"
+  technically true but not operationally — against the ticket's own "unbounded retries are
+  not in scope" line. Added `MAX_REASONABLE_ATTEMPTS = 10`, a hard ceiling regardless of what
+  a caller requests.
+- `loadPreviousMeta` did a bare `as CaptureMeta` type assertion with no runtime shape check
+  (lessons rule 13). A corrupted or hand-edited `coderabbit.meta.json` could produce a
+  half-populated object and an `"undefined finding(s) at undefined"` detail string. Added
+  `isCaptureMeta`, a runtime guard that returns `null` on any schema mismatch.
+
+**Dismissed, per lessons rule 31:** four more 25-word sentence-length findings on CHANGES.md
+prose already restructured in rounds 1 and 2. None changes shipped behavior or a factual
+claim.
+
+**A third exception instance, added mid-round by the orchestrator (TRO-542, G8).** While this
+round was in progress, the orchestrator supplied a third real, human-approved exception:
+TRO-542, gate `eval-not-regressed` (G8), approved by Troy 2026-08-13. Reason: the committed
+accuracy baseline (81.3%) sits at the top of TRO-543's measured variance band
+(78.1%-81.3%), so an honest run of unchanged code can fail the single-run comparison on
+variance alone, compounded by 31-vs-32-case corpus drift (TRO-556) — TRO-561 is the systemic
+fix. `resolveException` already took `gate` as a parameter, so adding the record cost nothing
+structurally. What DID need building: G8's `gate.sh` block never called the exception
+mechanism at all — G6 was its only caller. Rather than duplicate G6's ~15-line inline check a
+second time (the exact "two independent templates" shape review round 1's finding #9 already
+flagged once), extracted a shared `check_gate_exception <result_id> <gate_id>
+<fallback_detail>` function, called from both G6 and G8. Manually verified both directions:
+TRO-542 against `eval-not-regressed` resolves `pass-with-exception`; TRO-542 checked against
+`regression-test` (the wrong gate) resolves `none` and fails — the exception is gate-scoped,
+not ticket-scoped. Two new tests load the real committed file and assert both.
+
+Tests after round 3: 55/55 (17 in `gate-exceptions.test.ts`, 38 in `review-capture.test.ts`).
+
+### Not this ticket's job
+
+- The GitHub-App-level "pass — Review rate limited" surface (TRO-508's comment, PR #53) is a
+  different system (the GitHub status API), not `gate.sh`'s CLI capture — out of scope here.
+- Canonicalizing the ledger's fragmented category slugs (`prose-style` vs.
+  `prose-style-nitpick`, etc., flagged in TRO-508's 2026-08-13 comment) is TRO-508's own
+  close-out, not this PR's.
+
+### Gate evidence
+
+Full `gate.sh` run at the end of this PR (this PR's own modified gate, per the note above):
+verdict quoted in the PR body. Three full runs happened during development, in order:
+
+1. First full run hit the CLI's own 360s timeout on G10 (a real, non-simulated demonstration
+   of the partial-capture case round 1's test now covers).
+2. Second full run's review step completed for real and produced the 12 findings in review
+   round 1 above — itself additional evidence this PR's own G10 fix works on a live capture.
+3. Third full run's review step completed again and produced the 5 findings in review round 2
+   above.
+
+The FINAL full run before this PR opens uses `--skip-review`, per lessons rule 31: round 2's
+only remaining findings were prose nitpicks on already-edited text, and re-running review a
+third time would only continue that loop, not add evidence. `typecheck`/`lint`/`build`/
+`tests`/`regression-test`/`changes-entry`/`scope`/`defect-gate` all still run in that final
+call — only the live review capture is skipped. `--fast` inner-loop runs were used throughout
+development; `build` and `review` are `skip` under `--fast` by design, not evidence of
+anything.
+
+**Known non-blocking failure: G8 (`eval-not-regressed`) fails on this branch, for a reason
+this PR did not introduce and is not this PR's job to fix.** After merging `origin/main`
+twice mid-PR (to pick up two sibling tickets' merges), G8 started failing:
+`golden-set/manifest.json`'s content moved since the committed baseline was established
+(TRO-516's already-merged corpus edit), and 3 accuracy metrics read as regressed against that
+stale baseline. VERIFIED this is pre-existing on `main` itself, not caused by this PR: ran
+`pnpm eval:check` in a clean `git worktree add` checkout of `origin/main` HEAD (`350f21f`,
+detached, no branch changes at all) and got the byte-identical 5-problem failure. This
+branch's own commits never touch `golden-set/`, `scripts/eval/`, or any router/resolver file
+— every file G8's failure cites arrived via the `origin/main` merges, not this PR's own work.
+This is exactly the corpus/baseline-drift class TRO-556 and TRO-561 already track (TRO-561's
+own worktree exists, freshly provisioned against the same `main` commit, as this entry is
+written) — and exactly the scenario TRO-542's exception record above documents, but that
+record is scoped to ticket TRO-542 alone; this ticket has no matching record, and this PR's
+own non-negotiable ("agents must not be able to self-approve") means it cannot add itself
+one. Reported here rather than hidden or worked around. The true, complete, final verdict —
+including this failure — is quoted verbatim in the PR body and this session's final report.
 ## TRO-529 — LH-024 · Real-label reference cases + reference provenance record (2026-08-13)
 
 Advances TH-R10, TH-R12. Every one of the golden set's 31 cases was synthetic. Each was an
@@ -848,6 +1173,7 @@ pnpm vitest run scripts/e2e/fixtures.test.ts
 
 **Rollback.** Revert this commit. `buildManifestCsv`'s call sites (`e2e/batch.spec.ts`,
 `scripts/e2e/fixtures.test.ts`) do not change their own code either way.
+
 ## TRO-516 — C5 execution: merge case-24 into case-23 (2026-08-13)
 
 **Troy's ruling (TRO-516 comment, 2026-08-13):** merge case-24 into case-23. Both cases print

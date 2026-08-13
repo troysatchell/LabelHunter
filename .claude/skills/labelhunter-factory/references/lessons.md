@@ -169,6 +169,14 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     the gate just to re-review. (TRO-544: 13 rounds, 45 findings; real substance ended at
     round 12, and the last round was seven comment-shortening requests against stable files.)
 
+32. **Any ticket that changes `golden-set/` content runs the re-baseline protocol as part of
+    its own work:** `pnpm eval:variance -- --live --full --repeats=3 --establish-baseline`
+    (~$1 at 36 cases), committing the new band with its own golden-set SHA and manifest hash.
+    The `stale-baseline` failure class in `eval:check` is the routine detector — never a
+    reason for a gate exception, and never fixed by editing `baseline.json` by hand. No
+    "final corpus" exists; the band always names which corpus it measured. (TRO-561,
+    2026-08-13 — ended a six-exception day.)
+
 ## Mechanized (no longer prompt-dependent)
 
 - `gate.sh` refuses (`exit 2`) on an uncommitted worktree before running anything (unless

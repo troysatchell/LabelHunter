@@ -4,6 +4,45 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-578 — design tokens and one visual hierarchy (2026-08-13)
+
+**The point.** Troy: "spacing and hierarchy are incredibly important and scream even louder
+in a small application like this." Post-reskin, the system was tokenized for color only.
+Twelve ad hoc font sizes, twelve gap values, two unnamed radii, and weight-700-everywhere
+carried no hierarchy. This ticket gives the app one visual system and a gate that keeps it.
+
+**The system.**
+1. Three token families in `:root`, word-named like the color tokens: six `--space-*` steps,
+   seven `--font-*` sizes, two `--radius-*` values. 90 declarations migrated. The contrast
+   test's parser reads only hex-valued tokens, so the new tokens are invisible to it by
+   design.
+2. One hierarchy rule: weight 700 belongs to the page title and the verdict banner — the one
+   thing per screen that must win. Labels, badges, and reasons use 600. All small muted text
+   uses one size, `--font-meta`.
+3. The three verdict-card families (`.checklist-row`, `.review-field`, `.detail-field`) now
+   share one icon size and one value-label treatment. The drifted uppercase/letterspaced
+   variant is gone. The class names stay — the drift was in the values, and renaming three
+   component families would churn every TSX for no visual gain.
+4. Navigation reads as navigation: inside `.page__nav-links`, links drop the button chrome
+   and render underlined. Each screen has exactly one button-shaped primary action (TH-R3).
+5. Native radios take `accent-color: var(--color-primary)` — they rendered in each
+   browser's own default color before (orange in Chrome), the one element outside the
+   palette. Found by the before-screenshot, not the code audit.
+
+**The gate.** `src/app/globals-tokens.test.ts`: no raw rem literal in any `font-size`,
+`gap`, or `border-radius` declaration outside `:root`; every referenced token is defined;
+exactly two weight-700 owners. A new hardcoded value fails the unit suite instead of
+waiting for a reviewer.
+
+**Rollback.** Revert the PR. The stylesheet returns to literal values; no component markup
+changed except none — this is a CSS-and-tests-only diff.
+
+**Confirmed.** Token gate and contrast test green (13 tests). All 374 pre-existing app
+tests pass unchanged. `pnpm typecheck` is clean. Before/after screenshots of the verify,
+review-queue, and batch pages captured against the running app and attached to the PR.
+The visible deltas match the intent: blue radios, link-shaped navigation, one bold element
+per screen. **Not measured:** none owed — no runtime behavior changed.
+
 ## TRO-576 — the verify form fills itself from the label photo (2026-08-13)
 
 **The point.** Sarah: "My agents spend half their day doing what's essentially data entry

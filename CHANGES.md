@@ -17,27 +17,29 @@ produces its named reason at the router stage. The eight cases together produce 
 reviewReason: `MISSING_REQUIRED_FIELD`, on case-12.
 
 **Premise correction — the report this ticket cites moved.** TRO-541 was filed against a
-2026-08-12 13:26 run. TRO-516 committed a fresh full-corpus run after that
-(`measuredAt: "2026-08-13T01:47:56.655Z"`, already merged when this worktree was provisioned)
-and, as part of its own C1/C2 correction, changed case-25's manifest expectation from
-REVIEW/LOW_MODEL_CONFIDENCE to PASS/null — the same false claim this ticket removes from the
-comment, confirmed independently from the corpus side. This entry cites the current committed
-run, not the stale one the ticket named. The underlying finding stands: 0 of 32 cases produce
-`LOW_MODEL_CONFIDENCE` or `AMBIGUOUS_NET_CONTENTS` at the router stage, in this run.
+2026-08-12 13:26 run. TRO-516 committed a fresh full-corpus run after that. Its `measuredAt` is
+`"2026-08-13T01:47:56.655Z"`. It was already merged when this worktree was provisioned. As part
+of its own C1/C2 correction, TRO-516 changed case-25's manifest expectation. The old expectation
+was REVIEW/LOW_MODEL_CONFIDENCE. The new one is PASS/null. That is the same false claim this
+ticket removes from the comment. TRO-516 confirms it independently, from the corpus side. This
+entry cites the current committed run, not the stale one the ticket named. The underlying
+finding stands: 0 of 32 cases produce `LOW_MODEL_CONFIDENCE` or `AMBIGUOUS_NET_CONTENTS` at the
+router stage, in this run.
 
-**Scoped to a named run, not a structural claim.** A concurrent live run (TRO-543's variance
-sweep, 2026-08-13) produced REVIEW/LOW_MODEL_CONFIDENCE on case-07 — proof the reviewReason is
-reachable, just not present in the router-stage results of the one committed run this ticket's
-evidence comes from. The rewritten comment names the run and date on every such claim. It does
-not say the pipeline "cannot" produce these reasons, only that this one measured run did not.
+**Scoped to a named run, not a structural claim.** A concurrent live run produced
+REVIEW/LOW_MODEL_CONFIDENCE on case-07. That run is TRO-543's variance sweep, dated 2026-08-13.
+It proves the reviewReason is reachable. It was just not present in the router-stage results of
+the one committed run this ticket's evidence comes from. The rewritten comment names the run and
+date on every such claim. It does not say the pipeline "cannot" produce these reasons — only
+that this one measured run did not.
 
 **Fix.**
 - `args.ts` case-25/case-17 list lines: now state what each case is in the sample for (script
   brand font; front-label glare), naming no reviewReason.
 - Deleted the "swapped case-23 for case-25 to keep this sample covering every reviewReason
   family" sentence.
-- Replaced the "exercises every reviewReason family" claim with the measured result above, plus
-  a named gap: no case in the golden set produced `LOW_MODEL_CONFIDENCE` or
+- Replaced the "exercises every reviewReason family" claim with the measured result above.
+- Added a named gap: no case in the golden set produced `LOW_MODEL_CONFIDENCE` or
   `AMBIGUOUS_NET_CONTENTS` in that run.
 - "31-case" / "31 cases today" corrected to 32 — the manifest's real, current count.
 - Kept the TRO-469 / case-23 history verbatim. It is a separate, still-correct decision.
@@ -53,7 +55,7 @@ manifest, via `loadGoldenSetManifest`. No assertion reads `args.ts`'s source tex
 Red run, map seeded with the old comment's claims (case-17: `LOW_IMAGE_QUALITY`, case-25:
 `LOW_MODEL_CONFIDENCE`):
 
-```
+```text
 ❯ scripts/eval/args.test.ts (41 tests | 1 failed)
   × matches the committed report's router-stage actualReviewReason for every
     DEFAULT_SAMPLE_CASE_IDS case
@@ -64,15 +66,15 @@ Red run, map seeded with the old comment's claims (case-17: `LOW_IMAGE_QUALITY`,
 
 Green run, map corrected to `null` for both:
 
-```
+```text
  Test Files  1 passed (1)
       Tests  41 passed (41)
 ```
 
 **Evidence.** The string "31" no longer appears in `args.ts`. `pnpm test`: 158 files, 1911
-tests, all pass — includes `warning-golden-cases.test.ts` and `report-validation.test.ts`,
-neither pinning case-25 or case-17, neither edited. `pnpm typecheck`, `pnpm lint`: clean. No
-live API call made. Every number above is read from the already-committed `eval-report.json`.
+tests, all pass. This includes `warning-golden-cases.test.ts` and `report-validation.test.ts`.
+Neither pins case-25 or case-17. Neither file was edited. `pnpm typecheck`, `pnpm lint`: clean.
+No live API call made. Every number above is read from the already-committed `eval-report.json`.
 
 **Known, not this ticket's job.** case-17's manifest expectation (REVIEW/LOW_IMAGE_QUALITY)
 still mismatches the committed run's router-stage result (PASS/null). This is already tracked:

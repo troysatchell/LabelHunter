@@ -107,6 +107,64 @@ hop can see past a local assignment. Recorded as measured; not fixed this round.
 statistically meaningful result on its own — see `factory/replay/
 vacuous-empty-quantifier.v1.json` and the task-6 report for the full analysis.
 
+**Round 3 review fix — three precision exemptions, encoded in the rule.** Round 2 raised
+the repo-wide count from 7 to 12 and judged all 5 new sites non-genuine. That put precision
+at 7/12 (58%), below the plan's own 80% bar for a rule to ship blocking (spec §12.3). Each
+non-genuine class is now an exemption encoded in the rule itself, not an allowlist entry —
+an exemption helps every future site; an allowlist entry helps only the one it names (spec
+§12.2).
+
+1. **Seeded `.reduce()` is exempt.** `.reduce(fn, seed)` with 2 or more arguments cannot be
+   vacuous — the seed is the defined answer for an empty collection, not a wrong one. An
+   unseeded `.reduce(fn)` is still checked: it throws on an empty collection, a real defect.
+   Closes 3 sites (`benchmark.ts` ×2, `check.ts` ×1).
+2. **`.some` is removed from the checked method set — a narrowing of what this rule means,
+   not a bug fix.** Vacuous truth is a check that claims a property HOLDS when nothing was
+   examined. `[].every(p)` is `true`: it claims every element satisfied `p`, over zero
+   elements actually checked — the defect class this rule is named for. `[].some(p)` is
+   `false`: it claims "no matching element found," the safe, usually correct default for an
+   empty collection. A bare `.some()` is not a vacuous-truth defect, so it no longer
+   qualifies. **Known gap, recorded and not covered:** the negated form, `if
+   (!xs.some(bad))`, IS a vacuous assertion — "no bad items" holds trivially when there are
+   no items. This rule does not detect a negated `.some()`. Closes 3 of the original 7
+   sites (`field-resolution.ts` ×2, `label-blockers.ts` ×1) plus 2 of round 2's 5
+   (`pairing.ts`'s `else if` branch — TRO-464-request, see below — and the rule's own
+   internal `.some()`).
+3. **The rule's own directory is excluded from the repo-wide backlog measurement**
+   (`scripts/factory/defect-gates/` — a linter does not lint itself; its own `.some()` over
+   internal AST data is not a target-code defect). Already redundant with (2) for today's
+   one self-referential site, but this is the standing policy for any future rule this
+   directory adds.
+
+**A second known gap, also recorded and not covered this round:** an unguarded quantifier
+guarded only by an *enclosing* branch condition — `else if (xs.length > 1) { ... xs.some(p)
+... }` — is provably safe (the branch already establishes non-emptiness), but
+`isProvablyNonEmpty` only recognizes a *preceding* early-exit guard in the same block, not
+an enclosing branch condition. `pairing.ts:70` was this shape; removing `.some` closes it
+as a side effect, but the underlying gap in `isProvablyNonEmpty` is unfixed — a plain `if
+(xs.length > 1) { return xs.every(p); }` (no `else`) is already handled correctly today; the
+`else if` variant is not.
+
+4 new tests (seeded reduce not flagged, unseeded reduce still flagged, `.some` not flagged,
+`.every` still flagged as a regression guard). 15 tests total, all pass.
+
+**Re-measured backlog: 4, down from 12 (was 7 before round 2).** All 4 read by hand:
+`report-validation.ts:95` (`.every(isReliabilityBucket)`), `report-validation.ts:100`
+(`isStringArray`'s `.every()`), `review-queue-client.ts:108` (`isReviewQueueListResponse`'s
+`.every()`), `response.ts:186` (`deriveOutcome`, the corpus-confirmed `TRO-464` defect).
+Judged genuine, matching this rule's own "core case, keep" standard for a bare `.every()`
+reaching a real decision with no guard. Two of the four (`isStringArray`,
+`isReviewQueueListResponse`) validate array *shape*, where an empty array trivially and
+arguably-correctly satisfies "every element has type X" — flagged here as an honest,
+disclosed doubt, not resolved, and not exempted: unlike seeded `.reduce()` or `.some()`,
+whether an empty `caseIds`/`items` array should be accepted is a caller-specific business
+question this AST rule cannot settle, so both stay reported for human triage rather than
+silently auto-exempted. Precision on this measurement: 4/4 among reported findings.
+
+**Replay recall unaffected: still 1.0 (2/2).** Both corpus rows are `.every` cases;
+removing `.some` from the checked set does not touch them. Confirmed by re-running the
+replay, not assumed.
+
 **How to run it.**
 ```bash
 source .factory-env && pnpm test -- scripts/factory/defect-gates/rules/vacuous-empty-quantifier.test.ts

@@ -4,7 +4,22 @@ import { enclosingFunctionName, lineOf, parse, walk } from "../ast";
 import { violationIdentity } from "../identity";
 import type { Finding, RuleContext, RuleMeta } from "../types";
 
-const QUANTIFIERS = new Set(["every", "some", "reduce"]);
+/**
+ * `.some` is deliberately excluded — review round 3.
+ *
+ * Vacuous truth means a check claims a property HOLDS when nothing was
+ * examined. `[].every(p)` is `true`: it claims every element satisfied
+ * `p`, over zero elements actually checked. That is the defect class this
+ * rule names. `[].some(p)` is `false`: it claims "no matching element
+ * found," which is the safe, usually correct default for an empty
+ * collection. A bare `.some()` call is not a vacuous-truth defect.
+ *
+ * Known gap, not covered by this rule: the NEGATED form, `if
+ * (!xs.some(bad))`, IS a vacuous assertion — "no bad items" holds
+ * trivially when there are no items at all. This rule does not detect a
+ * negated `.some()`. That gap is recorded here, not silently dropped.
+ */
+const QUANTIFIERS = new Set(["every", "reduce"]);
 
 const meta: RuleMeta = {
   id: "vacuous-empty-quantifier",
@@ -165,6 +180,12 @@ function checkSource(filePath: string, text: string, _ctx: RuleContext): Finding
     if (!ts.isPropertyAccessExpression(node.expression)) return;
     const name = node.expression.name.text;
     if (!QUANTIFIERS.has(name)) return;
+
+    // Exemption, not an allowlist entry: a seeded .reduce(fn, seed) cannot
+    // be vacuous. The seed IS the defined result for an empty collection —
+    // review round 3. An unseeded .reduce(fn) is still checked below: it
+    // throws on an empty collection, a real defect this rule should catch.
+    if (name === "reduce" && node.arguments.length >= 2) return;
 
     const receiver = node.expression.expression;
     if (isProvablyNonEmpty(receiver, sourceFile)) return;

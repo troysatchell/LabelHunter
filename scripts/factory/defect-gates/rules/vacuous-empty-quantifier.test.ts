@@ -121,4 +121,40 @@ describe("vacuous-empty-quantifier", () => {
     `);
     expect(findings).toEqual([]);
   });
+
+  it("does not flag a seeded .reduce — the seed is the defined answer on empty", () => {
+    const findings = check(`
+      function total(xs: X[]) {
+        return xs.reduce((n, x) => n + x, 0);
+      }
+    `);
+    expect(findings).toEqual([]);
+  });
+
+  it("flags an unseeded .reduce — it throws on an empty collection", () => {
+    const findings = check(`
+      function total(xs: X[]) {
+        return xs.reduce((n, x) => n + x);
+      }
+    `);
+    expect(findings).toHaveLength(1);
+  });
+
+  it("does not flag .some — a false result is the safe default on empty", () => {
+    const findings = check(`
+      function gate(xs: X[]) {
+        return xs.some(p);
+      }
+    `);
+    expect(findings).toEqual([]);
+  });
+
+  it("still flags .every reaching a return — regression guard on the core case", () => {
+    const findings = check(`
+      function gate(xs: X[]) {
+        return xs.every(p);
+      }
+    `);
+    expect(findings).toHaveLength(1);
+  });
 });

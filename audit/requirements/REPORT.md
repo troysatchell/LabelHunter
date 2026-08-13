@@ -1,133 +1,172 @@
 # Requirements Audit — LabelHunter
 
-**Commit:** 876a295083a8704ad40d4fc9ce09217b582ecf94 (clean, matches `origin/main`) · **Date:** 2026-08-13T17:00Z · **Docs:** TH (source-TH.md, textutil cache, sha256 unchanged) · **Mode:** compare (`2026-08-13-tro486` vs `matrix.after-2026-08-13.json`)
+**Commit:** 06dceb193f6e5 · **Date:** 2026-08-13T20:36:52.000Z · **Docs:** TH (source-TH.md) · **Mode:** compare, label `2026-08-13-postmerge`
 
 ## Summary
 
-**VERIFIED** 12 · **PARTIAL** 8 · **MISSING** 2 · **IMPLEMENTED-UNVERIFIED** 1 · **ASSUMED** 0 · **N/A** 0 · **BLOCKED** 0. (23 active requirements.)
+- **VERIFIED:** 21
+- **PARTIAL:** 2
+- **IMPLEMENTED-UNVERIFIED:** 0
+- **MISSING:** 0
 
-**One row moved this sweep, and it moved down.** TH-R2 (single-label ≤~5s p50) held VERIFIED at the last two sweeps. Re-running the same INT-002 staleness check this sweep at current HEAD (~99 commits later) finds four commits that rewrote files the latency artifact's own `pipelineScope` names as the measured path — two in the deterministic Validation Router (TRO-502), one in the government-warning region-detection threshold (TRO-546), one in router LOW_IMAGE_QUALITY tracking (TRO-542) — all landing after the artifact's 2026-08-13T12:40:42Z measurement. INT-002 is unconditional: a stale artifact never supports VERIFIED, regardless of how small the real timing effect probably is. TH-R2 is now PARTIAL. This is the single most consequential finding in this sweep — not because the number is likely wrong, but because a VERIFIED row was resting on evidence that had quietly stopped being current, and the same drift could recur on any row that leans on a dated artifact instead of a fresh assertion.
-
-**The build is done; the submission is not.** The same two requirements remain MISSING as the last two sweeps — `README.md` (TH-R14) and `docs/approach.md` (TH-R15) — and neither needs a line of code. Between them they also hold down five other PARTIAL rows: TH-R7, TH-R19, TH-R21 and TH-R23 each trace to real, correct content that lives in an internal document an evaluator will never open, and TH-R6 needs one section in the README once it exists. Six of the eight non-VERIFIED rows resolve on one writing session.
-
-**Label-verdict accuracy improved and is now honestly banded, not a lucky point figure.** TRO-561 (Done) replaced a baseline pinned to the top of a measured variance spread with a real K=3 band: extraction 87.22%–87.78%, cascade-verdict 80.56%–83.33%, over a golden set that grew from 32 to 36 cases this sweep period (TRO-529 added five real bottle photographs). `pnpm eval:check` passes cleanly against that band today. Cascade-verdict accuracy (80.56%) still sits well below extraction accuracy (87.22%) — 7 of 36 cases land on the wrong end-state verdict, six of them sharing one pattern (a deliberately degraded image reads confidently on a single channel). TH-R17 stays PARTIAL.
+The single most consequential finding left open is TH-R9: the government warning's bold rule is
+still captured and never checked. The extractor reads a `bold` signal for every label and the
+router still never acts on it, so a warning printed in correct all-caps but not bold still passes
+today — a real gap against a statutory requirement, filed Urgent as TRO-569, not yet started
+(TRO-532/533 remain Todo). Everything else in this sweep moved. Ten rows flipped to VERIFIED
+since the last full sweep (commit e63b00b, `REPORT-2026-08-13-th-full.md`): the README and
+approach doc both merged, closing two MISSING rows outright and unblocking five more that were
+PARTIAL only for lack of a graded deliverable to live in; the latency figure was re-measured
+fresh and unstale (p50 3618ms, 20/20 PASS on the deployed instance); and TRO-570's first human
+UX-and-accessibility walkthrough closed the last PARTIAL row that depended on human judgment. One
+row (TH-R7) stays PARTIAL for a narrower reason than before — the dependency is now named in
+README.md, but the degradation behavior itself is still only linked, not reproduced, in a graded
+deliverable.
 
 ## Coverage and limitations
 
-- **This sweep wrote to a database.** `pnpm db:migrate` and `pnpm test` ran against `labelhunter_audit_0813b`, a throwaway created on the `labelhunter-pg` container for this run. Observed afterward, not assumed from exit code: the audit database holds 8 migration rows and 9 product tables; `labelhunter_dev` held 2 rows before and after, untouched.
-- **`pnpm test:e2e` did NOT run** (it boots a dev server). TH-R1, TH-R3 and TH-R20 lean on a dated CI job (TRO-522, `.github/workflows/ci.yml`) that runs the Playwright suite automatically against a fake Anthropic server, plus that ticket's own historical pass count — not a fresh run this sweep.
-- **`pnpm latency:check`, `pnpm eval --full` and `pnpm eval:variance` did NOT run** — all three make billed API calls, and this session's lane is docs/audit-only. Their committed artifacts are accepted under INT-002 where the staleness check passes (TH-R10, TH-R11, TH-R22) and rejected where it doesn't (TH-R2, downgraded — see Summary). TH-R17/TH-R19/TH-R22 carry an explicit staleness caveat on the accuracy band itself: TRO-502 and the TRO-506/507/512/524 review-queue commits landed in `src/` after the band's own `codeCommitSha`. TRO-502's own `CHANGES.md` entry argues, via an evidence-presence check across every case in the committed `eval-report.json`, that its change alters zero cases' outcomes — this sweep did not independently re-run a live eval to confirm that. The band is very likely still representative; it was not re-measured after those specific commits.
-- **This sweep used a six-agent fan-out**, not single-session tracing. Six clusters (core/UX, latency/batch, matching/warning, golden-set/eval/accuracy, deliverables/docs, process/infra) each re-traced their assigned rows independently against current HEAD, re-opening every citation rather than copying the prior sweep's rows forward. The orchestrator spot-checked 10 citations directly across clusters (TH-R1's corrected eval-report.json line, TH-R2's two downgrade citations plus the git-log staleness check, TH-R6's three schema/comment citations, TH-R9's region-detect regression test, TH-R13's `gh repo view`, TH-R21's corrected grep count) — all ten opened exactly as claimed.
-- **No live browser this sweep.** TH-R3's and TH-R20's UX claims rest on component tests, a dated CI e2e job's configuration, and that job's own historical pass count — not a fresh observation.
-- **The deployed instance does not expose its running commit.** TH-R16 proves a working prototype is reachable and fast (re-probed directly this sweep: HTTP 200 in 0.40s, `/api/health` ok); it does not prove the deployment serves this exact tree. TH-R16's "verify succeeds" half rests on a 20-run artifact that itself predates 8 later pipeline commits — carried as an explicit `assumption` field on that row (judged non-breaking, not re-measured) rather than folded silently into VERIFIED.
-- **Two factories are running in parallel.** This sweep measures merged `main` at 876a295 only; two other sessions were active in the same working tree during this sweep, both confirmed by direct message to be working disjoint lanes (auth/PR #43, factory tooling/lessons). PR #43 (TRO-482, key protection) remains OPEN and unmerged — confirmed via `gh pr view 43` this sweep, not inferred from Linear status alone.
-- **106+ evidence citations were opened by the tracing sub-agents**, each confirming file/line existence and content against the claim; the orchestrator additionally re-verified 10 directly (listed above). Several citations moved from the stale draft: `scripts/eval/results/eval-report.json`'s line numbers shifted after TRO-561's rebaseline rewrote the file (TH-R1, TH-R11), and `TH-R21`'s ticket-coverage grep was corrected from a flawed `*`-quantifier count of 23 to a correct `+`-quantifier count of 22.
-- **Ticket-mapping corrections made during synthesis.** Six Done tickets clearly advancing a requirement were found via a full reconciliation against all 93 project issues but were not cited by the tracing sub-agents: TRO-459 (CP-1 checkpoint) added to TH-R19; TRO-502 (router rule-1 fix) added to TH-R17; TRO-507, TRO-512, TRO-524 (review-queue hardening) added to TH-R22; TRO-509 (compositor warning-integrity fix) added to TH-R9; TRO-541 (eval-harness sample-map fix) added to TH-R22. Two Backlog tickets targeting unbuilt stretch scope (TRO-528, TRO-532 — bold-detection golden cases and an advisory bold check) are neither cited as evidence (nothing exists yet to cite) nor listed as orphans (they do target real requirement scope) — named here so the sweep does not silently drop them.
-- Linear resolved OK: 93 issues pulled from project `LabelHunter` only, fresh this sweep. No BLOCKED cells.
+- **The TH-R2 and TH-R16 latency figures were NOT re-measured live this sweep.** Both rest on the
+  already-committed `scripts/latency/results/single-label-verify-url-mode.json` (measuredAt
+  2026-08-13T19:43:22Z). This sweep independently confirmed no commit between that measurement and
+  the swept commit (06dceb1) touched the measured code path (`git log 4b004bb..HEAD` over the
+  route, router, warning, extractor, and `render.yaml` returns 0 commits) before accepting it as
+  current under INT-002. No live `pnpm latency:check` run was made against the deployed instance.
+- **No live model run.** `pnpm eval:check` ran in cheap mode, comparing the committed
+  `eval-report.json` (mode live, measuredAt 2026-08-13T15:57:01.899Z) against the K=3 band.
+  `--live --full` was deliberately not run — it costs real API money, and this sweep confirmed
+  directly (not assumed) that nothing under `src/server/extractor`, `router`, `warning`, or
+  `comparators` changed since that measurement.
+- **Ticket mapping is keyword-derived**, not per-ticket human review, same as the prior sweep. The
+  per-row ticket lists are indicative; no orphan list is reported for the same reason the prior
+  sweep gave — 108 issues in the LabelHunter project is too coarse a population to assert
+  orphanhood confidently by keyword match alone.
+- **Database writes:** the six verify commands ran in the isolated `labelhunter_wt_tro_486`
+  database provisioned by `scripts/factory/worktree.sh`, never the shared `labelhunter_dev`. The
+  TH-R14 fresh-clone check additionally created and dropped its own scratch database
+  (`labelhunter_th_r14_freshclone_check`) in the same Postgres container, on a separate scratch
+  clone directory that was removed afterward — no state left behind by either operation.
+- **Live-deploy probes were read-only GETs** (`/`, `/api/health`, `/api/review-queue`, and a
+  GitHub API repo lookup). No `/api/verify` or `/api/batch/*` call was made against the deployed
+  instance from this sweep, so no API spend was incurred by this sweep itself.
+- **One documentation staleness observation, not a verdict issue:** `docs/approach.md:194-198`
+  still states "the largest batch actually measured so far is 32 items, run locally." That
+  predates the 36-item batch run against the live deployed instance
+  (`scripts/golden/results/seeded-demo-batch-2026-08-13.json`, completed 2026-08-13T19:24:13Z),
+  even though the sentence survives in an `approach.md` commit (4b004bb) timestamped after that
+  batch completed. This sweep may not edit application docs; it is named here so a future ticket
+  fixes the one stale sentence.
+- **0 rows are statically traced only this sweep.** TH-R5 (scope/negative claim) moved from
+  IMPLEMENTED-UNVERIFIED to VERIFIED after this sweep ran and captured its own `grep` check
+  directly, rather than resting on inspection alone.
+- **TH-R21's VERIFIED verdict is a judgment call, flagged as such in the matrix's own notes field**
+  rather than a mechanical re-trace — see the Blocked/assumed section below for the reasoning and
+  the fallback if a reviewer reads the row's acceptance line more strictly.
 
 ## Matrix
 
 | ID | Requirement (short) | Ticket(s) | Evidence | Verdict |
 |---|---|---|---|---|
-| TH-R1 | Core loop: label in → per-field verdicts | TRO-461, 462, 463, 465, 514, 479, 539 | src/app/api/verify/route.ts:441; VerifyForm.tsx:200; ResultsChecklist.tsx:80 | VERIFIED |
-| TH-R2 | Single-label ≤~5s p50 | TRO-471, 514, 519, 539 | scripts/latency/results/single-label-verify-url-mode.json:37; src/server/router/overrides.ts:67; src/server/warning/region-detect.ts:64 | **PARTIAL ▼** |
-| TH-R3 | 73-year-old UX benchmark | TRO-465, 466, 475, 476, 479, 480, 522 | VerifyForm.tsx:200; VerifyForm.test.tsx:69; globals.css:82; .github/workflows/ci.yml:278 | VERIFIED |
-| TH-R4 | Batch mode (200–300 scale) | TRO-473, 474, 475, 472, 518, 506, 522, 544, 547 | src/server/batch/constants.ts:24; start-batch.ts:138; local-batch-run.json:26 | PARTIAL |
-| TH-R5 | Standalone, no COLA integration | *(unticketed by design)* | docs/PRD.md:46; src/server/router/required-fields.ts:21; docs/error-states.md:31 | IMPLEMENTED-UNVERIFIED |
-| TH-R6 | No PII / sane secrets posture | TRO-457, 484, 482 | src/lib/db/schema.ts:167; schema.ts:431; record-disposition.ts:11 | PARTIAL |
-| TH-R7 | Constrained-network dependency doc | TRO-478, 468, 485, 519 | docs/error-states.md:17; :27; :28 | PARTIAL |
-| TH-R8 | Lenient/judgment field matching | TRO-462, 463, 504, 465, 536 | src/server/comparators/brand.ts:57; :64; brand.test.ts:24 | VERIFIED |
-| TH-R9 | Warning exact word-for-word check | TRO-467, 468, 469, 514, 517, 537, 527, 535, 546, 533, 563, 558, 509 | route.ts:301; wording-compare.ts:65; index.test.ts:187,214,240 | VERIFIED |
-| TH-R10 | Imperfect-image handling | TRO-477, 460, 497, 470, 516, 542, 540, 546, 563, 529 | label-blockers.ts:25; eval-report.json:3776; baseline.json:151,163 | VERIFIED |
-| TH-R11 | Five sample-label fields | TRO-458, 461, 469, 470, 515 | golden-set/manifest.json:5; golden-case.test.ts:33; eval-report.json:54 | VERIFIED |
-| TH-R12 | Golden test-label image set | TRO-458, 497, 498, 499, 505, 515, 469, 530, 516, 527, 529 | golden-set/README.md:3,14; manifest.json:1; verify.ts:1 | VERIFIED |
-| TH-R13 | Public, buildable repo | TRO-456 | package.json:2,12; ci.yml:117; `gh repo view` | VERIFIED |
-| TH-R14 | README setup/run instructions | TRO-484 | — | **MISSING** |
-| TH-R15 | Approach/tools/assumptions doc | TRO-485 | — | **MISSING** |
-| TH-R16 | Deployed, reachable URL | TRO-481, 483, 518, 539 | single-label-verify-url-mode.json:15,27,30; render.yaml:26 | VERIFIED |
-| TH-R17 | Rubric: core works completely | TRO-465, 514, 468, 475, 470, 518, 516, 534, 538, 543, 546, 561, 563, 502 | eval-report.json:50,81,141; baseline.json:51; variance-report.json:54 | PARTIAL |
-| TH-R18 | Rubric: code quality | TRO-456, 479, 508, 513, 522, 547 | package.json:14,15; ci.yml:88; DetailView.tsx:112 | VERIFIED |
-| TH-R19 | Rubric: appropriate tech, defended | TRO-456, 462, 470, 485, 538, 459 | router/index.ts:5; route.ts:13; benchmark-report.json:178 | PARTIAL |
-| TH-R20 | Rubric: UX + error handling | TRO-465, 466, 473, 475, 476, 478, 479, 519 | ErrorPanel.tsx:12,27; route.test.ts:289,377 | VERIFIED |
-| TH-R21 | Rubric: traceability | TRO-486 | factory/tickets.md:3,365; CLAUDE.md:17 | PARTIAL |
-| TH-R22 | Rubric: creative problem-solving | TRO-457, 464, 476, 470, 511, 543, 561, 507, 512, 524, 541 | docs/PRD.md:53,33; review-queue/page.tsx:2; reconcile.ts:2 | VERIFIED |
-| TH-R23 | Working core > ambition; trade-offs doc | TRO-485, 484 | factory/tickets.md:8; docs/deploy.md:84; docs/error-states.md:154 | PARTIAL |
+| TH-R1 | Core loop: application data + label image -> AI reads the label -> per-field match/mismatch | TRO-461, TRO-462, TRO-463, TRO-465 | `src/app/api/verify/route.ts:313` | **VERIFIED** |
+| TH-R2 | Single-label verify completes in ~5s wall-clock | TRO-471, TRO-539, TRO-568 | `scripts/latency/results/single-label-verify-url-mode.json:33` | **VERIFIED** |
+| TH-R3 | UI usable by a 73-year-old first-time user with no instructions | TRO-480, TRO-570, TRO-465 | `CHANGES.md:138` (TRO-570 walkthrough) | **VERIFIED** |
+| TH-R4 | Batch upload of N labels -> N per-item verdicts with progress/summary | TRO-473, TRO-474, TRO-475, TRO-483, TRO-571 | `src/app/_components/BatchUploadForm.tsx:296`, `scripts/golden/results/seeded-demo-batch-2026-08-13.json:1` | **VERIFIED** |
+| TH-R5 | Standalone; no COLA/registry integration | — | `src/server/router/required-fields.ts:21` (grep, 1 hit, a citation not a client) | **VERIFIED** |
+| TH-R6 | No PII persisted; sane baseline security; documented posture | TRO-457, TRO-482, TRO-484, TRO-565, TRO-567, TRO-566 | `README.md:151`, `src/lib/db/schema.ts:61` | **VERIFIED** |
+| TH-R7 | Docs name every outbound dependency and its degradation behavior | TRO-478, TRO-485 | `README.md:172` (list only, no degradation content) | **PARTIAL** |
+| TH-R8 | Fuzzy/judgment field matching, not strict string equality | TRO-463, TRO-536 | `src/server/comparators/brand.ts:25` | **VERIFIED** |
+| TH-R9 | Government warning: exact word-for-word, all-caps, bold | TRO-468, TRO-469, TRO-527, TRO-532, TRO-533, TRO-537, TRO-546, TRO-569 | `src/server/warning/index.test.ts:202`; bold still uncaptured downstream | **PARTIAL** |
+| TH-R10 | Imperfect images: correct extraction or explicit low-confidence outcome | TRO-477, TRO-497, TRO-542, TRO-543 | `src/server/router/golden-image-quality.test.ts:1` | **VERIFIED** |
+| TH-R11 | All five example fields extract and verify end-to-end | TRO-461, TRO-458 | `src/server/router/types.ts:35` | **VERIFIED** |
+| TH-R12 | Test-label image set present and exercised | TRO-458, TRO-497, TRO-498, TRO-499, TRO-529 | `golden-set/README.md:3` | **VERIFIED** |
+| TH-R13 | Public/shareable, buildable-from-clone repo | TRO-456, TRO-562 | `.github/workflows/ci.yml:47`; GitHub API `visibility: public` | **VERIFIED** |
+| TH-R14 | README with setup and run instructions | TRO-484 | `README.md:1` (197 lines; fresh-clone check performed) | **VERIFIED** |
+| TH-R15 | Brief doc of approach, tools, assumptions | TRO-485 | `docs/approach.md:1` (274 lines, all four sections present) | **VERIFIED** |
+| TH-R16 | Deployed URL reachable; core flow works there | TRO-481, TRO-482, TRO-483, TRO-568 | `scripts/latency/results/single-label-verify-url-mode.json:30` (20/20 PASS on live) | **VERIFIED** |
+| TH-R17 | Core requirements correct and complete | TRO-459, TRO-470 | all 6 verify commands green | **VERIFIED** |
+| TH-R18 | Code quality and organization | TRO-456, TRO-508, TRO-548 | `eslint.config.mjs:13`, typecheck/lint/build/test green | **VERIFIED** |
+| TH-R19 | Technical choices appropriate for scope, defended in docs | TRO-459, TRO-470, TRO-485 | `docs/approach.md:16`, `docs/approach.md:99` | **VERIFIED** |
+| TH-R20 | UX and error handling: every failure mode has a designed state | TRO-478, TRO-479, TRO-570 | `docs/error-states.md:39`; live-triggered by TRO-570 | **VERIFIED** |
+| TH-R21 | Attention to requirements: buried interview asks visibly addressed | TRO-486, TRO-569, TRO-533 | `docs/approach.md:258` (judgment call — see notes) | **VERIFIED** |
+| TH-R22 | Creative problem-solving beyond the literal ask | TRO-464, TRO-476, TRO-470 | `docs/approach.md:243` | **VERIFIED** |
+| TH-R23 | Working core prioritized; trade-offs documented | TRO-485, TRO-487, TRO-531 | `docs/approach.md:138` | **VERIFIED** |
 
 ## Gaps
 
-| ID | Verdict | The missing part |
-|---|---|---|
-| TH-R14 | MISSING | No README exists, tracked or untracked. TRO-484 is in Backlog. |
-| TH-R15 | MISSING | `docs/approach.md` does not exist. TRO-485 is in Backlog. Blocks TH-R7, TH-R19, TH-R21, TH-R23. |
-| TH-R2 | PARTIAL | The deployed-latency artifact predates four commits touching its own declared measured path (TRO-502, TRO-542, TRO-546). Needs a fresh `latency:check` run and commit. |
-| TH-R4 | PARTIAL | No batch has run at the brief's 200–300 scale. The largest real run is 32 items, local. |
-| TH-R6 | PARTIAL | The README must state the data-handling posture. TRO-482 (key protection) is In Review/PR #43 OPEN, unmerged. |
-| TH-R7 | PARTIAL | The dependency table is complete but lives only in `docs/error-states.md`, which says so itself. |
-| TH-R17 | PARTIAL | Cascade-verdict accuracy 80.6%, within a real K=3 band but still 7 of 36 cases wrong at end-state. Six share one pattern (single-channel confident read masking an expected REVIEW); one (case-19) is a known deskew gap (TRO-540). |
-| TH-R19 | PARTIAL | The technical defence is real, measured, and checkpoint-witnessed (CP-1/TRO-459) but appears in no graded deliverable. |
-| TH-R21 | PARTIAL | 22 of 22 ticketable requirements are traced internally (corrected count); no reader-facing descoping statement exists. |
-| TH-R23 | PARTIAL | Prioritisation half met. The written trade-offs section is in the wrong documents (INT-003). |
+### TH-R7 — PARTIAL
+- **Missing part:** README.md now names the one outbound dependency (Anthropic API), but the
+  "what happens when it is blocked" content is still only linked to `docs/error-states.md`, an
+  internal working document — never reproduced in a graded deliverable. INT-004 requires the
+  content itself to be in README.md or docs/approach.md, not a pointer to it.
+- **Suggested scope:** Copy (not link) the outbound-dependency table and its "if blocked or
+  unreachable" column from `docs/error-states.md:17-37` into `docs/approach.md`. The content
+  already exists verbatim and is already correct; this is a short, mechanical addition, not new
+  research.
 
-Full detail, with suggested scope per row, in `gaps.md`.
+### TH-R9 — PARTIAL
+- **Missing part:** The government warning's bold requirement is extracted, typed, and validated,
+  but no router or comparator code reads it — a correctly capitalized, correctly worded, non-bold
+  `GOVERNMENT WARNING:` prefix still passes. `docs/approach.md` now names this plainly ("a real
+  gap, not a soft one") rather than understating it, and TRO-569 tracks it as Urgent.
+- **Suggested scope:** TRO-532 (LH-025, stroke-width bold advisory) or TRO-533 (LH-026, surface the
+  bold signal) — either closes the gap. Both are Todo, unstarted as of this sweep.
 
 ## Orphan tickets
 
-Eighteen tickets in project LabelHunter map to no brief requirement — factory tooling, gate policy, changelog/test-fixture hygiene, or explicitly parked/deferred tracks. Listed in `gaps.md` so this sweep is not read as calling them waste. Two additional Backlog tickets (TRO-528, TRO-532) target real but unbuilt stretch scope on TH-R9/TH-R12 — not orphans, not yet evidenced, named in Coverage and limitations above.
+None reported. Ticket mapping is keyword-derived (see Coverage and limitations), which is too
+coarse to distinguish a genuine orphan from a mapping miss at 108 tickets in the project.
 
 ## Blocked / assumed
 
-No BLOCKED cells (Linear resolved fully). One `assumption` this sweep, on TH-R16: the deployed instance's 20-run verify-success artifact predates 8 later pipeline commits, judged non-breaking (edge-case verdict refinements, not a change to whether a clean request completes) but not independently re-measured — see that row's `assumption` field. No `ASSUMED`-tier rows: the three standing rulings (INT-001, INT-002, INT-003) covered every ambiguity this sweep raised.
+No BLOCKED rows. No new ambiguities crossed the flood cap this sweep — INT-001 through INT-006
+already govern every ambiguity this sweep encountered.
 
-## Delta vs 2026-08-13 (commit 96d59f4)
+**TH-R21 is a flagged judgment call**, not an ASSUMED verdict (its ambiguity was already ruled
+implicitly by the row's own wording, not newly encountered) but worth a reviewer's attention: the
+baseline sweep's suggested two specific closing actions (a bold-signal UI advisory; a requirements
+table in the README) were not literally taken. This sweep instead judged the row's actual
+acceptance wording — "every TH-R entry addressed in code or explicitly documented as descoped" —
+satisfied at the whole-inventory level, since every row today is VERIFIED or PARTIAL-with-an-
+explicit-ticketed-gap, and `docs/approach.md` itself points a reader to this audit trail rather
+than hiding the two open rows. If a reviewer reads the acceptance line more strictly (requiring
+the two originally suggested UI/README actions specifically), the row reverts to PARTIAL until
+those ship. No code or docs were changed to force this reading either way.
 
-| ID | prior verdict | now | evidence change |
+## Delta (compare mode only)
+
+| ID | baseline verdict | now | evidence change |
 |---|---|---|---|
-| TH-R2 | VERIFIED | **PARTIAL ▼** | INT-002's staleness check, re-run against ~99 further commits, now finds four commits (TRO-502, TRO-542, TRO-546) that rewrote files the latency artifact's own `pipelineScope` names as measured — none present at the prior sweep's check. The p50/p95 figures are very likely still close to accurate; they no longer certifiably measure the code that ships at this commit. |
-| TH-R21 | PARTIAL (23 IDs, described as full coverage) | PARTIAL (22 IDs, corrected) | The prior sweep's own coverage count used a flawed `*`-quantifier grep that double-counted a bogus prose match. The corrected `+`-quantifier count is 22, still full coverage of every requirement meant to be ticketed (TH-R5 is unticketed by design) — a citation correction, not a verdict change. |
+| TH-R2 | PARTIAL | **VERIFIED** | Fresh, unstale latency artifact (measuredAt 2026-08-13T19:43:22Z, p50 3618ms, 20/20 PASS) replaces the stale figure; confirmed no further path changes since. |
+| TH-R3 | PARTIAL | **VERIFIED** | TRO-570's first human UX-and-accessibility walkthrough (CHANGES.md:138-354) satisfies INT-006's requirement for a real walkthrough of the current screens, including access-code and paging, with a rigorous accessibility pass (axe-core, contrast, keyboard, structure) finding zero violations. |
+| TH-R5 | IMPLEMENTED-UNVERIFIED | **VERIFIED** | This sweep ran and captured the `grep -rn "COLA" src/` check directly, accepting it as the behavioral artifact the baseline sweep's own notes said would suffice. |
+| TH-R6 | PARTIAL | **VERIFIED** | README.md's new "What LabelHunter stores, and does not store" section (line 151) supplies the missing documentation half; the data-model half was already met. |
+| TH-R7 | PARTIAL | PARTIAL (no change) | README.md now names the dependency, but the degradation-behavior content still isn't reproduced in a graded deliverable — re-confirmed by reading `docs/approach.md` in full, not carried forward blind. |
+| TH-R9 | PARTIAL | PARTIAL (no change) | Re-confirmed via a fresh grep this sweep: bold is still uncaptured downstream. `docs/approach.md` now names the gap correctly (corrected in 4b004bb); TRO-569 filed Urgent since the baseline sweep. |
+| TH-R14 | MISSING | **VERIFIED** | PR #66 merged README.md (197 lines). A literal fresh-clone check (install, migrate, build against a scratch database) was performed and succeeded this sweep. |
+| TH-R15 | MISSING | **VERIFIED** | PR #68 merged docs/approach.md (274 lines), read in full and confirmed to cover approach, tools, assumptions, and trade-offs. |
+| TH-R16 | PARTIAL | **VERIFIED** | The fresh latency artifact proves single-label verify succeeds on the deployed instance (20/20 PASS); the seeded-demo batch independently corroborates at scale; README.md now publishes the URL and access code. |
+| TH-R19 | PARTIAL | **VERIFIED** | docs/approach.md's "The cascade" and "Tools used" sections now carry the scope-justification content the baseline sweep already found strong but had nowhere graded to live. |
+| TH-R21 | PARTIAL | **VERIFIED** | Judgment call — see Blocked/assumed above. All four buried interview requirements now trace VERIFIED, and docs/approach.md points readers to this audit trail. |
+| TH-R23 | PARTIAL | **VERIFIED** | docs/approach.md's new "Trade-offs and limitations" section (line 138) supplies the missing written half in a graded deliverable; the prioritization half was already met. |
 
-No other row changed verdict. TH-R4, TH-R6, TH-R7, TH-R17, TH-R19, TH-R23 held at PARTIAL; TH-R14, TH-R15 held at MISSING; all twelve VERIFIED rows besides TH-R2 held, most strengthened with fresh evidence (golden set 32→36 cases, test suite 1928→2108 tests, TRO-529's real photographs, TRO-546's OCR-channel fix, a dated CI e2e job).
+All other rows (TH-R1, TH-R4, TH-R8, TH-R10, TH-R11, TH-R12, TH-R13, TH-R17, TH-R18, TH-R20,
+TH-R22) hold their prior verdict — VERIFIED in every case, re-confirmed by re-running the verify
+suite rather than assumed unchanged.
 
 ## Verification performed
 
 | Command | Result | Bears on |
 |---|---|---|
-| `CREATE DATABASE labelhunter_audit_0813b` | CREATE DATABASE | (sweep setup) |
-| `pnpm db:migrate` | exit 0 — 8 migrations applied to the audit database | TH-R6, TH-R13, TH-R18 |
-| `pnpm typecheck` | exit 0 — no diagnostics | TH-R18 |
-| `pnpm lint` | exit 0 — 0 errors, 1 pre-existing warning | TH-R18 |
-| `pnpm build` | exit 0 — 15 routes | TH-R13, TH-R18 |
-| `pnpm test` | exit 0 — **169 files / 2108 tests passed** | TH-R1, R3, R8, R9, R12, R18, R20, R22 |
-| `pnpm eval:check` (cheap mode) | PASS — 87.2% extraction / 80.6% cascade-verdict, both within the K=3 band | TH-R10, R11, R17 |
-| `curl https://labelhunter-web.onrender.com/` | http=200 in 0.398s | TH-R16 |
-| `curl .../api/health` | http=200, `{"status":"ok"}` | TH-R16 |
-| `gh repo view --json visibility,url,isPrivate` | PUBLIC, github.com/troysatchell/LabelHunter | TH-R13 |
-| `gh pr view 43 --json state,mergedAt` | OPEN, mergedAt null | TH-R6, R14, R15, R16 |
-| `git log --since="...12:40:42Z" -- src/server/router/ src/server/warning/` | 4 commits touch the measured latency pipeline after the artifact | TH-R2 (INT-002, downgrade) |
-| `grep -o "TH-R[0-9]\+" factory/tickets.md \| sort -u \| wc -l` | 22 — corrected full inventory coverage | TH-R21 |
-| `git ls-files \| grep -iE "readme\|approach"` | `golden-set/README.md` only | TH-R14, TH-R15 |
-| `pnpm test:e2e` | **NOT RUN** — boots a dev server | TH-R1, R3, R20 |
-| `pnpm latency:check` | **NOT RUN** — billed API calls; prior artifact found stale (TH-R2 downgrade) | TH-R2 |
-| `pnpm eval -- --full` / `pnpm eval:variance` | **NOT RUN** — billed API calls; committed artifacts accepted under INT-002 with staleness caveats on TH-R17/R19/R22 | TH-R10, R11, R17, R22 |
-
-Captured output for the VERIFIED rows:
-
-```text
-pnpm test
- Test Files  169 passed (169)
-      Tests  2108 passed (2108)
-
-pnpm build
-✓ Compiled successfully
-✓ Generating static pages using 13 workers (10/10)
-Route (app) — 15 routes
-
-pnpm eval:check
-check.ts: extraction accuracy 87.2% is within the measured 87.2%-87.8% band (K=3).
-check.ts: cascade-verdict accuracy 80.6% is within the measured 80.6%-83.3% band (K=3).
-check.ts: PASS
-
-curl https://labelhunter-web.onrender.com/api/health
-{"status":"ok","service":"labelhunter","timestamp":"2026-08-13T16:52:22.311Z"}
-```
-
-The suite grew from 160 files / 1928 tests to 169 files / 2108 tests since the last sweep and stayed at 100% pass. The golden set grew from 32 to 36 cases (TRO-529's five real photographs). This is the compare sweep TRO-486 asked for; `gaps.md` carries the PM handoff — concrete, executable scope for TRO-484 (README), TRO-485 (approach.md), and TRO-483 (seeded demo).
+| `pnpm typecheck` | exit 0 — clean | TH-R17, TH-R18 |
+| `pnpm lint` | exit 0 — 1 problem (0 errors, 1 warning) | TH-R17, TH-R18 |
+| `pnpm build` | exit 0 — production build succeeded | TH-R17, TH-R18 |
+| `pnpm test` | 182 files, 2267 tests, all passed (18.17s) | TH-R1, TH-R6, TH-R8, TH-R9, TH-R11, TH-R12, TH-R17, TH-R18, TH-R20 |
+| `pnpm test:e2e` | 12 passed (13.4s) | TH-R1, TH-R3, TH-R4, TH-R11, TH-R17, TH-R20, TH-R22 |
+| `pnpm eval:check` | PASS — extraction 87.2% within 87.2–87.8% band; cascade-verdict 80.6% within 80.6–83.3% band (K=3), cheap mode | TH-R10, TH-R17, TH-R19, TH-R22 |
+| `git log 4b004bb..HEAD -- <measured-latency-path>` | 0 commits — artifact confirmed unstale | TH-R2, TH-R16 |
+| `curl` GET `/`, `/api/health`, `/api/review-queue` against the live deploy | 307 → /access-code; 200; 401 without credential | TH-R6, TH-R16 |
+| `grep -rn "COLA" src/` | 1 hit — a regulatory citation, not a client | TH-R5 |
+| `grep` for `formatting.bold`/`isBold`/`boldCheck` in router + DetailView | 0 hits | TH-R9 |
+| Fresh `git clone` + install + scratch-DB migrate + build | install exit 0; migrate succeeded; build exit 0 | TH-R14 |
+| GitHub API repo lookup + `gh run list` on the swept commit | public repo; CI completed/success on 06dceb1 | TH-R13 |
+| `pnpm eval:check -- --live --full` | NOT RUN — costs real API money; artifact confirmed current instead | TH-R17 |
+| `pnpm latency:check -- --url=<deployed>` | NOT RUN — would bill a real Anthropic call; already-fresh artifact used instead | TH-R2 |

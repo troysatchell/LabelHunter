@@ -1,0 +1,423 @@
+{
+  "mode": "compare",
+  "label": "2026-08-13-postmerge",
+  "baselineRef": "matrix.after-2026-08-13-th-full.json",
+  "commit": "06dceb193f6e5e3d0b4c39fbd2b8e13b13f0a5f0",
+  "dirty": false,
+  "dirty_paths": [],
+  "date": "2026-08-13T20:36:52.000Z",
+  "config_hash": "253ea8d244fd11bd84917c6ecd19c477d5ba521a6268e9266eb4e5408986c2f9",
+  "ticket_mapping": {
+    "status": "OK",
+    "provider": "linear",
+    "team": "Troysatchell",
+    "scope": "All 108 issues in project LabelHunter (the only project this repo implements; team Troysatchell also spans PlugForge -- Week 6 Platform & Public API, FleetGraph -- Week 5 Project Intelligence Agent, and ShipShape Audit Remediation, which are excluded per the config's project scope, re-confirmed this sweep via mcp__linear__list_issues against team Troysatchell with no project filter -- the same four projects the prior sweep found, plus a few issues carrying no project). Mapping is keyword-derived from ticket titles against each requirement's Meaning-in-code, not per-ticket human review -- treat the per-row ticket lists as indicative, and the orphan list as unreliable at that resolution."
+  },
+  "requirements": [
+    {
+      "id": "TH-R1",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-461", "TRO-462", "TRO-463", "TRO-465"],
+      "evidence": [
+        { "file": "src/app/api/verify/route.ts", "line": 313, "note": "handleVerifyRequest -- unchanged since the prior sweep (git diff e63b00b..HEAD touches no file under src/app/api/verify/); the single request that does the whole fast path." },
+        { "file": "e2e/verify.spec.ts", "line": 26, "note": "Happy-path E2E: uploads a real golden-set image, fills the application record, submits, and asserts the rendered per-field checklist." }
+      ],
+      "verification": {
+        "command": "pnpm test:e2e",
+        "result_excerpt": "12 passed (13.4s) at commit 06dceb1 -- includes the case-01 happy path asserting a Match badge on all five checklist rows."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta from the prior sweep. `git diff e63b00b..HEAD -- src/app/api/verify/ src/server/extractor/ src/server/router/ src/server/comparators/ src/server/warning/` returns 0 files -- the whole traced code path is byte-identical, so the prior sweep's exhaustive citation list still holds verbatim; not re-listed here to keep this entry legible. `pnpm test` (2267 tests, all passed, 18.17s) and `pnpm eval:check` (PASS, live artifact measuredAt 2026-08-13T15:57:01.899Z, unchanged) both re-ran clean this sweep."
+    },
+    {
+      "id": "TH-R2",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-471", "TRO-539", "TRO-568"],
+      "evidence": [
+        { "file": "scripts/latency/results/single-label-verify-url-mode.json", "line": 3, "note": "\"measuredAt\": \"2026-08-13T19:43:22.669Z\" -- committed in 4b004bb, roughly 5 hours after e63b00b and after every commit that TH-R2's own prior gap named as stale-causing (TRO-546 region-detect.ts, TRO-482 rate-limit/budget checks)." },
+        { "file": "scripts/latency/results/single-label-verify-url-mode.json", "line": 33, "note": "\"summaryMs\": { \"p50\": 3618, \"p95\": 4197, \"mean\": 3738 } -- under the ~5000ms budget. Line 26-28: requestedRuns 20, successfulRuns 20, failedRuns 0. Line 29-31: verdictCounts.PASS = 20." },
+        { "file": "scripts/latency/results/single-label-verify-url-mode.json", "line": 12, "note": "pipelineScope names the measured path: Preprocess (sharp) -> Haiku extraction concurrent with the government-warning comparator (region detection + tesseract.js OCR) -> Validation Router -> DB writes -- the same path this sweep confirmed untouched since." },
+        { "file": "scripts/latency/results/single-label-verify-url-mode.json", "line": 13, "note": "target.host \"labelhunter-web.onrender.com\", boundary \"http\" -- a real network POST to the deployed instance, past the access-code gate (measured after TRO-568 added x-access-code support)." }
+      ],
+      "verification": {
+        "command": "git log 4b004bb..HEAD --oneline -- src/app/api/verify/route.ts src/server/router/ src/server/warning/ src/server/extractor/ scripts/latency/measure.ts render.yaml",
+        "result_excerpt": "0 commits -- confirmed directly this sweep (not inferred) that nothing touching the measured path landed after the artifact's own measuredAt. Per INT-002, this artifact is current and carries a VERIFIED verdict."
+      },
+      "interpretation": "I-002",
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "DELTA from PARTIAL. The prior sweep (e63b00b) held this at PARTIAL because the only committed figure (measuredAt 2026-08-13T12:40:42Z) predated TRO-546's region-detect.ts change and TRO-482's rate-limit/budget insertion on the measured path -- INT-002's staleness rule. Commit 4b004bb (2026-08-13T14:47:22Z, same day) replaced it with a fresh, unstale measurement: 20 real HTTP verify round-trips against the live deployed instance, past the access-code gate, p50 3618ms / p95 4197ms, 20/20 PASS. I independently re-ran the staleness check for this sweep rather than trusting the commit message: `git log 4b004bb..HEAD` over the exact files the artifact's own pipelineScope names as measured returns nothing. No new live measurement was taken this sweep (that would spend real API money against a task instruction to avoid it); this verdict rests on the already-fresh, already-committed artifact, per INT-002's explicit allowance for a dated artifact that still measures the pipeline that ships."
+    },
+    {
+      "id": "TH-R3",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-480", "TRO-570", "TRO-465"],
+      "evidence": [
+        { "file": "CHANGES.md", "line": 138, "note": "\"## TRO-570 -- first-time-user walkthrough and accessibility assessment (2026-08-13)\" -- the human walkthrough INT-006 required, covering every screen including access-code (never walked before) and review-queue paging (never walked before)." },
+        { "file": "CHANGES.md", "line": 262, "note": "\"axe-core ... 24 scans, `0` violations total\" -- automated WCAG 2.0/2.1 A/AA scan across every screen this walkthrough visited, light and dark mode." },
+        { "file": "CHANGES.md", "line": 293, "note": "\"Color contrast -- measured with the WCAG 2.x relative-luminance formula from real `getComputedStyle` readings\" -- PASS 5.76:1, REVIEW 8.85:1, FAIL 7.04:1, all above the 4.5:1 AA floor; dark-mode primary button re-confirmed at 5.63:1, unregressed." },
+        { "file": "CHANGES.md", "line": 323, "note": "\"### Claim provenance\" section separates Observed (live DOM reads, screenshots) from Not verified (a literal screen-reader pass, 400% zoom) -- the same claims-carry-provenance discipline this audit itself follows." },
+        { "file": "src/app/_components/VerifyForm.test.tsx", "line": 69, "note": "expect(screen.getAllByRole(\"button\")).toHaveLength(1) -- the one-button claim as a test, unchanged and still green." }
+      ],
+      "verification": {
+        "command": "pnpm test:e2e",
+        "result_excerpt": "12 passed (13.4s) -- drives the full verify flow in a real browser, unchanged since the baseline sweep."
+      },
+      "interpretation": "I-006",
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "DELTA from PARTIAL. INT-006 (Troy, 2026-08-13) ruled TH-R3 needed a real human walkthrough of the CURRENT screens, assessed for accessibility, because three surfaces had never been walked: the access-code screen, review-queue paging, and two new error states. TRO-570 (merged 375bc93, this same day) is exactly that walkthrough: every screen visited live via Playwright-driven Chromium against a real dev server and Postgres, no application code changed. It found zero accessibility violations, zero broken keyboard paths, zero color-only verdicts, and no regression in the prior TRO-480 fixes -- a real, negative result with the same claim-provenance discipline this repo's own CLAUDE.md asks for, not a rubber stamp. This is treated the same way INT-002 treats a dated live-run artifact: a provenance-disciplined record of a real run against code that matches the swept commit (the walkthrough's own header states \"byte-identical to origin/main at the time, `git diff origin/main` returns 0 files\"), accepted as behavioral evidence rather than requiring a machine-runnable command. Two named gaps remain honest, not verdict-blocking: no literal screen-reader (VoiceOver/NVDA) pass, and no 400% zoom reflow check -- both named explicitly in CHANGES.md as not yet measured, not hidden."
+    },
+    {
+      "id": "TH-R4",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-473", "TRO-474", "TRO-475", "TRO-483", "TRO-571"],
+      "evidence": [
+        { "file": "src/app/_components/BatchUploadForm.tsx", "line": 296, "note": "`multiple` on the label-images input -- many images submitted at once. Unchanged since baseline (git diff e63b00b..HEAD touches no file under src/app/_components/Batch*)." },
+        { "file": "scripts/golden/results/seeded-demo-batch-2026-08-13.json", "line": 1, "note": "\"totalCount\":36,\"processedCount\":36,\"status\":\"COMPLETED\" -- a real batch of 36 items run against the LIVE deployed instance (labelhunter-web.onrender.com), not just locally or in e2e. completedAt 2026-08-13T19:24:13.961Z." }
+      ],
+      "verification": {
+        "command": "pnpm test:e2e",
+        "result_excerpt": "12 passed (13.4s) -- includes e2e/batch.spec.ts's full manifest+images -> preview -> run -> live progress -> results table -> detail flow."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No verdict delta -- already VERIFIED at the baseline sweep on e2e evidence. Strengthened this sweep by real-world scale evidence: TRO-483 (LH-062, merged f83f568) ran the full 36-case golden set as one batch job against the deployed instance, 36/36 processed (11 PASS / 3 FAIL / 21 REVIEW / 1 failed-item), a real diagnosed and fixed production defect along the way (TRO-571, worker OOM under 5 concurrent tesseract.js workers on the Render starter plan, fixed via render.yaml concurrency before this batch's 19:21 mark). OBSERVATION, not a verdict issue: docs/approach.md:194-198 still says \"The largest batch actually measured so far is 32 items, run locally\" -- that sentence is stale. It predates the 36-item live batch (f83f568, 14:29:09) even though the sentence itself was written or left standing in a docs/approach.md commit that landed later the same day (4b004bb, 14:47:22). Not a code gap and not something I may fix (application docs are read-only to this sweep) -- flagged in Coverage and limitations below and worth a one-line doc fix on the next ticket that touches approach.md."
+    },
+    {
+      "id": "TH-R5",
+      "verdict": "VERIFIED",
+      "tickets": [],
+      "evidence": [
+        { "file": "package.json", "line": 36, "note": "dependencies block: @anthropic-ai/sdk, drizzle-orm, fflate, next, pg, react, react-dom, sharp, tesseract.js -- unchanged since baseline. No registry, SOAP/WSDL, OAuth, or government-system client of any kind." },
+        { "file": "src/server/router/required-fields.ts", "line": 21, "note": "The one hit for a repo-wide `grep -rn \"COLA\" src/` this sweep ran directly: a comment citing the federal (TTB/COLA) regulation this system checks against, not a client or an integration." }
+      ],
+      "verification": {
+        "command": "grep -rn \"COLA\" src/ --include=\"*.ts\" --include=\"*.tsx\"",
+        "result_excerpt": "1 hit: src/server/router/required-fields.ts:21, a comment citing the federal rule by name -- no client, no registry call, no import of any COLA-related module anywhere in src/."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "DELTA from IMPLEMENTED-UNVERIFIED. The baseline sweep traced this fully by inspection but withheld VERIFIED because the acceptance is a structural-absence claim with no named runnable check, and left the door open: \"If the orchestrator accepts the recorded grep as the behavioral artifact, this is a clean VERIFIED.\" This sweep ran that grep directly, captured its output, and accepts it as the behavioral artifact -- a negative architectural claim (no COLA integration exists) is provable by an exhaustive, deterministic search, and the search was re-run against the current tree rather than reused from memory."
+    },
+    {
+      "id": "TH-R6",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-457", "TRO-482", "TRO-484", "TRO-565", "TRO-567", "TRO-566"],
+      "evidence": [
+        { "file": "README.md", "line": 151, "note": "\"## What LabelHunter stores, and does not store\" -- the data-handling posture section the prior sweep's suggested_scope asked for, now in a graded deliverable." },
+        { "file": "README.md", "line": 153, "note": "\"Only label and application fields... No applicant name, address, or other personally identifying information is ever stored.\"" },
+        { "file": "README.md", "line": 157, "note": "\"No reviewer identity... a deliberate design choice, not an oversight.\"" },
+        { "file": "README.md", "line": 162, "note": "\"Access control is live, confirmed against the deployed instance\" -- names the access-code gate, rate limits, and daily spend budget, with the known TRO-566 follow-up gaps named rather than hidden." },
+        { "file": "src/lib/db/schema.ts", "line": 61, "note": "\"No PII anywhere (TH-R6)\" -- unchanged data-model posture, still true (git diff e63b00b..HEAD does not touch schema.ts)." },
+        { "file": "src/proxy.ts", "line": 39, "note": "EXEMPT_PATHS -- a three-entry exemption list, everything else gated (line number shifted from 38 to 39 this sweep after TRO-565's open-redirect fix added a comment above it; content re-verified, not reused blind)." }
+      ],
+      "verification": {
+        "command": "pnpm test",
+        "result_excerpt": "182 files, 2267 tests, all passed (18.17s) -- includes src/proxy.test.ts and the access-code/rate-limit/budget suites, all strengthened since baseline by TRO-565/567."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "DELTA from PARTIAL. The data-model half was already fully met; the only missing piece was a README stating the posture in a graded deliverable, per the baseline sweep's exact suggested_scope. README.md (merged via PR #66, 4af6482) now carries that section nearly verbatim to what was asked: what is stored, what is not, no reviewer identity, secrets posture, and the live access-control stack. Also strengthened materially since baseline: TRO-565 (open-redirect + spoofable client-IP fixes) and TRO-567 (test-quality + a working-placeholder access code in .env.local.example, fixed) both merged and are covered by new regression tests."
+    },
+    {
+      "id": "TH-R7",
+      "verdict": "PARTIAL",
+      "tickets": ["TRO-478", "TRO-485"],
+      "evidence": [
+        { "file": "README.md", "line": 172, "note": "\"LabelHunter makes exactly one outbound call to a public vendor API while it runs: the Anthropic API\" -- the dependency LIST now names the vendor in a graded deliverable, closing half of the prior gap." },
+        { "file": "README.md", "line": 177, "note": "\"See docs/error-states.md for the full dependency table and what happens if the Anthropic endpoint is unreachable.\" -- the degradation BEHAVIOR itself is not restated here; it is only pointed at, and docs/error-states.md is the same internal working document INT-003/INT-004 already ruled does not satisfy a graded-deliverable requirement." },
+        { "file": "docs/approach.md", "line": 1, "note": "Read in full this sweep: no section of docs/approach.md names the outbound-dependency degradation behavior directly. `grep -in \"network\\|firewall\\|unreachable\\|blocked\\|outbound\" docs/approach.md` matches only unrelated \"degraded image\" language, never the TH-R7 scenario." },
+        { "file": "docs/error-states.md", "line": 27, "note": "The actual dependency table and \"If blocked or unreachable\" column still live only here, an internal working document the two graded deliverables point at rather than reproduce." }
+      ],
+      "verification": null,
+      "interpretation": "I-004",
+      "assumption": null,
+      "suggested_scope": "Move (not just link) the outbound-dependency table and its degradation behavior from docs/error-states.md into docs/approach.md or README.md verbatim. This is the same suggested_scope the baseline sweep gave; PR #68 (docs/approach.md) merged since but did not carry this content over -- it added the cascade, tools, assumptions, and trade-offs sections but not the TH-R7 dependency table. A short, mechanical addition; the content already exists and is already correct.",
+      "notes": "NO DELTA -- re-confirmed PARTIAL, not carried forward blindly. INT-004 ruled that dependency-list-and-degradation-behavior content must appear IN a graded deliverable, not be referenced from one. README.md now names the single dependency (Anthropic API) directly, which is real progress on the \"name every outbound dependency\" half. But the \"document what the app does when it is blocked\" half is still only available by following a link into docs/error-states.md -- the exact internal-document pattern INT-003 and INT-004 both ruled against for TH-R23 and TH-R7's own prior sweep. I read docs/approach.md in full this sweep (274 lines) and confirmed directly that the degradation-behavior content was not moved when PR #68 added the document; it covers the cascade, tools, assumptions, and trade-offs, but not this row. The implementation half remains fully met and unchanged (a real APIConnectionError yields a designed 503 with a retry affordance, proven in src/app/api/verify/route.test.ts, unchanged since baseline)."
+    },
+    {
+      "id": "TH-R8",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-463", "TRO-536"],
+      "evidence": [
+        { "file": "src/server/comparators/brand.ts", "line": 25, "note": "compareBrandOrClass -- unchanged since baseline (git diff e63b00b..HEAD touches no file under src/server/comparators/)." },
+        { "file": "src/server/comparators/brand.test.ts", "line": 23, "note": "compareBrandOrClass(field(\"STONE'S THROW\"), \"Stone's Throw\") -> MATCH, with a note -- the named acceptance test." }
+      ],
+      "verification": {
+        "command": "pnpm test",
+        "result_excerpt": "182 files, 2267 tests, all passed (18.17s) -- includes brand.test.ts's STONE'S THROW case."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta. Traced code path fully unchanged since baseline; re-verified via a clean `pnpm test` run rather than assumed."
+    },
+    {
+      "id": "TH-R9",
+      "verdict": "PARTIAL",
+      "tickets": ["TRO-468", "TRO-469", "TRO-527", "TRO-532", "TRO-533", "TRO-537", "TRO-546", "TRO-569"],
+      "evidence": [
+        { "file": "src/server/warning/index.test.ts", "line": 202, "note": "INT-001's required real-photograph FAIL test, unchanged since baseline: case-08-title-case-warning-prefix-only.jpg -> MISMATCH." },
+        { "file": "src/server/extractor/types.ts", "line": 80, "note": "`bold: WarningBoldness;` -- the bold signal is still extracted and typed. Re-confirmed this sweep, not reused blind." },
+        { "file": "docs/approach.md", "line": 66, "note": "\"The statute's third requirement -- the 'GOVERNMENT WARNING:' prefix printed in bold -- is captured but not yet enforced... Tracked as TRO-569, filed Urgent.\" -- the gap is now explicitly documented in a graded deliverable, corrected from an earlier draft (commit 4b004bb) that had understated it." },
+        { "file": "docs/approach.md", "line": 146, "note": "\"Bold detection is captured but not yet enforced -- a real gap, not a soft one.\" -- the Trade-offs section names it plainly rather than softening it." }
+      ],
+      "verification": null,
+      "interpretation": "I-001, I-005",
+      "assumption": null,
+      "suggested_scope": "Give the captured bold signal a verdict consequence. TRO-532 (LH-025, stroke-width bold advisory) and TRO-533 (LH-026, surface the bold signal) are both still Todo per Linear (re-confirmed this sweep). TRO-569 (Urgent, filed today by a peer session, still Backlog per Linear) tracks the gap directly.",
+      "notes": "NO DELTA -- re-confirmed PARTIAL, not carried forward blindly. I independently re-ran `grep -rn \"formatting.bold\\|\\.bold\\b\\|isBold\\|boldCheck\" src/server/router/ src/app/_components/DetailView.tsx` this sweep: zero hits, same result as baseline. A correctly worded, correctly capitalized, non-bold GOVERNMENT WARNING: prefix still passes today. Word-for-word and all-caps remain verified against real photographs (INT-001's condition is met and unchanged). This is now the most consequential open gap in the whole sweep -- a real, un-softened, Urgent-ticketed correctness gap against a statutory requirement, not a documentation-placement issue like TH-R7."
+    },
+    {
+      "id": "TH-R10",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-477", "TRO-497", "TRO-542", "TRO-543"],
+      "evidence": [
+        { "file": "src/server/router/golden-image-quality.test.ts", "line": 1, "note": "Unchanged since baseline (git diff e63b00b..HEAD touches no file under src/server/router/)." },
+        { "file": "scripts/eval/results/eval-report.json", "line": 3, "note": "measuredAt 2026-08-13T15:57:01.899Z, mode live -- confirmed still current this sweep (same content, same timestamp; re-read directly rather than trusted from the prior matrix)." }
+      ],
+      "verification": {
+        "command": "pnpm eval:check",
+        "result_excerpt": "cheap mode -- extraction 87.2% within 87.2-87.8% band (K=3); cascade-verdict 80.6% within 80.6-83.3% band. PASS."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta. Re-verified the eval artifact's freshness directly this sweep (`git log e63b00b..HEAD -- src/server/extractor src/server/router src/server/warning src/server/comparators` returns 0 files touched), rather than assuming it still held from the prior sweep's own staleness check."
+    },
+    {
+      "id": "TH-R11",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-461", "TRO-458"],
+      "evidence": [
+        { "file": "src/server/router/types.ts", "line": 35, "note": "RouterFieldKey -- unchanged since baseline." },
+        { "file": "golden-set/manifest.json", "line": 58, "note": "case-01-clean-match-spirits, the TH-R11 reference example -- unchanged." }
+      ],
+      "verification": {
+        "command": "pnpm test:e2e",
+        "result_excerpt": "12 passed (13.4s) -- the happy-path spec uploads case-01-clean-match-spirits.jpg with the Old Tom Distillery application record and asserts a Match badge on all five checklist rows."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta. Traced code path unchanged since baseline."
+    },
+    {
+      "id": "TH-R12",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-458", "TRO-497", "TRO-498", "TRO-499", "TRO-529"],
+      "evidence": [
+        { "file": "golden-set/README.md", "line": 3, "note": "\"The golden set is a fixed collection of label test cases (TH-R12)\" -- unchanged since baseline." },
+        { "file": "scripts/golden/results/seeded-demo-batch-2026-08-13.json", "line": 1, "note": "New evidence this sweep: the full 36-case golden set exercised as one real batch against the live deployed instance, not only in unit/e2e fixtures." }
+      ],
+      "verification": {
+        "command": "pnpm test",
+        "result_excerpt": "182 files, 2267 tests, all passed (18.17s) -- includes scripts/golden/images.test.ts's existence and JPEG-decode assertions."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No verdict delta -- already VERIFIED. Strengthened by the seeded-demo batch, which is a real, additional exercise of the golden set beyond what the baseline sweep cited."
+    },
+    {
+      "id": "TH-R13",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-456", "TRO-562"],
+      "evidence": [
+        { "file": ".github/workflows/ci.yml", "line": 47, "note": "Unchanged since baseline -- fresh clone, frozen-lockfile install, build." },
+        { "file": "README.md", "line": 45, "note": "`git clone https://github.com/troysatchell/LabelHunter.git` -- the repo URL now also appears in the setup instructions of a graded deliverable, not only in the internal PRD." }
+      ],
+      "verification": {
+        "command": "curl -s -H \"Accept: application/vnd.github+json\" https://api.github.com/repos/troysatchell/LabelHunter ; gh run list --repo troysatchell/LabelHunter --branch main --limit 5",
+        "result_excerpt": "GitHub API (unauthenticated): \"private\": false, \"visibility\": \"public\". gh run list: the CI run on the exact swept commit (\"Merge pull request #72\", 06dceb1) shows completed / success, 2m26s."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No delta. Re-ran both checks fresh this sweep rather than reusing the baseline's result: public visibility confirmed again, and CI green on the exact commit this sweep traces (06dceb1), not an older one."
+    },
+    {
+      "id": "TH-R14",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-484"],
+      "evidence": [
+        { "file": "README.md", "line": 1, "note": "197 lines: Prerequisites, Setup (8 numbered steps), Running the tests, How it works, Model usage and cost, What LabelHunter stores, What LabelHunter does not call, Repository layout, Deploying your own instance." },
+        { "file": "README.md", "line": 40, "note": "\"## Setup\" -- 8 numbered steps: clone, install, start Postgres, copy env file, set ANTHROPIC_API_KEY, migrate, `pnpm dev`." }
+      ],
+      "verification": {
+        "command": "git clone (local, from this worktree's own history) at commit 06dceb1, into a scratch directory; pnpm install; cp .env.local.example .env.local; set DATABASE_URL to a fresh scratch database in the existing labelhunter-pg container and ANTHROPIC_API_KEY (copied through, never echoed); pnpm db:migrate; pnpm build",
+        "result_excerpt": "pnpm install: exit 0. pnpm db:migrate: \"migrations applied successfully!\". pnpm build: exit 0, full route manifest printed, no errors. Scratch database dropped and the scratch clone directory removed afterward -- no state left behind."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "DELTA from MISSING. The baseline sweep found no README.md anywhere on main; PR #66 (TRO-484 / LH-063) has since merged (4af6482), adding a 197-line README with the exact shape docs/PRD.md:240 specified. Rather than cite the file's existence alone, this sweep performed the acceptance evidence literally: a genuine fresh clone (not this worktree, a separate `git clone` into a scratch directory), following the README's own numbered steps 1-2 and 4-7 nearly verbatim -- install, copy the env file, set the two required variables, migrate, build. One documented deviation: reused the already-running `labelhunter-pg` container on its actual port (5434) instead of the README's from-scratch `docker run` command on port 5432, since a container by that name already exists on this machine; this changes only the port, not the setup logic, and is disclosed here rather than silently substituted. `pnpm dev` / opening the app in a browser was not exercised in the fresh clone (build success plus this worktree's own already-passing `pnpm test:e2e` against the identical code stand in for that step). Both the scratch database and the scratch clone directory were removed after the check, per this skill's rule that a database-writing verify command runs against a throwaway database."
+    },
+    {
+      "id": "TH-R15",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-485"],
+      "evidence": [
+        { "file": "docs/approach.md", "line": 1, "note": "274 lines, read in full this sweep: Approach (problem, cascade, warning check, imperfect images, batch mode), Tools used, Assumptions log, Trade-offs and limitations, Measured results, What makes this more than the literal ask, What was not built and why -- exactly the four sections docs/PRD.md:241 named (approach, tools, assumptions, trade-offs)." },
+        { "file": "docs/approach.md", "line": 111, "note": "\"## Assumptions log\" -- names all three interpretation rulings (INT-001, INT-002, INT-003) plus the COLA-descope assumption, each with the question and the ruling." },
+        { "file": "docs/approach.md", "line": 214, "note": "\"## Measured results\" -- cites the accuracy BAND (87.2%-87.8% extraction, 80.6%-83.3% cascade-verdict, K=3), never a single point value, matching the exact failure mode the baseline sweep's suggested_scope warned against." }
+      ],
+      "verification": null,
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "DELTA from MISSING. docs/approach.md did not exist at the baseline sweep; PR #68 (TRO-485 / LH-064) has since merged (9fc217b), adding a 274-line document. This is a content-completeness requirement (\"Doc exists and names approach, tools, assumptions explicitly\"), not a behavioral-command requirement, so VERIFIED rests on having read the full document and confirmed it covers all four named sections -- done this sweep, not inferred from the file's existence alone. The document is honest rather than promotional: it states cascade-verdict accuracy as its \"clearest open problem\" and names the bold-detection gap plainly (see TH-R9)."
+    },
+    {
+      "id": "TH-R16",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-481", "TRO-482", "TRO-483", "TRO-568"],
+      "evidence": [
+        { "file": "scripts/latency/results/single-label-verify-url-mode.json", "line": 30, "note": "20 real POST /api/verify requests against labelhunter-web.onrender.com, past the access-code gate, verdictCounts.PASS = 20 -- proves \"single-label verify succeeds on the deployed instance\", the exact clause the baseline sweep held below VERIFIED." },
+        { "file": "scripts/golden/results/seeded-demo-batch-2026-08-13.json", "line": 1, "note": "A second, independent proof on the deployed instance: a real 36-item batch, status COMPLETED, processedCount 36." },
+        { "file": "README.md", "line": 17, "note": "\"Deployed URL: https://labelhunter-web.onrender.com\" and the access code, both now published in a graded deliverable -- closing the baseline sweep's other named gap (\"the access code lives only in the unmerged README\")." }
+      ],
+      "verification": {
+        "command": "curl -s -o /dev/null -w \"%{http_code} %{redirect_url}\" https://labelhunter-web.onrender.com/ ; curl -s -o /dev/null -w \"%{http_code}\" https://labelhunter-web.onrender.com/api/health ; curl -s -o /dev/null -w \"%{http_code}\" https://labelhunter-web.onrender.com/api/review-queue",
+        "result_excerpt": "GET / -> 307 -> /access-code. GET /api/health -> 200. GET /api/review-queue (no credential) -> 401. All read-only GETs, re-run fresh this sweep, no mutation."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "DELTA from PARTIAL. Both halves the baseline sweep split now hold. Half one (URL loads): re-confirmed live this sweep with fresh read-only probes. Half two (single-label verify succeeds on the deployed instance): the baseline sweep's own blocking reason was that the only evidence was stale (predated TRO-546 and the access-code gate reaching the deployment). The 4b004bb artifact is a fresh, unstale, gate-crossing measurement of exactly that claim (TH-R2's evidence, cited here too since it is the same underlying fact). The seeded-demo batch corroborates independently at batch scale. The access code and URL are now both published in README.md, closing the \"an evaluator has no documented way past the gate\" gap the baseline sweep also named."
+    },
+    {
+      "id": "TH-R17",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-459", "TRO-470"],
+      "evidence": [
+        { "file": "src/app/api/verify/route.ts", "line": 313, "note": "Unchanged since baseline -- the core loop's single entry point." }
+      ],
+      "verification": {
+        "command": "pnpm typecheck && pnpm lint && pnpm build && pnpm test && pnpm test:e2e && pnpm eval:check",
+        "result_excerpt": "typecheck: clean. lint: 1 warning, 0 errors. build: exit 0. test: 182 files / 2267 tests, all passed (18.17s). test:e2e: 12 passed (13.4s). eval:check: PASS, extraction 87.2% and cascade-verdict 80.6%, both within band."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No verdict delta -- already VERIFIED. The cross-cluster dependency the baseline sweep flagged (TH-R4, TH-R5) both resolved this sweep: TH-R4 stays VERIFIED, TH-R5 moved to VERIFIED. TH-R2, TH-R15 and TH-R23, previously the non-blocking exceptions this row's rubric-roll-up carried, are now themselves VERIFIED -- the functional core this row rolls up is green end to end with no outstanding exception."
+    },
+    {
+      "id": "TH-R18",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-456", "TRO-508", "TRO-548"],
+      "evidence": [
+        { "file": "eslint.config.mjs", "line": 13, "note": "Unchanged since baseline -- explicit `any` is a repo-wide lint error." },
+        { "file": "src/app/_components/DetailView.tsx", "line": 112, "note": "The one lint warning (no-img-element), unchanged and still deliberately accepted with an in-code comment at lines 110-111." }
+      ],
+      "verification": {
+        "command": "pnpm typecheck && pnpm lint && pnpm build && pnpm test",
+        "result_excerpt": "typecheck: clean. lint: 1 problem (0 errors, 1 warning) -- same single warning as baseline. build: exit 0. test: 182 files / 2267 tests, all passed (18.17s)."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No verdict delta. The baseline sweep's one honest caveat -- no README, no architecture diagram for an evaluator opening the repo root -- is resolved now that README.md exists (see TH-R14)."
+    },
+    {
+      "id": "TH-R19",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-459", "TRO-470", "TRO-485"],
+      "evidence": [
+        { "file": "docs/approach.md", "line": 16, "note": "\"### The cascade\" -- justifies the two-tier model choice with a measured comparison (cascade 71.9% verdict accuracy / $0.28 vs Sonnet-only 37.5% / $0.47, 32-case benchmark)." },
+        { "file": "docs/approach.md", "line": 99, "note": "\"## Tools used\" table -- Next.js, claude-haiku-4-5, claude-sonnet-5, Postgres/Drizzle, tesseract.js (WASM, no native build step), Render -- each choice named against the prototype's scope." },
+        { "file": "package.json", "line": 36, "note": "Nine runtime dependencies -- unchanged, the scope-sizing evidence the baseline sweep already found strong." }
+      ],
+      "verification": null,
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "DELTA from PARTIAL. The baseline sweep found the justification content already strong (measured benchmark, lean dependency list, deliberate architecture) but held the row at PARTIAL for one reason only: the named deliverable, docs/approach.md, did not exist. That reason is resolved -- I read the document in full and confirmed \"The cascade\" and \"Tools used\" sections carry the justification directly, not just a pointer. The benchmark figure itself (71.9%/37.5%, 32-case set from 2026-08-12) is cited by the document as a dated, scoped comparison rather than a current headline number, which is the honest framing this sweep's own discipline asks for."
+    },
+    {
+      "id": "TH-R20",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-478", "TRO-479", "TRO-570"],
+      "evidence": [
+        { "file": "docs/error-states.md", "line": 39, "note": "Unchanged since baseline -- the four single-label designed states." },
+        { "file": "CHANGES.md", "line": 247, "note": "TRO-570's walkthrough triggered two of the four states live for the first time: client-side network failure and server-side unreachable endpoint (TH-R7's exact scenario), both showing the documented, distinct panel text." }
+      ],
+      "verification": {
+        "command": "pnpm test:e2e && pnpm test",
+        "result_excerpt": "test:e2e: 12 passed (13.4s). test: 182 files / 2267 tests, all passed (18.17s)."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No verdict delta -- already VERIFIED. TRO-570's walkthrough adds real, live confirmation of two error states the automated suite exercises only via mocked failures, strengthening rather than changing the verdict."
+    },
+    {
+      "id": "TH-R21",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-486", "TRO-569", "TRO-533"],
+      "evidence": [
+        { "file": "docs/approach.md", "line": 258, "note": "\"## What was not built, and why\" -- \"Every requirement in this brief is either built, or intentionally out of scope with a reason. None is silently dropped... See `audit/requirements/gaps.md` for the current, complete list, with the concrete next step named for each row.\" -- the graded deliverable explicitly points to this audit as the live traceability record, rather than omitting the gaps." },
+        { "file": "docs/approach.md", "line": 66, "note": "Names the one remaining functional gap (bold detection) explicitly and links the ticket (TRO-569) -- addressed-or-documented, not silent." }
+      ],
+      "verification": null,
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "DELTA from PARTIAL. NOTED AS A JUDGMENT CALL, not a mechanical re-trace, so it is fully auditable rather than silent. The baseline sweep's suggested_scope proposed two specific closing actions (surface a bold advisory in the UI; add a requirements table to the README) -- neither literally happened. What did happen: the row's actual Meaning-in-code names four buried interview requirements (5s latency, batch, fuzzy-vs-strict matching, UX benchmark) -- all four now trace VERIFIED (TH-R2, TH-R4, TH-R8/TH-R9's split, TH-R3). And its Acceptance evidence (\"every TH-R entry addressed in code or explicitly documented as descoped\") is now met at the whole-inventory level: every row this sweep traces is either VERIFIED or PARTIAL-with-an-explicit-gap-and-ticket (TH-R7, TH-R9), none MISSING, none silently dropped -- and docs/approach.md's own closing section explicitly hands the reader to this audit trail rather than hiding it. I judged this satisfies the row's literal acceptance wording even though it does not match the baseline sweep's two proposed actions; if a reviewer disagrees with that reading, the two original actions (bold UI advisory, README requirements table) remain the concrete fallback to close it under a stricter reading."
+    },
+    {
+      "id": "TH-R22",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-464", "TRO-476", "TRO-470"],
+      "evidence": [
+        { "file": "docs/approach.md", "line": 243, "note": "\"## What makes this more than the literal ask\" -- names all four differentiators explicitly in the graded deliverable (the baseline sweep's one honest caveat was that \"differentiator\" only appeared in the internal PRD)." }
+      ],
+      "verification": {
+        "command": "pnpm test:e2e ; pnpm eval:check",
+        "result_excerpt": "test:e2e: 12 passed (13.4s). eval:check: PASS."
+      },
+      "interpretation": null,
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "No verdict delta -- already VERIFIED. The baseline sweep's one caveat (differentiators named only in an internal draft) is resolved: docs/approach.md now names all four explicitly, including the variance-band eval harness the internal PRD never labelled as one."
+    },
+    {
+      "id": "TH-R23",
+      "verdict": "VERIFIED",
+      "tickets": ["TRO-485", "TRO-487", "TRO-531"],
+      "evidence": [
+        { "file": "docs/approach.md", "line": 138, "note": "\"## Trade-offs and limitations\" -- a full section, seven named limitations: bold detection, access control posture, the daily-budget-shipped-inert incident, no batch at brief-scale yet, cascade-verdict accuracy, and the latency re-measurement story." },
+        { "file": "docs/approach.md", "line": 140, "note": "\"A working core over ambitious but incomplete features.\" -- the prioritization half, restated in the same document as the written half, not split across an internal PRD and nothing." }
+      ],
+      "verification": null,
+      "interpretation": "I-003",
+      "assumption": null,
+      "suggested_scope": null,
+      "notes": "DELTA from PARTIAL. INT-003 ruled a trade-offs section must live in a graded deliverable; internal documents (docs/deploy.md, docs/error-states.md) do not satisfy it. docs/approach.md now carries exactly that section, and it is candid rather than promotional -- it names the daily-budget bug PR #43's own review caught, states cascade-verdict accuracy as the weakest measured number, and states the batch-scale gap plainly. Both halves of the acceptance (prioritization; written trade-offs) are now met in the same graded document."
+    }
+  ],
+  "orphan_tickets": [],
+  "needs_ruling": [],
+  "commands_run": [
+    { "command": "pnpm typecheck", "result": "exit 0 -- tsc --noEmit clean", "bears_on": ["TH-R17", "TH-R18"], "note": "run in the TRO-486 worktree (labelhunter-wt-tro_486), its own isolated database, at commit 06dceb1" },
+    { "command": "pnpm lint", "result": "exit 0 -- 1 problem (0 errors, 1 warning)", "bears_on": ["TH-R17", "TH-R18"], "note": null },
+    { "command": "pnpm build", "result": "exit 0 -- production build succeeded", "bears_on": ["TH-R17", "TH-R18"], "note": null },
+    { "command": "pnpm test", "result": "182 files, 2267 tests, all passed (18.17s)", "bears_on": ["TH-R1", "TH-R6", "TH-R8", "TH-R9", "TH-R11", "TH-R12", "TH-R17", "TH-R18", "TH-R20"], "note": null },
+    { "command": "pnpm test:e2e", "result": "12 passed (13.4s)", "bears_on": ["TH-R1", "TH-R3", "TH-R4", "TH-R11", "TH-R17", "TH-R20", "TH-R22"], "note": "fake Anthropic server by default; E2E_LIVE=1 is the paid opt-in and was NOT used" },
+    { "command": "pnpm eval:check", "result": "PASS -- extraction 87.2% within 87.2-87.8% band; cascade-verdict 80.6% within 80.6-83.3% band (K=3)", "bears_on": ["TH-R10", "TH-R17", "TH-R19", "TH-R22"], "note": "cheap mode: compares committed eval-report.json (live, measuredAt 2026-08-13T15:57:01.899Z) against the committed baseline band; makes no live model call. Confirmed current under INT-002 by checking `git log e63b00b..HEAD` over extractor/router/warning/comparators -- 0 files changed." },
+    { "command": "git log 4b004bb..HEAD --oneline -- src/app/api/verify/route.ts src/server/router/ src/server/warning/ src/server/extractor/ scripts/latency/measure.ts render.yaml", "result": "0 commits", "bears_on": ["TH-R2", "TH-R16"], "note": "confirms the fresh latency artifact (measuredAt 2026-08-13T19:43:22Z) is not stale under INT-002; TH-R2's latency re-measurement itself was NOT re-run live this sweep, per the orchestrator's explicit instruction to avoid live API spend" },
+    { "command": "curl -s -o /dev/null -w '%{http_code} %{redirect_url}' https://labelhunter-web.onrender.com/ ; same for /api/health and /api/review-queue", "result": "307 -> /access-code; 200; 401 without credential", "bears_on": ["TH-R6", "TH-R16"], "note": "read-only GET probes against the live deploy; no mutation" },
+    { "command": "grep -rn \"COLA\" src/ --include=*.ts --include=*.tsx", "result": "1 hit, a regulatory-citation comment, not a client", "bears_on": ["TH-R5"], "note": null },
+    { "command": "grep -rn 'formatting.bold|\\.bold\\b|isBold|boldCheck' src/server/router/ src/app/_components/DetailView.tsx", "result": "0 hits", "bears_on": ["TH-R9"], "note": "confirms the bold signal is still not read anywhere downstream of the extractor" },
+    { "command": "fresh `git clone` (local) at commit 06dceb1 into a scratch directory; pnpm install; pnpm db:migrate against a throwaway scratch database; pnpm build", "result": "install exit 0; migrations applied successfully; build exit 0", "bears_on": ["TH-R14"], "note": "scratch database dropped and scratch directory removed after the check" },
+    { "command": "curl -s -H 'Accept: application/vnd.github+json' https://api.github.com/repos/troysatchell/LabelHunter ; gh run list --repo troysatchell/LabelHunter --branch main --limit 5", "result": "private: false, visibility: public; CI run on commit 06dceb1 (\"Merge pull request #72\") completed/success in 2m26s", "bears_on": ["TH-R13"], "note": null },
+    { "command": "pnpm eval:check -- --live --full", "result": "NOT RUN", "bears_on": ["TH-R17"], "note": "deliberately not run: costs real API money; the committed artifact is current under INT-002 (confirmed directly this sweep, not assumed)" },
+    { "command": "pnpm latency:check -- --url=<deployed> (a fresh live re-measurement)", "result": "NOT RUN", "bears_on": ["TH-R2"], "note": "deliberately not run: would bill a real Anthropic call against the deployed instance; the already-committed, already-fresh artifact (measuredAt 2026-08-13T19:43:22Z) supplies the evidence instead, per explicit orchestrator instruction" }
+  ]
+}

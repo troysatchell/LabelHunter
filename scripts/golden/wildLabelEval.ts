@@ -47,10 +47,17 @@ const RESULTS_PATH = path.resolve(
  * other golden-set image path, even though `candidates.json` is a
  * committed, reviewed file, not runtime input (CodeRabbit finding, round
  * 1 — "cheap enough to add anyway" is `build.ts`'s own reasoning for the
- * identical check). */
-const WILD_LABELS_DIRECTORY = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../golden-set/wild-labels",
+ * identical check). Resolved through `realpathSync` — not just
+ * `path.resolve` — so both sides of the `path.relative` comparison below
+ * share the same physical-path basis as `resolvedImagePath` (also
+ * `realpathSync`-resolved). Comparing a symlink-resolved candidate path
+ * against an un-resolved boundary would be comparing two different
+ * coordinate systems: if any component of this repo's checkout path is
+ * itself a symlink, the two could disagree about what "inside" means
+ * (CodeRabbit finding, round 4). The directory is committed and always
+ * exists, so resolving it eagerly at module load is safe. */
+const WILD_LABELS_DIRECTORY = realpathSync(
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../golden-set/wild-labels"),
 );
 
 interface CandidatesFile {
@@ -192,7 +199,7 @@ function printCaseLine(outcome: CaseRunOutcome, index: number, total: number): v
       ? `, resolver: FAILED (${r.resolverError})`
       : "";
   console.log(
-    `  [${index}/${total}] ${r.caseId}: extraction ${extractionCorrect}/5 fields correct, ${routerNote}, haiku $${r.haikuCost.usd.toFixed(4)}${resolverNote}`,
+    `  [${index}/${total}] ${r.caseId}: extraction ${extractionCorrect}/${r.extraction.fields.length} fields correct, ${routerNote}, haiku $${r.haikuCost.usd.toFixed(4)}${resolverNote}`,
   );
 }
 
@@ -217,9 +224,26 @@ async function main(): Promise<void> {
   const outcomes: CaseRunOutcome[] = [];
   try {
     for (let i = 0; i < candidates.length; i++) {
-      const outcome = await runOneCase(candidates[i], db);
-      outcomes.push(outcome);
-      printCaseLine(outcome, i + 1, candidates.length);
+      // runOneCase normally reports a real API/HTTP failure as
+      // outcome.failure, never a throw (cascade-runner.ts's own design) --
+      // but it DOES throw for what its own comments call "a harness bug,
+      // not a case result" (e.g. a captured-state invariant violated).
+      // Catching that here, instead of letting it propagate past this
+      // whole loop, means an unexpected failure on case 3 of 5 does not
+      // discard the already-collected, already-paid-for outcomes for
+      // cases 1-2, and the report below still gets written with whatever
+      // real evidence this run actually produced (CodeRabbit finding,
+      // round 4 -- CLAUDE.md "never fabricate a number" cuts both ways: an
+      // unreported real cost is exactly as dishonest as a fabricated one).
+      try {
+        const outcome = await runOneCase(candidates[i], db);
+        outcomes.push(outcome);
+        printCaseLine(outcome, i + 1, candidates.length);
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        outcomes.push({ result: null, failure: { caseId: candidates[i].caseId, error: message }, rawExtraction: null, rawPreprocessed: null });
+        console.log(`  [${i + 1}/${candidates.length}] ${candidates[i].caseId}: FAILED (harness error) — ${message}`);
+      }
     }
   } finally {
     const { scratchDirCleanupError, closePoolError } = await cleanupScratchDirAndPool(

@@ -564,16 +564,26 @@ export async function mainWild(): Promise<void> {
   const generate = await generateWildLabelWithGemini(apiKey);
   let spentUsd = 0;
   const results: WildLabelGenerationResult[] = [];
-  for (const request of WILD_LABEL_REQUESTS) {
-    const result = await generateWildLabelOne(request, generate);
-    spentUsd += result.costUsd;
-    results.push(result);
-    console.log(`${result.caseId}: OK, $${result.costUsd.toFixed(4)} (running total $${spentUsd.toFixed(4)})`);
+  try {
+    for (const request of WILD_LABEL_REQUESTS) {
+      const result = await generateWildLabelOne(request, generate);
+      spentUsd += result.costUsd;
+      results.push(result);
+      console.log(`${result.caseId}: OK, $${result.costUsd.toFixed(4)} (running total $${spentUsd.toFixed(4)})`);
+    }
+  } finally {
+    // Always prints the real accumulated spend, even when a later request
+    // in the list throws (a transient API error, most likely) -- every
+    // dollar already spent on the successful calls before the throw is
+    // real money, and it must never go unreported just because a later
+    // call in the same run failed (CodeRabbit finding, round 4; CLAUDE.md
+    // "never fabricate a number" -- an unreported real cost is exactly as
+    // dishonest as a fabricated one).
+    console.log(
+      `\n${results.length}/${WILD_LABEL_REQUESTS.length} wild label(s) generated, $${spentUsd.toFixed(4)} real spend so far ` +
+        `(exact, from each call's real usageMetadata -- see each .meta.json for its own figure).`,
+    );
   }
-  console.log(
-    `\nDone. ${results.length} wild label(s) generated, $${spentUsd.toFixed(4)} real spend ` +
-      `(exact, from each call's real usageMetadata -- see each .meta.json for its own figure).`,
-  );
 }
 
 /**

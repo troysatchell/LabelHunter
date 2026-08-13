@@ -56,6 +56,19 @@ export interface WildLabelRequest {
 }
 
 /**
+ * The statutory warning text every request below asks Gemini to render.
+ * One shared constant, not five copies of the same literal (CodeRabbit
+ * finding, round 4) — a future edit to this text now touches one line,
+ * not five. Every request still asks Gemini to render this SAME string;
+ * what actually renders in the committed image (transcribed by hand into
+ * `golden-set/wild-labels/candidates.json`) is the real ground truth, per
+ * this file's own module comment — this constant is only ever the
+ * request, never trusted as an outcome.
+ */
+const REQUESTED_WARNING_TEXT =
+  "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.";
+
+/**
  * The ~5 wild-label requests (design doc §5, ticket "aim for about 5").
  * Deliberately varied across every axis the ticket names: beverage type,
  * layout, typeface, color, and where the government warning sits on the
@@ -79,8 +92,7 @@ export const WILD_LABEL_REQUESTS: readonly WildLabelRequest[] = [
     classType: "Straight Rye Whiskey",
     abvText: "47% Alc./Vol. (94 Proof)",
     netContentsText: "750 mL",
-    warningText:
-      "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+    warningText: REQUESTED_WARNING_TEXT,
     designBrief:
       "Design direction: an ornate Victorian-style label, deep amber and gold color scheme, an engraved-look decorative border, a wax-seal graphic near the brand name, a bold serif display typeface for the brand name. Place the government warning in a bordered box in the lower third of the label, in a small plain serif font.",
   },
@@ -91,8 +103,7 @@ export const WILD_LABEL_REQUESTS: readonly WildLabelRequest[] = [
     classType: "India Pale Ale",
     abvText: "6.8% Alc./Vol.",
     netContentsText: "12 fl oz",
-    warningText:
-      "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+    warningText: REQUESTED_WARNING_TEXT,
     designBrief:
       "Design direction: a modern minimalist can-front design, bold geometric sans-serif typeface for the brand name, a bright teal-and-orange color-block palette, a simple line-art foghorn icon. Place the government warning as very small print running vertically along the right edge of the label, rotated 90 degrees.",
   },
@@ -103,8 +114,7 @@ export const WILD_LABEL_REQUESTS: readonly WildLabelRequest[] = [
     classType: "Pinot Noir",
     abvText: "13.5% Alc./Vol.",
     netContentsText: "750 mL",
-    warningText:
-      "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+    warningText: REQUESTED_WARNING_TEXT,
     designBrief:
       "Design direction: an elegant, minimal wine label, muted cream-and-burgundy palette, a delicate flowing script typeface for the brand name, a thin single-line rule under the class/type line. Place the government warning as a single dense paragraph in very small print along the very bottom edge of the label, not boxed.",
   },
@@ -115,8 +125,7 @@ export const WILD_LABEL_REQUESTS: readonly WildLabelRequest[] = [
     classType: "London Dry Gin",
     abvText: "42% Alc./Vol. (84 Proof)",
     netContentsText: "750 mL",
-    warningText:
-      "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+    warningText: REQUESTED_WARNING_TEXT,
     designBrief:
       "Design direction: an ultra-modern, high-contrast design, matte black background with neon-green ink, a bold condensed geometric sans-serif typeface, an asymmetric off-center layout. Place the government warning in a small rectangular box tucked into the bottom-left corner, slightly rotated.",
   },
@@ -127,8 +136,7 @@ export const WILD_LABEL_REQUESTS: readonly WildLabelRequest[] = [
     classType: "Oatmeal Stout",
     abvText: "5.4% Alc./Vol.",
     netContentsText: "16 fl oz",
-    warningText:
-      "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+    warningText: REQUESTED_WARNING_TEXT,
     designBrief:
       "Design direction: a rustic hand-drawn woodcut illustration style, a warm earthy palette of deep brown and cream, a distressed hand-lettered display font for the brand name, a small woodcut-style illustration of a millwheel. Place the government warning directly beneath the class/type line, in regular (not boxed) small print, the same general style as the rest of the label's body text.",
   },

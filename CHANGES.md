@@ -109,14 +109,35 @@ its cost table shows the 5-image total's real, exact precision, with a footnote 
 figures that are honestly rounded (read from terminal output, not a saved report). 7 new test
 cases (52 → 59).
 
+**Review, round 4 — last round; stop rule invoked.** 13 findings. 7 more prose-style re-flags
+and 1 test-readability preference (moving a repeated try/finally into an `afterEach`, equal
+correctness either way) — dismissed per rule 31. 5 fixed, all real: the repeated statutory
+warning literal in `wildLabelPrompt.ts` is now one shared constant, not five copies;
+`WILD_LABELS_DIRECTORY` is now `realpathSync`-resolved so both sides of the containment check's
+`path.relative` share the same physical-path basis as the already-resolved candidate path (a
+symlinked checkout path could otherwise disagree about what "inside" means); `wildLabelEval.ts`'s
+`main()` now catches a per-case harness error instead of letting it discard every
+already-collected outcome and skip writing the report; `printCaseLine`'s field count now reads
+`r.extraction.fields.length` instead of a hardcoded `5`; `mainWild`'s spend summary now prints
+from a `finally` block, so a real, already-spent total is never silently dropped if a later
+request in the same run fails. No new automated test covers the exact "a case throws mid-run"
+path in `wildLabelEval.ts`'s `main()` — `runOneCase` isn't dependency-injected there, matching
+`scripts/eval/check.ts`'s own `runLive`, which carries the identical gap; the fix is a real,
+reviewed code change, verified by inspection and by the unchanged, still-passing existing
+suite, not by a new mocked test. Round 4 (like round 3) mixed genuine, non-prose findings in
+with the recurring prose noise — the stop rule (lessons.md rule 31) applies to that prose
+subset, never to a round wholesale; every round's real findings got fixed. Stopping here: the
+CHANGES.md/README prose has now been rewritten to the same standard three times running, and
+further re-review is expected to keep re-flagging the identical paragraphs.
+
 **Confirmed.** `scripts/golden/wildLabelPrompt.test.ts`, `wildLabelImagen.test.ts`, and
-`wildLabelCandidates.test.ts` are new — 59 test cases across three triage rounds, red first
-every round, green after each implementation. The candidates' schema shape is checked against
-the real, current `GoldenSetCase` validator (`verified`/`imagePath` patched to their
-post-fold-in values for that one check only, never written to disk) — both in the test suite
-and in `loadWildLabelCandidates` itself. `pnpm typecheck` is clean. The full 2414-test unit
-suite and the existing `imagen.test.ts`/`imagenPrompt.test.ts` job-1 suites still pass
-unchanged.
+`wildLabelCandidates.test.ts` are new — 59 test cases across four triage rounds, red first
+every round with new coverage, green after each implementation. The candidates' schema shape
+is checked against the real, current `GoldenSetCase` validator (`verified`/`imagePath` patched
+to their post-fold-in values for that one check only, never written to disk) — both in the
+test suite and in `loadWildLabelCandidates` itself. `pnpm typecheck` is clean. The full
+2414-test unit suite and the existing `imagen.test.ts`/`imagenPrompt.test.ts` job-1 suites
+still pass unchanged.
 
 ## TRO-577 — list surfaces stop hitching while scrolling (2026-08-13)
 

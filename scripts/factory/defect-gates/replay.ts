@@ -59,11 +59,12 @@ export function resolveFixCommit(repoRoot: string, row: LedgerRow): string | nul
  * Lists every commit that touched this row's file and names its ticket in
  * its own message, oldest first.
  *
- * A single "most recent match" guess often lands on the wrong commit — a
- * merge commit whose parent predates the whole PR, or a later bookkeeping
- * commit dated after the real fix. This lists every candidate instead, so
- * `replayRule` can test the rule against each pre-fix snapshot in turn. It
- * does not need to know which one was the real fix.
+ * A single "most recent match" guess often lands on the wrong commit. It
+ * might be a merge commit whose parent predates the whole PR. It might be
+ * a later bookkeeping commit dated after the real fix. This lists every
+ * candidate instead. `replayRule` can then test the rule against each
+ * pre-fix snapshot in turn. It does not need to know which one was the
+ * real fix.
  */
 export function resolveFixCandidates(repoRoot: string, row: LedgerRow): string[] {
   const result = git(repoRoot, [
@@ -121,10 +122,10 @@ export function summariseReplay(outcomes: ReplayOutcome[]): ReplayReport {
  *
  * A row may have several candidate fixing commits (see
  * `resolveFixCandidates`). The row counts as a hit when the rule fires at
- * ANY candidate's pre-fix snapshot — the real question is whether the rule
- * would have caught the defect at some point while it was still present,
- * not which commit history later assigned as "the" fix. A row is
- * unresolvable only when no candidate's parent even contains the file.
+ * any candidate's pre-fix snapshot. The real question is whether the rule
+ * would have caught the defect while it was present. It does not matter
+ * which commit history later assigned as "the" fix. A row is unresolvable
+ * only when no candidate's parent contains the file.
  */
 export function replayRule(
   repoRoot: string,

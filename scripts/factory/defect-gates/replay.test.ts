@@ -117,8 +117,8 @@ describe("selectCorpusRows", () => {
 describe("replayRule", () => {
   it("counts a hit when any candidate snapshot triggers the rule, not only the most recent one", () => {
     // Measured on this repo 2026-08-12: the most recent commit naming
-    // TRO-464 and touching queue.ts is not the one whose parent holds the
-    // unguarded quantifier — an earlier candidate does.
+    // TRO-464 and touching queue.ts is not the fix. Its own parent does
+    // not hold the unguarded quantifier. An earlier candidate's parent does.
     const rows: LedgerRow[] = [
       {
         ticket: "TRO-464",

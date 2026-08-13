@@ -151,15 +151,34 @@ as a side effect, but the underlying gap in `isProvablyNonEmpty` is unfixed — 
 **Re-measured backlog: 4, down from 12 (was 7 before round 2).** All 4 read by hand:
 `report-validation.ts:95` (`.every(isReliabilityBucket)`), `report-validation.ts:100`
 (`isStringArray`'s `.every()`), `review-queue-client.ts:108` (`isReviewQueueListResponse`'s
-`.every()`), `response.ts:186` (`deriveOutcome`, the corpus-confirmed `TRO-464` defect).
-Judged genuine, matching this rule's own "core case, keep" standard for a bare `.every()`
-reaching a real decision with no guard. Two of the four (`isStringArray`,
-`isReviewQueueListResponse`) validate array *shape*, where an empty array trivially and
-arguably-correctly satisfies "every element has type X" — flagged here as an honest,
-disclosed doubt, not resolved, and not exempted: unlike seeded `.reduce()` or `.some()`,
-whether an empty `caseIds`/`items` array should be accepted is a caller-specific business
-question this AST rule cannot settle, so both stay reported for human triage rather than
-silently auto-exempted. Precision on this measurement: 4/4 among reported findings.
+`.every()`), `response.ts:186` (`deriveOutcome`). Judged genuine, matching this rule's own
+"core case, keep" standard for a bare `.every()` reaching a real decision with no guard.
+
+**Correction (review round 4): `response.ts:186` was overstated below as "still live at
+HEAD, no doubt."** That claim went further than the evidence. Here is what the review found,
+and what I confirmed independently. `deriveOutcome` has no guard of its own against an empty
+`fields` array. Both of its current callers guard before calling it.
+`deriveResolvedFields` (`response.ts:280`) throws first when `flaggedFields.length === 0`.
+`isResolverResolution` (`queue.ts:221`) returns `false` first when `obj.fields.length === 0`
+(`queue.ts:212`). The historical defect is fixed at both known call sites today — that is
+observed, not assumed. What remains is different: the exported function itself has no
+guard. A future caller that skips the guard would reproduce the original bug. That is a
+defence-in-depth finding, not a live one, and it stays in the count on that basis.
+
+This uses the same standard as `pairing.ts:70` above, not a different one. The question is
+always the same: is safety provable from the code the rule reads? For `pairing.ts`, yes —
+the guard sits in the same branch as the call, one fact, inseparable from the site. For
+`deriveOutcome`, no — its safety depends on every caller staying disciplined, and its own
+code cannot guarantee that. Two sites, one standard, two different answers.
+
+Two of the four (`isStringArray`, `isReviewQueueListResponse`) validate array *shape*,
+where an empty array trivially and arguably-correctly satisfies "every element has type X"
+— flagged here as an honest, disclosed doubt, not resolved, and not exempted: unlike seeded
+`.reduce()` or `.some()`, whether an empty `caseIds`/`items` array should be accepted is a
+caller-specific business question this AST rule cannot settle, so both stay reported for
+human triage rather than silently auto-exempted. Precision on this measurement: 4/4 among
+reported findings — one of the four (`response.ts:186`) genuine as a defence-in-depth gap
+rather than a live defect.
 
 **Replay recall unaffected: still 1.0 (2/2).** Both corpus rows are `.every` cases;
 removing `.some` from the checked set does not touch them. Confirmed by re-running the

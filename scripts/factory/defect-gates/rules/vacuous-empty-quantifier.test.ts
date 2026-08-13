@@ -86,9 +86,9 @@ describe("vacuous-empty-quantifier", () => {
   });
 
   it("does not flag a quantifier's result assigned to a variable used only for display", () => {
-    // Same case as "does not flag a quantifier used only for display" above,
-    // restated directly against the one-hop variable read: text.length
-    // derives from text, but is not a direct read of text itself.
+    // Same case as "does not flag a quantifier used only for display"
+    // above, restated directly against the one-hop variable read.
+    // text.length derives from text. It is not a direct read of text itself.
     const findings = check(`
       function label(items: I[]) {
         const text = items.every(done) ? "all done" : "in progress";
@@ -100,9 +100,10 @@ describe("vacuous-empty-quantifier", () => {
 
   it("flags a quantifier's result assigned to a variable, then returned via object shorthand", () => {
     // TRO-464 / response.ts's real historical shape: `return { outcome, fields };`.
-    // Shorthand is a ShorthandPropertyAssignment node, a different AST kind
-    // than the explicit `{ outcome: outcome }` PropertyAssignment, but the
-    // same sink — a property assignment, not a transforming expression.
+    // Shorthand is a ShorthandPropertyAssignment node. That is a different
+    // AST kind than the explicit `{ outcome: outcome }` PropertyAssignment.
+    // Both are the same sink — a property assignment, not a transforming
+    // expression.
     const findings = check(`
       function deriveOutcome(fields: F[]) {
         const outcome = fields.every(p) ? "resolved" : "needs-human";

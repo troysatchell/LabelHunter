@@ -8,16 +8,17 @@ import type { Finding, RuleContext, RuleMeta } from "../types";
  * `.some` is deliberately excluded — review round 3.
  *
  * Vacuous truth means a check claims a property HOLDS when nothing was
- * examined. `[].every(p)` is `true`: it claims every element satisfied
- * `p`, over zero elements actually checked. That is the defect class this
- * rule names. `[].some(p)` is `false`: it claims "no matching element
- * found," which is the safe, usually correct default for an empty
- * collection. A bare `.some()` call is not a vacuous-truth defect.
+ * examined. `[].every(p)` is `true`. It claims every element satisfied
+ * `p`, over zero elements actually checked. That is the defect class
+ * this rule names. `[].some(p)` is `false`. It claims "no matching
+ * element found." That is the safe, usually correct default for an
+ * empty collection. A bare `.some()` call is not a vacuous-truth defect.
  *
- * Known gap, not covered by this rule: the NEGATED form, `if
- * (!xs.some(bad))`, IS a vacuous assertion — "no bad items" holds
- * trivially when there are no items at all. This rule does not detect a
- * negated `.some()`. That gap is recorded here, not silently dropped.
+ * Known gap, not covered by this rule: a negated `.some()`. The form is
+ * `if (!xs.some(bad))`. That form IS a vacuous assertion. "No bad items"
+ * holds trivially when there are no items at all. This rule does not
+ * detect a negated `.some()`. That gap is recorded here, not silently
+ * dropped.
  */
 const QUANTIFIERS = new Set(["every", "reduce"]);
 
@@ -79,15 +80,18 @@ function isProvablyNonEmpty(receiver: ts.Expression, sourceFile: ts.SourceFile):
 /**
  * True when a node's own value is read directly at a decision point.
  *
- * Checked shapes: the whole expression of a return, the whole test of an
- * if, the whole value of a property assignment (`{ outcome: x }` or the
- * shorthand `{ outcome }` — the same sink, two spellings TypeScript parses
- * as different node kinds), or a bare-statement ternary's condition. This
- * is deliberately shallow — one level up, with no further climbing through
- * a transforming expression. `return t;` is a direct use of `t`.
- * `return t.length;` is not a direct use of `t`, even though the number it
- * returns is derived from `t` — a derived value is not the same decision
- * as the value itself.
+ * Checked shapes:
+ * - the whole expression of a `return`
+ * - the whole test of an `if`
+ * - the whole value of a property assignment (`{ outcome: x }`, or the
+ *   shorthand `{ outcome }` — the same sink, two different node kinds)
+ * - a bare-statement ternary's condition
+ *
+ * This check is deliberately shallow. It looks only one level up. It does
+ * not climb through a transforming expression. `return t;` is a direct
+ * use of `t`. `return t.length;` is not. The number it returns is derived
+ * from `t`, but a derived value is not the same decision as the value
+ * itself.
  */
 function isDirectSinkUse(node: ts.Node): boolean {
   const parent = node.parent;
@@ -106,12 +110,15 @@ function isDirectSinkUse(node: ts.Node): boolean {
  * True when a quantifier's result, assigned to a local variable, is later
  * read as a direct decision value — one hop through that one variable.
  *
- * Bounded on purpose, per review: only a `const`/`let` with a plain
- * identifier name (no destructuring, no `var`), only inside the function
- * that declares it, and only one hop. A read that itself only feeds a
- * second variable is not followed further — that would need a second hop.
- * A variable declared but never read again decides nothing, so a
- * zero-read variable is not a sink.
+ * Bounded on purpose, per review:
+ * - only a `const`/`let` with a plain identifier name (no destructuring,
+ *   no `var`)
+ * - only inside the function that declares it
+ * - only one hop — a read that itself only feeds a second variable is not
+ *   followed further
+ *
+ * A variable declared but never read again decides nothing. A zero-read
+ * variable is never a sink.
  */
 function reachesSinkThroughVariable(declaration: ts.VariableDeclaration, sourceFile: ts.SourceFile): boolean {
   if (!ts.isIdentifier(declaration.name)) return false;
@@ -181,10 +188,11 @@ function checkSource(filePath: string, text: string, _ctx: RuleContext): Finding
     const name = node.expression.name.text;
     if (!QUANTIFIERS.has(name)) return;
 
-    // Exemption, not an allowlist entry: a seeded .reduce(fn, seed) cannot
-    // be vacuous. The seed IS the defined result for an empty collection —
-    // review round 3. An unseeded .reduce(fn) is still checked below: it
-    // throws on an empty collection, a real defect this rule should catch.
+    // Exemption, not an allowlist entry — review round 3. A seeded
+    // .reduce(fn, seed) cannot be vacuous. The seed IS the defined result
+    // for an empty collection. An unseeded .reduce(fn) is still checked
+    // below. It throws on an empty collection. That is a real defect this
+    // rule should catch.
     if (name === "reduce" && node.arguments.length >= 2) return;
 
     const receiver = node.expression.expression;

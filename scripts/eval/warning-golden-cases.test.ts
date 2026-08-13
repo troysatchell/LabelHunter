@@ -84,11 +84,18 @@ describe("case-09-title-case-warning-full-statement — CP-2 §9.2 finding 2: a 
   });
 });
 
-describe("case-23/case-24 (tiny warning text) — CP-2 §9.2 finding 1: LOW_IMAGE_QUALITY, not LOW_MODEL_CONFIDENCE", () => {
+describe("case-23/case-24 (tiny warning text) — CP-2 §9.2 finding 1: WARNING_MISMATCH, not LOW_MODEL_CONFIDENCE", () => {
   it("both cases expect a reviewReason resolveGovernmentWarningField/WarningComparatorResult can actually produce", () => {
+    // TRO-516 correction C4: TRO-469/LH-021 predicted LOW_IMAGE_QUALITY as the
+    // value this comparator would produce for tiny print. TRO-535's
+    // OCR_CONFIDENCE_FLOOR sweep (60 -> 50) let the OCR channel's real,
+    // badly-degraded reading reach the reconciler; measured live
+    // (eval-report.json, measuredAt 2026-08-12T22:15:52.776Z), both cases
+    // return WARNING_MISMATCH instead — one of the same three legal values
+    // CP-2 §9.2 finding 1 already named, just not the one TRO-469 predicted.
     for (const caseId of ["case-23-tiny-warning-text-standard-bottle", "case-24-tiny-warning-text-miniature-bottle"]) {
       const goldenCase = findCase(caseId);
-      expect(goldenCase.expected.reviewReason, `${caseId} expected.reviewReason`).toBe("LOW_IMAGE_QUALITY");
+      expect(goldenCase.expected.reviewReason, `${caseId} expected.reviewReason`).toBe("WARNING_MISMATCH");
     }
   });
 });

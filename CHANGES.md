@@ -4,6 +4,49 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-577 — list surfaces stop hitching while scrolling (2026-08-13)
+
+**The report.** Troy: "in the review queue the scroll sticks randomly — it hitches." A
+parallel code sweep (workflow wf_d4a01062-e5b) ranked the causes; each was then verified
+against the code by hand.
+
+**The causes, and the fixes.**
+1. **Link viewport prefetch (review queue).** Every queue row rendered a default-prefetch
+   `next/link`. In production, each link prefetches its detail route as it scrolls into
+   view. Each prefetch is a server render with database queries. Scrolling the seeded queue
+   fired a burst of them mid-scroll — felt as random hitches. Fix: `prefetch={false}` on the
+   row links. The detail page is one deliberate click away; nothing needs to load before
+   that click.
+2. **Batch page poll re-render.** The batch progress poll called `setPhase` with a fresh
+   object every 3 s, even when nothing changed. A still batch re-rendered the whole summary
+   and results table every tick. Fix: skip the update when the payload is identical AND no
+   stale poll-error note needs clearing (`isSameProgress`, exported and unit-tested).
+   Identical data after a failed poll still updates, because clearing the error note is a
+   visible change.
+3. **Row re-render on Refresh / Load more (review queue).** The list re-rendered every row
+   at the moment of a click, because the phase transition re-rendered the parent.
+   `ReviewQueueList` is now memoized. The transitions keep the same `items` reference, so
+   only the status chrome re-renders.
+
+**Investigated, no change needed.** The sweep flagged refresh-from-error unmounting the
+list and losing scroll position. The code already guards this: a manual refresh keeps rows
+mounted for every state that has rows (`ReviewQueueBrowser.tsx`'s own PR #16 fix). The
+error state has no rows to lose. **Not applied:** `content-visibility: auto` on rows — a
+wrong `contain-intrinsic-size` estimate makes the scrollbar itself jump, which reads as the
+exact symptom this ticket removes; the queue's row count does not need it.
+
+**Rollback.** Revert the PR. All three surfaces return to their prior render behavior.
+
+**Confirmed.** The prefetch test failed red against the unmodified component
+(`data-prefetch` was `"undefined"`), and the `isSameProgress` unit tests failed red on the
+missing export — both observed before the fix. The two poll integration tests (a real
+change still applies after identical no-op polls; a stale error note clears on identical
+data) pass against the old always-apply code by construction: they pin the two ways the new
+skip could regress. All 33 tests across the three touched component files pass. `pnpm
+typecheck` is clean. **Not measured:** a before/after scroll-jank profile on the live
+deployment — the causal chain is verified in code, and the production prefetch behavior
+does not reproduce in a dev-mode profile; stated per the no-fabricated-numbers rule.
+
 ## TRO-532 — LH-025 · Stroke-width bold advisory check (2026-08-13)
 
 Advances TH-R9. CP-2 §7.2 named a technique for bold detection and did not try it: binarize

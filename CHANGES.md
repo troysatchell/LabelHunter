@@ -7,8 +7,8 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 ## TRO-577 — list surfaces stop hitching while scrolling (2026-08-13)
 
 **The report.** Troy: "in the review queue the scroll sticks randomly — it hitches." A
-parallel code sweep (workflow wf_d4a01062-e5b) ranked the causes; each was then verified
-against the code by hand.
+parallel code sweep (workflow wf_d4a01062-e5b) ranked the causes. Each cause was then
+verified against the code by hand.
 
 **The causes, and the fixes.**
 1. **Link viewport prefetch (review queue).** Every queue row rendered a default-prefetch
@@ -19,33 +19,33 @@ against the code by hand.
    that click.
 2. **Batch page poll re-render.** The batch progress poll called `setPhase` with a fresh
    object every 3 s, even when nothing changed. A still batch re-rendered the whole summary
-   and results table every tick. Fix: skip the update when the payload is identical AND no
-   stale poll-error note needs clearing (`isSameProgress`, exported and unit-tested).
-   Identical data after a failed poll still updates, because clearing the error note is a
-   visible change.
+   and results table every tick. Fix: skip the update when the payload is identical
+   (`isSameProgress`, exported and unit-tested). One exception holds: identical data after
+   a failed poll still updates. Clearing the stale error note is itself a visible change.
 3. **Row re-render on Refresh / Load more (review queue).** The list re-rendered every row
    at the moment of a click, because the phase transition re-rendered the parent.
    `ReviewQueueList` is now memoized. The transitions keep the same `items` reference, so
    only the status chrome re-renders.
 
 **Investigated, no change needed.** The sweep flagged refresh-from-error unmounting the
-list and losing scroll position. The code already guards this: a manual refresh keeps rows
+list and losing scroll position. The code already guards this. A manual refresh keeps rows
 mounted for every state that has rows (`ReviewQueueBrowser.tsx`'s own PR #16 fix). The
-error state has no rows to lose. **Not applied:** `content-visibility: auto` on rows — a
-wrong `contain-intrinsic-size` estimate makes the scrollbar itself jump, which reads as the
-exact symptom this ticket removes; the queue's row count does not need it.
+error state has no rows to lose. **Not applied:** `content-visibility: auto` on rows. A
+wrong `contain-intrinsic-size` estimate makes the scrollbar itself jump. That reads as the
+exact symptom this ticket removes, and the queue's row count does not need the
+optimization.
 
 **Rollback.** Revert the PR. All three surfaces return to their prior render behavior.
 
-**Confirmed.** The prefetch test failed red against the unmodified component
-(`data-prefetch` was `"undefined"`), and the `isSameProgress` unit tests failed red on the
-missing export — both observed before the fix. The two poll integration tests (a real
-change still applies after identical no-op polls; a stale error note clears on identical
-data) pass against the old always-apply code by construction: they pin the two ways the new
-skip could regress. All 33 tests across the three touched component files pass. `pnpm
-typecheck` is clean. **Not measured:** a before/after scroll-jank profile on the live
-deployment — the causal chain is verified in code, and the production prefetch behavior
-does not reproduce in a dev-mode profile; stated per the no-fabricated-numbers rule.
+**Confirmed.** The prefetch test failed red against the unmodified component:
+`data-prefetch` was `"undefined"`. The `isSameProgress` unit tests failed red on the
+missing export. Both failures were observed before the fix. Two poll integration tests pin
+the two ways the new skip could regress: a real change must still apply after identical
+no-op polls, and a stale error note must clear on identical data. Both pass against the old
+always-apply code by construction. All 33 tests across the three touched component files
+pass. `pnpm typecheck` is clean. **Not measured:** a before/after scroll-jank profile on
+the live deployment. The causal chain is verified in code. The production prefetch behavior
+does not reproduce in a dev-mode profile. Stated per the no-fabricated-numbers rule.
 
 ## TRO-532 — LH-025 · Stroke-width bold advisory check (2026-08-13)
 

@@ -82,21 +82,21 @@ export const DEFAULT_SAMPLE_CASE_IDS: readonly string[] = [
 ];
 
 /**
- * Which `ReviewReason` each `DEFAULT_SAMPLE_CASE_IDS` case actually
- * produced in the committed `eval-report.json` run this repo carries now
- * (`measuredAt: "2026-08-13T01:47:56.655Z"`, 32 cases, from `pnpm
- * eval:check -- --live --full`), at the router stage —
+ * This map records which `ReviewReason` each `DEFAULT_SAMPLE_CASE_IDS`
+ * case actually produced, in the committed `eval-report.json` run this
+ * repo carries now (`measuredAt: "2026-08-13T01:47:56.655Z"`, 32 cases,
+ * from `pnpm eval:check -- --live --full`). It uses the router stage —
  * `VerdictCaseScore.actualReviewReason` on `routerVerdict`, the same
  * stage `EvalReportSummary.reviewReasonAccuracy` scores (`types.ts`'s own
  * comment on that field). `null` means the router verdict was PASS or
  * FAIL, with no `reviewReason`.
  *
- * A snapshot of one measured run (TRO-541 / LH-036), not a claim about
- * what the pipeline can or cannot produce on a different run —
- * `DEFAULT_REPEATS`'s own comment below already records real run-to-run
- * variance for case-17. `args.test.ts` checks this map against the same
- * committed report on every test run, so a stale value here fails loudly
- * instead of drifting silently from measured reality.
+ * This is a snapshot of one measured run (TRO-541 / LH-036). It is not a
+ * claim about what the pipeline can or cannot produce on a different
+ * run — `DEFAULT_REPEATS`'s own comment below already records real
+ * run-to-run variance for case-17. `args.test.ts` checks this map
+ * against the same committed report on every test run, so a stale value
+ * here fails loudly instead of drifting silently from measured reality.
  */
 export const DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS: Readonly<Record<string, ReviewReason | null>> = {
   "case-01-clean-match-spirits": null,

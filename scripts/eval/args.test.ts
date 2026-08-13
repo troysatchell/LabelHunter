@@ -130,17 +130,18 @@ describe("resolveCaseIds", () => {
   });
 });
 
-// TRO-541 / LH-036 — the default sample's own coverage claim, made
-// machine-checkable against the committed evidence artifact instead of
-// left as unverified prose. `DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS`
-// (`args.ts`) is documentation the file's own module comment reads FROM;
-// this suite is what keeps that documentation honest as the committed
-// report changes. Deliberately reads the real, committed
-// `results/eval-report.json` — no live API call, no mock — so a rewritten
-// map that drifts from measured reality fails loudly here (standing rule
-// 2: never fabricate a number). Do NOT assert on `args.ts`'s source text
-// (the ticket's own "Do NOT"); only the exported constant's VALUES are
-// checked, against the report's own VALUES.
+// TRO-541 / LH-036 — this suite makes the default sample's own coverage
+// claim machine-checkable, against the committed evidence artifact,
+// instead of leaving it as unverified prose.
+// `DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS` (`args.ts`) is documentation the
+// file's own module comment reads FROM. This suite keeps that
+// documentation honest as the committed report changes. It deliberately
+// reads the real, committed `results/eval-report.json` — no live API
+// call, no mock — so a rewritten map that drifts from measured reality
+// fails loudly here (standing rule 2: never fabricate a number). Do NOT
+// assert on `args.ts`'s source text (the ticket's own "Do NOT"). Only the
+// exported constant's VALUES are checked, against the report's own
+// VALUES.
 describe("DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS", () => {
   const REPORT_PATH = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "results/eval-report.json");
   const report = validateEvalReport(JSON.parse(readFileSync(REPORT_PATH, "utf8")), REPORT_PATH);

@@ -74,7 +74,8 @@ Green run, map corrected to `null` for both:
 **Evidence.** The string "31" no longer appears in `args.ts`. `pnpm test`: 158 files, 1911
 tests, all pass. This includes `warning-golden-cases.test.ts` and `report-validation.test.ts`.
 Neither pins case-25 or case-17. Neither file was edited. `pnpm typecheck`, `pnpm lint`: clean.
-No live API call made. Every number above is read from the already-committed `eval-report.json`.
+This ticket made no live API call. Every number above comes from the already-committed
+`eval-report.json`.
 
 **Known, not this ticket's job.** case-17's manifest expectation (REVIEW/LOW_IMAGE_QUALITY)
 still mismatches the committed run's router-stage result (PASS/null). This is already tracked:

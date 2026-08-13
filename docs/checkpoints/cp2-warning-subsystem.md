@@ -546,6 +546,51 @@ a wrong PASS delays a catch, a wrong FAIL accuses a compliant producer of a fede
 > `docs/diagnostics/2026-08-12-verdict-miss-triage.md` §3B / `docs/diagnostics/2026-08-12-fix-tickets.md`
 > S2 for the diagnosis this measurement answers.
 
+> **Amendment, 2026-08-13 (TRO-558).** The golden set changed twice since the amendment above was
+> written. TRO-527 (`51f0d93`, 2026-08-13) rebuilt every image to add the renderer's bold prefix.
+> TRO-516 C5 (`add9138`) merged case-24 into case-23. TRO-529 added five real-photograph cases,
+> case-35 through case-39. The 32-case corpus the 2026-08-12 amendment measured no longer exists.
+> The current golden set has 36 cases (`golden-set/manifest.json`, commit
+> `0e6e3e1432f63609ad49febf5445fb866cadaf91`).
+>
+> Re-swept with the same script, same method: read-only, no API call. The artifact is
+> `scripts/eval/results/ocr-floor-sweep.json`, re-measured against the commit above. 31 of the 36
+> cases are warning-bearing with a usable OCR candidate. The confidences no longer form a clean
+> two-value split. The new real-photograph rotation cases land across a wider range, and some of
+> that range sits below the floor:
+>
+> | Case | Confidence | Distance from canonical | What OCR actually read |
+> |---|---|---|---|
+> | case-39 (rotation, real photo, wraparound label) | 33 | 215 | Garbage — the label wraps a curved bottle; the crop cannot follow it |
+> | case-37 (rotation, real photo, severe curve) | 41 | 192 | Garbage — same wraparound problem, worse crop |
+> | case-36 (rotation, real photo, gentle curve) | 47 | 186 | Garbage — a milder curve, still an unreadable crop |
+> | case-23 (tiny warning print) | 65 | 25 | Degraded but real print — the case this floor was set for. Was 56-58 against the old images; moved further above the floor after the bold-prefix rebuild |
+> | case-18 (glare on the warning block) | 91 | 46 | Confident but wrong — Tesseract's own confidence is not a read-quality oracle. That is why the dual-channel agreement check, not this floor, is the real safety net |
+> | case-35 (clean real photo) | 93 | 0 | Clean read |
+> | 22 other warning-bearing cases | 95 or 96 | 0 | Clean reads |
+> | case-10, case-11 (deliberately reworded warning clauses) | 95 | 38, 24 | Confident and correct — the label itself carries different wording. Not an OCR error |
+> | case-32 (deliberate near-miss, one missing comma) | 95 | 1 | Confident and correct, same reason |
+>
+> **Measured, not assumed: whether `OCR_CONFIDENCE_FLOOR = 50` still holds.** Every case lands on
+> the correct side of 50, for the reason this table gives its outcome. Case-23 was the original
+> reason the floor had to move below 56. It measured 65 this run. It moved further away from the
+> floor, not toward it, so this run does not undermine the finding that moved the floor off 60.
+>
+> The three new real-photograph rotation cases (case-36, case-37, case-39) measure 33, 41, and
+> 47 — all below 50. Their edit distances, 186 to 215 against a 283-character canonical string,
+> show why: the OCR read is genuine garbage, not a marginal or borderline reading. The floor
+> correctly discards all three from the dual-channel path. That is the floor doing its job on
+> cases it was never measured against before, not evidence the floor needs to move.
+>
+> One honest limit. Case-36's 47 is the closest any measured case has come to the 50 line: 3
+> points under. The previous closest approach was case-23's old 56, 6 points over. A floor of 45,
+> not 50, would have let case-36's distance-186 garbage through as a single-channel "healthy"
+> reading — the corpus offered no evidence on this question before this run. That gap is new and
+> narrower than the 2026-08-12 amendment described. It is not, by itself, a reason to move the
+> floor: no case in this corpus crosses to the wrong side of 50, and the floor's job — discard
+> unreliable OCR, keep reliable OCR — is still measurably correct on every one of the 36 current
+> cases. `OCR_CONFIDENCE_FLOOR` stays 50.
+
 ---
 
 ## 5. Normalization — the load-bearing decision

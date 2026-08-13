@@ -51,25 +51,41 @@ session id. It writes a marker table. It then attempts reuse under a different s
 checks for exit code 2. It checks that the marker table still exists, untouched. The test then
 confirms two more behaviors. A same-session retry still resets the database. This reset is
 pre-existing behavior, and this ticket must not remove it. `--steal` proceeds and reassigns the
-stamp to the new session. Confirmed the test fails for the right reason first. Against the
-pre-fix script, the test fails because no `.factory-owner` file exists yet.
+stamp to the new session. The test first failed for the right reason: against the pre-fix
+script, it failed because no `.factory-owner` file existed yet.
 
 A second test case covers a stamp file that exists but has no `FACTORY_OWNER_SESSION` line. See
 the CodeRabbit triage note below for what that case caught.
 
-**CodeRabbit review triage (2 findings, both fixed).**
+**CodeRabbit review triage, 2 rounds, 5 findings, all fixed.**
+
+Round 1:
 - `scripts/factory/worktree.sh` (major): the stamp-read pipeline, `grep | cut`, could abort the
   whole script under `set -euo pipefail`. A stamp file present but missing the
   `FACTORY_OWNER_SESSION` line made `grep` exit 1. `cut` still exited 0 on the empty input.
   `pipefail` keeps `grep`'s non-zero status instead. `set -e` then killed the script before it
   reached the refusal path. A legacy or corrupted stamp crashed provisioning outright, instead
   of refusing it cleanly. Fixed with `|| true` on the substitution. Added a regression case: a
-  stamp file missing that one field. Confirmed it fails for the right reason first — exit 1, not
-  2, against the pre-fix code.
+  stamp file missing that one field. That case first failed for the right reason too — exit 1,
+  not 2, against the pre-fix code.
 - `scripts/factory/worktree-owner.test.ts` (minor): `uniqueTicket()` built its fixture ticket id
   from `Date.now()` and `process.pid`. Two runners can share a pid within the same millisecond.
   A shared ticket id would then race two test runs onto the same fixture database. Switched to
   `crypto.randomUUID()`.
+
+Round 2:
+- `scripts/factory/worktree-owner.test.ts` (minor): `cleanupFixture` only logged a cleanup
+  failure. A cleanup-only failure — the worktree, the database, or the temp directory did not
+  go away — then passed the test silently. Added `withFixture`, a wrapper every test case now
+  runs through. It fails the test on a cleanup-only failure. It still only logs a cleanup
+  failure that happens after the test body itself already failed. That earlier failure is the
+  one that must reach the report.
+- `scripts/factory/worktree.sh` (minor): the argument-parsing loop accepted any unrecognized
+  `--flag` as a silent no-op, and any positional argument past the third as silently ignored.
+  A typo like `--steel` shifted into `BASE_REF` instead of failing loudly. Both cases now exit
+  2 with the usage line.
+- `CHANGES.md` (minor): two sentences read "Confirmed the test fails..." with no explicit
+  subject. Reworded to name the subject directly.
 
 **How to run it.** Run `pnpm test -- scripts/factory/worktree-owner.test.ts`. It needs no setup
 beyond the worktree's own `.factory-env`. That means the same `DATABASE_URL` and reachable

@@ -166,10 +166,11 @@ async function queryDb(pg: PgTarget, dbName: string, sql: string) {
   }
 }
 
-/** Every step runs even if an earlier one throws, and any failure is logged
- * rather than swallowed (lessons.md #24) -- a silent cleanup failure here
- * leaks a disposable git worktree, database, or temp dir. */
-async function cleanupFixture(fx: Fixture, pg: PgTarget) {
+/** Every step runs even if an earlier one throws (lessons.md #24). On
+ * failure this both logs (so the cause is visible even if the throw below
+ * gets swallowed by `withFixture`) and throws an AggregateError, so a
+ * cleanup-only failure fails the test instead of passing silently. */
+async function cleanupFixture(fx: Fixture, pg: PgTarget): Promise<void> {
   const errors: unknown[] = [];
   try {
     execFileSync("git", ["worktree", "remove", "--force", fx.worktreeDir], { cwd: fx.repoDir });
@@ -202,17 +203,42 @@ async function cleanupFixture(fx: Fixture, pg: PgTarget) {
   }
   if (errors.length > 0) {
     console.error(`TRO-557 fixture cleanup had ${errors.length} failure(s):`, errors);
+    throw new AggregateError(errors, `TRO-557 fixture cleanup had ${errors.length} failure(s)`);
+  }
+}
+
+/** Sets up a disposable fixture, runs `fn`, and always cleans up. A cleanup
+ * failure fails the test too, UNLESS `fn` itself already failed -- then the
+ * original failure is what the test must report, so cleanup's own failure
+ * is logged (inside cleanupFixture) rather than thrown over it. */
+async function withFixture(fn: (fx: Fixture, pg: PgTarget) => Promise<void>): Promise<void> {
+  const pgConn = requirePgTargetFromEnv();
+  const pg: PgTarget = { ...pgConn, container: discoverPgContainer(pgConn.port) };
+  const fx = makeFixture();
+  let primaryError: unknown;
+  try {
+    await fn(fx, pg);
+  } catch (err) {
+    primaryError = err;
+    throw err;
+  } finally {
+    try {
+      await cleanupFixture(fx, pg);
+    } catch (cleanupErr) {
+      if (primaryError) {
+        console.error("TRO-557 fixture cleanup ALSO failed after a test failure:", cleanupErr);
+      } else {
+        throw cleanupErr;
+      }
+    }
   }
 }
 
 describe("worktree.sh ownership stamp (TRO-557)", () => {
   it(
     "refuses a mismatched-session reuse (exit 2, database untouched); same-session retry and --steal still work",
-    async () => {
-      const pgConn = requirePgTargetFromEnv();
-      const pg: PgTarget = { ...pgConn, container: discoverPgContainer(pgConn.port) };
-      const fx = makeFixture();
-      try {
+    () =>
+      withFixture(async (fx, pg) => {
         // Session A provisions the worktree for the first time.
         const first = runWorktreeSh(fx, pg, "test-session-a");
         expect(first.status, `stderr: ${first.stderr}`).toBe(0);
@@ -248,25 +274,19 @@ describe("worktree.sh ownership stamp (TRO-557)", () => {
         expect(steal.status, `stderr: ${steal.stderr}`).toBe(0);
         expect(readFileSync(stampPath, "utf8")).toMatch(/^FACTORY_OWNER_SESSION=test-session-b$/m);
         await expect(queryDb(pg, fx.dbName, "SELECT 1 FROM tro_557_marker")).rejects.toThrow(/does not exist/);
-      } finally {
-        await cleanupFixture(fx, pg);
-      }
-    },
+      }),
     60_000,
   );
 
   it(
     "treats a stamp missing FACTORY_OWNER_SESSION as an unknown owner, and refuses instead of crashing",
-    async () => {
+    () =>
       // Regression for a real bug CodeRabbit caught in this same PR: under
       // `set -euo pipefail`, grep finding no matching line exits 1, and that
       // aborted the whole script before it could reach the refusal path --
       // so a stamp from before this field existed, or a corrupted one, took
       // provisioning down instead of just refusing it.
-      const pgConn = requirePgTargetFromEnv();
-      const pg: PgTarget = { ...pgConn, container: discoverPgContainer(pgConn.port) };
-      const fx = makeFixture();
-      try {
+      withFixture(async (fx, pg) => {
         const first = runWorktreeSh(fx, pg, "test-session-a");
         expect(first.status, `stderr: ${first.stderr}`).toBe(0);
 
@@ -277,10 +297,7 @@ describe("worktree.sh ownership stamp (TRO-557)", () => {
         expect(second.status, `stderr: ${second.stderr}`).toBe(2);
         expect(second.stderr).toContain("Re-provisioning resets a database another session may be using.");
         expect(second.stderr).toContain("worktree.sh found no readable ownership stamp here.");
-      } finally {
-        await cleanupFixture(fx, pg);
-      }
-    },
+      }),
     60_000,
   );
 });

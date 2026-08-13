@@ -19,17 +19,28 @@
 #
 set -euo pipefail
 
+USAGE="usage: worktree.sh <TICKET-ID> <branch-name> [base-ref] [--steal]"
 STEAL=0
 POSITIONAL=()
 for arg in "$@"; do
   case "$arg" in
     --steal) STEAL=1 ;;
+    --*)
+      echo "ERROR: unknown option '${arg}'." >&2
+      echo "       ${USAGE}" >&2
+      exit 2
+      ;;
     *) POSITIONAL+=("$arg") ;;
   esac
 done
+if [ "${#POSITIONAL[@]}" -gt 3 ]; then
+  echo "ERROR: too many arguments." >&2
+  echo "       ${USAGE}" >&2
+  exit 2
+fi
 
-TICKET="${POSITIONAL[0]:?usage: worktree.sh <TICKET-ID> <branch-name> [base-ref] [--steal]}"
-BRANCH="${POSITIONAL[1]:?usage: worktree.sh <TICKET-ID> <branch-name> [base-ref] [--steal]}"
+TICKET="${POSITIONAL[0]:?$USAGE}"
+BRANCH="${POSITIONAL[1]:?$USAGE}"
 BASE_REF="${POSITIONAL[2]:-main}"
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"

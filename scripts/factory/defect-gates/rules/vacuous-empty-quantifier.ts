@@ -118,7 +118,15 @@ function hasPrecedingLengthGuard(
   let guarded = false;
   walkOwnScope(fnBody, (n) => {
     if (guarded || !ts.isIfStatement(n)) return;
-    if (n.getStart(sourceFile) >= callStart) return; // must precede the call, not follow it
+    // The whole `if` — condition and body — must finish before the call
+    // starts, not merely start before it. A call nested inside the `if`'s
+    // own then-block also starts after the `if` starts, but the `if` has
+    // not finished: the call sits INSIDE the guarded region, not after
+    // it. Checking only the start position let a quantifier written
+    // inside its own empty-collection branch read as guarded, when that
+    // branch's own condition proves the opposite — the receiver IS empty
+    // right there.
+    if (n.getEnd() > callStart) return;
     const test = n.expression.getText(sourceFile);
     const mentionsLength =
       test.includes(`${receiverText}.length`) || test.includes(`${receiverText}?.length`);
@@ -145,10 +153,17 @@ function escapeForRegExp(text: string): string {
  * Covers `.length > N` (N >= 0), `.length >= N` (N >= 1), and `.length
  * !== 0` / `!= 0`. Not a general arithmetic prover — only the shapes this
  * rule's calibration corpus (`pairing.ts`) has actually shown.
+ *
+ * The pattern is anchored to the entire test, not searched as a
+ * substring. A substring match reads `xs.length > 1` as proof inside
+ * `xs.length > 1 || force` (a disjunction — false does not prove
+ * anything) or `!(xs.length > 1)` (a negation — the opposite is proved).
+ * Anchoring rejects both: only a test that IS this one comparison, with
+ * nothing else, counts as proof.
  */
 function lengthComparisonProvesNonEmpty(testText: string, receiverText: string): boolean {
   const pattern = new RegExp(
-    `${escapeForRegExp(receiverText)}\\??\\.length\\s*(>=|>|!==|!=)\\s*(\\d+)`,
+    `^\\s*${escapeForRegExp(receiverText)}\\??\\.length\\s*(>=|>|!==|!=)\\s*(\\d+)\\s*$`,
   );
   const match = testText.match(pattern);
   if (!match) return false;

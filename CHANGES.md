@@ -4,6 +4,42 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-485 — LH-064: approach.md (2026-08-13)
+
+**What changed.** This ticket adds `docs/approach.md`. It closes TH-R15, a graded deliverable
+that was MISSING across three sweeps. It also closes TH-R7's and TH-R19's written halves, and
+half of TH-R21 and TH-R23. Each of those traces to real content that lived only in internal
+working documents until now. Content is assembled from `docs/PRD.md`, `docs/error-states.md`,
+`docs/deploy.md`, `audit/requirements/interpretations.md`, `scripts/eval/baseline.json`, and
+`scripts/eval/results/benchmark-report.json` — per `audit/requirements/gaps.md`'s TH-R15
+suggested scope (TRO-486).
+
+**The accuracy figures are a band, not a point value.** Extraction 87.2%-87.8%, cascade-verdict
+80.6%-83.3% (K=3, N=36, `scripts/eval/baseline.json`, TRO-561). TRO-561 exists specifically
+because an earlier practice pinned a single number to one end of a measured spread; this
+document does not repeat that.
+
+**The latency figure is deliberately withheld.** TRO-486's sweep downgraded TH-R2 to PARTIAL
+because the last deployed-latency measurement predates commits that touch its own measured
+path. Quoting either the old number or a new one now would be premature — a peer session
+holding PR #43 (which itself changes the measured path again) asked that the re-measurement
+wait until #43 merges. This document says so plainly instead of quoting a number.
+
+**Names two gaps found during PR #43's own review, before merge.** The batch workers do not
+re-check the spend budget mid-run, and a database failure during the budget check 500s instead
+of returning the designed 503. Both are real, both are already tracked, and naming them here is
+a better answer at interview than an unexamined system would be.
+
+**Observed, not derived.** This ticket ran these commands against a fresh worktree:
+`pnpm install`; `pnpm db:migrate` (8 migrations, exit 0); `pnpm typecheck` (exit 0); `pnpm lint`
+(exit 0); `pnpm test` (exit 0); `pnpm build` (exit 0). No application code changed, so
+`pnpm test:e2e` did not run.
+
+**How to run it.** Read `docs/approach.md`. No command runs it.
+
+**Rollback.** Delete `docs/approach.md`. Remove this changelog entry. No schema or application
+code changed.
+
 ## TRO-486 — LH-065: requirements-audit compare sweep at commit 876a295 (2026-08-13)
 
 **One row moved, and it moved down.** TH-R2 (single-label latency) held VERIFIED at the last

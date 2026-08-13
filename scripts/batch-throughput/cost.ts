@@ -1,16 +1,19 @@
 /**
- * Derives one batch run's real dollar cost from real call counts and the
- * eval harness's own measured mean per-call cost (TRO-544 / LH-039).
+ * Derives one batch run's dollar cost estimate (TRO-544 / LH-039). The
+ * inputs: one observed call count, one attempts-derived upper bound, and
+ * the eval harness's measured mean per-call costs.
  *
- * This is DERIVED, not measured: the batch worker
- * (`src/server/batch-queue/`) records no per-call token usage, unlike the
- * eval harness's own `scripts/eval/usage.ts` (`createUsageCapturingClient`
- * wraps a real `Anthropic` client to read `response.usage` on every call —
- * that seam exists only in the eval harness). CLAUDE.md: "never fabricate
- * a number" — every input to `deriveBatchCostUsd` is either a real count
- * from this run's own `batch_jobs` row, or a real prior measurement from
- * `scripts/eval/results/eval-report.json`; only the multiplication itself
- * is new.
+ * The result is a DERIVED ESTIMATE, not a measurement. The batch worker
+ * (`src/server/batch-queue/`) records no per-call token usage. That seam
+ * exists only in the eval harness (`scripts/eval/usage.ts`, whose
+ * `createUsageCapturingClient` reads `response.usage` on every call).
+ * CLAUDE.md: "never fabricate a number." The Sonnet count is a real
+ * count from this run's own `batch_jobs` row. The Haiku count is an
+ * UPPER BOUND from this run's own `batch_queue_items.attempts`. The
+ * means are real prior measurements from
+ * `scripts/eval/results/eval-report.json`. Only the multiplication is
+ * new, so the estimate can overstate the Haiku side and cannot
+ * understate it.
  */
 
 /** Arithmetic mean of a list of real, measured per-call costs. Throws on
@@ -28,7 +31,14 @@ export function meanCost(costsUsd: readonly number[]): number {
   if (badIndex !== -1) {
     throw new RangeError(`meanCost: costsUsd must contain only finite, non-negative numbers — index ${badIndex} is ${costsUsd[badIndex]}`);
   }
-  return costsUsd.reduce((sum, cost) => sum + cost, 0) / costsUsd.length;
+  const mean = costsUsd.reduce((sum, cost) => sum + cost, 0) / costsUsd.length;
+  // Finite inputs can still overflow the SUM to Infinity. An artifact
+  // must never carry that: JSON.stringify(Infinity) serializes as null,
+  // which would read as "no cost" (review finding, local review round 7).
+  if (!Number.isFinite(mean)) {
+    throw new RangeError(`meanCost: result is not finite (${mean}) — the cost sum overflowed`);
+  }
+  return mean;
 }
 
 export interface DeriveBatchCostParams {
@@ -68,5 +78,12 @@ export function deriveBatchCostUsd(params: DeriveBatchCostParams): number {
       `deriveBatchCostUsd: mean costs must be finite and non-negative — got haikuMeanCostUsd=${haikuMeanCostUsd}, sonnetMeanCostUsd=${sonnetMeanCostUsd}`,
     );
   }
-  return haikuCallCount * haikuMeanCostUsd + sonnetCallCount * sonnetMeanCostUsd;
+  const total = haikuCallCount * haikuMeanCostUsd + sonnetCallCount * sonnetMeanCostUsd;
+  // Same overflow guard as meanCost: a huge count times a finite mean can
+  // reach Infinity, and JSON.stringify(Infinity) writes null into the
+  // artifact — a silent "no cost" (review finding, local review round 7).
+  if (!Number.isFinite(total)) {
+    throw new RangeError(`deriveBatchCostUsd: result is not finite (${total}) — a count times a mean overflowed`);
+  }
+  return total;
 }

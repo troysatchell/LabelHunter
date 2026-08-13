@@ -10,9 +10,11 @@
  *      pnpm worker            # terminal B — the batch worker pool
  *   3. pnpm batch:throughput  # terminal C — this script
  *
- * **This costs real money.** Every item makes one real, live Haiku call.
- * An escalated item adds one real Sonnet call. These are exactly the
- * calls a real batch upload would make.
+ * **This costs real money.** A processed item normally makes one real,
+ * live Haiku call. The real count varies: an attempt can fail before its
+ * request, and a retry adds a call. An escalated item adds one real
+ * Sonnet call, and a resolver retry adds more. These are the same calls
+ * a real batch upload would make.
  *
  * **This measures the real HTTP path.** The script submits through the
  * same two routes `BatchUploadForm.tsx` calls: `POST /api/batch/preview`,

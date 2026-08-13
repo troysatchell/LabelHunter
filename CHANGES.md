@@ -53,8 +53,10 @@ unchanged `scripts/batch-worker/run.ts` defaults. Models: `claude-haiku-4-5` (ex
 **The escalation cap was hit.** CP-3 §6.1 caps Sonnet calls at `ceil(0.25 * totalCount)`. For
 32 items, that cap is 8. This run made exactly 8 Sonnet call attempts, then stopped. The
 remaining REVIEW-bound labels went straight to `needsHumanCount`, with no Sonnet call
-(`resolverSkipReason: "ESCALATION_CAP_EXCEEDED"`). A batch under the cap would spend more on
-Sonnet. It would show a different `resolvedBySonnetCount`/`needsHumanCount` split.
+(`resolverSkipReason: "ESCALATION_CAP_EXCEEDED"`). A batch whose escalation demand stays
+below the cap makes fewer Sonnet calls, so it spends less on Sonnet, not more. It also
+shows a different `resolvedBySonnetCount`/`needsHumanCount` split: nothing is cap-skipped
+to a human.
 
 **Cost is derived, not measured.** The batch worker records no per-call token usage. That
 seam exists only in the eval harness. The $0.2371 total multiplies each call count by the
@@ -186,6 +188,16 @@ now runs in the fail-fast preflight, before any request. The rest: this section'
 after round 3" now says INITIAL triage; the cost paragraph above got its own STE split; and
 "same sourced shell" became "both terminals sourced the same environment configuration,"
 which is what actually happens.
+
+Round 7 found five issues. Four were fixed: the escalation-cap example inverted the cost
+direction (under-cap batches spend LESS on Sonnet); the `measure.ts` header over-promised
+exactly one Haiku call per item; `cost.ts`'s file header still said "real call counts"; and
+both cost functions now throw on a non-finite RESULT, because `JSON.stringify(Infinity)`
+writes `null` into the artifact — a silent "no cost." Two regression tests cover the new
+guards. One was dismissed: a request to re-bullet these triage paragraphs — the sentences
+are already single-claim, and reformatting bookkeeping changes no reported fact. The triage
+stops when a round changes no shipped behavior and no factual claim; this round's
+follow-ups will be judged by that rule.
 
 **Do NOT.** No column was added to `batch_jobs` — every input already existed. No claim was
 extrapolated past this run's real 32 items to TH-R4's 200-300 label reference.

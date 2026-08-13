@@ -18,6 +18,10 @@ describe("meanCost", () => {
     expect(() => meanCost([0.005, -0.001])).toThrow(RangeError);
   });
 
+  it("throws when the cost sum overflows to Infinity (review finding, local review round 7)", () => {
+    expect(() => meanCost([Number.MAX_VALUE, Number.MAX_VALUE])).toThrow(RangeError);
+  });
+
   it("throws on a non-finite cost (NaN or Infinity)", () => {
     expect(() => meanCost([0.005, Number.NaN])).toThrow(RangeError);
     expect(() => meanCost([0.005, Number.POSITIVE_INFINITY])).toThrow(RangeError);
@@ -88,5 +92,13 @@ describe("deriveBatchCostUsd", () => {
     expect(() => deriveBatchCostUsd({ haikuCallCount: 10, haikuMeanCostUsd: -0.001, sonnetCallCount: 0, sonnetMeanCostUsd: 0.010969 })).toThrow(
       RangeError,
     );
+  });
+
+  it("throws when the total overflows to Infinity instead of serializing null into the artifact (review finding, local review round 7)", () => {
+    // JSON.stringify(Infinity) writes null — the artifact would silently
+    // read "no cost." Finite inputs can still overflow the product.
+    expect(() =>
+      deriveBatchCostUsd({ haikuCallCount: Number.MAX_SAFE_INTEGER, haikuMeanCostUsd: Number.MAX_VALUE, sonnetCallCount: 0, sonnetMeanCostUsd: 0.010969 }),
+    ).toThrow(RangeError);
   });
 });

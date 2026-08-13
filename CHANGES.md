@@ -4,6 +4,36 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-575 — the review detail shows the label image (2026-08-13)
+
+**The gap.** The review-item page showed per-field text evidence with no label image. A
+reviewer deciding approve/reject could not see the artwork they were ruling on. TH-R1 names
+that artwork as the object of review: "an agent pulls up an application, looks at the label
+artwork, and checks." The omission was a deliberate deferral (`get-item.ts`'s old file
+comment): the image-serving route belonged to a then-unmerged sibling ticket. That ticket
+(LH-016/TRO-466) merged days ago, so the justification was stale. Troy asked for the image
+directly: surfacing it "is a massive quality of life benefit."
+
+**The fix.**
+1. `getReviewQueueItem` now joins `labelImages` — the same one-select recipe
+   `get-verification-detail.ts` already uses. `ReviewQueueItemDetail` gains a `labelImage`
+   field: url, width, height, original filename. The review page reads over RSC, so no API
+   route changed.
+2. `ReviewItemDetail` renders the image beside the field comparison. The arrangement copies
+   `DetailView` on purpose — both screens now teach one layout: artwork on one side, field
+   verdicts on the other. The plain-`<img>` decision and the persisted width/height (browser
+   reserves space before the bytes arrive; no layout shift) carry over verbatim.
+3. Layout CSS (`.review-item__layout`, `.review-item__image`) uses the same literal values
+   as the detail view's. TRO-578 will tokenize both; this ticket does not start that.
+
+**Rollback.** Revert the PR. The review page returns to text-only evidence.
+
+**Confirmed.** Red first, for the right reason, in both layers:
+- `get-item.test.ts`: `labelImage` came back `undefined` before the join, exact shape after.
+- `ReviewItemDetail.test.tsx`: no `img` role before the change; src/width/height asserted after.
+All review-queue server tests and component tests pass; `pnpm typecheck` clean. The
+review-queue e2e spec exercises the real RSC page render against a live database.
+
 ## TRO-532 — LH-025 · Stroke-width bold advisory check (2026-08-13)
 
 Advances TH-R9. CP-2 §7.2 named a technique for bold detection and did not try it: binarize

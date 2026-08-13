@@ -534,10 +534,29 @@ fieldset.field legend {
 
 /* ---- Review field comparison — visually matches .checklist-row, a
    separate class family from DetailView.tsx's own .detail-field* (see
-   ReviewItemDetail.tsx's file comment: that component is a sibling
-   ticket's still-open PR, not a merged dependency). ------------------- */
+   ReviewItemDetail.tsx's file comment; consolidating the two families
+   is TRO-578's job). ------------------------------------------------- */
+
+/* Label artwork beside the field comparison (TRO-575) — the same values
+   as .detail-view__layout/.detail-view__image, kept literal here so both
+   screens render identically until TRO-578 tokenizes them. */
+.review-item__layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.review-item__image {
+  flex: 1 1 18rem;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 0.6rem;
+}
 
 .review-field-list {
+  flex: 2 1 22rem;
   list-style: none;
   margin: 0;
   padding: 0;

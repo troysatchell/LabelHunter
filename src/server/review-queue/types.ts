@@ -153,6 +153,21 @@ export type ResolverSuggestedField =
       reason: string;
     };
 
+/** The label image a review item's verification ran against (TRO-575).
+ * Mirrors `VerificationImageDetail` (`src/server/verification-detail/
+ * types.ts`) rather than importing it: the two modules stay independent
+ * on purpose (see `list.ts`'s file comment), and the shape is four
+ * fields. `url` points at the byte-serving route
+ * (`/api/label-images/:id`); `width`/`height` are the persisted,
+ * EXIF-corrected pixel dimensions, so the browser can reserve layout
+ * space before the bytes arrive. */
+export interface ReviewItemLabelImage {
+  url: string;
+  width: number;
+  height: number;
+  originalFilename: string;
+}
+
 /** The full review/detail view for one queue item (PRD §5). */
 export interface ReviewQueueItemDetail {
   id: number;
@@ -184,6 +199,11 @@ export interface ReviewQueueItemDetail {
    * to show. `null` when `resolver_output` is null (the normal case today)
    * or does not look like this shape at all. */
   resolverFields: ResolverSuggestedField[] | null;
+  /** The label artwork under review — the object the reviewer is ruling
+   * on (TH-R1: "looks at the label artwork, and checks"). Added by
+   * TRO-575; the earlier omission deferred to a then-unmerged sibling
+   * ticket that has since landed. */
+  labelImage: ReviewItemLabelImage;
   fields: ReviewQueueFieldDetail[];
 }
 

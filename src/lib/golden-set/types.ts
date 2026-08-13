@@ -96,6 +96,24 @@ export interface GoldenLabelFields {
   governmentWarningText: string;
   /** True when "GOVERNMENT WARNING:" is printed all-caps, as the statute requires (TH-R9). False (including when the warning is absent) otherwise. */
   governmentWarningPrefixAllCaps: boolean;
+  /**
+   * True when "GOVERNMENT WARNING:" (the prefix, through the colon) prints
+   * in bold type, as 27 CFR 16.22(a)(2) requires (TH-R9; TRO-527 / LH-022).
+   * False (including when the warning is absent) when it does not.
+   * `"unknown"` records a real photograph where a careful human reader
+   * cannot tell either way — never `false` there, because `false` would be
+   * a fabricated compliance claim against a shipped product. Every case in
+   * this manifest is a rendered image this repo controls, so none of them
+   * needs `"unknown"` yet; LH-024's hand-transcribed real-label cases will.
+   */
+  governmentWarningPrefixBold: boolean | "unknown";
+  /**
+   * True when the warning body (everything after the prefix's colon)
+   * prints in bold type. 27 CFR 16.22(a)(2) forbids this — a compliant
+   * label is `false` here. Same `false`-including-absent and `"unknown"`
+   * rules as `governmentWarningPrefixBold` above (TRO-527 / LH-022).
+   */
+  governmentWarningBodyBold: boolean | "unknown";
 }
 
 /** The Validation Router's expected verdict for one field. */
@@ -135,11 +153,36 @@ export type CameraCondition = "steady" | "motion-blur" | "camera-shake";
  * the render-first hybrid: a spec-driven renderer guarantees exact text,
  * Imagen adds realism only where exact text does not matter.
  */
+/**
+ * `"photographed"` (TRO-529 / LH-024): a real camera photograph of a real,
+ * physical label — not code, not a model. This is the fourth PRODUCTION
+ * METHOD, distinct from the three above by what held the camera or the
+ * pen: `"rendered"`/`"rendered+degraded"` are HTML/CSS a script drew;
+ * `"ai-generated"`/`"rendered+ai-backdrop"` are pixels a generative model
+ * predicted; `"photographed"` is neither — a person pointed a camera at an
+ * actual bottle. Ground truth for a `"photographed"` case comes from a
+ * human transcribing what the photograph shows (`verified` stays `false`
+ * until Troy confirms the transcription — see `GoldenSetCase.verified`),
+ * never from a spec the image is checked against. `governmentWarningPrefixBold`
+ * / `governmentWarningBodyBold`'s `"unknown"` state (TRO-527 / LH-022)
+ * exists for exactly this provenance: a real photograph often cannot
+ * support a bold/not-bold call either way.
+ *
+ * Committed at its own original filename under `assets/golden/references/`
+ * (`docs/reference-photo-provenance.md`) rather than copied into
+ * `golden-set/images/<caseId>.<ext>` — that naming convention (this file's
+ * own comment on `imagePath`) presumes a file `build.ts` produced FROM the
+ * case; a `"photographed"` case's file predates its case and IS the
+ * forensic evidence, so keeping its own name is the more honest record.
+ * `src/lib/golden-set/loader.ts`'s `checkCase` enforces a different,
+ * provenance-scoped `imagePath` convention for this value.
+ */
 export type GoldenSetProvenance =
   | "rendered"
   | "rendered+degraded"
   | "ai-generated"
-  | "rendered+ai-backdrop";
+  | "rendered+ai-backdrop"
+  | "photographed";
 
 /**
  * The five transforms `scripts/golden/degrade.ts` can apply to a clean
@@ -232,6 +275,10 @@ export interface GoldenSetCase {
    * (TRO-497 / LH-004); see `golden-set/README.md`. The loader checks the
    * naming convention, never that the file exists — that check lives in
    * `scripts/golden/images.test.ts`, scoped to non-`ai-generated` cases.
+   * A `provenance: "photographed"` case (TRO-529 / LH-024) follows a
+   * DIFFERENT convention: `"assets/golden/references/<original-filename>"`,
+   * not `golden-set/images/<caseId>`. See `GoldenSetProvenance`'s own
+   * comment for why, and `loader.ts`'s `checkCase` for the enforced rule.
    */
   imagePath: string;
   /** How the image was (or, for a future ai-generated case, will be) produced. */

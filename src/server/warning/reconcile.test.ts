@@ -53,18 +53,20 @@ function ocr(text: string, confidence = 90): OcrChannelInput {
 describe("reconcileWarningChannels — dual-channel, both channels agree (CP-2 §4.5's table)", () => {
   it("agree + exact match -> MATCH", () => {
     const result = reconcileWarningChannels(vlm(CANONICAL_WARNING_TEXT), ocr(CANONICAL_WARNING_TEXT));
-    expect(result).toEqual({ verdict: "MATCH", note: "Government Warning matches the required text." });
+    expect(result).toEqual({ verdict: "MATCH", channel: "dual", note: "Government Warning matches the required text." });
   });
 
   it("agree + both title-case prefix -> MISMATCH, capitalization reason (golden-set case-08/09 shape)", () => {
     const result = reconcileWarningChannels(vlm(TITLE_CASE_TEXT, { prefixCasing: "TITLE_CASE" }), ocr(TITLE_CASE_TEXT));
     expect(result.verdict).toBe("MISMATCH");
+    expect(result.channel).toBe("dual");
     expect(result.note).toBe("Government Warning must print in capital letters.");
   });
 
   it("agree + both lower-case surgeon/general -> MISMATCH, Surgeon General reason (CP-2 §2.6's named mistake)", () => {
     const result = reconcileWarningChannels(vlm(LOWER_SURGEON_GENERAL_TEXT), ocr(LOWER_SURGEON_GENERAL_TEXT));
     expect(result.verdict).toBe("MISMATCH");
+    expect(result.channel).toBe("dual");
     expect(result.note).toBe("Surgeon General must print with capital letters.");
   });
 
@@ -72,6 +74,7 @@ describe("reconcileWarningChannels — dual-channel, both channels agree (CP-2 �
     const result = reconcileWarningChannels(vlm(MISSING_COMMA_TEXT), ocr(MISSING_COMMA_TEXT));
     expect(result).toEqual({
       verdict: "NEEDS_REVIEW",
+      channel: "dual",
       reviewReason: "WARNING_MISMATCH",
       note: "Government Warning differs by a single character. A reviewer must confirm the exact wording.",
     });
@@ -83,6 +86,7 @@ describe("reconcileWarningChannels — dual-channel, both channels agree (CP-2 �
     // two unrelated engines."
     const result = reconcileWarningChannels(vlm(REWORDED_TEXT), ocr(REWORDED_TEXT));
     expect(result.verdict).toBe("MISMATCH");
+    expect(result.channel).toBe("dual");
     expect(result.note).toBe("Government Warning wording differs from the required text.");
   });
 });
@@ -92,6 +96,7 @@ describe("reconcileWarningChannels — dual-channel, channels disagree (CP-2 §4
     const result = reconcileWarningChannels(vlm(CANONICAL_WARNING_TEXT), ocr(GARBLED_TEXT));
     expect(result).toEqual({
       verdict: "NEEDS_REVIEW",
+      channel: "dual",
       reviewReason: "WARNING_MISMATCH",
       note: "Government Warning could not be read consistently.",
     });
@@ -101,6 +106,7 @@ describe("reconcileWarningChannels — dual-channel, channels disagree (CP-2 §4
     const result = reconcileWarningChannels(vlm(REWORDED_TEXT), ocr(GARBLED_TEXT));
     assertNeedsReview(result);
     expect(result.reviewReason).toBe("WARNING_MISMATCH");
+    expect(result.channel).toBe("dual");
   });
 
   it("disagree on capitalization alone (same words, different caps) -> NEEDS_REVIEW", () => {
@@ -110,19 +116,21 @@ describe("reconcileWarningChannels — dual-channel, channels disagree (CP-2 §4
     const result = reconcileWarningChannels(vlm(CANONICAL_WARNING_TEXT), ocr(TITLE_CASE_TEXT));
     assertNeedsReview(result);
     expect(result.reviewReason).toBe("WARNING_MISMATCH");
+    expect(result.channel).toBe("dual");
   });
 });
 
 describe("reconcileWarningChannels — single channel: OCR unavailable (CP-2 §4.5's single-channel table)", () => {
   it("VLM exact match at confidence >= 0.90 -> MATCH", () => {
     const result = reconcileWarningChannels(vlm(CANONICAL_WARNING_TEXT, { confidence: 0.9 }), OCR_UNAVAILABLE);
-    expect(result).toEqual({ verdict: "MATCH", note: "Government Warning matches the required text." });
+    expect(result).toEqual({ verdict: "MATCH", channel: "single", note: "Government Warning matches the required text." });
   });
 
   it("VLM exact match below 0.90 confidence -> NEEDS_REVIEW LOW_IMAGE_QUALITY", () => {
     const result = reconcileWarningChannels(vlm(CANONICAL_WARNING_TEXT, { confidence: 0.89 }), OCR_UNAVAILABLE);
     expect(result).toEqual({
       verdict: "NEEDS_REVIEW",
+      channel: "single",
       reviewReason: "LOW_IMAGE_QUALITY",
       note: "Government Warning is not clear enough in this image.",
     });
@@ -176,7 +184,7 @@ describe("reconcileWarningChannels — OCR below the confidence floor is treated
       vlm(CANONICAL_WARNING_TEXT, { confidence: 0.95 }),
       ocr(GARBLED_TEXT, OCR_CONFIDENCE_FLOOR - 1),
     );
-    expect(result).toEqual({ verdict: "MATCH", note: "Government Warning matches the required text." });
+    expect(result).toEqual({ verdict: "MATCH", channel: "single", note: "Government Warning matches the required text." });
   });
 
   it(`OCR confidence at or above ${OCR_CONFIDENCE_FLOOR} is trusted as a real second channel`, () => {
@@ -185,6 +193,69 @@ describe("reconcileWarningChannels — OCR below the confidence floor is treated
       ocr(GARBLED_TEXT, OCR_CONFIDENCE_FLOOR),
     );
     expect(result.verdict).toBe("NEEDS_REVIEW"); // now a real disagreement
+    expect(result.channel).toBe("dual");
+  });
+});
+
+describe("reconcileWarningChannels — channel provenance (TRO-535 / LH-030b)", () => {
+  it("records channel: 'dual' whenever OCR clears the floor, regardless of the verdict", () => {
+    const result = reconcileWarningChannels(vlm(CANONICAL_WARNING_TEXT), ocr(CANONICAL_WARNING_TEXT, OCR_CONFIDENCE_FLOOR));
+    expect(result.channel).toBe("dual");
+  });
+
+  it("records channel: 'single' whenever OCR is unavailable, regardless of the verdict", () => {
+    const result = reconcileWarningChannels(vlm(CANONICAL_WARNING_TEXT, { confidence: 0.5 }), OCR_UNAVAILABLE);
+    expect(result.channel).toBe("single");
+  });
+
+  it("records channel: 'single' on the prefix-casing cross-check's downgrade path, matching the tentative result it overrode", () => {
+    // The cross-check (CP-2 §7.1) does not run its own comparison — it
+    // refines whatever the dual/single table already decided. The channel
+    // it reports must be the one that actually produced the evidence, not
+    // a fabricated third value.
+    const result = reconcileWarningChannels(vlm(CANONICAL_WARNING_TEXT, { prefixCasing: "TITLE_CASE", confidence: 0.99 }), OCR_UNAVAILABLE);
+    assertNeedsReview(result);
+    expect(result.channel).toBe("single");
+  });
+
+  it("records channel: 'dual' on the prefix-casing cross-check's downgrade path when a dual-channel result triggered it", () => {
+    const result = reconcileWarningChannels(vlm(CANONICAL_WARNING_TEXT, { prefixCasing: "TITLE_CASE" }), ocr(CANONICAL_WARNING_TEXT));
+    assertNeedsReview(result);
+    expect(result.channel).toBe("dual");
+  });
+});
+
+describe("reconcileWarningChannels — the measured TRO-535 / LH-030b regression: case-23/case-24's tiny-print OCR reading (58, 56) is no longer discarded", () => {
+  // scripts/eval/results/ocr-floor-sweep.json — a read-only replay of the
+  // OCR channel over the full 32-case golden set, no API call — measured
+  // Tesseract confidence 58.00 on case-23 and 56.00 on case-24, both far
+  // outside the near-miss band (distance 47 and 42). Every other
+  // warning-bearing case in the corpus measured 91 or above. Before this
+  // ticket, OCR_CONFIDENCE_FLOOR was 60 — ABOVE both of these real
+  // readings — so the reconciler discarded them unconditionally and ran
+  // single-channel, which PASSED on the VLM's own confident (and, for tiny
+  // print, unverifiable) transcription. That is the false-PASS bug TH-R9
+  // and rubric V4 name. This test encodes the two measured confidence
+  // values directly, red under the old floor (60), green under the
+  // measured one (50).
+  it("OCR confidence 58 (case-23's measured value): a garbled reading now reaches dual-channel and disagrees -> NEEDS_REVIEW, never a silent MATCH", () => {
+    const result = reconcileWarningChannels(vlm(CANONICAL_WARNING_TEXT, { confidence: 0.97 }), ocr(GARBLED_TEXT, 58));
+    expect(result).toEqual({
+      verdict: "NEEDS_REVIEW",
+      channel: "dual",
+      reviewReason: "WARNING_MISMATCH",
+      note: "Government Warning could not be read consistently.",
+    });
+  });
+
+  it("OCR confidence 56 (case-24's measured value): a garbled reading now reaches dual-channel and disagrees -> NEEDS_REVIEW, never a silent MATCH", () => {
+    const result = reconcileWarningChannels(vlm(CANONICAL_WARNING_TEXT, { confidence: 0.97 }), ocr(GARBLED_TEXT, 56));
+    expect(result).toEqual({
+      verdict: "NEEDS_REVIEW",
+      channel: "dual",
+      reviewReason: "WARNING_MISMATCH",
+      note: "Government Warning could not be read consistently.",
+    });
   });
 });
 

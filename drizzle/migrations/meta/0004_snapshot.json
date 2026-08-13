@@ -1,5 +1,5 @@
 {
-  "id": "bfdc73e9-861b-456d-a2ff-2cd9345ea38f",
+  "id": "4132670e-fcfd-4e13-b8b4-a13b46906a55",
   "prevId": "810b9317-41a6-4fb1-9a57-57638afcebf3",
   "version": "7",
   "dialect": "postgresql",
@@ -573,51 +573,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.daily_spend": {
-      "name": "daily_spend",
-      "schema": "",
-      "columns": {
-        "spend_date": {
-          "name": "spend_date",
-          "type": "date",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "total_usd": {
-          "name": "total_usd",
-          "type": "numeric(12, 6)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "daily_spend_total_usd_non_negative": {
-          "name": "daily_spend_total_usd_non_negative",
-          "value": "\"daily_spend\".\"total_usd\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.field_results": {
       "name": "field_results",
       "schema": "",
@@ -738,6 +693,44 @@
           "value": "\"field_results\".\"confidence\" >= 0 AND \"field_results\".\"confidence\" <= 1"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.label_image_blobs": {
+      "name": "label_image_blobs",
+      "schema": "",
+      "columns": {
+        "storage_key": {
+          "name": "storage_key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "bytes": {
+          "name": "bytes",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_filename": {
+          "name": "original_filename",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.label_images": {

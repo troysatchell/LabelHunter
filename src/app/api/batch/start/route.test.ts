@@ -4,17 +4,14 @@
  * connection this ticket closes: an accepted preview becomes a real,
  * running batch job.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { zipSync } from "fflate";
 import sharp from "sharp";
-import { eq } from "drizzle-orm";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { eq, inArray } from "drizzle-orm";
+import { afterEach, describe, expect, it } from "vitest";
 import { db } from "../../../../lib/db";
-import { batchJobs, batchQueueItems, applications } from "../../../../lib/db/schema";
+import { batchJobs, batchQueueItems, applications, labelImages } from "../../../../lib/db/schema";
 import { startBatchFromPairings } from "../../../../server/batch-start/start-batch";
-import { saveLabelImage } from "../../../../server/storage/local-file-storage";
+import { deleteLabelImageBlobsWhere } from "../../../../server/storage/db-image-storage";
 import { BUDGET_EXHAUSTED_MESSAGE } from "../../../../server/budget/daily-budget";
 import { createFixedWindowLimiter } from "../../../../server/rate-limit/fixed-window";
 import { checkRateLimitPair } from "../../../../server/rate-limit/instances";
@@ -23,24 +20,26 @@ import type { BatchStartErrorResponse, BatchStartSuccessResponse } from "./types
 
 const HEADER = "beverage_type,brand_name,class_type,alcohol_content_percent,net_contents_value,net_contents_unit,image_filename";
 
-let scratchDir: string;
 const createdBatchJobIds: number[] = [];
 
-beforeEach(async () => {
-  scratchDir = await mkdtemp(path.join(tmpdir(), "labelhunter-tro475-start-route-"));
-});
-
 afterEach(async () => {
-  await rm(scratchDir, { recursive: true, force: true });
-  for (const id of createdBatchJobIds.splice(0)) {
+  const ids = createdBatchJobIds.splice(0);
+  if (ids.length > 0) {
+    // TRO-518: label_image_blobs rows are not reached by the cascade below
+    // — see db-image-storage.ts's own deleteLabelImageBlobsWhere comment.
+    await deleteLabelImageBlobsWhere(inArray(labelImages.batchJobId, ids));
+  }
+  for (const id of ids) {
     await db.delete(batchJobs).where(eq(batchJobs.id, id));
   }
 });
 
 function testDeps() {
   return {
-    startBatch: (pairings: Parameters<typeof startBatchFromPairings>[0]) =>
-      startBatchFromPairings(pairings, { saveLabelImage: (bytes, name) => saveLabelImage(bytes, name, { baseDir: scratchDir }) }),
+    // TRO-518: startBatchFromPairings' own default saveLabelImage already
+    // writes through the real db-image-storage.ts adapter — no scratch
+    // directory to inject anymore.
+    startBatch: (pairings: Parameters<typeof startBatchFromPairings>[0]) => startBatchFromPairings(pairings),
   };
 }
 

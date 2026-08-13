@@ -9,20 +9,24 @@
  * image/jpeg`, a fact read from that one shared constant, never sniffed or
  * guessed per file.
  *
- * `local-file-storage.ts`'s own module comment documents a known,
- * accepted limitation: Render's filesystem is ephemeral, so a deploy or
- * restart can lose a saved file while its `label_images` row survives.
- * That case, and a bad or unknown id, both answer the same designed 404
- * (TH-R20) — never an unhandled crash. A read failure for any OTHER
- * reason (permissions, disk I/O) answers 500 instead — the row and the
- * file both exist, so "not found" would not be the true fact.
+ * **Missing-image handling (TRO-518).** `db-image-storage.ts` stores image
+ * bytes in Postgres, not on a service's own disk, so the old "Render's
+ * filesystem is ephemeral" failure mode this route used to guard against no
+ * longer applies. A stored image can still go missing, though — most
+ * plausibly a `label_images` row left over from before this ticket, whose
+ * `storage_path` is a filesystem-style value (e.g.
+ * `"uploads/<uuid>-name.jpg"`) that no `label_image_blobs` row will ever
+ * match. That case, and a bad or unknown id, both answer the same designed
+ * 404 (TH-R20) — never an unhandled crash. A read failure for any OTHER
+ * reason (a database error) answers 500 instead — the row exists and the
+ * blob lookup itself failed, so "not found" would not be the true fact.
  */
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db as defaultDb } from "../../../../lib/db";
 import { labelImages } from "../../../../lib/db/schema";
 import { OUTPUT_MEDIA_TYPE } from "../../../../server/preprocessing/constants";
-import { readLabelImage as defaultReadLabelImage } from "../../../../server/storage/local-file-storage";
+import { LabelImageNotFoundError, readLabelImage as defaultReadLabelImage } from "../../../../server/storage/db-image-storage";
 
 export interface LabelImageRouteDeps {
   db: typeof defaultDb;
@@ -48,10 +52,11 @@ function readFailed(): Response {
   });
 }
 
-/** Node's `fs` errors carry a `.code` string (e.g. `ENOENT`, `EACCES`) —
- * narrower and more reliable than matching on `.message`. */
-function isMissingFileError(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+/** TRO-518: `db-image-storage.ts`'s `readLabelImage` throws
+ * `LabelImageNotFoundError` for a missing image — the database-shaped
+ * replacement for the Node `fs` `ENOENT` code this check used to test. */
+function isMissingImageError(error: unknown): boolean {
+  return error instanceof LabelImageNotFoundError;
 }
 
 export async function handleGetLabelImage(labelImageIdRaw: string, deps: LabelImageRouteDeps = defaultDeps): Promise<Response> {
@@ -67,12 +72,11 @@ export async function handleGetLabelImage(labelImageIdRaw: string, deps: LabelIm
   try {
     bytes = await deps.readLabelImage(row.storagePath);
   } catch (error) {
-    // The database row survives a lost file (see the file comment) — a
-    // missing file is a designed 404, never an unhandled crash (TH-R20).
-    // A different read failure (permissions, disk I/O) is not the same
-    // fact as "not found" — the row and the file both exist, something
-    // else is wrong, and that is a server error, not a 404.
-    if (isMissingFileError(error)) return notFound();
+    // See the file comment — a missing image is a designed 404, never an
+    // unhandled crash (TH-R20). A different read failure is not the same
+    // fact as "not found" — the row exists and something else is wrong,
+    // and that is a server error, not a 404.
+    if (isMissingImageError(error)) return notFound();
     return readFailed();
   }
 

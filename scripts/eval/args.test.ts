@@ -1,5 +1,21 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SAMPLE_CASE_IDS, MAX_CASES, parseEvalArgs, resolveCaseIds, validateCheckArgs } from "./args";
+import { loadGoldenSetManifest } from "../../src/lib/golden-set/loader";
+import {
+  DEFAULT_REPEATS,
+  DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS,
+  DEFAULT_SAMPLE_CASE_IDS,
+  MAX_CASES,
+  MAX_REPEATS,
+  parseEvalArgs,
+  parseVarianceArgs,
+  resolveCaseIds,
+  validateCheckArgs,
+  validateVarianceArgs,
+} from "./args";
+import { validateEvalReport } from "./report-validation";
 
 describe("parseEvalArgs", () => {
   it("defaults to cheap mode: live=false, full=false, no case, no baseline update", () => {
@@ -111,5 +127,192 @@ describe("resolveCaseIds", () => {
     const tooMany = Array.from({ length: MAX_CASES + 1 }, (_, i) => `case-${i}`);
     const args = parseEvalArgs(["--live", "--full"]);
     expect(() => resolveCaseIds(args, tooMany)).toThrow(/exceeds the \d+-case safety cap/);
+  });
+});
+
+// TRO-541 / LH-036 — this suite makes the default sample's own coverage
+// claim machine-checkable, against the committed evidence artifact,
+// instead of leaving it as unverified prose.
+// `DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS` (`args.ts`) is documentation the
+// file's own module comment reads FROM. This suite keeps that
+// documentation honest as the committed report changes. It deliberately
+// reads the real, committed `results/eval-report.json` — no live API
+// call, no mock — so a rewritten map that drifts from measured reality
+// fails loudly here (standing rule 2: never fabricate a number). Do NOT
+// assert on `args.ts`'s source text (the ticket's own "Do NOT"). Only the
+// exported constant's VALUES are checked, against the report's own
+// VALUES.
+describe("DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS", () => {
+  const REPORT_PATH = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "results/eval-report.json");
+  const report = validateEvalReport(JSON.parse(readFileSync(REPORT_PATH, "utf8")), REPORT_PATH);
+
+  it("matches the committed report's router-stage actualReviewReason for every DEFAULT_SAMPLE_CASE_IDS case", () => {
+    for (const caseId of DEFAULT_SAMPLE_CASE_IDS) {
+      const row = report.cases.find((c) => c.caseId === caseId);
+      if (!row) {
+        throw new Error(`eval-report.json (${REPORT_PATH}) has no case row for sample case "${caseId}"`);
+      }
+      expect(DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS[caseId]).toBe(row.routerVerdict.actualReviewReason);
+    }
+  });
+
+  it("every DEFAULT_SAMPLE_CASE_IDS entry exists in the real golden-set manifest", () => {
+    const manifest = loadGoldenSetManifest();
+    const manifestIds = new Set(manifest.cases.map((c) => c.caseId));
+    for (const caseId of DEFAULT_SAMPLE_CASE_IDS) {
+      expect(manifestIds.has(caseId)).toBe(true);
+    }
+  });
+});
+
+// LH-038 / TRO-543 — the variance runner's own CLI layer, added on top of
+// parseEvalArgs/resolveCaseIds without touching either (this ticket's own
+// "reuse, do not build a second path" rule, generalized to the arg parser).
+describe("parseVarianceArgs", () => {
+  it("defaults repeats to DEFAULT_REPEATS and every parseEvalArgs field to its own default", () => {
+    expect(parseVarianceArgs([])).toEqual({
+      live: false,
+      full: false,
+      caseId: null,
+      updateBaseline: false,
+      repeats: DEFAULT_REPEATS,
+      repeatsExplicit: false,
+      establishBaseline: false,
+    });
+  });
+
+  it("parses --repeats=<k> as a number, and marks it explicit", () => {
+    expect(parseVarianceArgs(["--live", "--repeats=3"])).toEqual({
+      live: true,
+      full: false,
+      caseId: null,
+      updateBaseline: false,
+      repeats: 3,
+      repeatsExplicit: true,
+      establishBaseline: false,
+    });
+  });
+
+  it("marks repeatsExplicit true even when the explicit value equals DEFAULT_REPEATS (PR review finding: value equality cannot stand in for presence)", () => {
+    const args = parseVarianceArgs(["--live", `--repeats=${DEFAULT_REPEATS}`]);
+    expect(args.repeats).toBe(DEFAULT_REPEATS);
+    expect(args.repeatsExplicit).toBe(true);
+  });
+
+  it("combines --repeats=<k> with --case=<id>, both taking effect", () => {
+    const args = parseVarianceArgs(["--live", "--case=case-17-glare-front-label", "--repeats=1"]);
+    expect(args.caseId).toBe("case-17-glare-front-label");
+    expect(args.repeats).toBe(1);
+  });
+
+  it("combines --repeats=<k> with --full, both taking effect", () => {
+    const args = parseVarianceArgs(["--live", "--full", "--repeats=2"]);
+    expect(args.full).toBe(true);
+    expect(args.repeats).toBe(2);
+  });
+
+  it("skips a literal -- token the same way parseEvalArgs does", () => {
+    expect(parseVarianceArgs(["--", "--live", "--repeats=2"])).toEqual({
+      live: true,
+      full: false,
+      caseId: null,
+      updateBaseline: false,
+      repeats: 2,
+      repeatsExplicit: true,
+      establishBaseline: false,
+    });
+  });
+
+  it("parses --establish-baseline as a bare flag, combinable with --full and --repeats", () => {
+    const args = parseVarianceArgs(["--live", "--full", "--repeats=3", "--establish-baseline"]);
+    expect(args.establishBaseline).toBe(true);
+    expect(args.full).toBe(true);
+    expect(args.repeats).toBe(3);
+  });
+
+  it("does not set establishBaseline when the flag is absent", () => {
+    expect(parseVarianceArgs(["--live", "--full"]).establishBaseline).toBe(false);
+  });
+
+  it("throws when --repeats is passed more than once", () => {
+    expect(() => parseVarianceArgs(["--live", "--repeats=2", "--repeats=3"])).toThrow(/--repeats may be passed at most once/);
+  });
+
+  it("throws on --repeats=0", () => {
+    expect(() => parseVarianceArgs(["--live", "--repeats=0"])).toThrow(/--repeats must be a positive integer, got 0/);
+  });
+
+  it("throws when --repeats exceeds MAX_REPEATS", () => {
+    expect(() => parseVarianceArgs(["--live", `--repeats=${MAX_REPEATS + 1}`])).toThrow(/exceeds the \d+-repeat safety cap/);
+  });
+
+  it("accepts --repeats=MAX_REPEATS exactly (the cap is inclusive)", () => {
+    expect(parseVarianceArgs(["--live", `--repeats=${MAX_REPEATS}`]).repeats).toBe(MAX_REPEATS);
+  });
+
+  it("rejects a non-numeric --repeats value as an unrecognized argument (it never matches the --repeats flag, so parseEvalArgs sees and rejects it)", () => {
+    expect(() => parseVarianceArgs(["--live", "--repeats=abc"])).toThrow(/unrecognized argument "--repeats=abc"/);
+  });
+
+  it("still throws on an unrelated unrecognized argument", () => {
+    expect(() => parseVarianceArgs(["--live", "--bogus"])).toThrow(/unrecognized argument "--bogus"/);
+  });
+});
+
+describe("validateVarianceArgs", () => {
+  it("passes for cheap mode (no flags)", () => {
+    expect(() => validateVarianceArgs(parseVarianceArgs([]))).not.toThrow();
+  });
+
+  it("passes for a valid --live run with --full and --repeats", () => {
+    expect(() => validateVarianceArgs(parseVarianceArgs(["--live", "--full", "--repeats=3"]))).not.toThrow();
+  });
+
+  it("passes for a valid --live run with --case and --repeats=1 (the mechanical-proof shape)", () => {
+    expect(() =>
+      validateVarianceArgs(parseVarianceArgs(["--live", "--case=case-01-clean-match-spirits", "--repeats=1"])),
+    ).not.toThrow();
+  });
+
+  it("throws when --repeats=<k> (non-default) is passed without --live", () => {
+    expect(() => validateVarianceArgs(parseVarianceArgs(["--repeats=3"]))).toThrow(/only affect a --live run/);
+  });
+
+  it("throws when --repeats=<DEFAULT_REPEATS> is explicitly passed without --live (PR review finding: an explicit value equal to the default must not silently pass validation)", () => {
+    expect(() => validateVarianceArgs(parseVarianceArgs([`--repeats=${DEFAULT_REPEATS}`]))).toThrow(/only affect a --live run/);
+  });
+
+  it("throws when --full is passed without --live", () => {
+    expect(() => validateVarianceArgs(parseVarianceArgs(["--full"]))).toThrow(/only affect a --live run/);
+  });
+
+  it("throws when --case=<id> is passed without --live", () => {
+    expect(() => validateVarianceArgs(parseVarianceArgs(["--case=case-01-clean-match-spirits"]))).toThrow(/only affect a --live run/);
+  });
+
+  it("rejects --update-baseline outright, even with --live — use --establish-baseline instead (TRO-561)", () => {
+    expect(() => validateVarianceArgs(parseVarianceArgs(["--live", "--update-baseline"]))).toThrow(
+      /--update-baseline is not supported by the variance runner/,
+    );
+  });
+
+  it("passes for --live --full --establish-baseline — the re-baseline protocol's own shape (TRO-561)", () => {
+    expect(() => validateVarianceArgs(parseVarianceArgs(["--live", "--full", "--repeats=3", "--establish-baseline"]))).not.toThrow();
+  });
+
+  it("throws when --establish-baseline is passed without --live", () => {
+    expect(() => validateVarianceArgs(parseVarianceArgs(["--establish-baseline"]))).toThrow(/only affect a --live run/);
+  });
+
+  it("throws when --establish-baseline is passed with --live but without --full — a band needs full corpus coverage", () => {
+    expect(() => validateVarianceArgs(parseVarianceArgs(["--live", "--establish-baseline"]))).toThrow(
+      /--establish-baseline requires --full/,
+    );
+  });
+
+  it("throws when --establish-baseline is combined with --case=<id> (mutually exclusive with --full, so also with a baseline's full-corpus requirement)", () => {
+    expect(() =>
+      validateVarianceArgs(parseVarianceArgs(["--live", "--case=case-01-clean-match-spirits", "--establish-baseline"])),
+    ).toThrow(/--establish-baseline requires --full/);
   });
 });

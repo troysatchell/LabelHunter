@@ -1,7 +1,172 @@
 {
-  "ticket": "TRO-470 / LH-030",
-  "establishedAt": "2026-08-12T13:26:45.488Z",
+  "ticket": "TRO-561 (re-baseline protocol; lineage: TRO-470 / LH-030)",
+  "establishedAt": "2026-08-13T15:18:44.699Z",
+  "k": 3,
+  "repeats": [
+    {
+      "repeatIndex": 1,
+      "extractionAccuracy": {
+        "total": 180,
+        "correct": 157,
+        "rate": 0.8722222222222222
+      },
+      "cascadeVerdictAccuracy": {
+        "total": 36,
+        "correct": 29,
+        "rate": 0.8055555555555556
+      }
+    },
+    {
+      "repeatIndex": 2,
+      "extractionAccuracy": {
+        "total": 180,
+        "correct": 157,
+        "rate": 0.8722222222222222
+      },
+      "cascadeVerdictAccuracy": {
+        "total": 36,
+        "correct": 30,
+        "rate": 0.8333333333333334
+      }
+    },
+    {
+      "repeatIndex": 3,
+      "extractionAccuracy": {
+        "total": 180,
+        "correct": 158,
+        "rate": 0.8777777777777778
+      },
+      "cascadeVerdictAccuracy": {
+        "total": 36,
+        "correct": 30,
+        "rate": 0.8333333333333334
+      }
+    }
+  ],
+  "extractionAccuracyBand": {
+    "min": 0.8722222222222222,
+    "max": 0.8777777777777778,
+    "spread": 0.005555555555555536
+  },
+  "cascadeVerdictAccuracyBand": {
+    "min": 0.8055555555555556,
+    "max": 0.8333333333333334,
+    "spread": 0.02777777777777779
+  },
+  "perCaseVerdictSets": {
+    "case-01-clean-match-spirits": [
+      "PASS"
+    ],
+    "case-02-clean-match-beer-no-abv": [
+      "PASS"
+    ],
+    "case-03-clean-match-wine": [
+      "PASS"
+    ],
+    "case-04-clean-match-spirits-alt-format": [
+      "PASS"
+    ],
+    "case-05-abv-mismatch-application-higher": [
+      "FAIL"
+    ],
+    "case-06-abv-mismatch-label-higher": [
+      "FAIL"
+    ],
+    "case-07-abv-proof-mismatch-internal": [
+      "REVIEW"
+    ],
+    "case-08-title-case-warning-prefix-only": [
+      "FAIL"
+    ],
+    "case-09-title-case-warning-full-statement": [
+      "FAIL"
+    ],
+    "case-10-reworded-warning-clause-one": [
+      "FAIL"
+    ],
+    "case-11-reworded-warning-clause-two": [
+      "FAIL"
+    ],
+    "case-12-missing-warning-spirits": [
+      "REVIEW"
+    ],
+    "case-13-missing-warning-wine": [
+      "REVIEW"
+    ],
+    "case-14-case-variant-brand-stones-throw": [
+      "PASS"
+    ],
+    "case-15-case-variant-brand-punctuation": [
+      "PASS"
+    ],
+    "case-16-case-variant-brand-extra-words": [
+      "PASS"
+    ],
+    "case-17-glare-front-label": [
+      "PASS"
+    ],
+    "case-18-glare-warning-block": [
+      "PASS"
+    ],
+    "case-19-rotation-mild-correctable": [
+      "PASS",
+      "REVIEW"
+    ],
+    "case-20-rotation-severe-upside-down": [
+      "REVIEW"
+    ],
+    "case-21-low-light-front-label": [
+      "PASS"
+    ],
+    "case-22-low-light-warning-block": [
+      "PASS"
+    ],
+    "case-23-tiny-warning-text-standard-bottle": [
+      "PASS"
+    ],
+    "case-25-odd-typography-script-brand": [
+      "PASS"
+    ],
+    "case-26-odd-typography-blackletter-class-type": [
+      "PASS"
+    ],
+    "case-27-conflicting-net-contents": [
+      "FAIL"
+    ],
+    "case-28-conflicting-class-type": [
+      "FAIL"
+    ],
+    "case-29-conflicting-brand-name": [
+      "FAIL"
+    ],
+    "case-30-clean-match-net-contents-alt-format": [
+      "PASS"
+    ],
+    "case-31-title-case-warning-surgeon-general-lowercase": [
+      "FAIL"
+    ],
+    "case-32-reworded-warning-near-miss-missing-comma": [
+      "REVIEW"
+    ],
+    "case-35-clean-match-real-photo-flat-scan": [
+      "REVIEW"
+    ],
+    "case-36-rotation-real-photo-gentle-curve": [
+      "REVIEW"
+    ],
+    "case-37-rotation-real-photo-severe-curve-partial-crop": [
+      "REVIEW"
+    ],
+    "case-38-glare-real-photo-crown-royal": [
+      "REVIEW"
+    ],
+    "case-39-rotation-real-photo-coppola-wraparound": [
+      "REVIEW"
+    ]
+  },
   "manifestVersion": "1.0.0",
+  "manifestContentHash": "fa3dbcfb60a6ecbd6c2de4ec837c54c72b87e909865ee9429946ac79cc5e0784",
+  "goldenSetCommitSha": "0e6e3e1432f63609ad49febf5445fb866cadaf91",
   "caseIds": [
     "case-01-clean-match-spirits",
     "case-02-clean-match-beer-no-abv",
@@ -26,7 +191,6 @@
     "case-21-low-light-front-label",
     "case-22-low-light-warning-block",
     "case-23-tiny-warning-text-standard-bottle",
-    "case-24-tiny-warning-text-miniature-bottle",
     "case-25-odd-typography-script-brand",
     "case-26-odd-typography-blackletter-class-type",
     "case-27-conflicting-net-contents",
@@ -34,96 +198,19 @@
     "case-29-conflicting-brand-name",
     "case-30-clean-match-net-contents-alt-format",
     "case-31-title-case-warning-surgeon-general-lowercase",
-    "case-32-reworded-warning-near-miss-missing-comma"
+    "case-32-reworded-warning-near-miss-missing-comma",
+    "case-35-clean-match-real-photo-flat-scan",
+    "case-36-rotation-real-photo-gentle-curve",
+    "case-37-rotation-real-photo-severe-curve-partial-crop",
+    "case-38-glare-real-photo-crown-royal",
+    "case-39-rotation-real-photo-coppola-wraparound"
   ],
-  "summary": {
-    "extractionAccuracy": {
-      "total": 160,
-      "correct": 154,
-      "rate": 0.9625
-    },
-    "extractionAccuracyByField": {
-      "brandName": {
-        "total": 32,
-        "correct": 31,
-        "rate": 0.96875
-      },
-      "classType": {
-        "total": 32,
-        "correct": 31,
-        "rate": 0.96875
-      },
-      "abv": {
-        "total": 32,
-        "correct": 31,
-        "rate": 0.96875
-      },
-      "netContents": {
-        "total": 32,
-        "correct": 31,
-        "rate": 0.96875
-      },
-      "governmentWarning": {
-        "total": 32,
-        "correct": 30,
-        "rate": 0.9375
-      }
-    },
-    "labelVerdictAccuracy": {
-      "total": 32,
-      "correct": 21,
-      "rate": 0.65625
-    },
-    "fieldVerdictAccuracyByField": {
-      "brand_name": {
-        "total": 32,
-        "correct": 27,
-        "rate": 0.84375
-      },
-      "class_type": {
-        "total": 32,
-        "correct": 29,
-        "rate": 0.90625
-      },
-      "alcohol_content": {
-        "total": 32,
-        "correct": 32,
-        "rate": 1
-      },
-      "net_contents": {
-        "total": 32,
-        "correct": 32,
-        "rate": 1
-      },
-      "government_warning": {
-        "total": 32,
-        "correct": 28,
-        "rate": 0.875
-      }
-    },
-    "reviewReasonAccuracy": {
-      "total": 14,
-      "correct": 5,
-      "rate": 0.35714285714285715
-    },
-    "warningSegmentation": {
-      "total": 32,
-      "clean": {
-        "count": 21,
-        "rate": 0.65625
-      },
-      "trueMismatch": {
-        "count": 5,
-        "rate": 0.15625
-      },
-      "resolutionSuspect": {
-        "count": 4,
-        "rate": 0.125
-      },
-      "notFound": {
-        "count": 2,
-        "rate": 0.0625
-      }
-    }
+  "haikuModel": "claude-haiku-4-5",
+  "sonnetModel": "claude-sonnet-5",
+  "codeCommitSha": "e4ac31e30803d20e35e40215886e259f70fa36a5",
+  "costUsd": {
+    "totalUsd": 1.203565,
+    "meanHaikuCallUsd": 0.004674416666666666,
+    "meanSonnetCallUsd": 0.013974560000000004
   }
 }

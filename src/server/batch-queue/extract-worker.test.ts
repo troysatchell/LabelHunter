@@ -4,13 +4,10 @@
  * is a canned `makeMockMessage`, the same pattern
  * `src/app/api/verify/route.test.ts` already uses.
  */
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
 import { InternalServerError, RateLimitError } from "@anthropic-ai/sdk";
 import { eq, sql } from "drizzle-orm";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { db } from "../../lib/db";
 import { batchJobs, batchQueueItems, fieldResults, reviewQueue, verifications } from "../../lib/db/schema";
 import { productionComparators } from "../comparators";
@@ -18,7 +15,7 @@ import { HaikuExtractionError } from "../extractor";
 import { makeMockMessage, WELL_FORMED_EXTRACTION_BODY } from "../extractor/test-support";
 import type { WarningComparatorResult } from "../router";
 import type { CompareGovernmentWarningFromImageInput } from "../warning";
-import { readLabelImage } from "../storage/local-file-storage";
+import { readLabelImage } from "../storage/db-image-storage";
 import { claimNextBatchQueueItem } from "./claim";
 import { DEFAULT_BACKOFF_CONFIG } from "./backoff";
 import { processExtractClaim, type ExtractWorkerDeps } from "./extract-worker";
@@ -33,15 +30,9 @@ import {
   makeTestJpeg,
 } from "./test-support";
 
-let scratchDir: string;
 const createdBatchJobIds: number[] = [];
 
-beforeEach(async () => {
-  scratchDir = await mkdtemp(path.join(tmpdir(), "labelhunter-tro474-extract-"));
-});
-
 afterEach(async () => {
-  await rm(scratchDir, { recursive: true, force: true });
   // Promise.allSettled, not a sequential loop: one rejected cleanup must
   // not leave the REST of this test's fixture rows behind uncleaned —
   // that would leak into later tests (this suite already documents one
@@ -97,15 +88,15 @@ function makeDeps(overrides: Partial<ExtractWorkerDeps> = {}): ExtractWorkerDeps
   return {
     db,
     comparators: productionComparators,
-    readLabelImage: (storagePath) => readLabelImage(storagePath, { baseDir: scratchDir }),
+    readLabelImage,
     compareGovernmentWarning: warningNeedsReviewStub,
     backoffConfig: DEFAULT_BACKOFF_CONFIG,
     ...overrides,
   };
 }
 
-async function claimedFixture(batchJobId: number, filename: string, applicationOverrides?: Parameters<typeof createApplicationAndSavedImageFixture>[4]) {
-  const { applicationId, labelImageId } = await createApplicationAndSavedImageFixture(db, batchJobId, filename, scratchDir, applicationOverrides);
+async function claimedFixture(batchJobId: number, filename: string, applicationOverrides?: Parameters<typeof createApplicationAndSavedImageFixture>[3]) {
+  const { applicationId, labelImageId } = await createApplicationAndSavedImageFixture(db, batchJobId, filename, applicationOverrides);
   await enqueueExtractItemFixture(db, { batchJobId, applicationId, labelImageId });
   const claimed = await claimNextBatchQueueItem(db, "EXTRACT", "worker-1", 60, { scopeToBatchJobId: batchJobId });
   if (!claimed) throw new Error("test setup failed: claim returned null");
@@ -284,7 +275,7 @@ describe("processExtractClaim — retryable failure (CP-3 §5)", () => {
 
   it("exhausting maxAttempts turns a retryable failure into a permanent one — processedCount and failedCount both increment (CP-3 §7.1)", async () => {
     const batchJobId = await trackBatch({ totalCount: 1 });
-    const { applicationId, labelImageId } = await createApplicationAndSavedImageFixture(db, batchJobId, "exhaust.jpg", scratchDir);
+    const { applicationId, labelImageId } = await createApplicationAndSavedImageFixture(db, batchJobId, "exhaust.jpg");
     const itemId = await enqueueExtractItemFixture(db, { batchJobId, applicationId, labelImageId });
     const error = new RateLimitError(429, { type: "rate_limit_error", message: "rate limited" }, "429", new Headers(), "rate_limit_error");
     const deps = makeDeps({ anthropicClient: clientThrowing(error), backoffConfig: { ...DEFAULT_BACKOFF_CONFIG, maxAttempts: 2, baseDelayMs: 1 } });

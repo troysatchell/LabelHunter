@@ -206,7 +206,7 @@ function isResolvedFieldResult(value: unknown): value is ResolvedFieldResult {
  * than pushing the guard into the shared formula — this function guards its
  * own call site the same way, not by teaching `deriveOutcome` to throw.
  */
-function isResolverResolution(value: unknown): value is ResolverResolution {
+export function isResolverResolution(value: unknown): value is ResolverResolution {
   if (typeof value !== "object" || value === null) return false;
   const obj = value as Record<string, unknown>;
   if (obj.outcome !== "resolved" && obj.outcome !== "needs-human") return false;
@@ -292,6 +292,11 @@ export interface UpdateReviewQueueEntryResolutionParams {
  * A caller that gets `null` back should re-read the row a winning caller
  * already wrote (the same recovery shape `resolve-worker.ts` already uses),
  * not treat it as an error.
+ *
+ * TRO-506/TRO-512: the same write also clears `resolverReservedUntil`. A
+ * finished row must not keep advertising a reservation — a human reading
+ * the row would see a resolution next to a live "still checking" state, and
+ * `review-queue/list.ts` would report that state to the reviewer.
  */
 export async function updateReviewQueueEntryResolution(
   params: UpdateReviewQueueEntryResolutionParams,
@@ -299,7 +304,7 @@ export async function updateReviewQueueEntryResolution(
 ): Promise<{ id: number } | null> {
   const [row] = await db
     .update(reviewQueue)
-    .set({ resolverOutput: params.resolverOutput })
+    .set({ resolverOutput: params.resolverOutput, resolverReservedUntil: null })
     .where(and(eq(reviewQueue.id, params.id), isNull(reviewQueue.resolverOutput), isNull(reviewQueue.resolverSkipReason)))
     .returning({ id: reviewQueue.id });
   return row ?? null;

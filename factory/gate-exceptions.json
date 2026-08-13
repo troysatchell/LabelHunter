@@ -1,0 +1,83 @@
+{
+  "$comment": [
+    "Human-approved exceptions to a gate.sh check. TRO-553 built this after G6",
+    "(regression-test) failed three real docs-only/test-only tickets whose",
+    "premise \u2014 every ticket changes production code \u2014 does not hold for them.",
+    "The mechanism is generic over the gate id, not G6-specific: gate.sh calls",
+    "the same check_gate_exception function from both G6 and G8, and TRO-542's",
+    "entry below is a live G8 (eval-not-regressed) instance.",
+    "",
+    "RULES:",
+    "(1) Only the orchestrator writes an entry here, and only after Troy's",
+    "    approval already exists on the named Linear ticket. An agent must",
+    "    never add its own entry \u2014 that would be self-approval.",
+    "(2) gate.sh honors an entry ONLY when \"approver\" is a non-empty string.",
+    "    An entry with an empty or missing approver reads as unapproved, and",
+    "    the gate still fails \u2014 see scripts/factory/gate-exceptions.ts.",
+    "(3) gate.sh reads THIS FILE FROM BASE_REF, never from the ticket branch's",
+    "    own working copy (see gate.sh, next to the quarantine baseline it",
+    "    copies the same discipline from). Editing this file on a ticket",
+    "    branch has ZERO effect on that ticket's own gate run \u2014 rule (1) is",
+    "    then code-enforced, not only documented: an entry only takes effect",
+    "    once the commit adding it has already landed on the base branch.",
+    "(4) One entry exempts one ticket from one named gate id. It does not",
+    "    exempt the ticket from any other gate, and it does not carry over to",
+    "    a different ticket that happens to touch the same files.",
+    "",
+    "Schema per entry: ticket (TRO-nnn), gate (the gate.sh check id), reason",
+    "(why this gate cannot pass honestly right now), approver (a name; empty",
+    "means NOT approved), date (YYYY-MM-DD the approval was given), pr",
+    "(optional \u2014 the PR this exception covers, for provenance; omitted when",
+    "the approval is not tied to one specific PR)."
+  ],
+  "version": 1,
+  "exceptions": [
+    {
+      "ticket": "TRO-547",
+      "gate": "regression-test",
+      "reason": "Test-repair ticket: the flake fix has no production-code change to write a red-first case against, and the only behavior candidate is already covered by BatchProgressBrowser.test.tsx's existing test. Flagged in CHANGES.md and escalated by the TRO-547 agent rather than padding the suite.",
+      "approver": "Troy",
+      "date": "2026-08-13",
+      "pr": 50
+    },
+    {
+      "ticket": "TRO-472",
+      "gate": "regression-test",
+      "reason": "LH-CP3 checkpoint 3 walkthrough material: docs only, no production or test code changed.",
+      "approver": "Troy",
+      "date": "2026-08-12",
+      "pr": 18
+    },
+    {
+      "ticket": "TRO-542",
+      "gate": "eval-not-regressed",
+      "reason": "The committed accuracy baseline (81.3%) sits at the top of TRO-543's measured variance band (78.1-81.3%), so an honest single run of unchanged code can fail the comparison on variance alone. Compounded by 31-vs-32-case corpus drift (TRO-556). TRO-561 is the systemic fix; this exception covers the interim.",
+      "approver": "Troy",
+      "date": "2026-08-13"
+    },
+    {
+      "ticket": "TRO-529",
+      "gate": "eval-not-regressed",
+      "reason": "Inherited stale-baseline condition (TRO-561/TRO-556), not caused by this branch. The golden-set corpus had to finalize at 36 cases before the variance-band sweep could run.",
+      "approver": "Troy",
+      "date": "2026-08-13",
+      "pr": 64
+    },
+    {
+      "ticket": "TRO-553",
+      "gate": "eval-not-regressed",
+      "reason": "Same inherited stale-baseline condition (TRO-561/TRO-556), not caused by this branch \u2014 verified byte-identical on a clean checkout of main. This is the exception-mechanism PR itself.",
+      "approver": "Troy",
+      "date": "2026-08-13",
+      "pr": 62
+    },
+    {
+      "ticket": "TRO-506",
+      "gate": "eval-not-regressed",
+      "reason": "Batch TRO-506/512/507/524 (review-queue reservation + keyset paging) touches no eval, corpus or prompt code. Its G8 failure is wholly inherited from main: cheap-mode check only (no live call), driven by manifest-hash drift as the corpus went 32 -> 36 cases, stale coverage on case-24 removed by TRO-516 C5, and accuracy compared against the pre-TRO-561 baseline pinned to the top of the measured 78.1-81.3% variance band. Verified before requesting: eval-not-regressed was the ONLY failing gate and the only failing CI step; build, defect-gate and 37 added regression tests all green. Expires with TRO-561's band baseline.",
+      "approver": "Troy",
+      "date": "2026-08-13",
+      "pr": "https://github.com/troysatchell/LabelHunter/pull/60"
+    }
+  ]
+}

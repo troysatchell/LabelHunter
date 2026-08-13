@@ -69,6 +69,48 @@ describe("getBatchProgress", () => {
     expect(result.progress.latency).toBeNull();
   });
 
+  it("returns throughput: null before the batch has completed — never a fabricated in-flight rate (TRO-544)", async () => {
+    const batchJobId = await trackBatch({ totalCount: 10 });
+    const result = await getBatchProgress(db, batchJobId);
+    expect(result.found).toBe(true);
+    if (!result.found) return;
+    expect(result.progress.throughput).toBeNull();
+  });
+
+  it("computes items/minute and the per-item average from startedAt/completedAt once the batch is done (TRO-544, PRD §3.8)", async () => {
+    const batchJobId = await trackBatch({ totalCount: 10 });
+    // A deterministic 2-minute span, computed in Postgres's own clock — same
+    // reasoning as the latency test just below: avoid Node/Postgres clock skew.
+    await db.execute(
+      sql`UPDATE batch_jobs SET started_at = now() - interval '2 minutes', completed_at = now(), status = 'COMPLETED', processed_count = 10 WHERE id = ${batchJobId}`,
+    );
+
+    const result = await getBatchProgress(db, batchJobId);
+    expect(result.found).toBe(true);
+    if (!result.found) return;
+    expect(result.progress.throughput).not.toBeNull();
+    expect(result.progress.throughput?.itemsPerMinute).toBeCloseTo(5, 0); // 10 items / 2 minutes
+    expect(result.progress.throughput?.avgMsPerItem).toBeGreaterThan(0);
+  });
+
+  it("returns autoVerifiedShare: null before anything has processed — never a fabricated 0% (TRO-544)", async () => {
+    const batchJobId = await trackBatch({ totalCount: 10 });
+    const result = await getBatchProgress(db, batchJobId);
+    expect(result.found).toBe(true);
+    if (!result.found) return;
+    expect(result.progress.autoVerifiedShare).toBeNull();
+  });
+
+  it("computes autoVerifiedShare from autoVerifiedCount/processedCount, live off batch_jobs (TRO-544, CP-1 §4.5 step 3)", async () => {
+    const batchJobId = await trackBatch({ totalCount: 10 });
+    await db.update(batchJobs).set({ processedCount: 8, autoVerifiedCount: 6 }).where(eq(batchJobs.id, batchJobId));
+
+    const result = await getBatchProgress(db, batchJobId);
+    expect(result.found).toBe(true);
+    if (!result.found) return;
+    expect(result.progress.autoVerifiedShare).toBe(0.75);
+  });
+
   it("computes avg/p95 latency from DONE EXTRACT items' claimed_at→updated_at gap", async () => {
     const batchJobId = await trackBatch();
     const a = await createApplicationAndImageFixture(db, batchJobId, "a.jpg");

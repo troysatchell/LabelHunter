@@ -1,47 +1,45 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
 import { APIConnectionError } from "@anthropic-ai/sdk";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import sharp from "sharp";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { db } from "../../../lib/db";
-import { applications, dailySpend, fieldResults, reviewQueue, verifications } from "../../../lib/db/schema";
+import { applications, dailySpend, fieldResults, labelImages, reviewQueue, verifications } from "../../../lib/db/schema";
 import { extractLabel } from "../../../server/extractor";
 import { makeMockMessage, WELL_FORMED_EXTRACTION_BODY } from "../../../server/extractor/test-support";
 import { MAX_UPLOAD_BYTES, preprocessImage } from "../../../server/preprocessing";
 import { productionComparators } from "../../../server/comparators";
 import type { WarningComparatorResult } from "../../../server/router";
 import type { CompareGovernmentWarningFromImageInput } from "../../../server/warning";
-import { saveLabelImage } from "../../../server/storage/local-file-storage";
+import { deleteLabelImageBlobsWhere, saveLabelImage } from "../../../server/storage/db-image-storage";
 import { BUDGET_EXHAUSTED_MESSAGE, getTodaySpendUsd, recordSpendUsd } from "../../../server/budget/daily-budget";
 import { createFixedWindowLimiter } from "../../../server/rate-limit/fixed-window";
 import { checkRateLimitPair } from "../../../server/rate-limit/instances";
 import { handleVerifyRequest, type VerifyRouteDeps } from "./route";
+import { parseServerTimingHeader, SERVER_TIMING_STAGES } from "./server-timing";
 import type { VerifyErrorResponse, VerifySuccessResponse } from "./types";
 
-// This suite makes NO live Anthropic call and writes NO file into the real
-// `var/uploads` — every Anthropic response is a canned `makeMockMessage`
-// (same pattern as `src/server/extractor/index.test.ts`), and every saved
-// image lands in a per-test scratch directory, deleted in `afterEach`. It
-// DOES use the real worktree Postgres database (`DATABASE_URL`, sourced
-// from `.factory-env`) to assert persistence — TRO-465's brief calls for
-// this explicitly.
+// This suite makes NO live Anthropic call — every Anthropic response is a
+// canned `makeMockMessage` (same pattern as
+// `src/server/extractor/index.test.ts`). It DOES use the real worktree
+// Postgres database (`DATABASE_URL`, sourced from `.factory-env`) to assert
+// persistence — TRO-465's brief calls for this explicitly — and every saved
+// image (TRO-518: `label_image_blobs`, in that same database) is deleted in
+// `afterEach` alongside its `applications` row.
 
-let scratchDir: string;
 const createdApplicationIds: number[] = [];
 
-beforeEach(async () => {
-  scratchDir = await mkdtemp(path.join(tmpdir(), "labelhunter-tro465-route-"));
-});
-
 afterEach(async () => {
-  await rm(scratchDir, { recursive: true, force: true });
+  const ids = createdApplicationIds.splice(0);
+  if (ids.length > 0) {
+    // TRO-518: label_image_blobs rows are not reached by the cascade below
+    // — see db-image-storage.ts's own deleteLabelImageBlobsWhere comment.
+    await deleteLabelImageBlobsWhere(inArray(labelImages.applicationId, ids));
+  }
   // Cascades to label_images, verifications, field_results, review_queue
   // (every FK in schema.ts is ON DELETE CASCADE) — one delete per test
   // application is enough to leave the shared worktree DB clean.
-  for (const id of createdApplicationIds.splice(0)) {
+  for (const id of ids) {
     await db.delete(applications).where(eq(applications.id, id));
   }
 });
@@ -114,7 +112,7 @@ function makeDeps(overrides: Partial<VerifyRouteDeps> = {}): VerifyRouteDeps {
     preprocessImage,
     extractLabel,
     compareGovernmentWarning: warningNeedsReviewStub,
-    saveLabelImage: (bytes, originalFilename) => saveLabelImage(bytes, originalFilename, { baseDir: scratchDir }),
+    saveLabelImage,
     comparators: productionComparators,
     ...overrides,
   };
@@ -257,6 +255,36 @@ describe("POST /api/verify — happy path", () => {
     expect(body.headlineReason).toBe("MISSING_REQUIRED_FIELD");
     const [queueRow] = await db.select().from(reviewQueue).where(eq(reviewQueue.verificationId, body.verificationId));
     expect(queueRow.reason).toBe("MISSING_REQUIRED_FIELD");
+  });
+});
+
+describe("POST /api/verify — Server-Timing header (TRO-539, PRD §3.8)", () => {
+  it("returns one dur= metric per PRD §3.8 stage on a 200 response", async () => {
+    const deps = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY) });
+    const response = await post(await buildFormData(), deps);
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as VerifySuccessResponse;
+    createdApplicationIds.push(body.applicationId);
+
+    const header = response.headers.get("server-timing");
+    expect(header).not.toBeNull();
+    const parsed = parseServerTimingHeader(header ?? "");
+    for (const stage of SERVER_TIMING_STAGES) {
+      expect(parsed[stage], `expected a numeric "${stage}" entry in Server-Timing: ${header}`).toBeDefined();
+      expect(parsed[stage]).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("omits the header on a non-200 (error) response — an early error means a stage never ran", async () => {
+    const garbage = new File([Buffer.from("this is not an image, just padded text bytes")], "photo.jpg", {
+      type: "image/jpeg",
+    });
+    const deps = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY) });
+
+    const response = await post(await buildFormData({ image: garbage }), deps);
+    expect(response.status).toBe(422);
+    expect(response.headers.get("server-timing")).toBeNull();
   });
 });
 

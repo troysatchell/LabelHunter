@@ -15,7 +15,7 @@
  * `FieldComparator` below is the interface LH-013 implements against.
  */
 import type { BeverageType, ReviewReason } from "../../lib/db/enums";
-import type { ExtractedField } from "../extractor/types";
+import type { ExtractedField, ImageQualityIssue } from "../extractor/types";
 
 export type { BeverageType, ReviewReason };
 
@@ -42,6 +42,18 @@ export type RouterFieldKey =
 /** The four fields a `FieldComparator` judges. `government_warning` is not
  * one of them — it is compared by its own subsystem (LH-020, CP-2). */
 export type ComparatorFieldKey = Exclude<RouterFieldKey, "government_warning">;
+
+/**
+ * The four rules `isLowImageQuality` (`label-blockers.ts`) can fire on
+ * (CP-1 §5.3, TRO-542). Two are deterministic on their own
+ * (`PREPROCESSING`, `FIELDS_ABSENT`); two pair a self-report with another
+ * self-report (`ILLEGIBLE`, `FIELD_CONFIDENCE`) — CP-1 §4.1 calls that
+ * pairing out by name as the one still-open promise this ticket measures,
+ * not one it closes. Naming the trigger, instead of returning a bare
+ * boolean, is what lets a run state WHICH rule decided, not only that the
+ * label-level blocker fired.
+ */
+export type LowImageQualityTrigger = "ILLEGIBLE" | "FIELD_CONFIDENCE" | "PREPROCESSING" | "FIELDS_ABSENT";
 
 /**
  * The application record the router compares a label reading against.
@@ -99,6 +111,19 @@ export type FieldComparator = (
 export type FieldComparators = Record<ComparatorFieldKey, FieldComparator>;
 
 /**
+ * Which reconciliation table decided a `WarningComparatorResult` (TRO-535 /
+ * LH-030b, CP-2 §4.5's amendment). `"dual"`: the OCR channel cleared
+ * `OCR_CONFIDENCE_FLOOR` (`../warning/reconcile.ts`), so both the VLM and
+ * OCR readings were compared against each other. `"single"`: OCR was
+ * unavailable (no crop found, or the OCR call itself produced nothing) OR
+ * its confidence sat below the floor, so the VLM reading alone decided —
+ * CP-2 §10 Q7's residual false-PASS path, and the reason a single-channel
+ * PASS on this field is worth counting on its own (see
+ * `scripts/eval/warning-segmentation.ts`'s `singleChannelPass`).
+ */
+export type WarningComparatorChannel = "dual" | "single";
+
+/**
  * The government-warning comparator's contract (CP-1 §5.3 "WARNING_MISMATCH").
  * The real comparator — VLM transcription + OCR, exact statutory comparison —
  * is LH-020's job, gated by CP-2, not yet cleared. This ticket accepts an
@@ -112,11 +137,20 @@ export type FieldComparators = Record<ComparatorFieldKey, FieldComparator>;
  * `NEEDS_REVIEW` branch, and absent everywhere else, makes a REVIEW result
  * with no stated reason a compile error for LH-020 to hit, not a silent
  * default this router would otherwise have to guess.
+ *
+ * `channel` is OPTIONAL, not required on every branch, for one honest
+ * reason: `compareGovernmentWarningFromImage`'s own defensive branch
+ * (`../warning/index.ts`, "a real caller filters this case out before
+ * reaching here") returns a bare `MISSING_REQUIRED_FIELD` result without
+ * ever running `reconcileWarningChannels` — there is no reconciliation
+ * table behind that result to name. Every result `reconcileWarningChannels`
+ * itself returns always sets `channel` (TRO-535 / LH-030b).
  */
 export type WarningComparatorResult =
-  | { verdict: "MATCH" | "MISMATCH"; note?: string }
+  | { verdict: "MATCH" | "MISMATCH"; channel?: WarningComparatorChannel; note?: string }
   | {
       verdict: "NEEDS_REVIEW";
+      channel?: WarningComparatorChannel;
       reviewReason: Extract<ReviewReason, "WARNING_MISMATCH" | "LOW_IMAGE_QUALITY" | "MISSING_REQUIRED_FIELD">;
       note?: string;
     };
@@ -172,4 +206,23 @@ export interface LabelRouterResult {
    * `null` for a clean PASS. */
   headlineReason: ReviewReason | null;
   fields: FieldResultRow[];
+  /**
+   * TRO-542: which CP-1 §5.3 rule made `isLowImageQuality` fire, or `null`
+   * when it did not fire. `LOW_IMAGE_QUALITY` outranks every other
+   * `ReviewReason` (`precedence.ts`'s rank 0), so this is non-null exactly
+   * when `headlineReason` is `LOW_IMAGE_QUALITY`. No artifact recorded
+   * this before this ticket — `scripts/eval/results/eval-report.json` had
+   * no `confidence`/trigger field at all.
+   */
+  lowImageQualityTrigger: LowImageQualityTrigger | null;
+  /**
+   * TRO-542: Haiku's own self-reported `image_quality.issues`
+   * (`../extractor/types.ts`'s `ExtractedImageQuality`), carried through
+   * verbatim. Evidence only — no branch in `label-blockers.ts` or
+   * `index.ts` tests `.issues`, so CP-1 §4.1 still holds: a self-report
+   * never decides anything alone. Reading it here answers this ticket's
+   * step 4 ("the router reads it, or the schema drops it") without
+   * claiming the read closes CP-1's pairing gap — it does not.
+   */
+  imageQualityIssues: readonly ImageQualityIssue[];
 }

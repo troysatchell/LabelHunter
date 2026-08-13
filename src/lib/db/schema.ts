@@ -1,6 +1,7 @@
 import { relations, sql } from "drizzle-orm";
 import {
   check,
+  customType,
   date,
   index,
   integer,
@@ -248,6 +249,68 @@ export const labelImages = pgTable(
 );
 
 /**
+ * A Postgres `bytea` column. drizzle-orm 0.45's `pg-core` has no built-in
+ * `bytea` helper (checked against the installed package — no
+ * `columns/bytea.*` file, unlike `text`/`jsonb`/etc), so this defines the
+ * minimal one `labelImageBlobs` needs below. No `toDriver`/`fromDriver`
+ * mapping functions: node-postgres already reads a `bytea` value back as a
+ * `Buffer` (confirmed against the installed `pg`/`pg-types`/`postgres-bytea`
+ * packages' own source — `postgres-bytea`'s parser returns `Buffer.from(...)`)
+ * and already accepts a `Buffer` directly as a query parameter, so `data`
+ * and `driverData` are the same `Buffer` on both sides — nothing to convert.
+ */
+const bytea = customType<{ data: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
+
+/**
+ * The bytes for one uploaded label image (TRO-518). Split out from
+ * `labelImages` rather than added as a column on it: `labelImages` rows are
+ * read on every batch-progress poll and every worker claim (Drizzle
+ * relations eager-load the whole row — see `extract-worker.ts`/
+ * `resolve-worker.ts`), and none of those reads want a multi-hundred-
+ * kilobyte blob riding along for free.
+ *
+ * Replaces `local-file-storage.ts` (deleted by this ticket), which wrote
+ * each image to a directory on the running process's own filesystem.
+ * `render.yaml` deploys `web` (writes the image) and `worker` (reads it
+ * back) as two separate Render services with two separate disks, so a file
+ * `web` wrote was never visible to `worker` once actually deployed. Postgres
+ * is the one resource `render.yaml` already gives both services
+ * (`DATABASE_URL`, same instance) — storing the bytes here removes the
+ * cross-service gap with no new external dependency, no new credential, and
+ * no new account (TRO-518's own hard constraint). See `db-image-storage.ts`
+ * for the read/write functions and CHANGES.md's TRO-518 entry for the size/
+ * scale/quota numbers behind this choice over an S3-compatible bucket.
+ */
+export const labelImageBlobs = pgTable("label_image_blobs", {
+  // Plain `text`, not a Postgres `uuid` column, even though every value
+  // this app writes IS a v4 UUID (`db-image-storage.ts`'s `saveLabelImage`
+  // generates one with `randomUUID()`). A `uuid`-typed column makes
+  // Postgres itself THROW ("invalid input syntax for type uuid") on a
+  // lookup for a value that is not valid UUID syntax — and a stale
+  // `labelImages.storagePath` value written under the pre-TRO-518
+  // filesystem-storage regime (shape: "uploads/<uuid>-name.jpg") is exactly
+  // that: not a bare UUID. `readLabelImage` must turn a lookup like that
+  // into a clean "not found" (`LabelImageNotFoundError`, TH-R20's designed
+  // 404), never an unhandled database error (standing rule 13) — a plain
+  // `text` primary key gives that for free, since a non-matching lookup
+  // just returns zero rows instead of raising a type error.
+  storageKey: text("storage_key").primaryKey(),
+  bytes: bytea("bytes").notNull(),
+  // Diagnostic only — no code path reads this column back (the same
+  // "opaque outside this module" contract `local-file-storage.ts`'s own
+  // `storagePath` had). Lets a human reading this table with a Postgres
+  // client tell which upload a row came from.
+  originalFilename: text("original_filename").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
  * One row per label-level verification, single or batch (PRD §3.3).
  * `batchJobId` is null for a single-label verification. The row records a
  * completed result: `verdict` and `resolutionPath` are set at insert time,
@@ -386,6 +449,19 @@ export const reviewQueue = pgTable(
     // batch-originated row; set at insert time by the single-label verify
     // route for every REVIEW-verdict row it files.
     resolverInput: jsonb("resolver_input"),
+    // TRO-506/TRO-512 (CP-3 §3.3, §12 open question 2). The resolver's
+    // atomic reservation: the instant one caller's exclusive right to call
+    // Sonnet for this verification runs out. Set by
+    // `../../server/resolver/reservation.ts` BEFORE the model call, cleared
+    // when a resolution lands or when the call fails.
+    //
+    // A dedicated column, not a second use of `claimToken`/`leaseExpiresAt`
+    // above: those belong to the single-label resolve worker's claim
+    // (TRO-511), which is still holding them while it calls
+    // `resolveEscalatedLabel`. Writing them here would replace that
+    // worker's own live claim token and turn its retry and failure writes
+    // into silent no-ops.
+    resolverReservedUntil: timestamp("resolver_reserved_until", { withTimezone: true }),
     claimedBy: text("claimed_by"),
     claimToken: uuid("claim_token"),
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
@@ -401,7 +477,28 @@ export const reviewQueue = pgTable(
     lastError: text("last_error"),
     disposition: reviewDispositionEnum("disposition"),
     disposedAt: timestamp("disposed_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true })
+    // Millisecond precision, unlike every other timestamp in this schema
+    // (TRO-507). This column is the review queue's paging sort key, and a
+    // page cursor is built from the JavaScript `Date` the driver hands
+    // back — which carries milliseconds and nothing finer. Postgres's own
+    // default microsecond precision made a cursor unable to name one exact
+    // position: the truncated cursor compared as "before" the very row it
+    // came from, so the next page served that row again, forever. Observed
+    // as a repeating page in `src/app/api/review-queue/route.test.ts`.
+    // Storing exactly what a cursor can carry removes the mismatch instead
+    // of papering over it in the query.
+    //
+    // Re-verified in the local review round 6, because "is this migration
+    // needed at all" is the cheapest thing to get wrong. Method: revert
+    // this worktree's column to the default microsecond precision, run
+    // `npx vitest run src/server/review-queue src/app/api/review-queue`,
+    // then restore it. Reverted, that route test failed, and it failed with
+    // the exact repeat: one queue id came back on page after page, and the
+    // walk never reached the next row. Restored, all 56 tests passed. The
+    // migration stands. The only way to drop it is to make the cursor carry
+    // microseconds, which means teaching the driver to hand this column
+    // back as text instead of a `Date`.
+    createdAt: timestamp("created_at", { withTimezone: true, precision: 3 })
       .notNull()
       .defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -418,8 +515,17 @@ export const reviewQueue = pgTable(
     index("review_queue_reason_idx").on(table.reason),
     // The review-queue UI's default view is "what's still unresolved" —
     // a partial index keeps that scan cheap as the table grows.
+    //
+    // Both keys, `createdAt` then `id`, since migration 0007 (TRO-507).
+    // The list query's keyset page boundary is a row comparison on the
+    // PAIR, `(created_at, id) > (cursor_created_at, cursor_id)`, and its
+    // `ORDER BY` uses the same pair. A `createdAt`-only index served the
+    // pair with the leading column alone, and Postgres re-checked the
+    // whole comparison as a filter and then sorted (measured, see
+    // `../../server/review-queue/list.ts`). Both keys let the index answer
+    // the boundary and the order together.
     index("review_queue_unresolved_idx")
-      .on(table.createdAt)
+      .on(table.createdAt, table.id)
       .where(sql`${table.disposition} IS NULL`),
     // TRO-511's own claim query's WHERE clause, almost verbatim — mirrors
     // `batch_queue_items_claim_idx`'s reasoning (CP-3 §2.2): keeps the scan

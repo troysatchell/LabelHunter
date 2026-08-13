@@ -89,8 +89,10 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     paragraph doesn't get counted by `review-ledger.mjs report`.
 22. **A hardened `pg.Pool` doesn't protect a second `new Pool(...)` created elsewhere.** Reuse
     the existing hardened client from `src/lib/db`. If a script genuinely needs its own
-    short-lived pool, copy both settings (the error listener, `connectionTimeoutMillis`), not
-    just the constructor call.
+    short-lived pool, copy every hardened setting — the error listener,
+    `connectionTimeoutMillis`, and `query_timeout` — not just the constructor call.
+    `connectionTimeoutMillis` bounds only connection establishment; an established query
+    needs `query_timeout` or it can hang forever (TRO-544 post-merge finding).
 23. **An `AbortController` timeout must stay live through the whole request, including the body
     read** — `clearTimeout` in the `finally` after `fetch()` resolves, before `.json()` runs,
     leaves a hanging body parse with no timeout at all. Scope one timer across every `await` in
@@ -111,6 +113,13 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     doesn't repeat what assistive tech already announces (not "The uploaded label photo" — a
     screen reader already says "image"). (`ux-copy`, 2 tickets: TRO-462, TRO-466.)
 
+26b. **Never union-interleave a CHANGES.md merge conflict — rebuild it.** CHANGES.md is
+    append-at-top, so both sides add at the same offset and a union splices entries together
+    (a five-fence corrupted entry shipped this way once; G7 caught it). Resolution: take
+    `origin/main`'s file whole, then insert your branch's own new entry after the preamble.
+    Union-keep-both stays correct for `factory/scorecard.jsonl` and
+    `factory/review-findings.jsonl` — line-oriented, no structure to corrupt.
+    (Second factory session, 2026-08-13, bitten twice.)
 27. **After merging `origin/main` into a ticket branch, run `pnpm install` even when
     `package.json`/`pnpm-lock.yaml` auto-merge with no conflict markers.** A clean auto-merge
     still doesn't touch `node_modules` on disk — a dependency the merge pulled in from a
@@ -119,13 +128,17 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     origin/main merge; the third worktree resolving it got the same failure pre-empted only
     because this rule existed by then.
 
-28. **Never background `gate.sh` (or anything else) and wait for its own completion
-    notification.** Only the orchestrator's top-level shell receives background-task
-    notifications — a sub-agent backgrounding its own process and then waiting gets no signal
-    and simply stalls, with real committed work sitting unpushed. Run `gate.sh` in the
-    foreground and wait for it to print an actual verdict line before doing anything else. Hit
-    twice in one session (TRO-473, TRO-474) — both times the work itself was fine, safely
-    committed, just never pushed or reported.
+28. **Never background `gate.sh` (or anything else) and then end your turn to wait for its
+    completion notification.** Only the orchestrator's top-level shell receives background-task
+    notifications — a sub-agent that backgrounds a process and stops gets no signal and simply
+    stalls, with real committed work sitting unpushed. Hit twice in one session (TRO-473,
+    TRO-474), then twice more in one wave (TRO-543 Part 2, TRO-527, 2026-08-13) where both
+    agents read a shell time limit as permission to background "with a monitor" — one cited
+    this rule as justification. The rule for long commands: raise the foreground timeout (the
+    shell tool accepts up to 10 minutes) and wait for the actual verdict line. If a run can
+    genuinely exceed that, poll it yourself in repeated short foreground checks inside your own
+    loop — process alive? result file's `ranAt` newer than your start? — until the verdict
+    exists. Ending your turn to "wait for the monitor" IS the stall this rule bans.
 29. **A `try/catch` guards a synchronous throw, not automatically an async one.** Code that runs
     after the `catch` block, or inside a bare `Promise.all`, still needs its own guard — a
     rejected promise there propagates unhandled, or (in `Promise.all`) discards every other
@@ -148,6 +161,21 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     than re-litigating the distinction from scratch: does the skip hide a real bug/gap (banned),
     or does it drop only a test-only mechanism with no legitimate real-world counterpart
     (not banned, but still narrow it and say so in `CHANGES.md`)?
+
+31. **The gate's review step re-reviews the whole branch every run, including the previous
+    round's own triage prose — findings regenerate forever, so triage runs to a stop rule,
+    not to zero.** After a round whose findings change no shipped behavior and no factual
+    claim, record every disposition and stop; do not fix-iterate prose, and do not re-run
+    the gate just to re-review. (TRO-544: 13 rounds, 45 findings; real substance ended at
+    round 12, and the last round was seven comment-shortening requests against stable files.)
+
+32. **Any ticket that changes `golden-set/` content runs the re-baseline protocol as part of
+    its own work:** `pnpm eval:variance -- --live --full --repeats=3 --establish-baseline`
+    (~$1 at 36 cases), committing the new band with its own golden-set SHA and manifest hash.
+    The `stale-baseline` failure class in `eval:check` is the routine detector — never a
+    reason for a gate exception, and never fixed by editing `baseline.json` by hand. No
+    "final corpus" exists; the band always names which corpus it measured. (TRO-561,
+    2026-08-13 — ended a six-exception day.)
 
 ## Mechanized (no longer prompt-dependent)
 

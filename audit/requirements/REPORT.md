@@ -4,7 +4,11 @@
 
 ## Summary
 
-Verdicts: **VERIFIED** 10 · **PARTIAL** 9 · **IMPLEMENTED-UNVERIFIED** 1 · **MISSING** 3 · **ASSUMED** 0 · **N/A** 0 · **BLOCKED** 0. (23 active requirements.)
+Verdicts at this sweep's own point in time (2026-08-12T18:05Z): **VERIFIED** 10 · **PARTIAL** 9 ·
+**IMPLEMENTED-UNVERIFIED** 1 · **MISSING** 3 · **ASSUMED** 0 · **N/A** 0 · **BLOCKED** 0. (23
+active requirements.) **Updated 2026-08-13 (TRO-539):** TH-R2 rose PARTIAL → VERIFIED after
+this sweep closed — **VERIFIED 11 · PARTIAL 8** as of that one change; the matrix row and
+Summary note above carry the detail, the rest of this sweep's counts are unchanged.
 
 Three rulings were taken from Troy on 2026-08-12 and recorded in `interpretations.md` as INT-001, INT-002, and INT-003. They are binding on every later sweep. Applying them cleared both ASSUMED rows: TH-R9 → PARTIAL, TH-R23 → PARTIAL, and lifted TH-R10 → VERIFIED.
 
@@ -12,7 +16,10 @@ Nine rows moved up, one moved down, and the one that moved down matters most.
 
 **The headline: label-verdict accuracy is 65.6%, not the extraction accuracy the repo usually quotes.** The live eval run (`scripts/eval/results/eval-report.json`, 2026-08-12T13:26:45Z, mode `live`, `claude-haiku-4-5`) reads fields correctly 154 times out of 160 — **96.25% extraction**. But only **21 of 32 cases** land on the expected label verdict — **65.6%**. Extraction is strong; the router's verdict calibration is the weak link, and no ticket currently owns it.
 
-**TH-R2 dropped VERIFIED → PARTIAL, and the reason is honest rather than regressive.** The latency artifact measures a pipeline that no longer ships. `scripts/latency/results/single-label-verify.json` was measured 2026-08-12T02:17:14Z; the warning comparator was wired into the route at commit c5e49f8, roughly an hour later. The artifact's own `pipelineScope` field says so: *"No OCR/warning-subsystem comparator."* Every one of its 20 runs also returned REVIEW / LOW_MODEL_CONFIDENCE — never a clean pass. The p50 of 4232 ms is real, and it measures the wrong thing. Compounding it, TRO-519 (Urgent, open) leaves the OCR channel with no deadline, so p95 on the shipping pipeline is currently unbounded.
+**TH-R2 dropped VERIFIED → PARTIAL, 2026-08-12. The reason was honest, not regressive.** The
+latency artifact measured a pipeline that no longer shipped. `scripts/latency/results/single-label-verify.json` was measured 2026-08-12T02:17:14Z. The warning comparator was wired into the route at commit c5e49f8, roughly an hour later. The artifact's own `pipelineScope` field said so at the time: *"No OCR/warning-subsystem comparator."* All 20 of its runs returned REVIEW / LOW_MODEL_CONFIDENCE — never a clean pass. That artifact's real figure is p50 **3690 ms**, p95 4339 ms (`single-label-verify.json:30-31`). An earlier draft of this line quoted 4232 ms instead. That figure belonged to a DIFFERENT, superseded artifact (commit `bce6b71`, replaced the same day by `5a16263`). It was never the committed file's own number.
+
+**Update, 2026-08-13 (TRO-539): TH-R2 rises PARTIAL → VERIFIED.** A real, sequential, paid run against the deployed Render `starter` instance now exists. It measured `scripts/latency/results/single-label-verify-url-mode.json` at 2026-08-13T12:40:42Z — after commit c5e49f8. It includes the warning comparator. It includes the OCR deadline TRO-519 added. All 20 requests were real HTTP round-trips. All 20 succeeded. All 20 returned `PASS`. p50 was **3834 ms**. p95 was **4458 ms** (`single-label-verify-url-mode.json:37-38`). Both figures clear TH-R2's own ~5s p50 acceptance bar (`audit/requirements/inventory.md:31`). This is the real, deployed number TH-R2 asks for. It is not an in-process estimate. The deployed instance does not expose its running commit. This run cannot independently confirm it served the exact reviewed code. It can only confirm that `render.yaml`'s `autoDeployTrigger: checksPass` should have deployed the latest green `main` first. Full detail — including the per-stage `Server-Timing` breakdown — is in `CHANGES.md`'s newest TRO-539 entry, at the top of that file. Neither 4232 ms nor 3690 ms is a valid current TH-R2 figure. Do not quote either one.
 
 **TH-R9 rose MISSING → PARTIAL.** The brief's headline requirement now has real code on the live path (TRO-514) and 198 green tests across `src/server/warning`. It is not VERIFIED because INT-001 rules that at least one FAIL case must run through the real image pipeline. Today the two FAIL cases run against simulated dual-channel text; only the PASS case uses a real photograph. The image needed is already committed at `golden-set/images/case-08-title-case-warning-prefix-only.jpg`, so one test closes it.
 
@@ -22,7 +29,7 @@ Nine rows moved up, one moved down, and the one that moved down matters most.
 
 - **This sweep wrote to a database.** `pnpm db:migrate` and `pnpm test` ran against `labelhunter_audit_0812`, a throwaway created for this run on the `labelhunter-pg` container. Verified afterward: the audit database holds 4 migration rows and 8 product tables; `labelhunter_dev` held 2 migration rows before and after, untouched.
 - **The environment was broken at sweep start, and the first attempt was aborted because of it.** `pnpm typecheck` failed with 7 `TS2307` errors for `fflate` and `js-yaml`. Both are declared in `package.json` and present in `pnpm-lock.yaml`; `node_modules` was stale. `pnpm install --frozen-lockfile` fixed it in 325 ms, changed no repo file, and typecheck then reported 0 errors. Had the sweep continued, TH-R4 and TH-R18 would have carried false failures backed by real-looking command output.
-- **`pnpm latency:check` did NOT run** (real billed API calls). TH-R2 cites the dated artifact and its staleness is the finding.
+- **`pnpm latency:check` did NOT run** (real billed API calls). TH-R2 cites the dated artifact and its staleness is the finding. **Superseded 2026-08-13 (TRO-539):** it has since run, against the deployed instance. See the Summary's Update note and the TH-R2 matrix row.
 - **`pnpm test:e2e` did NOT run** (boots a dev server). TH-R1 and TH-R20 cite `CHANGES.md:188`'s recorded 11/11 pass against a production build.
 - **No live browser this sweep.** TH-R3 and TH-R20's UX claims rest on reading component code plus the recorded Playwright run, not on driving the app.
 - **Sweep point is local `main`, 1 commit ahead of `origin/main`.** Commit 8fa8999 is unpushed, so CI has never run this exact tree.
@@ -35,7 +42,7 @@ Nine rows moved up, one moved down, and the one that moved down matters most.
 | ID | Requirement (short) | Ticket(s) | Evidence | Verdict |
 |---|---|---|---|---|
 | TH-R1 | Core loop: label in → per-field verdicts | TRO-461, TRO-462, TRO-463, TRO-465, TRO-514, TRO-479 | src/app/_components/VerifyForm.tsx:200; src/app/api/verify/route.ts:259; src/app/api/verify/route.ts:233 | VERIFIED |
-| TH-R2 | Single-label ≤~5s p50 | TRO-471, TRO-514, TRO-519 | scripts/latency/results/single-label-verify.json:3; scripts/latency/results/single-label-verify.json:11; scripts/latency/results/single-label-verify.json:30 | PARTIAL ▼ |
+| TH-R2 | Single-label ≤~5s p50 | TRO-471, TRO-514, TRO-519, TRO-539 | scripts/latency/results/single-label-verify-url-mode.json:3; scripts/latency/results/single-label-verify-url-mode.json:14; scripts/latency/results/single-label-verify-url-mode.json:37 | VERIFIED ▲ (2026-08-13) |
 | TH-R3 | 73-year-old UX benchmark | TRO-465, TRO-466, TRO-475, TRO-476, TRO-479, TRO-480 | src/app/_components/VerifyForm.tsx:200; src/app/_components/VerifyForm.test.tsx:69; src/app/globals.css:82 | VERIFIED ▲ |
 | TH-R4 | Batch mode (200–300 scale) | TRO-473, TRO-474, TRO-475, TRO-472, TRO-518, TRO-506, TRO-522 | src/server/batch-start/start-batch.ts:138; src/server/batch-start/start-batch.test.ts:58; src/server/batch-queue/pool.test.ts:86 | PARTIAL |
 | TH-R5 | Standalone, no COLA integration | *(unticketed)* | docs/PRD.md:46; src/server/router/required-fields.ts:21; docs/error-states.md:27 | IMPLEMENTED-UNVERIFIED |

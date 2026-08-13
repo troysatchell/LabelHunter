@@ -156,13 +156,21 @@ jobs:
         # This job has no ANTHROPIC_API_KEY and must not need one: CI runs on
         # every push and every PR update, and a real per-case pipeline sweep
         # here would be real, unbounded, per-commit API spend. The real
-        # sweep — `pnpm eval:check -- --live --full --update-baseline` — is a
+        # sweep — the re-baseline protocol, `pnpm eval:variance -- --live
+        # --full --repeats=3 --establish-baseline` (TRO-561; extends the
+        # eval:variance sweep rather than a second cascade path) — is a
         # deliberate, human-or-agent-invoked step that refreshes the
-        # committed report/baseline; this job only checks that the last
-        # committed refresh still holds. Same convention TRO-499 already set
-        # for "Golden set verify"/"Golden set render smoke" above: no live
-        # call, no network. See CHANGES.md's TRO-470 entry for the full
-        # reasoning and the alternative this design rejected.
+        # committed report/baseline band together; this job only checks
+        # that the last committed refresh still holds. TRO-561 also made the
+        # baseline a K-repeat BAND, not one run's point — the floor is the
+        # band's own measured minimum, and a corpus edit alone (no code
+        # regression) reports as its own "stale-baseline" problem class,
+        # a loud warning in this cheap mode rather than a false-positive
+        # "regressed" failure (see baseline-compare.ts's own module
+        # comment). Same convention TRO-499 already set for "Golden set
+        # verify"/"Golden set render smoke" above: no live call, no
+        # network. See CHANGES.md's TRO-470 and TRO-561 entries for the
+        # full reasoning and the alternatives each design rejected.
         if: steps.scaffold.outputs.present == 'true'
         run: |
           if node -e 'const p=require("./package.json"); process.exit(p.scripts && p.scripts["eval:check"] ? 0 : 1)'; then
@@ -178,4 +186,102 @@ jobs:
           name: verify-artifacts
           path: |
             ${{ runner.temp }}/unit-tests.json
+          if-no-files-found: ignore
+
+  # TRO-522: pnpm test:e2e (the Playwright suite, TRO-479) as its own,
+  # separately-named check — never folded into "verify"'s G4 unit-test
+  # step. Two independent sources named this gap before this job existed:
+  # TRO-479's own agent, and CodeRabbit's post-merge review. This job
+  # reproduces the same worker + fake-Anthropic-server lifecycle
+  # playwright.config.ts already manages locally (its own `webServer`
+  # array starts the fake model server, the Next.js app, and the batch
+  # worker; see that file for how each process finds the others).
+  #
+  # E2E_LIVE is never set here, on purpose. playwright.config.ts treats an
+  # unset E2E_LIVE as "point every outbound Anthropic call at
+  # scripts/e2e/fake-anthropic-server.ts" — this job spends no real API
+  # money and needs no ANTHROPIC_API_KEY. E2E_LIVE=1 stays a deliberate,
+  # human- or agent-invoked opt-in, run locally, never automatic here.
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: labelhunter
+          POSTGRES_PASSWORD: labelhunter_ci_password
+          POSTGRES_DB: labelhunter_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U labelhunter"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://labelhunter:labelhunter_ci_password@localhost:5432/labelhunter_ci
+      FACTORY_TICKET: ci
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect scaffold
+        id: scaffold
+        run: |
+          if [ -f package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::pre-scaffold repo — nothing to verify yet"
+          fi
+
+      - name: Setup pnpm
+        if: steps.scaffold.outputs.present == 'true'
+        uses: pnpm/action-setup@v4
+
+      - name: Setup node
+        if: steps.scaffold.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        if: steps.scaffold.outputs.present == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        if: steps.scaffold.outputs.present == 'true'
+        # Same requirement as the "verify" job's own copy of this step
+        # (see its comment): Chromium ships as a separate download `pnpm
+        # install` never fetches, and `--with-deps` also installs the
+        # Linux libraries headless Chromium needs on a fresh runner.
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Migrate
+        if: steps.scaffold.outputs.present == 'true'
+        # The app and worker processes playwright.config.ts's webServer
+        # starts below both need a migrated schema to serve real
+        # requests — same command the "verify" job runs before its own
+        # unit suite.
+        run: pnpm db:migrate
+
+      - name: E2E suite (fake Anthropic API — default, no live spend)
+        if: steps.scaffold.outputs.present == 'true'
+        # playwright.config.ts's own webServer entries do the rest: build
+        # + start the Next.js app, start the batch worker, and (since
+        # E2E_LIVE is unset above) start scripts/e2e/fake-anthropic-server.ts
+        # and point every outbound Anthropic call at it. No fixed sleep —
+        # each webServer entry waits on its own real, observable readiness
+        # signal (a port, or the worker's own startup log line).
+        run: pnpm test:e2e
+
+      - name: Upload Playwright artifacts
+        if: always() && steps.scaffold.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: |
+            test-results/
           if-no-files-found: ignore

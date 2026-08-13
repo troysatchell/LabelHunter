@@ -11,7 +11,7 @@
  * process restart (a deploy, a crash, Render recycling the instance) must
  * not silently reset spend to zero and defeat the guard exactly when a
  * traffic spike is causing restarts. `daily_spend` (`../../lib/db/schema.ts`,
- * migration `drizzle/migrations/0004_daily_spend.sql`) holds one row per UTC
+ * migration `drizzle/migrations/0008_tricky_banshee.sql`) holds one row per UTC
  * calendar day.
  *
  * **The default budget number and the reasoning behind it.** PRD §4's own

@@ -451,6 +451,30 @@ fieldset.field legend {
   font-size: 0.9rem;
 }
 
+/* What the resolver has done for this item (TRO-512). Quieter than the
+   reason line: the reason is why a person is needed, this is only whether
+   a suggestion is on its way. */
+.review-queue-row__resolver {
+  margin: 0 0 0.3rem;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+/* "More items are waiting" plus its own control (TRO-507). Kept directly
+   under the list, so the notice and the rows it qualifies read together. */
+.review-queue-more {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+  margin-top: 1rem;
+}
+
+.review-queue-more__notice {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
 .review-item-detail {
   display: flex;
   flex-direction: column;

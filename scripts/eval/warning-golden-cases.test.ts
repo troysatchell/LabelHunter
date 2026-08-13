@@ -84,11 +84,66 @@ describe("case-09-title-case-warning-full-statement — CP-2 §9.2 finding 2: a 
   });
 });
 
-describe("case-23/case-24 (tiny warning text) — CP-2 §9.2 finding 1: LOW_IMAGE_QUALITY, not LOW_MODEL_CONFIDENCE", () => {
-  it("both cases expect a reviewReason resolveGovernmentWarningField/WarningComparatorResult can actually produce", () => {
-    for (const caseId of ["case-23-tiny-warning-text-standard-bottle", "case-24-tiny-warning-text-miniature-bottle"]) {
+describe("case-23 (tiny warning text) — CP-2 §9.2 finding 1: WARNING_MISMATCH, not LOW_MODEL_CONFIDENCE", () => {
+  // TRO-516 C5 (Troy's ruling, 2026-08-13) merged case-24-tiny-warning-text-
+  // miniature-bottle into case-23: both cases printed the warning at the
+  // same 9px size on the same canvas and read at the same OCR-floor branch
+  // (58 and 56, both above OCR_CONFIDENCE_FLOOR=50 and below the old
+  // floor=60) — one code path, sampled twice. case-23 alone still proves
+  // that path; the removed case added no branch this file does not still
+  // cover. See golden-set/manifest.json's case-23 `notes` for the merge
+  // record, including case-24's own measured numbers.
+  it("expects a reviewReason resolveGovernmentWarningField/WarningComparatorResult can actually produce", () => {
+    // TRO-516 correction C4: TRO-469/LH-021 predicted LOW_IMAGE_QUALITY as the
+    // value this comparator would produce for tiny print. TRO-535's
+    // OCR_CONFIDENCE_FLOOR sweep (60 -> 50) let the OCR channel's real,
+    // badly-degraded reading reach the reconciler; measured live
+    // (eval-report.json, measuredAt 2026-08-12T22:15:52.776Z), the case
+    // returns WARNING_MISMATCH instead — one of the same three legal values
+    // CP-2 §9.2 finding 1 already named, just not the one TRO-469 predicted.
+    const goldenCase = findCase("case-23-tiny-warning-text-standard-bottle");
+    expect(goldenCase.expected.reviewReason).toBe("WARNING_MISMATCH");
+  });
+
+  /**
+   * The manifest-only check above proves the expectation is internally
+   * consistent; it does not exercise the real comparator, because tiny
+   * print's actual defect (the OCR channel misreads it) has no golden-set
+   * text field to read from — `reconcileCase`'s "both channels read the
+   * ground truth" simulation is the wrong one here on purpose (this file's
+   * own header comment). This test instead builds the case the diagnosis
+   * measured directly: a correct VLM read, and an OCR reading garbled by
+   * tiny print, at the OCR confidence `scripts/eval/ocr-floor-sweep.ts`
+   * actually recorded for this case (58 — above `OCR_CONFIDENCE_FLOOR`, 50,
+   * so the dual-channel path runs). The two channels disagree, so
+   * `reconcileWarningChannels` should return the same `WARNING_MISMATCH`
+   * the manifest now expects.
+   */
+  it("reconcileWarningChannels returns WARNING_MISMATCH when a correct VLM read meets an OCR read garbled by tiny print", () => {
+    const tinyPrintOcrMisreads: Record<string, { caseId: string; ocrConfidence: number; ocrText: string }> = {
+      "case-23-tiny-warning-text-standard-bottle": {
+        caseId: "case-23-tiny-warning-text-standard-bottle",
+        ocrConfidence: 58,
+        ocrText:
+          "GOVERNMENT WARNXNG (1) Aecordlng ta the Surgcon Genoral, wamen shquld nat drlnk alcohollc " +
+          "boverages durlng prognancy bocause af the rlsk af blrih dofocts (2) Consumptlon af alcohollc " +
+          "boverages impalrs yaur abllity ta drlve a car ar operate machlnery, and may cause hoalth problems.",
+      },
+    };
+
+    for (const { caseId, ocrConfidence, ocrText } of Object.values(tinyPrintOcrMisreads)) {
       const goldenCase = findCase(caseId);
-      expect(goldenCase.expected.reviewReason, `${caseId} expected.reviewReason`).toBe("LOW_IMAGE_QUALITY");
+      const canonicalText = goldenCase.label.governmentWarningText;
+      const vlm: VlmWarningCandidate = { transcription: canonicalText, prefixCasing: "ALL_CAPS", confidence: 0.98 };
+      const result = reconcileWarningChannels(vlm, { available: true, text: ocrText, confidence: ocrConfidence });
+
+      expect(result.channel, `${caseId} channel`).toBe("dual");
+      expect(result.verdict, `${caseId} verdict`).toBe(goldenCase.expected.fields.governmentWarning.verdict);
+      expect(result.verdict, `${caseId} verdict`).toBe("NEEDS_REVIEW");
+      if (result.verdict === "NEEDS_REVIEW") {
+        expect(result.reviewReason, `${caseId} reviewReason`).toBe(goldenCase.expected.reviewReason);
+        expect(result.reviewReason, `${caseId} reviewReason`).toBe("WARNING_MISMATCH");
+      }
     }
   });
 });

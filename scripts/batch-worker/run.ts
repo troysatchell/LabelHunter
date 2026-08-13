@@ -43,7 +43,7 @@ import { processExtractClaim } from "../../src/server/batch-queue/extract-worker
 import { startWorkerPool, type WorkerPoolHandle } from "../../src/server/batch-queue/pool";
 import { processResolveClaim } from "../../src/server/batch-queue/resolve-worker";
 import { productionComparators } from "../../src/server/comparators";
-import { readLabelImage } from "../../src/server/storage/local-file-storage";
+import { readLabelImage } from "../../src/server/storage/db-image-storage";
 import { startSingleLabelResolveWorker, type SingleLabelResolveWorkerHandle } from "../../src/server/single-label-resolve";
 
 /** Proposed, not measured (CP-3 §3.2) — generous multiples of the

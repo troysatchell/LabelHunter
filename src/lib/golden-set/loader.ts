@@ -24,7 +24,12 @@ import type {
   RubricVector,
 } from "./types";
 
-const DEFAULT_MANIFEST_PATH = path.resolve(
+/** Exported so a caller that needs the manifest's own file path — not just
+ * its parsed content — can read the identical file this loader reads
+ * (TRO-538 / LH-033: `scripts/eval/manifest-hash.ts` hashes this same path,
+ * so "the manifest we loaded" and "the manifest we hashed" can never
+ * drift apart into two different files). */
+export const DEFAULT_MANIFEST_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../../golden-set/manifest.json",
 );
@@ -79,7 +84,15 @@ const PROVENANCE_VALUES: readonly GoldenSetProvenance[] = [
   "rendered+degraded",
   "ai-generated",
   "rendered+ai-backdrop",
+  "photographed",
 ];
+
+/** The `imagePath` directory prefix `"photographed"` cases use instead of
+ * `golden-set/images/` (TRO-529 / LH-024) — see `GoldenSetProvenance`'s own
+ * comment (types.ts) for why a real photograph keeps its original filename
+ * under `assets/golden/references/` rather than being copied/renamed into
+ * the render pipeline's output directory. */
+const PHOTOGRAPHED_IMAGE_PREFIX = "assets/golden/references/";
 const CAMERA_CONDITIONS: readonly CameraCondition[] = ["steady", "motion-blur", "camera-shake"];
 const AI_BACKDROP_ONLY_FIELDS = [
   "referenceBottle",
@@ -121,6 +134,11 @@ function isFiniteNumber(value: unknown): value is number {
 
 function isBoolean(value: unknown): value is boolean {
   return typeof value === "boolean";
+}
+
+/** Checks `value` is `boolean | "unknown"` — the shape `governmentWarningPrefixBold` / `governmentWarningBodyBold` require (TRO-527 / LH-022). */
+function isBooleanOrUnknown(value: unknown): value is boolean | "unknown" {
+  return typeof value === "boolean" || value === "unknown";
 }
 
 /**
@@ -258,7 +276,14 @@ const DEGRADATION_PARAM_SHAPE: Record<
     required: { region: "string" },
     optional: { angleDegrees: "number", opacity: "number" },
   },
-  "low-light": { required: { region: "string", brightnessFactor: "number" } },
+  "low-light": {
+    required: { region: "string", brightnessFactor: "number" },
+    // TRO-516 correction C3: optional dynamic-range compression toward
+    // mid-gray and deterministic sensor noise, matching
+    // `scripts/golden/degrade.ts`'s `applyLowLight` params exactly —
+    // absent, a case keeps the original brightness-only behavior.
+    optional: { contrastFactor: "number", noiseAmplitude: "number" },
+  },
 };
 
 /**
@@ -474,6 +499,22 @@ function checkLabel(problems: string[], where: string, raw: unknown): void {
     isBoolean,
     "a boolean",
   );
+  checkField(
+    problems,
+    w,
+    raw,
+    "governmentWarningPrefixBold",
+    isBooleanOrUnknown,
+    'a boolean or "unknown"',
+  );
+  checkField(
+    problems,
+    w,
+    raw,
+    "governmentWarningBodyBold",
+    isBooleanOrUnknown,
+    'a boolean or "unknown"',
+  );
 }
 
 function checkFieldExpectation(
@@ -571,7 +612,25 @@ function checkCase(problems: string[], index: number, raw: unknown): void {
   if (imagePathOk) {
     const imagePath = raw.imagePath as string;
     const ext = imagePath.split(".").pop()?.toLowerCase() ?? "";
-    if (!imagePath.startsWith("golden-set/images/")) {
+    const isPhotographed = raw.provenance === "photographed";
+    if (isPhotographed) {
+      // TRO-529 / LH-024: a "photographed" case's file predates its case
+      // and IS the forensic evidence (docs/reference-photo-provenance.md)
+      // — it lives at its own original filename under
+      // assets/golden/references/, never renamed to match caseId and never
+      // copied into golden-set/images/ (GoldenSetProvenance's own comment,
+      // types.ts, explains why). This is a DIFFERENT convention from every
+      // other provenance's golden-set/images/<caseId> rule below, so the
+      // basename-must-match-caseId check does not apply here — it assumes
+      // a build-produced file named after its case, which a photograph
+      // that predates its case cannot satisfy without discarding the
+      // original filename's own provenance value.
+      if (!imagePath.startsWith(PHOTOGRAPHED_IMAGE_PREFIX)) {
+        problems.push(
+          `${caseLabel}: imagePath "${imagePath}" must start with "${PHOTOGRAPHED_IMAGE_PREFIX}" for provenance "photographed"`,
+        );
+      }
+    } else if (!imagePath.startsWith("golden-set/images/")) {
       problems.push(
         `${caseLabel}: imagePath "${imagePath}" must start with "golden-set/images/"`,
       );
@@ -581,7 +640,7 @@ function checkCase(problems: string[], index: number, raw: unknown): void {
         `${caseLabel}: imagePath "${imagePath}" must end in one of ${IMAGE_EXTENSIONS.join(", ")}`,
       );
     }
-    if (caseIdOk && basenameWithoutExtension(imagePath) !== raw.caseId) {
+    if (!isPhotographed && caseIdOk && basenameWithoutExtension(imagePath) !== raw.caseId) {
       problems.push(
         `${caseLabel}: imagePath basename "${basenameWithoutExtension(imagePath)}" must match caseId "${String(raw.caseId)}"`,
       );

@@ -1,0 +1,201 @@
+{
+  "ticket": "TRO-470 / LH-030",
+  "establishedAt": "2026-08-13T01:47:56.655Z",
+  "manifestVersion": "1.0.0",
+  "manifestContentHash": "8c9fad3fe780d4ea059681473c793163664708be583c5f7200e75e5c67b21f8f",
+  "caseIds": [
+    "case-01-clean-match-spirits",
+    "case-02-clean-match-beer-no-abv",
+    "case-03-clean-match-wine",
+    "case-04-clean-match-spirits-alt-format",
+    "case-05-abv-mismatch-application-higher",
+    "case-06-abv-mismatch-label-higher",
+    "case-07-abv-proof-mismatch-internal",
+    "case-08-title-case-warning-prefix-only",
+    "case-09-title-case-warning-full-statement",
+    "case-10-reworded-warning-clause-one",
+    "case-11-reworded-warning-clause-two",
+    "case-12-missing-warning-spirits",
+    "case-13-missing-warning-wine",
+    "case-14-case-variant-brand-stones-throw",
+    "case-15-case-variant-brand-punctuation",
+    "case-16-case-variant-brand-extra-words",
+    "case-17-glare-front-label",
+    "case-18-glare-warning-block",
+    "case-19-rotation-mild-correctable",
+    "case-20-rotation-severe-upside-down",
+    "case-21-low-light-front-label",
+    "case-22-low-light-warning-block",
+    "case-23-tiny-warning-text-standard-bottle",
+    "case-24-tiny-warning-text-miniature-bottle",
+    "case-25-odd-typography-script-brand",
+    "case-26-odd-typography-blackletter-class-type",
+    "case-27-conflicting-net-contents",
+    "case-28-conflicting-class-type",
+    "case-29-conflicting-brand-name",
+    "case-30-clean-match-net-contents-alt-format",
+    "case-31-title-case-warning-surgeon-general-lowercase",
+    "case-32-reworded-warning-near-miss-missing-comma"
+  ],
+  "summary": {
+    "extractionAccuracy": {
+      "total": 160,
+      "correct": 154,
+      "rate": 0.9625
+    },
+    "extractionAccuracyByField": {
+      "brandName": {
+        "total": 32,
+        "correct": 31,
+        "rate": 0.96875
+      },
+      "classType": {
+        "total": 32,
+        "correct": 31,
+        "rate": 0.96875
+      },
+      "abv": {
+        "total": 32,
+        "correct": 31,
+        "rate": 0.96875
+      },
+      "netContents": {
+        "total": 32,
+        "correct": 31,
+        "rate": 0.96875
+      },
+      "governmentWarning": {
+        "total": 32,
+        "correct": 30,
+        "rate": 0.9375
+      }
+    },
+    "routerVerdictAccuracy": {
+      "total": 32,
+      "correct": 26,
+      "rate": 0.8125
+    },
+    "fieldVerdictAccuracyByField": {
+      "brand_name": {
+        "total": 32,
+        "correct": 29,
+        "rate": 0.90625
+      },
+      "class_type": {
+        "total": 32,
+        "correct": 30,
+        "rate": 0.9375
+      },
+      "alcohol_content": {
+        "total": 32,
+        "correct": 32,
+        "rate": 1
+      },
+      "net_contents": {
+        "total": 32,
+        "correct": 32,
+        "rate": 1
+      },
+      "government_warning": {
+        "total": 32,
+        "correct": 30,
+        "rate": 0.9375
+      }
+    },
+    "reviewReasonAccuracy": {
+      "total": 12,
+      "correct": 7,
+      "rate": 0.5833333333333334
+    },
+    "warningSegmentation": {
+      "total": 32,
+      "clean": {
+        "count": 19,
+        "rate": 0.59375
+      },
+      "trueMismatch": {
+        "count": 5,
+        "rate": 0.15625
+      },
+      "resolutionSuspect": {
+        "count": 6,
+        "rate": 0.1875
+      },
+      "notFound": {
+        "count": 2,
+        "rate": 0.0625
+      },
+      "singleChannelPass": {
+        "count": 1,
+        "rate": 0.03125
+      }
+    },
+    "cascadeVerdictAccuracy": {
+      "total": 32,
+      "correct": 26,
+      "rate": 0.8125
+    },
+    "extractionReliabilityDiagram": [
+      {
+        "decile": 0,
+        "n": 8,
+        "correct": 3,
+        "rate": 0.375
+      },
+      {
+        "decile": 1,
+        "n": 0,
+        "correct": 0,
+        "rate": 0
+      },
+      {
+        "decile": 2,
+        "n": 0,
+        "correct": 0,
+        "rate": 0
+      },
+      {
+        "decile": 3,
+        "n": 0,
+        "correct": 0,
+        "rate": 0
+      },
+      {
+        "decile": 4,
+        "n": 0,
+        "correct": 0,
+        "rate": 0
+      },
+      {
+        "decile": 5,
+        "n": 0,
+        "correct": 0,
+        "rate": 0
+      },
+      {
+        "decile": 6,
+        "n": 0,
+        "correct": 0,
+        "rate": 0
+      },
+      {
+        "decile": 7,
+        "n": 0,
+        "correct": 0,
+        "rate": 0
+      },
+      {
+        "decile": 8,
+        "n": 0,
+        "correct": 0,
+        "rate": 0
+      },
+      {
+        "decile": 9,
+        "n": 152,
+        "correct": 151,
+        "rate": 0.993421052631579
+      }
+    ]
+  }
+}

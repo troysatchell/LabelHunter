@@ -26,7 +26,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "PASS",
@@ -82,7 +84,9 @@
         "netContentsUnit": "fl oz",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "PASS",
@@ -140,7 +144,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "PASS",
@@ -198,7 +204,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "PASS",
@@ -258,7 +266,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "FAIL",
@@ -314,7 +324,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "FAIL",
@@ -370,7 +382,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -428,7 +442,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "Government Warning: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": false
+        "governmentWarningPrefixAllCaps": false,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "FAIL",
@@ -486,7 +502,9 @@
         "netContentsUnit": "fl oz",
         "governmentWarningPresent": true,
         "governmentWarningText": "Government Warning: (1) According To The Surgeon General, Women Should Not Drink Alcoholic Beverages During Pregnancy Because Of The Risk Of Birth Defects. (2) Consumption Of Alcoholic Beverages Impairs Your Ability To Drive A Car Or Operate Machinery, And May Cause Health Problems.",
-        "governmentWarningPrefixAllCaps": false
+        "governmentWarningPrefixAllCaps": false,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "FAIL",
@@ -513,7 +531,7 @@
           }
         }
       },
-      "notes": "A more severe caps defect than case-08: every word is capitalized, not just the prefix. Both must FAIL the same way. CP-2 §9.2 finding 2 (docs/checkpoints/cp2-warning-subsystem.md): the failure is capitalization, not wording — with case folded this body is a genuine exact match (distance 0), so only the caps check catches it. Fixed by TRO-469 / LH-021; the prior reason text said 'the wording must match the statute exactly', which implied a wording failure this case does not have.",
+      "notes": "A more severe caps defect than case-08: every word is capitalized, not just the prefix. Both must FAIL the same way. CP-2 \u00a79.2 finding 2 (docs/checkpoints/cp2-warning-subsystem.md): the failure is capitalization, not wording \u2014 with case folded this body is a genuine exact match (distance 0), so only the caps check catches it. Fixed by TRO-469 / LH-021; the prior reason text said 'the wording must match the statute exactly', which implied a wording failure this case does not have.",
       "vectors": [
         "V2"
       ],
@@ -544,7 +562,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, pregnant women should not consume alcoholic beverages due to the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "FAIL",
@@ -601,7 +621,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages may impair your ability to operate a vehicle or machinery, and can cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "FAIL",
@@ -659,7 +681,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": false,
         "governmentWarningText": "",
-        "governmentWarningPrefixAllCaps": false
+        "governmentWarningPrefixAllCaps": false,
+        "governmentWarningPrefixBold": false,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -716,7 +740,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": false,
         "governmentWarningText": "",
-        "governmentWarningPrefixAllCaps": false
+        "governmentWarningPrefixAllCaps": false,
+        "governmentWarningPrefixBold": false,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -773,7 +799,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "PASS",
@@ -832,7 +860,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "PASS",
@@ -890,7 +920,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -948,7 +980,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -1009,7 +1043,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -1070,7 +1106,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "PASS",
@@ -1130,7 +1168,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -1193,7 +1233,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -1221,9 +1263,13 @@
           }
         }
       },
-      "notes": "Photo condition: front label underexposed; back label (ABV, net contents, warning) evenly lit and legible.",
+      "notes": "Photo condition: front label underexposed; back label (ABV, net contents, warning) evenly lit and legible. TRO-516 (2026-08-12, correction C3): the original transform (modulate brightness only) darkened without degrading glyph edges, so a real model read it perfectly (docs/diagnostics/2026-08-12-verdict-miss-triage.md, section 3D). Strengthened per the case-20 precedent (CHANGES.md, TRO-497 entry): dynamic-range compression toward mid-gray plus deterministic sensor noise (scripts/golden/degrade.ts, applyLowLight) and a small blur, so the pixels now support this case's note instead of only restating it.",
       "degradations": [
-        { "type": "low-light", "params": { "region": "front", "brightnessFactor": 0.32 } }
+        {
+          "type": "low-light",
+          "params": { "region": "front", "brightnessFactor": 0.6, "contrastFactor": 0.45, "noiseAmplitude": 22 }
+        },
+        { "type": "blur", "params": { "sigma": 1.6 } }
       ],
       "vectors": [],
       "provenance": "rendered+degraded",
@@ -1253,7 +1299,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -1314,11 +1362,13 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
-        "reviewReason": "LOW_IMAGE_QUALITY",
+        "reviewReason": "WARNING_MISMATCH",
         "fields": {
           "brandName": {
             "verdict": "MATCH",
@@ -1338,71 +1388,11 @@
           },
           "governmentWarning": {
             "verdict": "NEEDS_REVIEW",
-            "reason": "Warning text is legible but printed near the minimum legal size; extraction confidence is low."
+            "reason": "Warning text is legible but printed near the minimum legal size. The OCR channel disagrees with the extracted text, so a reviewer must confirm the exact wording."
           }
         }
       },
-      "notes": "Photo itself is clean and well-lit \u2014 the defect is print size, not capture quality. CP-2 \u00a79.2 finding 1 (docs/checkpoints/cp2-warning-subsystem.md): WarningComparatorResult can only return LOW_IMAGE_QUALITY, WARNING_MISMATCH, or MISSING_REQUIRED_FIELD, never LOW_MODEL_CONFIDENCE, so tiny print reaching this comparator by definition routes on LOW_IMAGE_QUALITY \u2014 tiny print is an image-resolution problem, and that is the honest name for it. Fixed by TRO-469 / LH-021; the prior expected.reviewReason (LOW_MODEL_CONFIDENCE) was a value this field can never actually carry.",
-      "vectors": [
-        "V4"
-      ],
-      "provenance": "rendered+degraded",
-      "verified": false
-    },
-    {
-      "caseId": "case-24-tiny-warning-text-miniature-bottle",
-      "description": "A 50 mL miniature bottle forces the warning into extremely small print.",
-      "category": "tiny-warning-text",
-      "beverageType": "spirits",
-      "imagePath": "golden-set/images/case-24-tiny-warning-text-miniature-bottle.jpg",
-      "application": {
-        "brandName": "Pocketful Spirits",
-        "classType": "Bourbon Whiskey",
-        "abvPercent": 40,
-        "netContentsValue": 50,
-        "netContentsUnit": "mL"
-      },
-      "label": {
-        "brandName": "Pocketful Spirits",
-        "classType": "Bourbon Whiskey",
-        "abvPresent": true,
-        "abvText": "40% Alc./Vol. (80 Proof)",
-        "abvPercent": 40,
-        "proof": 80,
-        "netContentsText": "50 mL",
-        "netContentsValue": 50,
-        "netContentsUnit": "mL",
-        "governmentWarningPresent": true,
-        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
-      },
-      "expected": {
-        "labelVerdict": "REVIEW",
-        "reviewReason": "LOW_IMAGE_QUALITY",
-        "fields": {
-          "brandName": {
-            "verdict": "MATCH",
-            "reason": "Label brand matches the application exactly."
-          },
-          "classType": {
-            "verdict": "MATCH",
-            "reason": "Label class/type matches the application exactly."
-          },
-          "abv": {
-            "verdict": "MATCH",
-            "reason": "Label states 40% ABV, matching the application."
-          },
-          "netContents": {
-            "verdict": "MATCH",
-            "reason": "Label states 50 mL, matching the application."
-          },
-          "governmentWarning": {
-            "verdict": "NEEDS_REVIEW",
-            "reason": "Bottle is a 50 mL miniature; the warning text is legible but very small, and extraction confidence is low."
-          }
-        }
-      },
-      "notes": "CP-2 §9.2 finding 1 (docs/checkpoints/cp2-warning-subsystem.md): same correction as case-23 — WarningComparatorResult cannot return LOW_MODEL_CONFIDENCE, so this routes on LOW_IMAGE_QUALITY. Fixed by TRO-469 / LH-021.",
+      "notes": "Photo itself is clean and well-lit \u2014 the defect is print size, not capture quality. CP-2 \u00a79.2 finding 1 (docs/checkpoints/cp2-warning-subsystem.md): WarningComparatorResult can only return LOW_IMAGE_QUALITY, WARNING_MISMATCH, or MISSING_REQUIRED_FIELD, never LOW_MODEL_CONFIDENCE. Fixed by TRO-469 / LH-021; the prior expected.reviewReason (LOW_MODEL_CONFIDENCE) was a value this field can never actually carry. TRO-469 predicted LOW_IMAGE_QUALITY as the replacement value, reasoning tiny print reaching this comparator would route there by default. TRO-535 (2026-08-12) swept OCR_CONFIDENCE_FLOOR from 60 to 50 and let the OCR channel's real reading reach the reconciler. Measured, live (eval-report.json, measuredAt 2026-08-12T22:15:52.776Z): the OCR channel now reads this print at distance 47 from the statute, the two channels disagree, and the comparator returns WARNING_MISMATCH \u2014 one of the same three legal values CP-2 \u00a79.2 finding 1 already named, just not the one TRO-469 predicted. TRO-516 (correction C4) corrects expected.reviewReason to match this measured result. Merged case-24-tiny-warning-text-miniature-bottle into this case per TRO-516 C5 (Troy's ruling, 2026-08-13). Both cases printed the warning at the same 9px font size on the same canvas. The pair sampled one print size twice, not two. case-24 measured OCR distance 42 from the statute at confidence 56; this case measured distance 47 at confidence 58 \u2014 both readings corroborate the same WARNING_MISMATCH pattern. The freed corpus slot goes to a genuinely different sample later.",
       "vectors": [
         "V4"
       ],
@@ -1411,7 +1401,7 @@
     },
     {
       "caseId": "case-25-odd-typography-script-brand",
-      "description": "Brand name is set in an ornate script font that is hard for a model to read confidently.",
+      "description": "Brand name is set in an ornate script font.",
       "category": "odd-typography",
       "beverageType": "wine",
       "imagePath": "golden-set/images/case-25-odd-typography-script-brand.jpg",
@@ -1433,15 +1423,16 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
-        "labelVerdict": "REVIEW",
-        "reviewReason": "LOW_MODEL_CONFIDENCE",
+        "labelVerdict": "PASS",
         "fields": {
           "brandName": {
-            "verdict": "NEEDS_REVIEW",
-            "reason": "Brand name is set in an ornate script font; extraction confidence is low."
+            "verdict": "MATCH",
+            "reason": "Label brand matches the application exactly; the ornate script font does not lower extraction confidence."
           },
           "classType": {
             "verdict": "MATCH",
@@ -1461,13 +1452,14 @@
           }
         }
       },
+      "notes": "TRO-516 (2026-08-12): expected REVIEW/LOW_MODEL_CONFIDENCE until this correction. Two live runs (eval-report.json, benchmark-report.json) both scored brandName MATCH with no confidence drop \u2014 the prior expected block was an unfalsified prediction, not a measured result (docs/diagnostics/2026-08-12-verdict-miss-triage.md \u00a73D, correction C2).",
       "vectors": [],
       "provenance": "rendered+degraded",
       "verified": false
     },
     {
       "caseId": "case-26-odd-typography-blackletter-class-type",
-      "description": "Class/type is set in a decorative blackletter font that is hard for a model to read confidently.",
+      "description": "Class/type is set in a decorative blackletter font.",
       "category": "odd-typography",
       "beverageType": "spirits",
       "imagePath": "golden-set/images/case-26-odd-typography-blackletter-class-type.jpg",
@@ -1490,19 +1482,20 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
-        "labelVerdict": "REVIEW",
-        "reviewReason": "LOW_MODEL_CONFIDENCE",
+        "labelVerdict": "PASS",
         "fields": {
           "brandName": {
             "verdict": "MATCH",
             "reason": "Label brand matches the application exactly."
           },
           "classType": {
-            "verdict": "NEEDS_REVIEW",
-            "reason": "Class/type is set in a decorative blackletter font; extraction confidence is low."
+            "verdict": "MATCH",
+            "reason": "Label class/type matches the application exactly; the decorative blackletter font does not lower extraction confidence."
           },
           "abv": {
             "verdict": "MATCH",
@@ -1518,6 +1511,7 @@
           }
         }
       },
+      "notes": "TRO-516 (2026-08-12): expected REVIEW/LOW_MODEL_CONFIDENCE until this correction. Two live runs (eval-report.json, benchmark-report.json) both scored classType MATCH with no confidence drop \u2014 the prior expected block was an unfalsified prediction, not a measured result (docs/diagnostics/2026-08-12-verdict-miss-triage.md \u00a73D, correction C1).",
       "vectors": [],
       "provenance": "rendered+degraded",
       "verified": false
@@ -1546,7 +1540,9 @@
         "netContentsUnit": "fl oz",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "FAIL",
@@ -1602,7 +1598,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "FAIL",
@@ -1658,7 +1656,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "FAIL",
@@ -1717,7 +1717,9 @@
         "netContentsUnit": "ml",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "PASS",
@@ -1777,7 +1779,9 @@
         "netContentsUnit": "mL",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the surgeon general, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "FAIL",
@@ -1835,7 +1839,9 @@
         "netContentsUnit": "fl oz",
         "governmentWarningPresent": true,
         "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-        "governmentWarningPrefixAllCaps": true
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
       },
       "expected": {
         "labelVerdict": "REVIEW",
@@ -1866,6 +1872,313 @@
       "notes": "CP-2 \u00a79.2 finding 4 / \u00a711 open question 9 (docs/checkpoints/cp2-warning-subsystem.md): no prior case exercised the near-miss band (edit distance 1-2) \u2014 case-10/11's deviations sit at distance 38 and 24, far outside it. TTB's own Boot Camp for Brewers deck names a missing comma after 'General' a common real mistake, so this is a case TTB's own specialist sees, not one invented for coverage. Exactly one character is removed (the comma after 'General'); every capitalization position stays clean, isolating the defect to wording distance alone. Routes REVIEW, never FAIL \u2014 CP-2 \u00a75.5's own guard: the near-miss band never turns a would-be FAIL into a PASS, but it also never lets a one-character slip read as confidently as a 24+ character rewording. Added by TRO-469 / LH-021. Renumbered from case-31 to case-32 when TRO-515's case-30-clean-match-net-contents-alt-format landed on main first.",
       "vectors": [],
       "provenance": "rendered",
+      "verified": false
+    },
+    {
+      "caseId": "case-35-clean-match-real-photo-flat-scan",
+      "description": "Real, flat, straight-on photograph of a government-warning panel. The only asset in the corpus that measurably shows the statute's required bold prefix.",
+      "category": "clean-match",
+      "beverageType": "wine",
+      "imagePath": "assets/golden/references/alcohol-warning-label-1200x596-235563604.jpg",
+      "application": {
+        "brandName": "Meadow Creek Cellars",
+        "classType": "Table Wine",
+        "abvPercent": 10.5,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "(not shown in this crop)",
+        "classType": "(not shown in this crop)",
+        "abvPresent": true,
+        "abvText": "ALC. 10.5% BY VOL.",
+        "abvPercent": 10.5,
+        "netContentsText": "(not shown in this crop)",
+        "netContentsValue": 0,
+        "netContentsUnit": "not visible",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) ACCORDING TO THE SURGEON GENERAL, WOMEN SHOULD NOT DRINK ALCOHOLIC BEVERAGES DURING PREGNANCY BECAUSE OF THE RISK OF BIRTH DEFECTS. (2) CONSUMPTION OF ALCOHOLIC BEVERAGES IMPAIRS YOUR ABILITY TO DRIVE A CAR OR OPERATE MACHINERY, AND MAY CAUSE HEALTH PROBLEMS.",
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "LOW_IMAGE_QUALITY",
+        "fields": {
+          "brandName": {
+            "verdict": "NEEDS_REVIEW",
+            "reason": "Brand name is not visible. This photograph shows only the government-warning panel, not a full label."
+          },
+          "classType": {
+            "verdict": "NEEDS_REVIEW",
+            "reason": "Class/type is not visible. This photograph shows only the government-warning panel, not a full label."
+          },
+          "abv": {
+            "verdict": "MATCH",
+            "reason": "Label states 10.5% ABV, matching the application."
+          },
+          "netContents": {
+            "verdict": "NEEDS_REVIEW",
+            "reason": "Net contents are not visible. This photograph shows only the government-warning panel, not a full label."
+          },
+          "governmentWarning": {
+            "verdict": "MATCH",
+            "reason": "The warning matches the canonical text exactly. GOVERNMENT WARNING: prints bold and all-caps; the body does not."
+          }
+        }
+      },
+      "notes": "TRO-529 / LH-024: hand-transcribed from a real photograph, not rendered. Edit distance vs CANONICAL_WARNING_TEXT: 0 (case-folded Levenshtein, via evaluateCandidate() in src/server/warning/wording-compare.ts) -- an exact wording match; every caps position checks OK. Measured prefix/body stroke-width ratio 2.2, stable across three thresholds (docs/reference-photo-provenance.md, file 1) -- the only asset in the corpus that measurably shows the compliant bold pattern, so prefix/body are recorded true/false here rather than \"unknown\". No live trademark is visible; no brand appears in the frame at all. application.brandName/classType/netContents are a fictional filed record, the same convention every other golden-set case uses. label.brandName/classType/netContentsText record plainly that this crop shows no brand, class/type, or net-contents statement -- a warning-panel close-up, not a full label -- rather than inventing a plausible-looking value that was never printed on the photograph. beverageType (wine) is inferred from the 10.5% ABV figure alone; the photograph names no beverage type.",
+      "vectors": [
+        "V1",
+        "V9"
+      ],
+      "provenance": "photographed",
+      "verified": false
+    },
+    {
+      "caseId": "case-36-rotation-real-photo-gentle-curve",
+      "description": "Real bottle photograph, warning label curved gently around the glass. Full warning legible; brand and class/type sit outside the crop.",
+      "category": "rotation",
+      "beverageType": "wine",
+      "imagePath": "assets/golden/references/39cdef_a2d8485e45e84dc69fd21743b9e5de98~mv2-2171205156.jpg",
+      "application": {
+        "brandName": "Hollow Ridge Vineyard",
+        "classType": "Red Wine",
+        "abvPercent": 15.1,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "(not shown in this crop)",
+        "classType": "(not shown in this crop)",
+        "abvPresent": true,
+        "abvText": "ALC. 15.1% BY VOL.",
+        "abvPercent": 15.1,
+        "netContentsText": "750ML",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) ACCORDING TO THE SURGEON GENERAL, WOMEN SHOULD NOT DRINK ALCOHOLIC BEVERAGES DURING PREGNANCY BECAUSE OF THE RISK OF BIRTH DEFECTS. (2) CONSUMPTION OF ALCOHOLIC BEVERAGES IMPAIRS YOUR ABILITY TO DRIVE A CAR OR OPERATE MACHINERY, AND MAY CAUSE HEALTH PROBLEMS.",
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": "unknown",
+        "governmentWarningBodyBold": "unknown"
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "MISSING_REQUIRED_FIELD",
+        "fields": {
+          "brandName": {
+            "verdict": "NEEDS_REVIEW",
+            "reason": "Brand name is not visible. This photograph shows only the government-warning panel, not a full label."
+          },
+          "classType": {
+            "verdict": "NEEDS_REVIEW",
+            "reason": "Class/type is not visible. This photograph shows only the government-warning panel, not a full label."
+          },
+          "abv": {
+            "verdict": "MATCH",
+            "reason": "Label states 15.1% ABV, matching the application."
+          },
+          "netContents": {
+            "verdict": "MATCH",
+            "reason": "Label states 750ML, matching the application's 750 mL."
+          },
+          "governmentWarning": {
+            "verdict": "MATCH",
+            "reason": "The warning matches the canonical text exactly, despite the bottle's gentle curve. The whole block prints at one uniform weight, so bold/non-bold structure cannot be confirmed from this photo."
+          }
+        }
+      },
+      "notes": "TRO-529 / LH-024: hand-transcribed from a real photograph, not rendered. Edit distance vs CANONICAL_WARNING_TEXT: 0 (case-folded Levenshtein). No live trademark is visible; no brand appears in the frame at all (the label's own top edge, which may have carried one, is clipped by the frame). governmentWarningPrefixBold/BodyBold are \"unknown\": a stroke-width measurement found no separation between the prefix and the body -- this photograph cannot support a bold/not-bold call either way. netContentsText is transcribed verbatim as printed, \"750ML\" with no space -- correct nothing (same V7 format-variant convention as case-30). The file's own source is unconfirmed: the filename's ~mv2 pattern suggests a Wix-hosted site, but the repo records no URL or licence (docs/reference-photo-provenance.md, file 2) -- flagged there, not resolved here. beverageType (wine) is inferred from the 15.1% ABV and 750ML pairing alone; the photograph names no beverage type.",
+      "vectors": [
+        "V1",
+        "V9"
+      ],
+      "provenance": "photographed",
+      "verified": false
+    },
+    {
+      "caseId": "case-37-rotation-real-photo-severe-curve-partial-crop",
+      "description": "Real bottle photograph, strong curve and shallow depth of field. Only warning fragments are legible; every other required field is out of frame.",
+      "category": "rotation",
+      "beverageType": "wine",
+      "imagePath": "assets/golden/references/updated-alcohol-warnin-2564515199.jpg",
+      "application": {
+        "brandName": "Bellhaven Cellars",
+        "classType": "Table Wine",
+        "abvPercent": 12,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "(not shown in this crop)",
+        "classType": "(not shown in this crop)",
+        "abvPresent": false,
+        "abvText": "",
+        "netContentsText": "(not shown in this crop)",
+        "netContentsValue": 0,
+        "netContentsUnit": "not visible",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: [text continues off the right edge of frame, cut by the bottle's curvature] SURGEON GENERAL, WOMEN SHOULD [cut] BEVERAGES DURING PREGNANCY [cut] BIRTH DEFECTS. (2) CONSUMPTION [cut] IMPAIRS YOUR ABILITY TO DRIVE [cut] MACHINERY, AND MAY CAUSE HEALTH [cut]",
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": "unknown",
+        "governmentWarningBodyBold": "unknown"
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "LOW_IMAGE_QUALITY",
+        "fields": {
+          "brandName": {
+            "verdict": "NEEDS_REVIEW",
+            "reason": "Brand name is not visible. This photograph shows only the government-warning panel, not a full label."
+          },
+          "classType": {
+            "verdict": "NEEDS_REVIEW",
+            "reason": "Class/type is not visible. This photograph shows only the government-warning panel, not a full label."
+          },
+          "abv": {
+            "verdict": "NEEDS_REVIEW",
+            "reason": "No ABV statement is visible in this crop. This photograph shows only the government-warning panel."
+          },
+          "netContents": {
+            "verdict": "NEEDS_REVIEW",
+            "reason": "Net contents are not visible. This photograph shows only the government-warning panel, not a full label."
+          },
+          "governmentWarning": {
+            "verdict": "NEEDS_REVIEW",
+            "reason": "Only fragments of the warning body are legible. The bottle's strong curve and shallow depth of field cut most lines before the statutory text can be confirmed complete."
+          }
+        }
+      },
+      "notes": "TRO-529 / LH-024: hand-transcribed from a real photograph, not rendered. This is the hard case the ticket asked for: the bottle's curvature carries the right portion of every printed line out of the photograph's frame. Bracketed [cut] markers denote where that happens -- they are not printed on the label. Everything outside brackets is transcribed verbatim, character for character; correcting or completing a bracketed gap from memory of the canonical text would fabricate evidence the photograph does not support, so none was added. Edit distance vs CANONICAL_WARNING_TEXT: 116 (case-folded Levenshtein, via evaluateCandidate()) -- reported as the ticket requires, but this number reflects the missing text's length, not a wording deviation on the physical label; it should not be read as a near-miss or reworded-warning finding. The GOVERNMENT WARNING: prefix itself IS fully within frame and reads all-caps -- that one field-level fact stays confident even though the body does not. abvPresent is recorded false only for what THIS PHOTOGRAPH shows; it is not a claim that the underlying bottle carries no ABV statement anywhere on its label -- the crop is a narrow warning-panel close-up. This file appears in no other repo record at all (docs/reference-photo-provenance.md, file 6) -- no source, no licence, no photographer. beverageType (wine) is an unconfirmed guess; nothing in the frame names a beverage type.",
+      "vectors": [
+        "V9"
+      ],
+      "provenance": "photographed",
+      "verified": false
+    },
+    {
+      "caseId": "case-38-glare-real-photo-crown-royal",
+      "description": "Real Crown Royal warning-panel close-up: curved gold-on-dark-maroon surface with glare. A live trademark appears in frame (Troy's 2026-08-12 call).",
+      "category": "glare",
+      "beverageType": "spirits",
+      "imagePath": "assets/golden/references/crown-royal-warning-label-closeup.png",
+      "application": {
+        "brandName": "Crown Royal",
+        "classType": "Blended Canadian Whisky",
+        "abvPercent": 40,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "(not shown in this crop)",
+        "classType": "(not shown in this crop)",
+        "abvPresent": false,
+        "abvText": "",
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) ACCORDING TO THE SURGEON GENERAL, WOMEN SHOULD NOT DRINK ALCOHOLIC BEVERAGES DURING PREGNANCY BECAUSE OF THE RISK OF BIRTH DEFECTS. (2) CONSUMPTION OF ALCOHOLIC BEVERAGES IMPAIRS YOUR ABILITY TO DRIVE A CAR OR OPERATE MACHINERY, AND MAY CAUSE HEALTH PROBLEMS.",
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": "unknown",
+        "governmentWarningBodyBold": "unknown"
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "LOW_IMAGE_QUALITY",
+        "fields": {
+          "brandName": {
+            "verdict": "NEEDS_REVIEW",
+            "reason": "The printed brand name is not visible. This is the back label's warning panel; IMPORTED BY THE CROWN ROYAL COMPANY is an importer statement, not the filed brand name field."
+          },
+          "classType": {
+            "verdict": "NEEDS_REVIEW",
+            "reason": "Class/type is not visible. This photograph shows only the government-warning panel, not a full label."
+          },
+          "abv": {
+            "verdict": "NEEDS_REVIEW",
+            "reason": "No ABV statement is visible in this crop. This photograph shows only the government-warning panel."
+          },
+          "netContents": {
+            "verdict": "MATCH",
+            "reason": "Label states 750 mL, matching the application."
+          },
+          "governmentWarning": {
+            "verdict": "MATCH",
+            "reason": "The warning matches the canonical text exactly, read through glare on a curved gold-on-maroon surface. Bold/non-bold structure cannot be confirmed from this photo."
+          }
+        }
+      },
+      "notes": "TRO-529 / LH-024: hand-transcribed from a real photograph, not rendered. A live trademark (Crown Royal, Diageo) appears in this frame -- Troy's own photograph, his explicit 2026-08-12 call to use it (Linear TRO-529, \"Trademark decision -- SETTLED\"). This case is a test fixture only. It records NO compliance claim about Crown Royal's real, approved label: governmentWarningPrefixBold/BodyBold are \"unknown\" precisely because a false reading against a named, shipped, COLA-approved product would be a fabricated accusation, not a measurement -- the ticket's own instruction. Edit distance vs CANONICAL_WARNING_TEXT: 0 (case-folded Levenshtein) -- an exact wording match; every caps position checks OK. application uses Crown Royal's own real, public classification (Blended Canadian Whisky, 40% ABV, 750 mL) -- descriptive filed-application data, not a claim about what this specific crop shows. label.brandName/classType/abv record plainly that this back-label crop does not show them; the real product almost certainly states ABV and a front-label brand name elsewhere on the bottle, just not in this frame.",
+      "vectors": [
+        "V1",
+        "V9"
+      ],
+      "provenance": "photographed",
+      "verified": false
+    },
+    {
+      "caseId": "case-39-rotation-real-photo-coppola-wraparound",
+      "description": "Real Francis Ford Coppola Winery warning-panel close-up under extreme wrap-around curvature. A live trademark appears in frame.",
+      "category": "rotation",
+      "beverageType": "wine",
+      "imagePath": "assets/golden/references/Warning-Label-2.jpg",
+      "application": {
+        "brandName": "Francis Ford Coppola Winery",
+        "classType": "Red Wine",
+        "abvPercent": 14.5,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "(not shown in this crop)",
+        "classType": "(not shown in this crop)",
+        "abvPresent": true,
+        "abvText": "ALC. 14.5% BY VOL.",
+        "abvPercent": 14.5,
+        "netContentsText": "750 ML",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) ACCORDING TO THE SURGEON GENERAL, WOMEN SHOULD NOT DRINK ALCOHOLIC BEVERAGES DURING PREGNANCY BECAUSE OF THE RISK OF BIRTH DEFECTS. (2) CONSUMPTION OF ALCOHOLIC BEVERAGES IMPAIRS YOUR ABILITY TO DRIVE A CAR OR OPERATE MACHINERY, AND MAY CAUSE HEALTH PROBLEMS.",
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": "unknown",
+        "governmentWarningBodyBold": "unknown"
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "MISSING_REQUIRED_FIELD",
+        "fields": {
+          "brandName": {
+            "verdict": "NEEDS_REVIEW",
+            "reason": "The filed brand/product name is not visible. PRODUCED & BOTTLED BY FRANCIS FORD COPPOLA WINERY is a producer statement, not the specific product name."
+          },
+          "classType": {
+            "verdict": "NEEDS_REVIEW",
+            "reason": "Class/type is not visible. This photograph shows only the government-warning panel, not a full label."
+          },
+          "abv": {
+            "verdict": "MATCH",
+            "reason": "Label states 14.5% ABV, matching the application."
+          },
+          "netContents": {
+            "verdict": "MATCH",
+            "reason": "Label states 750 ML, matching the application."
+          },
+          "governmentWarning": {
+            "verdict": "MATCH",
+            "reason": "The warning matches the canonical text exactly, despite extreme wrap-around curvature. Bold/non-bold structure cannot be confirmed from this photo."
+          }
+        }
+      },
+      "notes": "TRO-529 / LH-024: hand-transcribed from a real photograph, not rendered. A live trademark (Francis Ford Coppola Winery) appears in this frame; the label itself prints \"THIS LABEL IS THE EXCLUSIVE TRADE DRESS OF FRANCIS FORD COPPOLA WINERY.\" This case is a test fixture only; it records no compliance claim about this real, approved product. Edit distance vs CANONICAL_WARNING_TEXT: 0 (case-folded Levenshtein) -- a direct read of this photograph found the full warning legible and byte-for-byte exact once case-folded, despite docs/reference-photo-provenance.md (file 5) flagging the earlier assessment as \"a guess\" under steep perspective; verified stays false regardless, pending Troy's own check. governmentWarningPrefixBold/BodyBold are \"unknown\" for the same named-product reason as case-38. netContentsText is transcribed verbatim, \"750 ML\", from the printed \"NET CONTENTS 750 ML\" phrase.",
+      "vectors": [
+        "V1",
+        "V9"
+      ],
+      "provenance": "photographed",
       "verified": false
     }
   ]

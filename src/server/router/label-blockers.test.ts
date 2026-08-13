@@ -29,17 +29,17 @@ function requiredField(overrides: Partial<FieldState> = {}): FieldState {
 describe("isLowImageQuality — CP-1 §5.3", () => {
   it("fires when legible is 'no', regardless of everything else", () => {
     const fired = isLowImageQuality(imageQuality({ legible: "no" }), preprocessing(), [requiredField()]);
-    expect(fired).toBe(true);
+    expect(fired).toBe("ILLEGIBLE");
   });
 
   it("fires when legible is 'partial' and a required field is Unusable (< 0.60)", () => {
     const fields = [requiredField({ confidence: 0.5 })];
-    expect(isLowImageQuality(imageQuality({ legible: "partial" }), preprocessing(), fields)).toBe(true);
+    expect(isLowImageQuality(imageQuality({ legible: "partial" }), preprocessing(), fields)).toBe("FIELD_CONFIDENCE");
   });
 
   it("does not fire for 'partial' alone, when every required field is at least Unusable's floor", () => {
     const fields = [requiredField({ confidence: 0.65 })];
-    expect(isLowImageQuality(imageQuality({ legible: "partial" }), preprocessing(), fields)).toBe(false);
+    expect(isLowImageQuality(imageQuality({ legible: "partial" }), preprocessing(), fields)).toBe(null);
   });
 
   it("does not count an override-rejected field's synthetic 0 confidence toward 'partial'", () => {
@@ -48,19 +48,19 @@ describe("isLowImageQuality — CP-1 §5.3", () => {
     // read, it is evidence the extraction was broken. CONFLICTING_EXTRACTION
     // already counts it; LOW_IMAGE_QUALITY must not count it a second time.
     const fields = [requiredField({ confidence: 0, overrideRejected: true })];
-    expect(isLowImageQuality(imageQuality({ legible: "partial" }), preprocessing(), fields)).toBe(false);
+    expect(isLowImageQuality(imageQuality({ legible: "partial" }), preprocessing(), fields)).toBe(null);
   });
 
   it("fires when preprocessing rejected the image", () => {
-    expect(isLowImageQuality(imageQuality(), preprocessing({ rejected: true }), [requiredField()])).toBe(true);
+    expect(isLowImageQuality(imageQuality(), preprocessing({ rejected: true }), [requiredField()])).toBe("PREPROCESSING");
   });
 
   it("fires when the image's long edge is under 640px", () => {
-    expect(isLowImageQuality(imageQuality(), preprocessing({ longEdgePx: 480 }), [requiredField()])).toBe(true);
+    expect(isLowImageQuality(imageQuality(), preprocessing({ longEdgePx: 480 }), [requiredField()])).toBe("PREPROCESSING");
   });
 
   it("does not fire at exactly 640px", () => {
-    expect(isLowImageQuality(imageQuality(), preprocessing({ longEdgePx: 640 }), [requiredField()])).toBe(false);
+    expect(isLowImageQuality(imageQuality(), preprocessing({ longEdgePx: 640 }), [requiredField()])).toBe(null);
   });
 
   it("fires when at least half of the required fields are absent after overrides", () => {
@@ -68,7 +68,7 @@ describe("isLowImageQuality — CP-1 §5.3", () => {
       requiredField({ field: "brand_name", value: null }),
       requiredField({ field: "class_type", value: "Bourbon" }),
     ];
-    expect(isLowImageQuality(imageQuality(), preprocessing(), fields)).toBe(true);
+    expect(isLowImageQuality(imageQuality(), preprocessing(), fields)).toBe("FIELDS_ABSENT");
   });
 
   it("does not fire when fewer than half of the required fields are absent", () => {
@@ -77,11 +77,36 @@ describe("isLowImageQuality — CP-1 §5.3", () => {
       requiredField({ field: "class_type", value: "Bourbon" }),
       requiredField({ field: "net_contents", value: "750 mL" }),
     ];
-    expect(isLowImageQuality(imageQuality(), preprocessing(), fields)).toBe(false);
+    expect(isLowImageQuality(imageQuality(), preprocessing(), fields)).toBe(null);
   });
 
-  it("is false when nothing above applies", () => {
-    expect(isLowImageQuality(imageQuality(), preprocessing(), [requiredField()])).toBe(false);
+  it("is null when nothing above applies", () => {
+    expect(isLowImageQuality(imageQuality(), preprocessing(), [requiredField()])).toBe(null);
+  });
+});
+
+describe("isLowImageQuality names the trigger that fired, not a boolean (TRO-542, G6)", () => {
+  it("names ILLEGIBLE — legible is 'no'", () => {
+    expect(isLowImageQuality(imageQuality({ legible: "no" }), preprocessing(), [requiredField()])).toBe("ILLEGIBLE");
+  });
+
+  it("names FIELD_CONFIDENCE — legible is 'partial' and a required field is Unusable", () => {
+    const fields = [requiredField({ confidence: 0.5 })];
+    expect(isLowImageQuality(imageQuality({ legible: "partial" }), preprocessing(), fields)).toBe("FIELD_CONFIDENCE");
+  });
+
+  it("names PREPROCESSING — the image's long edge is under 640px", () => {
+    expect(isLowImageQuality(imageQuality(), preprocessing({ longEdgePx: 480 }), [requiredField()])).toBe(
+      "PREPROCESSING",
+    );
+  });
+
+  it("names FIELDS_ABSENT — at least half the required fields are absent after overrides", () => {
+    const fields = [
+      requiredField({ field: "brand_name", value: null }),
+      requiredField({ field: "class_type", value: "Bourbon" }),
+    ];
+    expect(isLowImageQuality(imageQuality(), preprocessing(), fields)).toBe("FIELDS_ABSENT");
   });
 });
 

@@ -21,6 +21,8 @@ function progress(overrides: Partial<BatchProgressResponse> = {}): BatchProgress
     startedAt: "2026-08-12T00:00:00.000Z",
     completedAt: null,
     latency: null,
+    throughput: null,
+    autoVerifiedShare: null,
     rateLimitBackoff: { active: false, itemCount: 0 },
     results: [],
     ...overrides,
@@ -84,7 +86,15 @@ describe("BatchProgressBrowser", () => {
       .fn<(batchJobId: number) => Promise<BatchProgressResponse>>()
       .mockResolvedValueOnce(progress({ processedCount: 1 })) // initial mount load
       .mockReturnValueOnce(heldPoll) // first poll tick — held open deliberately
-      .mockResolvedValue(progress({ processedCount: 3 })); // any poll after that
+      // Any poll after that. This returns the SAME processedCount the held
+      // poll resolves with, on purpose. `progress()` is RUNNING, not terminal,
+      // so once the held poll resolves the component correctly keeps polling
+      // every FAST_POLL_MS. A different value here would let a legitimate
+      // later poll overwrite the banner before the assertion below reads it,
+      // and the test would fail on correct behaviour (TRO-547). The overlap
+      // guard this test exists to prove is asserted by the call count, not by
+      // this value.
+      .mockResolvedValue(progress({ processedCount: 2 }));
 
     render(<BatchProgressBrowser batchJobId={7} fetchProgress={fetchProgress} pollIntervalMs={FAST_POLL_MS} />);
     await screen.findByTestId("batch-status-banner");

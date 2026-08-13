@@ -1,6 +1,11 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { loadGoldenSetManifest } from "../../src/lib/golden-set/loader";
 import {
   DEFAULT_REPEATS,
+  DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS,
   DEFAULT_SAMPLE_CASE_IDS,
   MAX_CASES,
   MAX_REPEATS,
@@ -10,6 +15,7 @@ import {
   validateCheckArgs,
   validateVarianceArgs,
 } from "./args";
+import { validateEvalReport } from "./report-validation";
 
 describe("parseEvalArgs", () => {
   it("defaults to cheap mode: live=false, full=false, no case, no baseline update", () => {
@@ -121,6 +127,41 @@ describe("resolveCaseIds", () => {
     const tooMany = Array.from({ length: MAX_CASES + 1 }, (_, i) => `case-${i}`);
     const args = parseEvalArgs(["--live", "--full"]);
     expect(() => resolveCaseIds(args, tooMany)).toThrow(/exceeds the \d+-case safety cap/);
+  });
+});
+
+// TRO-541 / LH-036 — this suite makes the default sample's own coverage
+// claim machine-checkable, against the committed evidence artifact,
+// instead of leaving it as unverified prose.
+// `DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS` (`args.ts`) is documentation the
+// file's own module comment reads FROM. This suite keeps that
+// documentation honest as the committed report changes. It deliberately
+// reads the real, committed `results/eval-report.json` — no live API
+// call, no mock — so a rewritten map that drifts from measured reality
+// fails loudly here (standing rule 2: never fabricate a number). Do NOT
+// assert on `args.ts`'s source text (the ticket's own "Do NOT"). Only the
+// exported constant's VALUES are checked, against the report's own
+// VALUES.
+describe("DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS", () => {
+  const REPORT_PATH = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "results/eval-report.json");
+  const report = validateEvalReport(JSON.parse(readFileSync(REPORT_PATH, "utf8")), REPORT_PATH);
+
+  it("matches the committed report's router-stage actualReviewReason for every DEFAULT_SAMPLE_CASE_IDS case", () => {
+    for (const caseId of DEFAULT_SAMPLE_CASE_IDS) {
+      const row = report.cases.find((c) => c.caseId === caseId);
+      if (!row) {
+        throw new Error(`eval-report.json (${REPORT_PATH}) has no case row for sample case "${caseId}"`);
+      }
+      expect(DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS[caseId]).toBe(row.routerVerdict.actualReviewReason);
+    }
+  });
+
+  it("every DEFAULT_SAMPLE_CASE_IDS entry exists in the real golden-set manifest", () => {
+    const manifest = loadGoldenSetManifest();
+    const manifestIds = new Set(manifest.cases.map((c) => c.caseId));
+    for (const caseId of DEFAULT_SAMPLE_CASE_IDS) {
+      expect(manifestIds.has(caseId)).toBe(true);
+    }
   });
 });
 

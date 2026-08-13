@@ -199,8 +199,41 @@ check.ts: cascade-verdict accuracy 80.6% is within the measured 80.6%-83.3% band
 check.ts: PASS — both banded rates are at or above the committed baseline band's floor, manifest and coverage match.
 ```
 
-Full `scripts/factory/gate.sh` result and CodeRabbit review status recorded in a follow-up entry
-once both complete — see this file's next TRO-561 entry, if one exists, or the PR body.
+**Gate.** The first full `gate.sh` run on this branch caught two real findings: `defect-gate`
+(`vacuous-empty-quantifier`, two `.every()` calls over a possibly-empty collection in
+`report-validation.ts`) and a stale hardcoded `32` in `variance-report-artifact.test.ts` (TRO-529
+grew the corpus to 36 cases with no update to that file). Both fixed, with new tests. Final
+`gate.sh --skip-review` (review already attempted once, below — not retried, to respect the shared
+CodeRabbit cap):
+
+```text
+  [ok ] typecheck              clean
+  [ok ] lint                   clean
+  [ok ] build                  built
+  [ok ] tests                  no new failures vs baseline
+  [ok ] tests:not-weakened     -56 / +178 test line(s) — net gain; reviewer should confirm removals are corrections
+  [ok ] regression-test        66 test case(s) added
+  [ok ] changes-entry          entry for TRO-561 present; structure valid
+  [ok ] eval-not-regressed     accuracy >= committed baseline
+  [ok ] scope                  20 file(s) changed
+  [ok ] defect-gate            no introduced violations
+  [skip] review                 disabled for this run
+
+=== TRO-561: pass ===
+```
+
+This branch's merge with `origin/main` pulled in PR #62's gate-exception mechanism and TRO-560's
+extracted `review-capture.ts` — this is the post-merge `gate.sh`, not the one this branch was cut
+from.
+
+**Review.** One local CodeRabbit capture attempt, per the revised (2026-08-13) shared-cap protocol:
+attempt once, do not retry on a cap/timeout. Result: `rc=124` (timed out). The CLI streamed 4
+finding records before the timeout killed it, but the capture never completed, so
+`review-capture.ts` never persisted their content (`coderabbit.json` only writes on a completed
+capture) — nothing to triage from this attempt. Full attempt record:
+`.factory/coderabbit-capture.json`. **Final state: unreviewed-with-attempt-recorded.** PR-level
+review is the authoritative channel for this ticket; a further local retry, if any, is the
+orchestrator's call, not this agent's.
 
 **Timestamp discipline.** `establishedAt`/`measuredAt` are ISO strings. This code generates each one
 once, in-process, via `new Date().toISOString()`, and copies it through verbatim (`baseline-band.ts`,

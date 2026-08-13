@@ -102,10 +102,30 @@ services:
       # redeploy." Values below match its in-code defaults exactly; edit
       # in the Render dashboard to tune either pool with no code change and
       # no redeploy.
+      #
+      # TRO-571: these are DELIBERATELY BELOW `run.ts`'s in-code defaults
+      # (5 and 2). The deployed worker OOM-crash-looped under the first
+      # real batch — 36 items, 2 completed, then a restart every few
+      # minutes with no deploy and no error line. A `SIGKILL` leaves no
+      # last words, which is why the logs show a clean "starting" line and
+      # then silence.
+      #
+      # The cause is concurrency against plan size, not a leak:
+      # `src/server/warning/ocr.ts` creates a FRESH tesseract worker per
+      # item, each loading the English trained-data model, while `sharp`
+      # decodes a full-size JPEG alongside it. Five of those at once, on
+      # `plan: starter`, does not fit. Single-label verification never hit
+      # it because that path processes one image at a time — a batch is
+      # the first thing that ever ran five concurrently up here.
+      #
+      # The trade is throughput for completion: a 36-item batch takes
+      # roughly 90s instead of 30s, and it finishes, which it previously
+      # never did. Raising these again needs either a bigger plan or a
+      # pooled/reused tesseract worker, not just a bigger number.
       - key: BATCH_WORKER_CONCURRENCY
-        value: "5"
-      - key: BATCH_RESOLVE_WORKER_CONCURRENCY
         value: "2"
+      - key: BATCH_RESOLVE_WORKER_CONCURRENCY
+        value: "1"
       - key: BATCH_WORKER_SHUTDOWN_TIMEOUT_MS
         value: "30000"
 

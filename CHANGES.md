@@ -4,6 +4,74 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-573 — Notion-style light-only reskin (TH-R3, 2026-08-13)
+
+**What changed.** Replaced the USWDS-influenced visual language with a Notion-style look: white
+page, warm near-black text (`#37352f`), thin soft borders, larger radius. Generous whitespace,
+one quiet accent blue. Dark mode is gone. There is no `prefers-color-scheme` branching now, so a
+user's own OS setting can no longer hand them a look nobody has reviewed. Troy directed this
+in-session. `src/app/globals.css` is the only styled file touched. A two-line doc update goes
+with it. No component markup changed. No component logic changed. No behavior changed.
+
+**Verdicts still never rely on color alone.** Each verdict panel (checklist row, detail field,
+review-queue row, batch result) already paired its color with an icon and a text label before
+this ticket — TRO-570 confirmed it. This ticket keeps that pairing. It changes only how the
+color is drawn: a thin neutral border plus one colored left-edge accent stripe, a Notion-style
+callout. That replaces the old full-perimeter colored border.
+
+**Every color pair re-verified against WCAG AA, not carried over by assumption.** Body text
+12.26:1. Muted text 5.49:1. The functional border 3.28:1 — WCAG 1.4.11's UI-component floor.
+White button text 5.10:1. The focus ring 3.88:1. Each verdict color against its own tint
+background: match 4.65:1, mismatch 4.81:1, review 5.10:1. Every ratio comes from the real WCAG
+relative-luminance formula (`src/lib/utils/contrast.ts`), not a screenshot estimate.
+
+**New regression test, not a G6 exception.** `src/app/globals-contrast.test.ts` parses the real
+`:root` custom-property values out of `globals.css`. It checks every critical pair against its
+WCAG floor — a permanent guard against a future palette edit, not a one-time check. It also
+checks that the file carries no `prefers-color-scheme: dark` block. That check was false before
+this ticket's change: the file still had a dark-mode block. The test failed for that exact
+reason before the CSS edit, and passed after — red-first, confirmed directly, not asserted after
+the fact. `contrast.ts`'s own unit tests (`contrast.test.ts`) check the WCAG math itself against
+a known reference: WCAG's own worked example, `#767676` on white, measures 4.54:1.
+
+**Live-verified, not just measured on paper.** This walked every screen in a real Chromium
+session against this worktree's own `pnpm dev`: access-code, verify empty/error/detail ×3,
+review queue list/detail, batch upload/results. axe-core (Deque's WCAG rule engine) ran against
+all eight screens: **0 violations**. That matches TRO-570's own clean baseline — this reskin did
+not regress it.
+
+**`docs/PRD.md` §5 updated** so the aesthetic line stays accurate for the other sessions working
+this repo right now. It names Notion-style as the settled direction. It states plainly that this
+supersedes the prior USWDS-influenced line.
+
+### How to run it / verify
+
+```bash
+source .factory-env
+pnpm test -- globals-contrast contrast   # the new regression tests
+
+pnpm dev                                  # PORT=$APP_PORT
+```
+Visit `/access-code`, `/`, `/verify/:id`, `/review-queue`, `/review-queue/:id`, `/batch`,
+`/batch/:id`. `pnpm typecheck` / `pnpm lint` / `pnpm build` / `pnpm test` all green (2295 tests).
+
+### Claim provenance
+
+**Observed:** every contrast ratio quoted above, computed by `contrastRatio()` against the real
+`globals.css` values, not estimated. The 0-violation axe-core result across all 8 screens, real
+Chromium, this worktree's own `pnpm dev`. The red-before/green-after state of the new test file,
+run directly against `globals.css` before and after the CSS edit.
+**Not verified:** how this reads on a real screen-reader (VoiceOver/NVDA). There is no reason to
+expect a change from TRO-570's own structural findings — headings, landmarks, alt text, and
+`role="alert"` are all untouched by this ticket. This was not independently re-walked here,
+since this ticket is CSS-only and none of those structural elements changed.
+
+### Rollback
+
+`git revert` this ticket's commit. One commit touches six files: `CHANGES.md`, `docs/PRD.md`,
+`src/app/globals.css`, `src/app/globals-contrast.test.ts`, `src/lib/utils/contrast.ts`, and its
+test. No schema change, no migration — nothing to undo outside the app source tree and two docs.
+
 ## TRO-562 — CI workflow pins actions to commits and images to digests, not mutable tags (2026-08-13)
 
 **The gap.** `.github/workflows/ci.yml` used `@v4` tags for four GitHub Actions

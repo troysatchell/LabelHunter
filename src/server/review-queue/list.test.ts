@@ -273,12 +273,19 @@ describe("listUnresolvedReviewQueue — paging past the first page (TRO-507)", (
 
 describe("listUnresolvedReviewQueue — what the resolver has done (TRO-512)", () => {
   it("tells a live reservation apart from a deliberate skip", async () => {
+    // An anchor row created first, then read as a cursor: the page below
+    // starts immediately before these four fixtures, so sibling rows made
+    // by another test file cannot fill the first page and hide them
+    // (CodeRabbit finding, local review round 6). The four fixtures keep
+    // their default `createdAt`, so they still sort after the anchor.
+    const anchor = await makeQueueItemFixture();
     const checking = await makeQueueItemFixture({ resolverReservedUntil: new Date(Date.now() + 60_000) });
     const skipped = await makeQueueItemFixture({ resolverSkipReason: "escalation cap reached" });
     const waiting = await makeQueueItemFixture();
     const expired = await makeQueueItemFixture({ resolverReservedUntil: new Date(Date.now() - 60_000) });
     try {
-      const { items } = await listUnresolvedReviewQueue(db);
+      const [anchorRow] = await db.select().from(reviewQueue).where(eq(reviewQueue.id, anchor.queueId));
+      const { items } = await listUnresolvedReviewQueue(db, { after: { createdAt: anchorRow.createdAt, id: anchorRow.id } });
       const statusOf = (id: number) => items.find((row) => row.id === id)?.resolverStatus;
 
       // CP-3 §3.3's exact hazard: without this, a reserved row and a
@@ -290,6 +297,7 @@ describe("listUnresolvedReviewQueue — what the resolver has done (TRO-512)", (
       // An abandoned reservation is not "checking" — nobody is checking.
       expect(statusOf(expired.queueId)).toBe("waiting");
     } finally {
+      await cleanup(anchor.applicationId);
       await cleanup(checking.applicationId);
       await cleanup(skipped.applicationId);
       await cleanup(waiting.applicationId);

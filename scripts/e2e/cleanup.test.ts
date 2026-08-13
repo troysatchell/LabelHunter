@@ -40,9 +40,18 @@ describe("deleteE2ETaggedApplications", () => {
   });
 
   it("removes an E2E run's unresolved review-queue rows, and leaves everything else alone", async () => {
-    const tagged = await makeApplicationWithUnresolvedQueueItem(uniqueTag("cleanup-tagged"));
-    const untagged = await makeApplicationWithUnresolvedQueueItem("TRO-524 Keeper Fixture");
+    // Setup runs inside the try, not before it. A failure while building the
+    // second fixture used to leave the first one's rows behind for good —
+    // the very accumulation TRO-524 exists to stop (CodeRabbit finding,
+    // local review round 6). `created` records every application this test
+    // actually made, so the finally deletes exactly those.
+    const created: number[] = [];
     try {
+      const tagged = await makeApplicationWithUnresolvedQueueItem(uniqueTag("cleanup-tagged"));
+      created.push(tagged.applicationId);
+      const untagged = await makeApplicationWithUnresolvedQueueItem("TRO-524 Keeper Fixture");
+      created.push(untagged.applicationId);
+
       const removed = await deleteE2ETaggedApplications(db);
       expect(removed).toBeGreaterThanOrEqual(1);
 
@@ -59,8 +68,9 @@ describe("deleteE2ETaggedApplications", () => {
       // Nothing tagged is left anywhere, not just the row this test made.
       expect(await db.select().from(applications).where(like(applications.brandName, `${E2E_TAG_PREFIX}%`))).toHaveLength(0);
     } finally {
-      await db.delete(applications).where(eq(applications.id, tagged.applicationId));
-      await db.delete(applications).where(eq(applications.id, untagged.applicationId));
+      for (const applicationId of created) {
+        await db.delete(applications).where(eq(applications.id, applicationId));
+      }
     }
   });
 });

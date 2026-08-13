@@ -47,9 +47,41 @@
  * (`usage.ts`). `args.ts`'s `MAX_CASES` and `MAX_REPEATS` cap the two axes
  * SEPARATELY, on purpose (LH-038's brief: cases and repeats are different
  * axes; never raise `MAX_CASES` to fit more repeats).
+ *
+ * THE RE-BASELINE PROTOCOL (TRO-561): `--establish-baseline` extends the
+ * `--live --full` sweep above — it does not add a second cascade path.
+ * Pass it with `--repeats=3` for a real re-baseline:
+ *
+ *   pnpm eval:variance -- --live --full --repeats=3 --establish-baseline
+ *
+ * On a CLEAN sweep (zero failures) this does two things, both derived from
+ * THIS SAME sweep's own data — no second live call:
+ *
+ *   1. Archives the current `scripts/eval/baseline.json` under
+ *      `scripts/eval/baseline-archive/` (never deletes measured history —
+ *      TRO-539's own precedent), then writes a new band baseline: K, each
+ *      repeat's own extraction and cascade-verdict accuracy, the resulting
+ *      `[min, max]` bands, every case's own observed verdict set, the real
+ *      measured cost, and the corpus's own identity — `manifestContentHash`
+ *      AND the commit that last touched `golden-set/` (`EvalBaseline`,
+ *      `types.ts`).
+ *   2. Refreshes `scripts/eval/results/eval-report.json` from this sweep's
+ *      own repeat 1 (`buildEvalReportFromRepeat`, `baseline-band.ts`) — the
+ *      artifact cheap-mode `pnpm eval:check` (and CI's "Eval harness not
+ *      regressed" step) reads on every push, with no live call of its own.
+ *
+ * WHO RUNS THIS, AND WHEN. The baseline bands whatever corpus exists AT THE
+ * SWEEP — there is no "final" golden set to wait for. Every future ticket
+ * that changes `golden-set/` content (adds cases, edits ground truth,
+ * merges or removes a case) runs this protocol as part of ITS OWN work and
+ * commits the new band, with its own measured SHA, alongside its change.
+ * The `"stale-baseline"` problem class (`baseline-compare.ts`) is the
+ * routine detector that enforces this: a corpus edit lands with no
+ * re-baseline, `manifestContentHash` stops matching, and `pnpm eval:check`
+ * says so by name — a loud warning in cheap mode, a hard failure in live
+ * mode (`check.ts`'s own module comment).
  */
 import { mkdtemp, rm } from "node:fs/promises";
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -62,7 +94,9 @@ import { HAIKU_EXTRACTOR_MODEL } from "../../src/server/extractor";
 import { SONNET_RESOLVER_MODEL } from "../../src/server/resolver";
 import { cleanupScratchDirAndPool } from "../latency/cleanup";
 import { parseVarianceArgs, resolveCaseIds, validateVarianceArgs, type VarianceCliArgs } from "./args";
+import { buildBaselineBand, buildEvalReportFromRepeat, buildPerCaseVerdictSets, computeBaselineRepeats } from "./baseline-band";
 import { REPO_ROOT, runOneCase, type CaseRunOutcome } from "./cascade-runner";
+import { currentCommitSha, lastCommitTouchingPath } from "./git-provenance";
 import { validateVarianceReport } from "./report-validation";
 import {
   buildVarianceReport,
@@ -74,19 +108,12 @@ import {
 } from "./variance-analysis";
 
 const REPORT_PATH = path.resolve(REPO_ROOT, "scripts/eval/results/variance-report.json");
-
-/** Best-effort provenance, never a reason to abandon an already-paid-for
- * sweep's results — the same "never lose real evidence over a
- * housekeeping failure" discipline as `cascade-runner.ts`'s own
- * `cleanupApplicationRow`. */
-function currentCommitSha(): string {
-  try {
-    return execFileSync("git", ["rev-parse", "HEAD"], { cwd: REPO_ROOT, encoding: "utf8" }).trim();
-  } catch (cause) {
-    console.warn(`variance.ts: could not read the current commit SHA: ${cause instanceof Error ? cause.message : String(cause)}`);
-    return "unknown";
-  }
-}
+const BASELINE_PATH = path.resolve(REPO_ROOT, "scripts/eval/baseline.json");
+const BASELINE_ARCHIVE_DIR = path.resolve(REPO_ROOT, "scripts/eval/baseline-archive");
+// Matches check.ts's own REPORT_PATH — the re-baseline protocol refreshes
+// this file from the SAME sweep, rather than spending a second live run
+// (this file's own module comment on `establishBaselineBand` explains why).
+const EVAL_REPORT_PATH = path.resolve(REPO_ROOT, "scripts/eval/results/eval-report.json");
 
 function printRunLine(caseId: string, repeatIndex: number, repeats: number, outcome: CaseRunOutcome): void {
   if (outcome.failure) {
@@ -138,6 +165,132 @@ function warnIfNarrowingCommittedReport(report: VarianceReport): void {
         `Writing this report will replace the wider one. Run "git restore ${path.relative(REPO_ROOT, REPORT_PATH)}" to keep the wider one instead.`,
     );
   }
+}
+
+/**
+ * Archives the currently committed `baseline.json` before it gets
+ * overwritten — CLAUDE.md's non-negotiable, "never delete measured
+ * history," applied to the baseline the same way TRO-539 already applied
+ * it to a superseded latency number (a new, distinctly named artifact,
+ * plus a CHANGES.md note — never an in-place overwrite with nothing kept).
+ * A no-op when no baseline is committed yet (the very first
+ * `--establish-baseline` run). Never throws on a malformed existing file —
+ * it still gets archived, under a generic name, rather than blocking a
+ * real re-baseline over a housekeeping read failure.
+ */
+function archiveExistingBaseline(): void {
+  if (!existsSync(BASELINE_PATH)) return;
+  const raw = readFileSync(BASELINE_PATH, "utf8");
+  let establishedAt = "unknown-date";
+  let ticket = "unknown-ticket";
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (typeof parsed.establishedAt === "string") establishedAt = parsed.establishedAt;
+    if (typeof parsed.ticket === "string") ticket = parsed.ticket;
+  } catch {
+    // Malformed JSON — archive the raw bytes anyway under the generic name;
+    // losing the ability to name this archive precisely is not a reason to
+    // lose the bytes themselves.
+  }
+  mkdirSync(BASELINE_ARCHIVE_DIR, { recursive: true });
+  const safeDate = establishedAt.replace(/[:.]/g, "-");
+  const safeTicket = ticket.replace(/[^A-Za-z0-9_-]+/g, "-");
+  const archivePath = path.join(BASELINE_ARCHIVE_DIR, `baseline-${safeDate}-${safeTicket}.json`);
+  writeFileSync(archivePath, raw);
+  console.log(`variance.ts: archived the previous baseline to ${path.relative(REPO_ROOT, archivePath)} (never deleting measured history).`);
+}
+
+/**
+ * The re-baseline protocol's own write path (TRO-561) — see this file's
+ * own module comment for the full protocol. Called only from a CLEAN
+ * `--live --full --establish-baseline` sweep (`runLive`'s own guard, above
+ * this function's one call site). Pure computation lives in
+ * `baseline-band.ts`; this function does only the I/O: derive the
+ * provenance a pure function cannot (git commands), call the pure
+ * builders, archive the old baseline, and write both new artifacts.
+ */
+function establishBaselineBand(report: VarianceReport, runs: readonly VarianceCaseRun[]): void {
+  if (!report.manifestContentHash) {
+    throw new Error(
+      "variance.ts: cannot establish a baseline band — this sweep's manifestContentHash is missing (see manifest-hash.ts). This should not happen on a fresh sweep; investigate before re-running.",
+    );
+  }
+  if (report.commitSha === "unknown") {
+    throw new Error(
+      "variance.ts: cannot establish a baseline band — the code commit SHA could not be determined (git rev-parse HEAD failed). " +
+        "Fix the git provenance failure and re-run --establish-baseline; do not promote a baseline with a fabricated commit SHA.",
+    );
+  }
+  // TRO-561's own requirement: "the corpus SHA point is a design
+  // requirement, not decoration." lastCommitTouchingPath throws (never
+  // "unknown") on failure — see git-provenance.ts's own module comment for
+  // why this one, unlike currentCommitSha, never falls back silently.
+  const goldenSetCommitSha = lastCommitTouchingPath(REPO_ROOT, "golden-set");
+
+  const completeCaseIds = new Set(
+    report.summary.perCase.filter((c) => c.runCount === report.summary.nominalRepeats).map((c) => c.caseId),
+  );
+  const baselineRepeats = computeBaselineRepeats(runs, completeCaseIds);
+  if (baselineRepeats.length === 0) {
+    throw new Error(
+      "variance.ts: cannot establish a baseline band — no case completed every repeat, so there is no shared population to band. " +
+        "This should be unreachable after a clean sweep (failures.length === 0); investigate before re-running.",
+    );
+  }
+  const perCaseVerdictSets = buildPerCaseVerdictSets(report.summary.perCase);
+
+  const haikuCosts = runs.map((r) => r.haikuCost.usd);
+  const meanHaikuCallUsd = haikuCosts.reduce((sum, v) => sum + v, 0) / haikuCosts.length;
+  const sonnetCosts = runs.filter((r) => r.resolverCost !== null).map((r) => r.resolverCost!.usd);
+  const meanSonnetCallUsd = sonnetCosts.length > 0 ? sonnetCosts.reduce((sum, v) => sum + v, 0) / sonnetCosts.length : null;
+
+  const baseline = buildBaselineBand({
+    ticket: "TRO-561 (re-baseline protocol; lineage: TRO-470 / LH-030)",
+    establishedAt: report.measuredAt,
+    manifestVersion: report.manifestVersion,
+    manifestContentHash: report.manifestContentHash,
+    goldenSetCommitSha,
+    codeCommitSha: report.commitSha,
+    haikuModel: report.haikuModel,
+    sonnetModel: report.sonnetModel,
+    caseIds: report.caseIds,
+    repeats: baselineRepeats,
+    perCaseVerdictSets,
+    totalCostUsd: report.totalCostUsd,
+    meanHaikuCallUsd,
+    meanSonnetCallUsd,
+  });
+
+  archiveExistingBaseline();
+  mkdirSync(path.dirname(BASELINE_PATH), { recursive: true });
+  writeFileSync(BASELINE_PATH, JSON.stringify(baseline, null, 2) + "\n");
+  console.log(`variance.ts: wrote ${path.relative(REPO_ROOT, BASELINE_PATH)} — new band baseline, K=${baseline.k}.`);
+  console.log(
+    `variance.ts:   extraction accuracy band ${(baseline.extractionAccuracyBand.min * 100).toFixed(1)}%-${(baseline.extractionAccuracyBand.max * 100).toFixed(1)}%`,
+  );
+  console.log(
+    `variance.ts:   cascade-verdict accuracy band ${(baseline.cascadeVerdictAccuracyBand.min * 100).toFixed(1)}%-${(baseline.cascadeVerdictAccuracyBand.max * 100).toFixed(1)}%`,
+  );
+  console.log(`variance.ts:   manifest hash ${baseline.manifestContentHash}, golden-set commit ${baseline.goldenSetCommitSha}, code commit ${baseline.codeCommitSha}`);
+  console.log(`variance.ts:   measured cost $${baseline.costUsd.totalUsd.toFixed(4)} total over this K=${baseline.k} x N=${baseline.caseIds.length} sweep`);
+
+  // Refresh eval-report.json from THIS sweep's own repeat 1 — no second
+  // paid call (this file's own module comment explains why repeat 1,
+  // specifically, and why this avoids a second --live invocation).
+  const refreshedReport = buildEvalReportFromRepeat({
+    ticket: "TRO-470 / LH-030",
+    measuredAt: report.measuredAt,
+    haikuModel: report.haikuModel,
+    sonnetModel: report.sonnetModel,
+    manifestVersion: report.manifestVersion,
+    manifestContentHash: report.manifestContentHash,
+    requestedFull: report.requestedFull,
+    repeatIndex: 1,
+    runs,
+  });
+  mkdirSync(path.dirname(EVAL_REPORT_PATH), { recursive: true });
+  writeFileSync(EVAL_REPORT_PATH, JSON.stringify(refreshedReport, null, 2) + "\n");
+  console.log(`variance.ts: refreshed ${path.relative(REPO_ROOT, EVAL_REPORT_PATH)} from this sweep's repeat 1 (pnpm eval:check cheap mode reads this).`);
 }
 
 function printReportSummary(report: VarianceReport): void {
@@ -273,7 +426,7 @@ async function runLive(args: VarianceCliArgs): Promise<void> {
     // with the origin/main merge — the TODO that stood here is resolved.
     // Same call shape as check.ts's own report assembly.
     manifestContentHash: hashManifestFile(DEFAULT_MANIFEST_PATH),
-    commitSha: currentCommitSha(),
+    commitSha: currentCommitSha(REPO_ROOT),
     requestedFull: args.full,
     caseIds,
     repeats: args.repeats,
@@ -292,6 +445,18 @@ async function runLive(args: VarianceCliArgs): Promise<void> {
     process.exitCode = 1;
     return;
   }
+
+  if (args.establishBaseline) {
+    // Only on a CLEAN sweep (the failures.length > 0 branch above already
+    // returned) — never promote a partial sweep into the committed
+    // baseline (CLAUDE.md: "if it fails partway, report spend and stop —
+    // no blind re-runs"). A throw here (a missing manifest hash, an
+    // undeterminable commit SHA) propagates to `main`'s own top-level
+    // `.catch`, the same error-handling convention every other failure
+    // path in this file already uses.
+    establishBaselineBand(report, runs);
+  }
+
   process.exitCode = 0;
 }
 

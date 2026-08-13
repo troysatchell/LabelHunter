@@ -22,14 +22,32 @@ const VALID_SUMMARY = {
   extractionReliabilityDiagram: VALID_RELIABILITY_DIAGRAM,
 };
 
+// TRO-561: the band baseline's own fixture. K=2, both banded metrics carry
+// a real [min, max] range — not the pre-TRO-561 single `summary` block.
+const VALID_BASELINE_REPEATS = [
+  { repeatIndex: 1, extractionAccuracy: RATE, cascadeVerdictAccuracy: RATE },
+  { repeatIndex: 2, extractionAccuracy: RATE, cascadeVerdictAccuracy: RATE },
+];
+const VALID_ACCURACY_BAND = { min: 0.78125, max: 0.8125, spread: 0.03125 };
+const VALID_BASELINE_COST = { totalUsd: 0.95, meanHaikuCallUsd: 0.003, meanSonnetCallUsd: 0.02 };
+
 function validBaseline(overrides: Record<string, unknown> = {}) {
   return {
-    ticket: "TRO-470",
-    establishedAt: "2026-08-12T00:00:00.000Z",
+    ticket: "TRO-561",
+    establishedAt: "2026-08-13T12:30:00.000Z",
+    k: 2,
+    repeats: VALID_BASELINE_REPEATS,
+    extractionAccuracyBand: VALID_ACCURACY_BAND,
+    cascadeVerdictAccuracyBand: VALID_ACCURACY_BAND,
+    perCaseVerdictSets: { "case-01": ["PASS"] },
     manifestVersion: "1.0.0",
     manifestContentHash: "abc123",
+    goldenSetCommitSha: "deadbeef",
     caseIds: ["case-01"],
-    summary: VALID_SUMMARY,
+    haikuModel: "claude-haiku-4-5",
+    sonnetModel: "claude-sonnet-5",
+    codeCommitSha: "cafed00d",
+    costUsd: VALID_BASELINE_COST,
     ...overrides,
   };
 }
@@ -50,8 +68,13 @@ function validReport(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// TRO-561: validateEvalBaseline now checks the band shape (`k`/`repeats`/
+// `extractionAccuracyBand`/`cascadeVerdictAccuracyBand`/`perCaseVerdictSets`/
+// `goldenSetCommitSha`/`haikuModel`/`sonnetModel`/`codeCommitSha`/`costUsd`),
+// not the old single-point `summary`. These tests replace the pre-TRO-561
+// `summary`-shaped ones — the old EvalBaseline schema no longer exists.
 describe("validateEvalBaseline", () => {
-  it("accepts a well-formed baseline", () => {
+  it("accepts a well-formed band baseline", () => {
     expect(() => validateEvalBaseline(validBaseline(), "baseline.json")).not.toThrow();
   });
 
@@ -70,19 +93,44 @@ describe("validateEvalBaseline", () => {
     expect(() => validateEvalBaseline(validBaseline({ caseIds: "case-01" }), "baseline.json")).toThrow(/caseIds/);
   });
 
-  it("rejects a summary missing a required AccuracySummary", () => {
-    const { routerVerdictAccuracy: _drop, ...summaryRest } = VALID_SUMMARY;
-    expect(() => validateEvalBaseline(validBaseline({ summary: summaryRest }), "baseline.json")).toThrow(/summary/);
+  it("rejects a missing or non-positive-integer k", () => {
+    const { k: _drop, ...rest } = validBaseline();
+    expect(() => validateEvalBaseline(rest, "baseline.json")).toThrow(/"k"/);
+    expect(() => validateEvalBaseline(validBaseline({ k: 0 }), "baseline.json")).toThrow(/"k"/);
   });
 
-  it("rejects a summary missing cascadeVerdictAccuracy (TRO-538 / LH-033)", () => {
-    const { cascadeVerdictAccuracy: _drop, ...summaryRest } = VALID_SUMMARY;
-    expect(() => validateEvalBaseline(validBaseline({ summary: summaryRest }), "baseline.json")).toThrow(/summary/);
+  it("rejects a repeats entry missing cascadeVerdictAccuracy", () => {
+    const badRepeats = [{ repeatIndex: 1, extractionAccuracy: RATE }];
+    expect(() => validateEvalBaseline(validBaseline({ repeats: badRepeats }), "baseline.json")).toThrow(/repeats/);
   });
 
-  it("rejects a summary missing extractionReliabilityDiagram (TRO-538 / LH-033)", () => {
-    const { extractionReliabilityDiagram: _drop, ...summaryRest } = VALID_SUMMARY;
-    expect(() => validateEvalBaseline(validBaseline({ summary: summaryRest }), "baseline.json")).toThrow(/summary/);
+  it("rejects a repeats entry with repeatIndex 0 (1-based, not merely non-negative)", () => {
+    const badRepeats = [{ repeatIndex: 0, extractionAccuracy: RATE, cascadeVerdictAccuracy: RATE }];
+    expect(() => validateEvalBaseline(validBaseline({ repeats: badRepeats }), "baseline.json")).toThrow(/repeats/);
+  });
+
+  it("rejects a missing extractionAccuracyBand", () => {
+    const { extractionAccuracyBand: _drop, ...rest } = validBaseline();
+    expect(() => validateEvalBaseline(rest, "baseline.json")).toThrow(/extractionAccuracyBand/);
+  });
+
+  it("rejects a missing cascadeVerdictAccuracyBand (TRO-561's own headline metric)", () => {
+    const { cascadeVerdictAccuracyBand: _drop, ...rest } = validBaseline();
+    expect(() => validateEvalBaseline(rest, "baseline.json")).toThrow(/cascadeVerdictAccuracyBand/);
+  });
+
+  it("rejects an AccuracyBand with an out-of-range min", () => {
+    const badBand = { min: 1.5, max: 1.5, spread: 0 };
+    expect(() => validateEvalBaseline(validBaseline({ extractionAccuracyBand: badBand }), "baseline.json")).toThrow(/extractionAccuracyBand/);
+  });
+
+  it("rejects a missing perCaseVerdictSets", () => {
+    const { perCaseVerdictSets: _drop, ...rest } = validBaseline();
+    expect(() => validateEvalBaseline(rest, "baseline.json")).toThrow(/perCaseVerdictSets/);
+  });
+
+  it("rejects a perCaseVerdictSets entry whose value is not an array of strings", () => {
+    expect(() => validateEvalBaseline(validBaseline({ perCaseVerdictSets: { "case-01": "PASS" } }), "baseline.json")).toThrow(/perCaseVerdictSets/);
   });
 
   it("rejects a missing manifestContentHash (TRO-538 / LH-033)", () => {
@@ -90,26 +138,37 @@ describe("validateEvalBaseline", () => {
     expect(() => validateEvalBaseline(rest, "baseline.json")).toThrow(/manifestContentHash/);
   });
 
-  it("rejects an AccuracySummary with an out-of-range rate", () => {
-    const badSummary = { ...VALID_SUMMARY, extractionAccuracy: { total: 10, correct: 9, rate: 1.5 } };
-    expect(() => validateEvalBaseline(validBaseline({ summary: badSummary }), "baseline.json")).toThrow(/summary/);
+  it("rejects a missing or empty goldenSetCommitSha (TRO-561: the corpus SHA is a design requirement, not decoration)", () => {
+    const { goldenSetCommitSha: _drop, ...rest } = validBaseline();
+    expect(() => validateEvalBaseline(rest, "baseline.json")).toThrow(/goldenSetCommitSha/);
+    expect(() => validateEvalBaseline(validBaseline({ goldenSetCommitSha: "" }), "baseline.json")).toThrow(/goldenSetCommitSha/);
+    expect(() => validateEvalBaseline(validBaseline({ goldenSetCommitSha: "   " }), "baseline.json")).toThrow(/goldenSetCommitSha/);
   });
 
-  it("rejects a summary missing warningSegmentation (TRO-469 / LH-021)", () => {
-    const { warningSegmentation: _drop, ...summaryRest } = VALID_SUMMARY;
-    expect(() => validateEvalBaseline(validBaseline({ summary: summaryRest }), "baseline.json")).toThrow(/summary/);
+  it("rejects a missing or empty codeCommitSha", () => {
+    const { codeCommitSha: _drop, ...rest } = validBaseline();
+    expect(() => validateEvalBaseline(rest, "baseline.json")).toThrow(/codeCommitSha/);
   });
 
-  it("rejects a warningSegmentation whose resolutionSuspect count is negative", () => {
-    const badSegmentation = { ...VALID_WARNING_SEGMENTATION, resolutionSuspect: { count: -1, rate: 0 } };
-    const badSummary = { ...VALID_SUMMARY, warningSegmentation: badSegmentation };
-    expect(() => validateEvalBaseline(validBaseline({ summary: badSummary }), "baseline.json")).toThrow(/summary/);
+  it("rejects a missing or empty haikuModel/sonnetModel", () => {
+    const { haikuModel: _drop, ...rest } = validBaseline();
+    expect(() => validateEvalBaseline(rest, "baseline.json")).toThrow(/haikuModel/);
+    expect(() => validateEvalBaseline(validBaseline({ sonnetModel: "" }), "baseline.json")).toThrow(/sonnetModel/);
   });
 
-  it("rejects a warningSegmentation missing singleChannelPass (TRO-535 / LH-030b)", () => {
-    const { singleChannelPass: _drop, ...segmentationRest } = VALID_WARNING_SEGMENTATION;
-    const badSummary = { ...VALID_SUMMARY, warningSegmentation: segmentationRest };
-    expect(() => validateEvalBaseline(validBaseline({ summary: badSummary }), "baseline.json")).toThrow(/summary/);
+  it("rejects a missing costUsd", () => {
+    const { costUsd: _drop, ...rest } = validBaseline();
+    expect(() => validateEvalBaseline(rest, "baseline.json")).toThrow(/costUsd/);
+  });
+
+  it("accepts costUsd.meanSonnetCallUsd as null (no case escalated during the sweep)", () => {
+    const cost = { ...VALID_BASELINE_COST, meanSonnetCallUsd: null };
+    expect(() => validateEvalBaseline(validBaseline({ costUsd: cost }), "baseline.json")).not.toThrow();
+  });
+
+  it("rejects a costUsd with a non-finite totalUsd", () => {
+    const cost = { ...VALID_BASELINE_COST, totalUsd: "0.95" };
+    expect(() => validateEvalBaseline(validBaseline({ costUsd: cost }), "baseline.json")).toThrow(/costUsd/);
   });
 
   it("collects multiple problems in one error rather than stopping at the first", () => {
@@ -121,7 +180,12 @@ describe("validateEvalBaseline", () => {
       expect(message).toContain("manifestVersion");
       expect(message).toContain("caseIds");
       expect(message).toContain("establishedAt");
-      expect(message).toContain("summary");
+      expect(message).toContain('"k"');
+      expect(message).toContain("repeats");
+      expect(message).toContain("extractionAccuracyBand");
+      expect(message).toContain("cascadeVerdictAccuracyBand");
+      expect(message).toContain("goldenSetCommitSha");
+      expect(message).toContain("costUsd");
     }
   });
 });

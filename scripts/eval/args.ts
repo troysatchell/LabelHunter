@@ -286,25 +286,34 @@ export interface VarianceCliArgs extends EvalCliArgs {
    * field, not a value comparison, to decide whether an explicit
    * `--repeats` was passed without the required `--live`. */
   repeatsExplicit: boolean;
+  /** TRO-561's re-baseline protocol entry point: after this sweep
+   * completes cleanly, promote its own measured numbers into a new band
+   * baseline (`scripts/eval/baseline.json`), archiving the old one first
+   * (never deleting measured history). `validateVarianceArgs` requires
+   * `--live --full` alongside it — a band baseline built from a partial
+   * sample would misrepresent gate coverage. */
+  establishBaseline: boolean;
 }
 
 const REPEATS_FLAG = /^--repeats=(\d+)$/;
+const ESTABLISH_BASELINE_FLAG = "--establish-baseline";
 
 /**
  * Parses `variance.ts`'s CLI args: every flag `parseEvalArgs` already
  * understands (`--live`, `--full`, `--case=<id>`, `--update-baseline`) plus
- * `--repeats=<k>`. Does not duplicate `parseEvalArgs` — LH-038's brief:
- * reuse it, write no second parser for the flags it already owns.
- * `--repeats=<k>` is pulled out of `argv` before the remainder is handed to
- * `parseEvalArgs`, since that function rejects any argument it does not
- * itself recognize.
+ * `--repeats=<k>` and `--establish-baseline` (TRO-561). Does not duplicate
+ * `parseEvalArgs` — LH-038's brief: reuse it, write no second parser for
+ * the flags it already owns. Both new flags are pulled out of `argv`
+ * before the remainder is handed to `parseEvalArgs`, since that function
+ * rejects any argument it does not itself recognize.
  */
 export function parseVarianceArgs(argv: readonly string[]): VarianceCliArgs {
   const repeatsMatches = argv.filter((a) => REPEATS_FLAG.test(a));
   if (repeatsMatches.length > 1) {
     throw new Error(`eval args: --repeats may be passed at most once, got ${repeatsMatches.length}.`);
   }
-  const rest = argv.filter((a) => !REPEATS_FLAG.test(a));
+  const establishBaseline = argv.includes(ESTABLISH_BASELINE_FLAG);
+  const rest = argv.filter((a) => !REPEATS_FLAG.test(a) && a !== ESTABLISH_BASELINE_FLAG);
   const base = parseEvalArgs(rest);
 
   let repeats = DEFAULT_REPEATS;
@@ -321,24 +330,36 @@ export function parseVarianceArgs(argv: readonly string[]): VarianceCliArgs {
     );
   }
 
-  return { ...base, repeats, repeatsExplicit: repeatsMatches.length === 1 };
+  return { ...base, repeats, repeatsExplicit: repeatsMatches.length === 1, establishBaseline };
 }
 
 /**
  * `variance.ts`-specific validation, the same shape as `validateCheckArgs`
  * for `check.ts`: a bare `pnpm eval:variance` is cheap mode, so
- * `--full`/`--case=<id>`/`--repeats=<k>` — which only mean anything on a
- * real sweep — must come with an explicit `--live`. `--update-baseline` is
- * rejected outright: this runner has no baseline to update, the same
- * explicit-rejection precedent `benchmark.ts` sets for the identical
- * situation ("silently ignoring a typo'd flag would be more confusing than
- * rejecting it").
+ * `--full`/`--case=<id>`/`--repeats=<k>`/`--establish-baseline` — which
+ * only mean anything on a real sweep — must come with an explicit
+ * `--live`. `--update-baseline` is rejected outright: this runner has a
+ * DIFFERENT, band-shaped baseline flag now (`--establish-baseline`, TRO-561)
+ * — the same explicit-rejection precedent `benchmark.ts` sets for a typo'd
+ * flag ("silently ignoring it would be more confusing than rejecting it").
+ * `--establish-baseline` additionally requires `--full`: a band baseline
+ * built from a partial sample would misrepresent gate coverage (TRO-561's
+ * own re-baseline protocol always runs the whole golden set).
  */
 export function validateVarianceArgs(args: VarianceCliArgs): void {
   if (args.updateBaseline) {
-    throw new Error("eval args: --update-baseline is not supported by the variance runner — it has no baseline to update.");
+    throw new Error(
+      "eval args: --update-baseline is not supported by the variance runner — use --establish-baseline instead " +
+        "(TRO-561: the baseline is a K-repeat band, established here, not a single-run point).",
+    );
   }
-  if ((args.full || args.caseId !== null || args.repeatsExplicit) && !args.live) {
-    throw new Error("eval args: --full/--case=<id>/--repeats=<k> only affect a --live run — pass --live to select a sample.");
+  if ((args.full || args.caseId !== null || args.repeatsExplicit || args.establishBaseline) && !args.live) {
+    throw new Error("eval args: --full/--case=<id>/--repeats=<k>/--establish-baseline only affect a --live run — pass --live to select a sample.");
+  }
+  if (args.establishBaseline && !args.full) {
+    throw new Error(
+      "eval args: --establish-baseline requires --full — a band baseline built from a partial sample would misrepresent gate coverage. " +
+        "Run: pnpm eval:variance -- --live --full --repeats=3 --establish-baseline",
+    );
   }
 }

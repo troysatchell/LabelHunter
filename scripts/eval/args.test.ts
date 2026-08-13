@@ -177,6 +177,7 @@ describe("parseVarianceArgs", () => {
       updateBaseline: false,
       repeats: DEFAULT_REPEATS,
       repeatsExplicit: false,
+      establishBaseline: false,
     });
   });
 
@@ -188,6 +189,7 @@ describe("parseVarianceArgs", () => {
       updateBaseline: false,
       repeats: 3,
       repeatsExplicit: true,
+      establishBaseline: false,
     });
   });
 
@@ -217,7 +219,19 @@ describe("parseVarianceArgs", () => {
       updateBaseline: false,
       repeats: 2,
       repeatsExplicit: true,
+      establishBaseline: false,
     });
+  });
+
+  it("parses --establish-baseline as a bare flag, combinable with --full and --repeats", () => {
+    const args = parseVarianceArgs(["--live", "--full", "--repeats=3", "--establish-baseline"]);
+    expect(args.establishBaseline).toBe(true);
+    expect(args.full).toBe(true);
+    expect(args.repeats).toBe(3);
+  });
+
+  it("does not set establishBaseline when the flag is absent", () => {
+    expect(parseVarianceArgs(["--live", "--full"]).establishBaseline).toBe(false);
   });
 
   it("throws when --repeats is passed more than once", () => {
@@ -276,9 +290,29 @@ describe("validateVarianceArgs", () => {
     expect(() => validateVarianceArgs(parseVarianceArgs(["--case=case-01-clean-match-spirits"]))).toThrow(/only affect a --live run/);
   });
 
-  it("rejects --update-baseline outright, even with --live — this runner has no baseline", () => {
+  it("rejects --update-baseline outright, even with --live — use --establish-baseline instead (TRO-561)", () => {
     expect(() => validateVarianceArgs(parseVarianceArgs(["--live", "--update-baseline"]))).toThrow(
       /--update-baseline is not supported by the variance runner/,
     );
+  });
+
+  it("passes for --live --full --establish-baseline — the re-baseline protocol's own shape (TRO-561)", () => {
+    expect(() => validateVarianceArgs(parseVarianceArgs(["--live", "--full", "--repeats=3", "--establish-baseline"]))).not.toThrow();
+  });
+
+  it("throws when --establish-baseline is passed without --live", () => {
+    expect(() => validateVarianceArgs(parseVarianceArgs(["--establish-baseline"]))).toThrow(/only affect a --live run/);
+  });
+
+  it("throws when --establish-baseline is passed with --live but without --full — a band needs full corpus coverage", () => {
+    expect(() => validateVarianceArgs(parseVarianceArgs(["--live", "--establish-baseline"]))).toThrow(
+      /--establish-baseline requires --full/,
+    );
+  });
+
+  it("throws when --establish-baseline is combined with --case=<id> (mutually exclusive with --full, so also with a baseline's full-corpus requirement)", () => {
+    expect(() =>
+      validateVarianceArgs(parseVarianceArgs(["--live", "--case=case-01-clean-match-spirits", "--establish-baseline"])),
+    ).toThrow(/--establish-baseline requires --full/);
   });
 });

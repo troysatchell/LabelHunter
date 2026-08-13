@@ -101,22 +101,95 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((v) => typeof v === "string");
 }
 
+/** Light shape check for one `AccuracyBand` (TRO-561) — `min`/`max` are
+ * unit rates, `spread` is their difference; all three checked as unit
+ * rates here (a non-negative-but-possibly->1 `spread` genuinely can equal
+ * `max - min` up to `1`, so it shares `isFiniteUnitRate`'s own bound, not
+ * a separate one). */
+function isAccuracyBand(value: unknown): value is { min: number; max: number; spread: number } {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return isFiniteUnitRate(candidate.min) && isFiniteUnitRate(candidate.max) && isFiniteUnitRate(candidate.spread);
+}
+
+/** Light shape check for one `BaselineRepeatAccuracy` row (TRO-561). */
+function isBaselineRepeatAccuracyArray(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  return value.every((entry) => {
+    if (!entry || typeof entry !== "object") return false;
+    const candidate = entry as Record<string, unknown>;
+    return (
+      isPositiveSafeInteger(candidate.repeatIndex) &&
+      isAccuracySummary(candidate.extractionAccuracy) &&
+      isAccuracySummary(candidate.cascadeVerdictAccuracy)
+    );
+  });
+}
+
+/** Light shape check for `EvalBaseline.perCaseVerdictSets` (TRO-561) — a
+ * plain object mapping each case ID to a non-empty array of strings (the
+ * distinct label verdicts observed). Element values are not cross-checked
+ * against `LabelVerdict`'s own enum — the same "only what a caller reads"
+ * scope this file's own module comment already applies to
+ * `warningSegmentation`/the per-field breakdowns; nothing downstream
+ * branches on a specific verdict string here. */
+function isPerCaseVerdictSets(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.values(value as Record<string, unknown>).every((v) => Array.isArray(v) && v.every((entry) => typeof entry === "string"));
+}
+
+/** Light shape check for `EvalBaseline.costUsd` (TRO-561's `BaselineCost`) —
+ * `meanSonnetCallUsd` is `null` when the baseline's own sweep never
+ * escalated any case to the resolver (`BaselineCost`'s own doc comment). */
+function isBaselineCost(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  const isFiniteNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+  return (
+    isFiniteNumber(candidate.totalUsd) &&
+    isFiniteNumber(candidate.meanHaikuCallUsd) &&
+    (candidate.meanSonnetCallUsd === null || isFiniteNumber(candidate.meanSonnetCallUsd))
+  );
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 /** Throws a clear, file-naming error when `parsed` does not have the
- * fields `check.ts` needs from a committed baseline. Returns `parsed`,
- * narrowed to `EvalBaseline`, otherwise. */
+ * fields `check.ts` needs from a committed baseline BAND (TRO-561's
+ * redesign of the earlier single-point `EvalBaseline` — see that type's
+ * own doc comment, `types.ts`). Returns `parsed`, narrowed to
+ * `EvalBaseline`, otherwise. Deliberately not exhaustive, the same
+ * "only what a caller actually reads" scope this file's own module
+ * comment states elsewhere: `perCaseVerdictSets` and `costUsd` get a light
+ * shape check (present, well-formed) since `compareToBaseline` never reads
+ * them; `k`/`repeats`/`extractionAccuracyBand`/`cascadeVerdictAccuracyBand`
+ * get a full check since the gate's own pass/fail decision depends on
+ * them. */
 export function validateEvalBaseline(parsed: unknown, filePath: string): EvalBaseline {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error(`report-validation: ${filePath} does not contain a JSON object.`);
   }
   const candidate = parsed as Record<string, unknown>;
   const problems: string[] = [];
+  if (typeof candidate.ticket !== "string") problems.push('"ticket" must be a string');
+  if (typeof candidate.establishedAt !== "string") problems.push('"establishedAt" must be a string');
+  if (!isPositiveSafeInteger(candidate.k)) problems.push('"k" must be a positive integer');
+  if (!isBaselineRepeatAccuracyArray(candidate.repeats)) {
+    problems.push('"repeats" must be an array of {repeatIndex, extractionAccuracy, cascadeVerdictAccuracy} rows');
+  }
+  if (!isAccuracyBand(candidate.extractionAccuracyBand)) problems.push('"extractionAccuracyBand" must be a valid {min, max, spread} AccuracyBand');
+  if (!isAccuracyBand(candidate.cascadeVerdictAccuracyBand)) problems.push('"cascadeVerdictAccuracyBand" must be a valid {min, max, spread} AccuracyBand');
+  if (!isPerCaseVerdictSets(candidate.perCaseVerdictSets)) problems.push('"perCaseVerdictSets" must map case IDs to arrays of verdict strings');
   if (typeof candidate.manifestVersion !== "string") problems.push('"manifestVersion" must be a string');
   if (typeof candidate.manifestContentHash !== "string") problems.push('"manifestContentHash" must be a string');
+  if (!isNonEmptyString(candidate.goldenSetCommitSha)) problems.push('"goldenSetCommitSha" must be a non-empty string');
   if (!isStringArray(candidate.caseIds)) problems.push('"caseIds" must be an array of strings');
-  if (typeof candidate.establishedAt !== "string") problems.push('"establishedAt" must be a string');
-  if (!isEvalReportSummary(candidate.summary)) {
-    problems.push('"summary" must carry valid extractionAccuracy/routerVerdictAccuracy/cascadeVerdictAccuracy/reviewReasonAccuracy AccuracySummary objects, a valid warningSegmentation, and a valid extractionReliabilityDiagram');
-  }
+  if (!isNonEmptyString(candidate.haikuModel)) problems.push('"haikuModel" must be a non-empty string');
+  if (!isNonEmptyString(candidate.sonnetModel)) problems.push('"sonnetModel" must be a non-empty string');
+  if (!isNonEmptyString(candidate.codeCommitSha)) problems.push('"codeCommitSha" must be a non-empty string');
+  if (!isBaselineCost(candidate.costUsd)) problems.push('"costUsd" must be a valid {totalUsd, meanHaikuCallUsd, meanSonnetCallUsd} BaselineCost');
   if (problems.length > 0) {
     throw new Error(`report-validation: ${filePath} is not a valid EvalBaseline — ${problems.join("; ")}.`);
   }

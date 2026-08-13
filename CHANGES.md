@@ -7,15 +7,15 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 ## TRO-578 — design tokens and one visual hierarchy (2026-08-13)
 
 **The point.** Troy: "spacing and hierarchy are incredibly important and scream even louder
-in a small application like this." Post-reskin, the system was tokenized for color only.
+in a small application like this." The reskin (TRO-573) tokenized color only.
 Twelve ad hoc font sizes, twelve gap values, two unnamed radii, and weight-700-everywhere
 carried no hierarchy. This ticket gives the app one visual system and a gate that keeps it.
 
 **The system.**
-1. Three token families in `:root`, word-named like the color tokens: six `--space-*` steps,
-   seven `--font-*` sizes, two `--radius-*` values. 90 declarations migrated. The contrast
-   test's parser reads only hex-valued tokens, so the new tokens are invisible to it by
-   design.
+1. Three token families live in `:root`, word-named like the color tokens. The scale:
+   six `--space-*` steps, seven `--font-*` sizes, two `--radius-*` values. The migration
+   touched 90 declarations. The contrast test's parser reads only hex-valued tokens, so
+   the new tokens are invisible to it by design.
 2. One hierarchy rule: weight 700 belongs to the page title and the verdict banner — the one
    thing per screen that must win. Labels, badges, and reasons use 600. All small muted text
    uses one size, `--font-meta`.
@@ -29,19 +29,20 @@ carried no hierarchy. This ticket gives the app one visual system and a gate tha
    browser's own default color before (orange in Chrome), the one element outside the
    palette. Found by the before-screenshot, not the code audit.
 
-**The gate.** `src/app/globals-tokens.test.ts`: no raw rem literal in any `font-size`,
-`gap`, or `border-radius` declaration outside `:root`; every referenced token is defined;
-exactly two weight-700 owners. A new hardcoded value fails the unit suite instead of
-waiting for a reviewer.
+**The gate.** `src/app/globals-tokens.test.ts` enforces the discipline mechanically.
+No `font-size`, `gap`, or `border-radius` value outside `:root` may contain a raw rem
+literal. Every referenced token must be defined in `:root` itself. Exactly two rules own
+weight 700, and the test names them. A new hardcoded value fails the unit suite instead
+of waiting for a reviewer.
 
-**Rollback.** Revert the PR. The stylesheet returns to literal values; no component markup
-changed except none — this is a CSS-and-tests-only diff.
+**Rollback.** Revert the PR. This diff changes only CSS and tests — no component markup.
+The stylesheet returns to its literal values.
 
-**Confirmed.** Token gate and contrast test green (13 tests). All 374 pre-existing app
-tests pass unchanged. `pnpm typecheck` is clean. Before/after screenshots of the verify,
-review-queue, and batch pages captured against the running app and attached to the PR.
-The visible deltas match the intent: blue radios, link-shaped navigation, one bold element
-per screen. **Not measured:** none owed — no runtime behavior changed.
+**Confirmed.** The token gate and the contrast test pass (13 tests). All 374
+pre-existing app tests pass unchanged. `pnpm typecheck` is clean. I captured before/after
+screenshots of the verify, review-queue, and batch pages against the running app; the PR
+carries them. The visible deltas match the intent: blue radios, link-shaped navigation,
+one bold element per screen. No measurements are owed — runtime behavior did not change.
 
 ## TRO-576 — the verify form fills itself from the label photo (2026-08-13)
 

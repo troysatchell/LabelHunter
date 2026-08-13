@@ -648,7 +648,7 @@ fieldset.field legend {
 }
 
 .review-field__icon {
-  font-size: var(--font-section);
+  font-size: var(--font-icon);
   line-height: 1;
 }
 

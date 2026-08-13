@@ -171,7 +171,11 @@ export function routeLabel(
   const requiredFieldStates = Object.values(fieldStates).filter((state) => state.required);
 
   // --- CP-1 §5.3: the two label-level blockers ----------------------------
-  const lowImageQuality = isLowImageQuality(extraction.image_quality, preprocessing, requiredFieldStates);
+  // TRO-542: `isLowImageQuality` now names WHICH rule fired, not just
+  // whether one did. `lowImageQuality` stays a plain boolean below — every
+  // existing rollup/precedence computation reads it unchanged.
+  const lowImageQualityTrigger = isLowImageQuality(extraction.image_quality, preprocessing, requiredFieldStates);
+  const lowImageQuality = lowImageQualityTrigger !== null;
 
   // `beverage_type.value` is a free-form string in the extractor's JSON
   // schema (`schema.ts`'s "field" $def), not an enum the schema itself
@@ -291,7 +295,19 @@ export function routeLabel(
   );
   const headlineReason = pickHeadlineReason(reasonsPresent);
 
-  return { labelVerdict, headlineReason, fields: rows };
+  return {
+    labelVerdict,
+    headlineReason,
+    fields: rows,
+    lowImageQualityTrigger,
+    // TRO-542 step 4: the router reads `image_quality.issues` here — carried
+    // through verbatim, evidence only, never a decision input (see
+    // `LabelRouterResult.imageQualityIssues`'s own doc comment). Copied, not
+    // the original array reference — `routeLabel` is documented pure, and a
+    // caller must not be able to mutate the input `extraction` and silently
+    // change an already-returned result (CodeRabbit finding).
+    imageQualityIssues: [...extraction.image_quality.issues],
+  };
 }
 
 export type {
@@ -305,6 +321,7 @@ export type {
   FieldVerdict,
   LabelRouterResult,
   LabelVerdict,
+  LowImageQualityTrigger,
   PreprocessingSignal,
   ReviewReason,
   RouterFieldKey,

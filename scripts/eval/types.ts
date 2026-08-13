@@ -15,7 +15,13 @@
  */
 import type { GoldenSetCategory, LabelVerdict } from "../../src/lib/golden-set/types";
 import type { ExtractedField, ExtractedImageQuality } from "../../src/server/extractor/types";
-import type { FieldVerdict, ReviewReason, RouterFieldKey, WarningComparatorChannel } from "../../src/server/router/types";
+import type {
+  FieldVerdict,
+  LowImageQualityTrigger,
+  ReviewReason,
+  RouterFieldKey,
+  WarningComparatorChannel,
+} from "../../src/server/router/types";
 
 /** The router's five field keys, in one place — `response-validation.ts`,
  * `flagged-fields.ts`, and `resolver-rollup.ts` each need this exact list
@@ -118,6 +124,18 @@ export interface VerdictCaseScore {
    * `warning-segmentation.ts`'s `singleChannelPass` reads this field
    * directly. */
   warningChannel: WarningComparatorChannel | null;
+  /** TRO-542: which CP-1 §5.3 rule made the ROUTER's `isLowImageQuality`
+   * fire — `LabelRouterResult.lowImageQualityTrigger`, scored at the same
+   * ROUTER stage as `warningChannel` above. `null` when it did not fire,
+   * or when this score has no router pass of its own (the Sonnet-only
+   * benchmark arm, or a resolver-merged cascade end state — see
+   * `ActualVerdict.lowImageQualityTrigger`'s own doc comment for why
+   * those two never set it). Always present, never `undefined` —
+   * `verdict-scoring.ts`'s `scoreVerdict` normalizes an absent value to
+   * `null`, the same convention `warningChannel` uses. This is the field
+   * that answers TRO-542's own acceptance evidence: "quote the recorded
+   * trigger for case-20." */
+  lowImageQualityTrigger: LowImageQualityTrigger | null;
   fields: VerdictFieldScore[];
 }
 

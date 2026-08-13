@@ -235,7 +235,10 @@ async function runLive(args: VarianceCliArgs): Promise<void> {
         // just without aborting every repeat still to come.
         let outcome: CaseRunOutcome;
         try {
-          outcome = await runOneCase(caseSpec, db, scratchDir);
+          // TRO-518: `runOneCase` writes label images through `db` now —
+          // the scratch-directory parameter is gone. The directory itself
+          // stays, matching check.ts's kept-as-no-op cleanup shape.
+          outcome = await runOneCase(caseSpec, db);
         } catch (cause) {
           const error = cause instanceof Error ? cause.message : String(cause);
           console.warn(`  ${caseSpec.caseId} [${repeatIndex}/${args.repeats}]: FAILED — runOneCase threw: ${error}`);

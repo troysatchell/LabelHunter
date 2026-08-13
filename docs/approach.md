@@ -39,16 +39,16 @@ resolve on Haiku alone. This is the architecture, not a cost optimization layere
 simpler design. Sonnet never runs on the per-label happy path. The router never routes on a
 bare confidence number without a named reason attached.
 
-**Why a cascade instead of one model for everything.** A committed benchmark
-(`scripts/eval/results/benchmark-report.json`, a single run over the 32-case golden set as it
-stood on 2026-08-12) compared the cascade against a Sonnet-only pipeline that resolves every
-field of every label with the expensive model, no router involved. The cascade won on both
-axes measured that day: label-verdict accuracy 71.9% (23 of 32) against the Sonnet-only arm's
-37.5% (12 of 32), at a lower total cost ($0.28 against $0.47 for the same 32 cases). This
-defends the choice with a measurement, not an assumption. It is a separate, earlier measurement
-from the K=3, 36-case accuracy band in "Measured results" below — that band scores the cascade
-alone, on the current larger golden set, and is not a like-for-like comparison against a
-Sonnet-only arm.
+**Why a cascade instead of one model for everything.** A committed benchmark defends the choice
+with a measurement, not an assumption:
+`scripts/eval/results/benchmark-report.json`. It is a single run over the 32-case golden set as
+it stood on 2026-08-12. It compares the cascade against a Sonnet-only pipeline. The
+Sonnet-only arm resolves every field of every label with the expensive model, no router
+involved. The cascade won on both axes measured that day. Label-verdict accuracy: 71.9% (23 of
+32) against the Sonnet-only arm's 37.5% (12 of 32). Total cost: $0.28 against $0.47, for the
+same 32 cases. This is a separate, earlier measurement from the K=3, 36-case accuracy band in
+"Measured results" below. That band scores the cascade alone, on the current larger golden set.
+It is not a like-for-like comparison against a Sonnet-only arm.
 
 ### The government warning gets a stricter check
 

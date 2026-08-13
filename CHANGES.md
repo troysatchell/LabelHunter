@@ -20,20 +20,20 @@ scope (TRO-486) names these same six sources.
 because an earlier practice pinned a single number to one end of a measured spread; this
 document does not repeat that.
 
-**The latency figure is deliberately withheld.** TRO-486's sweep downgraded TH-R2 to PARTIAL
-because the last deployed-latency measurement predates commits that touch its own measured
-path. PR #43 changed that same path again and has now merged. A fresh measurement waits until
-the redeploy is confirmed live, not just merged — measuring against a stale build would repeat
-the exact defect this document exists to avoid.
+**The latency figure is deliberately withheld, at first.** TRO-486's sweep downgraded TH-R2 to
+PARTIAL. The last deployed-latency measurement predates commits that touch its own measured
+path. PR #43 changes that same path again. A fresh measurement waits until the redeploy is
+confirmed live, not just merged. Measuring against a stale build would repeat the exact defect
+this document exists to avoid.
 
 **Names two gaps found during PR #43's own review, before merge.** The batch workers do not
-re-check the spend budget mid-run, and a database failure during the budget check 500s instead
-of returning the designed 503. Both are real, both are already tracked, and naming them here is
-a better answer at interview than an unexamined system would be.
+re-check the spend budget mid-run. A database failure during the budget check 500s instead of
+returning the designed 503. Both are real. Both are already tracked. Naming them here is a
+better answer at interview than an unexamined system would be.
 
 **Updated after PR #43 merged, mid-ticket.** The first commit on this branch said PR #43 was
-"not yet merged." It merged shortly after, so a second commit corrects that claim. It does not
-claim the deployed instance is protected — that needs its own independent check against the
+"not yet merged." It merged shortly after. A second commit corrects that claim. It does not
+claim the deployed instance is protected. That needs its own independent check against the
 live URL, which had not happened by this commit.
 
 **Updated again once the deploy was confirmed live, a third time.** `GET /` now redirects to
@@ -69,7 +69,8 @@ accuracy.
 **How to run it.** Read `docs/approach.md`. No command runs it.
 
 **Rollback.** Delete `docs/approach.md`. Remove this changelog entry. No schema or application
-code changed.
+code changed. `factory/review-findings.jsonl`'s entries for this ticket stay — that ledger is
+append-only, and a revert should not be read as erasing the record of what was reviewed.
 
 ## TRO-484 — LH-063: README (2026-08-13)
 

@@ -137,6 +137,39 @@ async function buildSyntheticLabel(): Promise<{ image: Buffer; width: number; he
   };
 }
 
+/**
+ * TRO-546: the same synthetic multi-line paragraph as `buildSyntheticLabel`,
+ * but with a targeted brightness drop applied to ONLY the paragraph's own
+ * bounding box — the same shape golden-set case-22 uses
+ * (`scripts/golden/degrade.ts`'s `applyLowLight`, region-scoped, no
+ * contrast/noise change). `brightnessFactor` mirrors sharp's own
+ * `.modulate({ brightness })` scale, matching case-22's manifest entry
+ * (`golden-set/manifest.json`, case-22's `degradations`).
+ */
+async function buildSyntheticLabelWithDimmedParagraph(
+  brightnessFactor: number,
+): Promise<{ image: Buffer; height: number; paragraphTopFrac: number; paragraphBottomFrac: number }> {
+  const { image, height, paragraphTopFrac, paragraphBottomFrac } = await buildSyntheticLabel();
+  const metadata = await sharp(image).metadata();
+  const width = metadata.width!;
+
+  const paraRegion = {
+    left: 0,
+    top: Math.round(paragraphTopFrac * height),
+    width,
+    height: Math.round((paragraphBottomFrac - paragraphTopFrac) * height),
+  };
+
+  const dimmedParagraph = await sharp(image).extract(paraRegion).modulate({ brightness: brightnessFactor }).toBuffer();
+
+  const dimmedImage = await sharp(image)
+    .composite([{ input: dimmedParagraph, left: paraRegion.left, top: paraRegion.top }])
+    .jpeg({ quality: 92 })
+    .toBuffer();
+
+  return { image: dimmedImage, height, paragraphTopFrac, paragraphBottomFrac };
+}
+
 async function buildSingleLineOnlyLabel(): Promise<Buffer> {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800">
     <rect width="1200" height="800" fill="white"/>
@@ -163,6 +196,34 @@ describe("detectWarningRegionClassical — synthetic multi-block label", () => {
     const image = await buildSingleLineOnlyLabel();
     const region = await detectWarningRegionClassical(image);
     expect(region).toBeNull();
+  });
+});
+
+describe("detectWarningRegionClassical — TRO-546: a region-scoped brightness drop (CP-2 §4.5's OCR-unavailable split)", () => {
+  it("still finds the paragraph block when only that block is darkened, not the whole image", async () => {
+    // Same factor as golden-set case-22 (manifest.json: brightnessFactor
+    // 0.3, no contrast/noise change) — dark enough that the block's own
+    // background (originally white) lands under the OLD fixed
+    // DARK_PIXEL_THRESHOLD of 180, which read it as "solid ink" and
+    // discarded it (measured on case-22 before this fix: every row in the
+    // block scored ~88% ink, over MAX_INK_FRACTION's 60% cap, so
+    // `detectWarningRegionClassical` returned null and OCR never ran).
+    const { image, height, paragraphTopFrac, paragraphBottomFrac } = await buildSyntheticLabelWithDimmedParagraph(0.3);
+    const region = await detectWarningRegionClassical(image);
+    expect(region).not.toBeNull();
+    if (!region) return;
+    const regionCenterFrac = (region.y + region.height / 2) / height;
+    expect(regionCenterFrac).toBeGreaterThan(paragraphTopFrac);
+    expect(regionCenterFrac).toBeLessThan(paragraphBottomFrac);
+    expect(region.height).toBeLessThan(height / 2);
+  });
+
+  it("finds the SAME block whether the image is evenly lit or has a dim paragraph — the fix does not change behavior on a normal photo", async () => {
+    const even = await buildSyntheticLabel();
+    const dimmed = await buildSyntheticLabelWithDimmedParagraph(1); // brightnessFactor 1 = no-op
+    const evenRegion = await detectWarningRegionClassical(even.image);
+    const dimmedRegion = await detectWarningRegionClassical(dimmed.image);
+    expect(evenRegion).toEqual(dimmedRegion);
   });
 });
 
@@ -248,6 +309,30 @@ describe("region detection + crop + real OCR — a real golden-set label image",
       // environment that substitutes a different font for the synthetic
       // SVG render, and the property that matters is "trusted as a real
       // channel," which OCR_CONFIDENCE_FLOOR is the source of truth for.
+      expect(ocrResult?.confidence).toBeGreaterThan(OCR_CONFIDENCE_FLOOR);
+    },
+    15_000,
+  );
+
+  it(
+    "case-22 (TRO-546): detects the darkened warning block and reads it back correctly — was null before this fix",
+    async () => {
+      // Before TRO-546: `detectWarningRegionClassical` returned null (the
+      // region's own background, darkened to ~grey 76, read as "ink" under
+      // the old fixed threshold), and `detectWarningRegionByBandSearch`'s
+      // fixed-thirds crop also failed on this image — `detectWarningRegion`
+      // returned null overall, CP-2 §4.5's "OCR unavailable" state.
+      // Measured: scripts/eval/results/case-22-ocr-region.json.
+      const image = readFileSync("golden-set/images/case-22-low-light-warning-block.jpg");
+      const result = await detectWarningRegion(image, async (crop) => runWarningOcr(crop));
+      expect(result).not.toBeNull();
+      if (!result) return;
+      expect(result.method).toBe("classical"); // measured: classical alone now finds it, band-search fallback is not needed
+      const crop = await cropForOcr(image, result.region);
+      const ocrResult = await runWarningOcr(crop);
+      expect(ocrResult).not.toBeNull();
+      expect(ocrResult?.text).toContain("GOVERNMENT WARNING");
+      expect(ocrResult?.text).toContain("Surgeon General");
       expect(ocrResult?.confidence).toBeGreaterThan(OCR_CONFIDENCE_FLOOR);
     },
     15_000,

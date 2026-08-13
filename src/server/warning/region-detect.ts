@@ -24,13 +24,12 @@
  * cheapest thing that reaches the same answer for this specific shape of
  * input (dense small print in a roughly axis-aligned block).
  *
- * The constants below are **proposed**, tuned against this ticket's own
- * synthetic fixtures and validated against six real, varied golden-set
- * label images (case-01, 03, 08, 10, 14, 23 — every one with a warning
- * present) plus two with no warning (case-12, 13, correctly returning
- * `null`) — not against the full golden set, which is LH-030's job
- * (CP-2 §12: "any threshold as a final value... LH-030's sweep replaces
- * them with measured values").
+ * The constants below started **proposed** (LH-020), tuned against that
+ * ticket's own synthetic fixtures and six real golden-set images.
+ * `DARK_RATIO`, `BACKGROUND_PERCENTILE`, `ROW_MARGIN_PX`, and
+ * `COLUMN_MARGIN_PX` are now measured values (TRO-546): swept and checked
+ * against the full 32-case golden set via `pnpm eval:ocr-floor-sweep`, not
+ * just a sample — see each constant's own comment for the specific sweep.
  */
 import sharp from "sharp";
 import { clampRegionToBounds, type PixelRegion } from "../preprocessing/region";
@@ -40,8 +39,52 @@ import { clampRegionToBounds, type PixelRegion } from "../preprocessing/region";
  * milliseconds (CP-2 §8.2's whole reason for choosing this method). */
 const ANALYSIS_WIDTH_PX = 500;
 
-/** A greyscale pixel below this value (0-255) counts as "ink". */
-const DARK_PIXEL_THRESHOLD = 180;
+/**
+ * A pixel counts as "ink" when it is darker than `DARK_RATIO` times its OWN
+ * row's `BACKGROUND_PERCENTILE`-th grey value — not darker than one fixed
+ * absolute value (TRO-546; CP-2 §4.5's "OCR unavailable" split, §8.2).
+ *
+ * The original rule ("below 180 on a 0-255 scale") assumes the row's
+ * background sits near white. On a well-lit label that is true, so
+ * `DARK_RATIO * 255 ≈ 180` reproduces the original constant exactly and
+ * every currently-passing golden-set case keeps its measured behavior
+ * (verified: `pnpm eval:ocr-floor-sweep`, no regression across the other
+ * 31 golden-set cases). It stops being true the moment a real photo's
+ * ambient light is uneven: golden-set case-22 darkens ONLY the warning
+ * block (`brightnessFactor: 0.3`), so the block's own background lands at
+ * roughly grey 76, not 255 — comfortably under the fixed 180 cutoff. Every
+ * pixel in that block, ink or paper, then reads as "dark", so the
+ * row-density scan sees ~88% ink coverage (measured), exceeds
+ * `MAX_INK_FRACTION`, and the classifier discards the whole block as "a
+ * solid fill, not print" — the opposite of the truth. Region detection
+ * returns `null`, OCR never runs, and CP-2 §4.5's OCR-unavailable path
+ * falls back to whatever the vision channel alone says (see this ticket's
+ * CHANGES.md entry for the measured before/after).
+ */
+const DARK_RATIO = 180 / 255;
+
+/**
+ * Which percentile of a row's own grey values stands in for "this row's
+ * background level" (TRO-546). Print, even a dense paragraph, is a
+ * documented minority of any row (`MAX_INK_FRACTION` below caps it at 60%,
+ * and real warning text measures far under that) — so a HIGH percentile,
+ * not the median, lands on background almost everywhere ink can plausibly
+ * be. The median (50th) was the first thing tried and it regressed
+ * case-23/24 (`tiny-warning-text`): at that print size, after the row
+ * downscale to `ANALYSIS_WIDTH_PX`, a large share of a text row's pixels
+ * are antialiased edge grey rather than clean black or white, which can
+ * pull a 50th-percentile estimate down far enough to misprice the row's
+ * OWN background, discarding real (if faint) ink signal the original fixed
+ * threshold used to keep. 85 was measured, not assumed: swept 0.5 through
+ * 0.9 against case-22, 23, and 24 together (the darkened case and the two
+ * tiny-print cases at risk of a regression) — 0.5 through 0.8 leave
+ * case-23/24 with no region at all (a real regression); 0.9 loses case-22
+ * again (the percentile pixel starts landing on the SAME hard illumination
+ * edge `ROW_MARGIN_PX`/`COLUMN_MARGIN_PX` below has to dodge). 0.85 is the
+ * value that keeps all three — confirmed against the full 32-case corpus
+ * via `pnpm eval:ocr-floor-sweep`, not just these three.
+ */
+const BACKGROUND_PERCENTILE = 0.85;
 
 /** A row's ink-pixel fraction must fall in this band to count as a text
  * row — below it, the row is blank; above it, it is a solid fill or
@@ -60,11 +103,27 @@ const MAX_LINE_GAP_PX = 15;
  * statement. The warning is the only field this long on a typical label. */
 const MIN_LINES_FOR_CANDIDATE = 3;
 
-/** Padding added around the winning block before cropping, in
- * analysis-resolution pixels — avoids clipping ascenders/descenders at
- * the block's own edges. */
-const ROW_MARGIN_PX = 2;
-const COLUMN_MARGIN_PX = 4;
+/**
+ * Padding added around the winning block before cropping, in
+ * analysis-resolution pixels — avoids clipping ascenders/descenders at the
+ * block's own edges.
+ *
+ * TRO-546 shrank both values (row 2->1, column 4->1). Measured on case-22:
+ * the found ink already sits flush against the darkened block's true edge
+ * (the fixture's own `LABEL_REGIONS.warning` box), so the ORIGINAL padding
+ * (4 analysis px, 8 original px, each side) pushed the crop a few pixels
+ * past that edge into the undegraded pixels next to it — and tesseract's
+ * single-block page segmentation reads that hard illumination seam as
+ * structure, returning empty text at 0 confidence for the whole crop
+ * (measured directly: same content, padding-only difference, confidence
+ * 95 -> 0). A real photo has no such knife-edge lighting boundary; this is
+ * this fixture's own artifact, not a property of dim lighting in general.
+ * The smaller padding still guards the common case (verified: no
+ * regression across the other 31 golden-set cases,
+ * `pnpm eval:ocr-floor-sweep`) while no longer reaching past it here.
+ */
+const ROW_MARGIN_PX = 1;
+const COLUMN_MARGIN_PX = 1;
 
 export interface InkRun {
   start: number;
@@ -125,6 +184,31 @@ export function pickBestParagraphBlock(blocks: readonly ParagraphBlock[], minLin
 }
 
 /**
+ * The `percentile`-th grey value of one row of a greyscale raster (values
+ * 0-255) — e.g. `percentile=0.5` is the median, `0.85` is the 85th
+ * percentile. Computed via a 256-bucket cumulative histogram rather than a
+ * sort — the whole point of this module is milliseconds, and a row is
+ * re-scanned for this exactly once per `detectWarningRegionClassical` call.
+ * Exported for direct unit testing.
+ */
+export function rowPercentileGrey(
+  data: Uint8Array | Buffer,
+  rowStart: number,
+  width: number,
+  percentile: number,
+): number {
+  const hist = new Array<number>(256).fill(0);
+  for (let x = 0; x < width; x++) hist[data[rowStart + x]]++;
+  const target = width * percentile;
+  let cumulative = 0;
+  for (let value = 0; value < 256; value++) {
+    cumulative += hist[value];
+    if (cumulative > target) return value;
+  }
+  return 255;
+}
+
+/**
  * Classical detection (CP-2 §8.2 option C, primary): finds the most
  * paragraph-like block of dense small text and returns its bounding box
  * in the ORIGINAL image's pixel coordinates. Returns `null` when no block
@@ -144,11 +228,22 @@ export async function detectWarningRegionClassical(image: Buffer): Promise<Pixel
     .raw()
     .toBuffer({ resolveWithObject: true });
 
+  // One threshold per row, anchored to that row's OWN background estimate
+  // — see DARK_RATIO's and BACKGROUND_PERCENTILE's comments for why a
+  // fixed absolute cutoff misreads a row whose whole background has been
+  // darkened, not just its ink, and why the estimate is a high percentile
+  // rather than the median.
+  const rowDarkThreshold: number[] = [];
+  for (let y = 0; y < info.height; y++) {
+    rowDarkThreshold.push(rowPercentileGrey(data, y * info.width, info.width, BACKGROUND_PERCENTILE) * DARK_RATIO);
+  }
+  const isInk = (x: number, y: number): boolean => data[y * info.width + x] < rowDarkThreshold[y];
+
   const rowInkFractions: number[] = [];
   for (let y = 0; y < info.height; y++) {
     let dark = 0;
     for (let x = 0; x < info.width; x++) {
-      if (data[y * info.width + x] < DARK_PIXEL_THRESHOLD) dark++;
+      if (isInk(x, y)) dark++;
     }
     rowInkFractions.push(dark / info.width);
   }
@@ -167,7 +262,7 @@ export async function detectWarningRegionClassical(image: Buffer): Promise<Pixel
   let maxX = 0;
   for (let y = y0; y <= y1; y++) {
     for (let x = 0; x < info.width; x++) {
-      if (data[y * info.width + x] < DARK_PIXEL_THRESHOLD) {
+      if (isInk(x, y)) {
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
       }

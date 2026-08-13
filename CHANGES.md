@@ -4,6 +4,109 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-546 — case-22's government_warning single-channel MATCH masked an expected NEEDS_REVIEW (2026-08-13)
+
+Advances TH-R9, TH-R17. Three unrelated tickets found the same defect on the same day:
+TRO-534 (a blocker fix exposed it), TRO-535 (the new `singleChannelPass` metric caught it
+live), and TRO-538 (cascade end-state scoring flagged case-22 as correct→wrong once the
+resolver's real disposition is scored). This ticket is the fix.
+
+**The defect.** `detectWarningRegionClassical` (`src/server/warning/region-detect.ts`)
+called a pixel "ink" when it read below one fixed grey value, 180 out of 255. That rule
+assumes the row's background sits near white. Case-22's warning block is darkened on its
+own (`brightnessFactor: 0.3`, region-scoped — the rest of the label is normal). Its
+background lands near grey 76, under the fixed cutoff. Every pixel in the block, ink or
+paper, then reads "dark." The row-density scan measured about 88% ink coverage there, over
+`MAX_INK_FRACTION`'s 60% cap. The detector discarded the whole block as "a solid fill, not
+print" — the opposite of the truth. Region detection returned `null`. OCR never ran. CP-2
+§4.5's OCR-unavailable path fell back to the vision channel alone, which read the warning
+correctly at high confidence. That is a single-channel PASS. The manifest expects
+NEEDS_REVIEW.
+
+**The measurement (step 1, before touching code).**
+`scripts/eval/tro-546-case22-ocr-region-check.ts` reuses `ocr-floor-sweep.ts`'s exact method
+as its own script: `preprocessImage` → `detectWarningRegion` → `cropForOcr` →
+`runWarningOcr` → `evaluateCandidate`, read-only, no API call. It ran against the CURRENT
+golden-set image. TRO-527 merged the same day and rebuilt 30 of 32 images, including
+case-22, to add the bold warning prefix. Measured before this fix: `region: null`,
+`ocrChannelState: "unavailable"` — CP-2 §4.5's "no candidate at all" state, not a candidate
+discarded below the confidence floor. That result is unchanged from the pre-TRO-527 image:
+the defect presents identically on the rebuilt pixels. A second session's agent measured the
+same root cause independently on this same ticket. It posted the finding as a Linear comment
+on TRO-546: region-crop OCR at confidence 95, `EXACT_MATCH`, distance 0; 100 of 100 band rows
+at 88% ink against the 60% cap; a committed live eval run reading Haiku at confidence 0.98
+exact. Cited here as corroboration, not as a substitute for the measurement this ticket
+committed.
+
+**Confirming OCR should run at all (step 2).** Cropping case-22's true warning region
+(`LABEL_REGIONS.warning`, the fixture's own known-correct box) and running the shipped
+`runWarningOcr` on it reads the statutory text back at confidence 95, `EXACT_MATCH`, distance
+0 — no brightness or contrast correction. This is not a photographic limit. The pixels carry
+the text; the detector could not find them.
+
+**The fix.** Replaced the fixed 180 cutoff with a per-row relative one. A pixel is ink when
+it reads below `DARK_RATIO` (still 180/255) times that ROW's OWN 85th-percentile grey value
+— not one constant for the whole image. The anchor is a high percentile, not the median.
+Print is a documented minority of any row (`MAX_INK_FRACTION` caps it at 60%). The median
+was the first thing tried, and it broke case-23/24 (tiny warning print): at that print size,
+after the row's downscale, much of the row is antialiased edge grey. That pulled the
+50th-percentile estimate down far enough to misprice the row's real background. Swept 0.5
+through 0.9 against case-22, 23, and 24 together; 0.85 is the value that keeps all three
+(`region-detect.ts`'s `BACKGROUND_PERCENTILE` comment carries the numbers). On a normal,
+evenly-lit row this reproduces the original 180 cutoff exactly — confirmed with a synthetic
+equivalence test and a full 32-case sweep.
+
+A second, smaller change was needed to close the loop for case-22 specifically. The crop
+margin (`ROW_MARGIN_PX`, `COLUMN_MARGIN_PX`) shrank from 2/4 analysis pixels to 1/1. Measured
+directly: the threshold fix alone already found case-22's block correctly. But the original
+margin pushed the crop a few pixels past the block's true edge, into the label's undegraded
+surroundings. Tesseract's single-block page segmentation read that hard illumination seam as
+structure — same content, margin-only difference, confidence 95 → 0. A real photograph has
+no such knife-edge lighting boundary. This is specific to how this fixture's degradation is
+built (a rectangular region, not a gradient), not a property of dim lighting in general. The
+smaller margin was checked against the full 32-case corpus before landing — no regression.
+
+**Result, measured.** `pnpm eval:tro-546-case22-check` (committed:
+`scripts/eval/results/tro-546-case22-ocr-region-check.json`): case-22's OCR channel is now
+`"healthy"` — region found by classical detection alone (band search never runs), confidence
+95, `EXACT_MATCH`, distance 0, `capsOk: true`. `pnpm eval:ocr-floor-sweep` run locally to
+check for regressions across the other 31 cases (not committed here — that artifact is
+TRO-535's; its own post-TRO-527 staleness is TRO-558's to fix): 28 of 32 warning-bearing
+cases now have a usable candidate, up from 27, exactly the one intended addition. Every
+already-passing case keeps its measured confidence, wording, and distance unchanged; only
+the crop's padding shrank by the same fixed amount everywhere.
+
+**What this fix does NOT close.** Restoring the OCR channel does not, by itself, make
+case-22's live verdict match the manifest. With OCR available, both channels now read the
+statutory text correctly and agree. CP-2 §4.5 scores an agreeing, both-equal pair as PASS —
+the same verdict the single-channel path was already producing before this fix, not the
+manifest's `NEEDS_REVIEW`.
+
+The TH-R9 exposure this ticket closes is real regardless. A statutory field was being
+certified, silently, by one reader with the second unavailable for a code reason, not a
+genuine read failure. That risk is closed for any real photograph shaped like case-22's
+degradation.
+
+But case-22's own expectation-versus-behavior gap remains open. It is a corpus question, not
+a pipeline one. Is the manifest's `NEEDS_REVIEW` correct for pixels this legible? TRO-516's
+C3 precedent on case-21 says a pure-brightness transform can darken without degrading glyph
+edges, so a real reader passes it. Or is case-22's degradation too weak for its own claimed
+defect? Deciding that needs a live Haiku/Sonnet run against the regenerated image, and it
+touches `src/server/router/golden-image-quality.test.ts`'s fixture too (TH-R10's suite). Per
+this ticket's Do-NOT, the manifest is untouched here. **Proposed as its own ticket,
+Troy-gated, same precedent as TRO-516.**
+
+**How to run it.** `pnpm eval:tro-546-case22-check` re-runs this ticket's measurement (no API
+call). `pnpm test -- src/server/warning/region-detect.test.ts` runs the regression suite,
+including two new TRO-546 tests: a synthetic region-scoped brightness drop (confirmed red
+against the pre-fix threshold, for the right reason — `detectWarningRegionClassical` returned
+`null`) and a real case-22 image end-to-end (detect → crop → OCR → text match), also
+confirmed red-then-green.
+
+**Rollback.** `git revert` this commit. `DARK_PIXEL_THRESHOLD` (180, absolute) and the
+original margins (2/4) return; case-22's OCR channel goes back to `"unavailable"`. No
+manifest change to undo — none was made.
+
 ## TRO-527 — LH-022 · Golden-set bold ground truth + renderer bold prefix (2026-08-13)
 
 Advances TH-R9, TH-R12. 27 CFR 16.22(a)(2) has two bold rules: the "GOVERNMENT WARNING:"

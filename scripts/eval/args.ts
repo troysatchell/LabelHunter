@@ -111,8 +111,9 @@ export const DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS: Readonly<Record<string, Revie
 
 /**
  * Hard ceiling on how many cases one `--live` invocation may run — the
- * golden set's own size (31 cases today). `--full` already reaches this
- * ceiling by design; this constant exists so a future larger golden set
+ * golden set's own size (36 cases today, TRO-529 / LH-024's 5 real-
+ * photograph cases included). `--full` already reaches this ceiling by
+ * design; this constant exists so a future larger golden set
  * cannot silently make one careless invocation far more expensive than any
  * operator intended, the same backstop role `scripts/latency/args.ts`'s
  * `MAX_RUNS` plays there. No CLI override — raise it here, deliberately, if

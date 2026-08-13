@@ -715,6 +715,21 @@ describe("loadGoldenSetManifest", () => {
     expect(stonesThrow?.expected.fields.brandName.verdict).toBe("MATCH");
   });
 
+  it("merged case-24 into case-23 (TRO-516 C5): case-24 is gone, case-23 carries the merge note", () => {
+    const result = loadGoldenSetManifest();
+
+    const merged = result.cases.find(
+      (c) => c.caseId === "case-24-tiny-warning-text-miniature-bottle",
+    );
+    expect(merged).toBeUndefined();
+
+    const survivor = result.cases.find(
+      (c) => c.caseId === "case-23-tiny-warning-text-standard-bottle",
+    );
+    expect(survivor).toBeDefined();
+    expect(survivor?.notes).toMatch(/Merged case-24-tiny-warning-text-miniature-bottle into this case per TRO-516 C5/);
+  });
+
   it("includes the net-contents format-variant case required by rubric vector V7 (TRO-515)", () => {
     const result = loadGoldenSetManifest();
     const baseline = result.cases.find((c) => c.caseId === "case-01-clean-match-spirits");

@@ -1,0 +1,174 @@
+{
+  "ticket": "TRO-471 / LH-031 (extended by TRO-539 / LH-034: --url mode, Server-Timing breakdown, target provenance)",
+  "measuredAt": "2026-08-13T01:39:42.003Z",
+  "model": "not observed by this script -- the target server (localhost:3874) makes its own model choice; this repo's own code names claude-haiku-4-5, but --url mode never confirms the target is actually running it",
+  "validationNote": "TRO-539 harness validation ONLY. Target ran scripts/e2e/fake-anthropic-server.ts via ANTHROPIC_BASE_URL, not the real Anthropic API. This is a zero-cost, local-machine, in-memory-canned-response run that proves the --url mode and Server-Timing capture work end to end. It is NOT a TH-R2 measurement, NOT a deployed-instance measurement, and must never be quoted as either.",
+  "goldenSetCase": {
+    "caseId": "case-01-clean-match-spirits",
+    "category": "clean-match",
+    "beverageType": "spirits",
+    "imagePath": "golden-set/images/case-01-clean-match-spirits.jpg"
+  },
+  "pipelineScope": "Preprocess (sharp) -> Haiku extraction (claude-haiku-4-5, real API call) concurrently with the government-warning comparator (region detection + tesseract.js OCR on the warning crop, bounded by a 2000ms OCR deadline, TRO-519) -> deterministic Validation Router -> DB writes (TRO-518: label image bytes land in Postgres, not disk). LH-014's Sonnet resolver has merged to main, but route.ts never calls it inline -- every run is the fast path only; Sonnet resolution, when it happens, runs asynchronously off the review queue, never inside this request (TH-R19). Boundary: http -- this run sent a real multipart POST over the network to the target URL recorded in this artifact's own target field, and measured wall-clock from just before that request to the full response body received, including the Next.js HTTP framing layer and the real network path -- but still excludes a real browser's own upload/render time.",
+  "target": {
+    "boundary": "http",
+    "host": "localhost:3874",
+    "url": "http://localhost:3874",
+    "renderPlan": null
+  },
+  "machine": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpuModel": "Apple M4 Pro",
+    "cpuCount": 14,
+    "nodeVersion": "v23.2.0"
+  },
+  "requestedRuns": 5,
+  "successfulRuns": 5,
+  "failedRuns": 0,
+  "verdictCounts": {
+    "PASS": 5
+  },
+  "summaryMs": {
+    "count": 5,
+    "min": 390,
+    "max": 880,
+    "mean": 520,
+    "p50": 411,
+    "p95": 880
+  },
+  "stageBreakdownMs": {
+    "preprocess": {
+      "count": 5,
+      "min": 36.4,
+      "max": 68,
+      "mean": 44,
+      "p50": 38.6,
+      "p95": 68
+    },
+    "ocr": {
+      "count": 5,
+      "min": 339.9,
+      "max": 425.5,
+      "mean": 374,
+      "p50": 355,
+      "p95": 425.5
+    },
+    "haiku": {
+      "count": 5,
+      "min": 2.7,
+      "max": 13.9,
+      "mean": 5,
+      "p50": 2.9,
+      "p95": 13.9
+    },
+    "router": {
+      "count": 5,
+      "min": 0.2,
+      "max": 3.1,
+      "mean": 1,
+      "p50": 0.3,
+      "p95": 3.1
+    },
+    "db": {
+      "count": 5,
+      "min": 8.5,
+      "max": 26.7,
+      "mean": 13,
+      "p50": 9.5,
+      "p95": 26.7
+    }
+  },
+  "budget": {
+    "p50TargetMs": 5000,
+    "source": "TH-R2 / PRD §3.8: ~5s p50 wall-clock, single-label verify, realistic image.",
+    "internalFastPathP50TargetMs": 3000,
+    "internalFastPathSource": "PRD §3.8 stage table: 'Fast path total (~85-90% of labels): ~3s p50, <=5s p95' -- the internal engineering sub-target the 5s acceptance bar leaves headroom against, not the TH-R2 acceptance figure itself."
+  },
+  "cleanupFailures": [],
+  "cleanupSkippedReason": null,
+  "scratchDirCleanupError": null,
+  "closePoolError": null,
+  "runs": [
+    {
+      "index": 1,
+      "durationMs": 880,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 260,
+      "serverTimingMs": {
+        "preprocess": 40.1,
+        "ocr": 392.9,
+        "haiku": 13.9,
+        "router": 3.1,
+        "db": 26.7
+      }
+    },
+    {
+      "index": 2,
+      "durationMs": 411,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 261,
+      "serverTimingMs": {
+        "preprocess": 38.6,
+        "ocr": 354.8,
+        "haiku": 2.8,
+        "router": 1.6,
+        "db": 10.2
+      }
+    },
+    {
+      "index": 3,
+      "durationMs": 511,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 262,
+      "serverTimingMs": {
+        "preprocess": 68,
+        "ocr": 425.5,
+        "haiku": 3.5,
+        "router": 0.3,
+        "db": 9.2
+      }
+    },
+    {
+      "index": 4,
+      "durationMs": 406,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 263,
+      "serverTimingMs": {
+        "preprocess": 36.8,
+        "ocr": 355,
+        "haiku": 2.7,
+        "router": 0.2,
+        "db": 9.5
+      }
+    },
+    {
+      "index": 5,
+      "durationMs": 390,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 264,
+      "serverTimingMs": {
+        "preprocess": 36.4,
+        "ocr": 339.9,
+        "haiku": 2.9,
+        "router": 0.3,
+        "db": 8.5
+      }
+    }
+  ]
+}

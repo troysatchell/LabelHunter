@@ -44,7 +44,7 @@ function readCandidateCode(body: unknown): string | null {
  * routes in this repo declare — this route's own tests need `.cookies` to
  * assert the real cookie attributes get set, and `NextResponse` is what
  * this function always actually constructs. */
-export async function POST(
+export async function handleAccessCodeRequest(
   request: Request,
   /**
    * TRO-482, merge review round 1. Injected only so this route's own
@@ -94,4 +94,19 @@ export async function POST(
     maxAge: ACCESS_CODE_COOKIE_MAX_AGE_SECONDS,
   });
   return response;
+}
+
+/**
+ * Next.js's own route export. A thin wrapper over
+ * `handleAccessCodeRequest`, matching the same split
+ * `../verify/route.ts` and `../batch/start/route.ts` already use.
+ *
+ * The split is not cosmetic. Next type-checks this exported symbol
+ * against its own handler signature, `(request, context)`, so the
+ * injectable limiter parameter cannot live here — giving `POST` a second
+ * parameter of any other type fails `pnpm build`. Caught by the gate,
+ * not guessed.
+ */
+export async function POST(request: Request): Promise<NextResponse> {
+  return handleAccessCodeRequest(request);
 }

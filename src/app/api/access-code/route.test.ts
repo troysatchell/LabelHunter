@@ -11,7 +11,7 @@ import {
   checkRateLimitPair,
   formatAccessCodeRateLimitMessage,
 } from "../../../server/rate-limit/instances";
-import { POST } from "./route";
+import { handleAccessCodeRequest, POST } from "./route";
 
 const REAL_CODE = "correct-horse-battery-staple";
 const ORIGINAL_ACCESS_CODE = process.env.ACCESS_CODE;
@@ -116,7 +116,7 @@ describe("POST /api/access-code — brute-force limit", () => {
     // it cannot be skewed by another test's attempts.
     const limiter = createFixedWindowLimiter({ limit: ACCESS_CODE_IP_LIMIT, windowMs: ACCESS_CODE_IP_WINDOW_MS });
     const check = (request: Request) => checkRateLimitPair(request, limiter, neverFullGlobalLimiter(), formatAccessCodeRateLimitMessage);
-    const attempt = () => POST(withIp(postJson({ code: "wrong" }), "198.51.100.7"), check);
+    const attempt = () => handleAccessCodeRequest(withIp(postJson({ code: "wrong" }), "198.51.100.7"), check);
 
     for (let i = 0; i < ACCESS_CODE_IP_LIMIT; i += 1) {
       // Every attempt inside the limit still fails on the code itself.
@@ -134,7 +134,7 @@ describe("POST /api/access-code — brute-force limit", () => {
   it("counts a CORRECT code against the limit too, so a guesser cannot keep going after landing one", async () => {
     const limiter = createFixedWindowLimiter({ limit: 2, windowMs: ACCESS_CODE_IP_WINDOW_MS });
     const check = (request: Request) => checkRateLimitPair(request, limiter, neverFullGlobalLimiter(), formatAccessCodeRateLimitMessage);
-    const attempt = () => POST(withIp(postJson({ code: REAL_CODE }), "198.51.100.8"), check);
+    const attempt = () => handleAccessCodeRequest(withIp(postJson({ code: REAL_CODE }), "198.51.100.8"), check);
 
     expect((await attempt()).status).toBe(200);
     expect((await attempt()).status).toBe(200);
@@ -145,10 +145,10 @@ describe("POST /api/access-code — brute-force limit", () => {
     const limiter = createFixedWindowLimiter({ limit: 1, windowMs: ACCESS_CODE_IP_WINDOW_MS });
     const check = (request: Request) => checkRateLimitPair(request, limiter, neverFullGlobalLimiter(), formatAccessCodeRateLimitMessage);
 
-    expect((await POST(withIp(postJson({ code: "wrong" }), "198.51.100.9"), check)).status).toBe(401);
-    expect((await POST(withIp(postJson({ code: "wrong" }), "198.51.100.9"), check)).status).toBe(429);
+    expect((await handleAccessCodeRequest(withIp(postJson({ code: "wrong" }), "198.51.100.9"), check)).status).toBe(401);
+    expect((await handleAccessCodeRequest(withIp(postJson({ code: "wrong" }), "198.51.100.9"), check)).status).toBe(429);
     // A different address is untouched by the first one's exhausted bucket.
-    expect((await POST(withIp(postJson({ code: REAL_CODE }), "198.51.100.10"), check)).status).toBe(200);
+    expect((await handleAccessCodeRequest(withIp(postJson({ code: REAL_CODE }), "198.51.100.10"), check)).status).toBe(200);
   });
 
   it("checks the limit BEFORE reading the body — an unreadable body from a blocked IP still gets 429", async () => {
@@ -164,8 +164,8 @@ describe("POST /api/access-code — brute-force limit", () => {
         "198.51.100.11",
       );
 
-    expect((await POST(malformed(), check)).status).toBe(400);
-    expect((await POST(malformed(), check)).status).toBe(429);
+    expect((await handleAccessCodeRequest(malformed(), check)).status).toBe(400);
+    expect((await handleAccessCodeRequest(malformed(), check)).status).toBe(429);
   });
 
   it("wires the REAL limiter by default — fails if POST's default binding is dropped", async () => {

@@ -310,6 +310,20 @@ describe("violationIdentity", () => {
     expect(a).not.toBe(b);
   });
 
+  it("keeps token boundaries, so keyword+identifier pairs do not collide", () => {
+    // A single space between two word tokens is meaningful. Stripping it makes
+    // a constructor call hash the same as a call to a different function.
+    for (const [a, b] of [
+      ["new Date()", "newDate()"],
+      ["typeof x", "typeofx"],
+      ["return x", "returnx"],
+    ]) {
+      expect(violationIdentity("r", "src/a.ts", "fn", a)).not.toBe(
+        violationIdentity("r", "src/a.ts", "fn", b),
+      );
+    }
+  });
+
   it("differs when the rule differs", () => {
     const a = violationIdentity("one", "src/a.ts", "fn", "xs.every(p)");
     const b = violationIdentity("two", "src/a.ts", "fn", "xs.every(p)");
@@ -348,7 +362,14 @@ export function violationIdentity(
   enclosingFunctionName: string,
   nodeText: string,
 ): string {
-  const normalised = nodeText.replace(/\s+/g, " ").trim();
+  // Collapse runs of whitespace, then drop spaces adjacent to punctuation.
+  // The second pass keeps the separator BETWEEN two word tokens, so
+  // `new Date()` and `newDate()` stay distinct. A single collapse pass alone
+  // fails the newline test; stripping all whitespace collides those two.
+  const normalised = nodeText
+    .replace(/\s+/g, " ")
+    .replace(/\s*([^\w\s])\s*/g, "$1")
+    .trim();
   return createHash("sha256")
     .update([ruleId, repoRelativePath, enclosingFunctionName, normalised].join("|"))
     .digest("hex");

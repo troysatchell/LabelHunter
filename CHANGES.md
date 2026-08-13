@@ -7,47 +7,56 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 ## TRO-516 — Golden-set corpus calibration (2026-08-12)
 
 Advances TH-R12, TH-R17. Diagnosis: `docs/diagnostics/2026-08-12-verdict-miss-triage.md`. That
-report found 11 cases missing their expected verdict, 5 corpus-scope. TRO-538 (`routerVerdict`
-vs `cascadeVerdict`) and TRO-535 (`OCR_CONFIDENCE_FLOOR` 60 to 50) landed first, unblocking
-this ticket's C4, C6, and C7. This entry covers corrections C1 through C8 in order.
+report found 11 cases missing their expected verdict. Five misses were corpus-scope. TRO-538
+split `routerVerdict` from `cascadeVerdict`. TRO-535 swept `OCR_CONFIDENCE_FLOOR` from 60 to
+50. Both landed first. They unblock this ticket's C4, C6, and C7. This entry covers
+corrections C1 through C8, in order.
 
 **C1/C2 — case-26 and case-25, corrected together.** Both cases change one thing from a clean
 label: the font. Case-25 sets `brandName` in Dancing Script. Case-26 sets `classType` in
-UnifrakturMaguntia. Neither case carried a `notes` field or cited a design document. The old
-`expected` block predicted `REVIEW` / `LOW_MODEL_CONFIDENCE`. Two independent live runs
-(`eval-report.json`, measured 2026-08-12T22:15:52.776Z; `benchmark-report.json`, measured
-2026-08-12T22:30:58.027Z) both score the affected field `MATCH`, with no confidence drop.
-Changed, for each case: `labelVerdict` to `PASS`; `reviewReason` removed (absent, matching
-every other `PASS` case); the affected field's verdict to `MATCH`; its reason text restated
-as the measured result. `description` also dropped its own falsified clause ("hard for a
-model to read confidently") so it does not contradict the corrected `reason` text next to it.
+UnifrakturMaguntia. Neither case carried a `notes` field. Neither cited a design document. The
+old `expected` block predicted `REVIEW` / `LOW_MODEL_CONFIDENCE`. Two independent live runs
+score the affected field `MATCH`, with no confidence drop. Evidence: `eval-report.json`,
+measured 2026-08-12T22:15:52.776Z; `benchmark-report.json`, measured 2026-08-12T22:30:58.027Z.
+
+Changed, for each case:
+
+- `labelVerdict` to `PASS`.
+- `reviewReason` removed — absent, matching every other `PASS` case.
+- The affected field's verdict to `MATCH`.
+- Its reason text restated as the measured result.
+- `description` dropped its own falsified clause: "hard for a model to read confidently." It
+  no longer contradicts the corrected `reason` text next to it.
 
 Re-checked live, this ticket: case-25 `labelVerdictCorrect: true` ($0.004675). case-26
 `labelVerdictCorrect: true` ($0.004795).
 
 **C3 — case-21, pixels strengthened, expectation unchanged.** The old transform
 (`modulate({ brightness: 0.32 })`) only darkened the front region. It never degraded glyph
-edges, so a real model still read the label perfectly (diagnosis, section 3D). Per the case-20
-precedent (an added blur, so the image becomes genuinely unreadable instead of the note being
-restated to fit a weak image), `applyLowLight` (`scripts/golden/degrade.ts`) gains two new
-optional parameters:
+edges. So a real model still read the label perfectly (diagnosis, section 3D).
 
-- `contrastFactor` — compresses the region's dynamic range toward mid-gray (128) before the
-  existing exposure scale runs, simulating a sensor's noise floor crushing shadow and highlight
-  detail, not just a proportionally darker copy of the same crisp edges.
-- `noiseAmplitude` — a deterministic grain field, seeded with a fixed `mulberry32` generator,
-  never `Math.random()`. Composited with the `"overlay"` blend mode, whose no-op point sits at
-  exactly mid-gray, so `amplitude` alone controls how far the grain pushes a pixel.
+Precedent: case-20 added a blur, so the image becomes genuinely unreadable instead of the note
+being restated to fit a weak image. `applyLowLight` (`scripts/golden/degrade.ts`) gains two
+new optional parameters:
+
+- `contrastFactor` pulls the region's pixel values toward mid-gray (128), before the existing
+  exposure scale runs. This simulates a sensor's noise floor crushing shadow and highlight
+  detail. It is not just a proportionally darker copy of the same crisp edges.
+- `noiseAmplitude` adds a deterministic grain field. It is seeded with a fixed `mulberry32`
+  generator, never `Math.random()`. It composites with the `"overlay"` blend mode, whose no-op
+  point sits at exactly mid-gray. So `amplitude` alone controls how far the grain pushes a
+  pixel.
 
 Case-21's manifest entry chains this strengthened `low-light` step with an existing `blur`
-step (sigma 1.6) — the same two-step pattern case-20 already uses. Both new parameters default
-off (`contrastFactor: 1`, `noiseAmplitude: 0`), so every existing caller — case-22's own
-`low-light` degradation, and every pre-existing test — stays byte-identical. Verified: a full
-`pnpm golden:build` (all 32 cases) touches only `case-21-low-light-front-label.jpg`
-(`git diff --stat golden-set/images/`).
+step, sigma 1.6. This is the same two-step pattern case-20 already uses.
 
-Measured, real pixel statistics on the committed image, front region, grayscale (before —
-this ticket's own edit — vs after):
+Both new parameters default off: `contrastFactor: 1`, `noiseAmplitude: 0`. So every existing
+caller stays byte-identical — case-22's own `low-light` degradation, and every pre-existing
+test. Verified: a full `pnpm golden:build` (all 32 cases) touches only the `case-21` image
+(`git diff --stat golden-set/images/` confirms it).
+
+Measured, real pixel statistics on the committed image, front region, grayscale, before this
+ticket's edit and after:
 
 | Statistic | Before | After |
 |---|---|---|
@@ -55,50 +64,65 @@ this ticket's own edit — vs after):
 | Max horizontal gradient (one step vs spread over pixels) | 73 | 37 |
 | Region standard deviation | 15.06 | 13.16 |
 
-The "before" numbers reproduce the diagnosis's own independently-measured values exactly
-(2.32:1 contrast ratio, gradient 73), confirming this measurement method matches the one the
-diagnosis used. The image genuinely degrades now: a lower max gradient means an edge now
-spreads over several pixels instead of one, and the compressed, noisier range is a real
-dynamic-range change, not only a darker copy.
+The "before" numbers reproduce the diagnosis's own independently-measured values exactly:
+2.32:1 contrast ratio, gradient 73. This confirms the measurement method matches the one the
+diagnosis used.
 
-Case-21's own `expected` block — `labelVerdict`, `reviewReason`, every field verdict — is
-UNCHANGED. C3 is a pixel correction, not a corpus-expectation edit. Live re-check
-(`pnpm eval:check -- --live --case=case-21-low-light-front-label`, $0.004685): still scores
-`PASS` (`labelVerdictCorrect: false`), extractor confidence 0.99 on both affected fields,
-`image_quality.confidence: 0.95`. This is an honest result, not a partial fix. The diagnosis's
-own finding S6 says `LOW_IMAGE_QUALITY`'s confidence-driven branch fired zero times across the
-full 32-case corpus, because it depends entirely on the model's own self-reported confidence —
-which this run confirms stays high even against a measurably degraded image. S6 is a separate,
-already-documented code defect. It is not in this ticket's C1-C8 scope.
+The image genuinely degrades now. A lower max gradient means an edge spreads over several
+pixels instead of one. The compressed, noisier range is a real dynamic-range change, not only
+a darker copy.
 
-A stronger variant was tried and reverted (real spend: $0.014706, one extra live call):
-`brightnessFactor` 0.55, `contrastFactor` 0.3, `noiseAmplitude` 38, blur sigma 2.4. It did flip
-the label verdict to `REVIEW` — but for the wrong reason, and at a real cost. `applyBlur`
-blurs the WHOLE image, not one region. The stronger blur also degraded the
-`government_warning` block, breaking case-21's own "back label reads fine" premise. Measured:
-all 5 field-level verdicts came back wrong on that run, not just the two front-label fields the
-case is designed to test. Reverted to the modest values above, which keep `government_warning`
-correct (confirmed by the targeted run in the paragraph above).
+Case-21's own `expected` block is UNCHANGED: `labelVerdict`, `reviewReason`, every field
+verdict. C3 is a pixel correction, not a corpus-expectation edit.
 
-**C4 — case-23 / case-24, reviewReason corrected to the measured mechanism.** TRO-535
-(2026-08-12, already merged) swept `OCR_CONFIDENCE_FLOOR` from 60 to 50. Confirmed in the
-post-sweep artifacts before editing anything: `eval-report.json` (measured
-2026-08-12T22:15:52.776Z) records both cases' `routerVerdict.warningChannel: "dual"` — the
-second, OCR channel now participates, where the old floor discarded it. Both cases'
+Live re-check (`pnpm eval:check -- --live --case=case-21-low-light-front-label`, $0.004685):
+still scores `PASS` (`labelVerdictCorrect: false`). Extractor confidence stays 0.99 on both
+affected fields; `image_quality.confidence` reads 0.95.
+
+This is an honest result, not a partial fix. The diagnosis's own finding S6 says
+`LOW_IMAGE_QUALITY`'s confidence-driven branch fired zero times across the full 32-case
+corpus. The reason: it depends entirely on the model's own self-reported confidence. This run
+confirms that confidence stays high even against a measurably degraded image. S6 is a
+separate, already-documented code defect. It is not in this ticket's C1-C8 scope.
+
+A stronger variant was tried and reverted. Real spend: $0.014706, one extra live call.
+Params: `brightnessFactor` 0.55, `contrastFactor` 0.3, `noiseAmplitude` 38, blur sigma 2.4.
+
+It did flip the label verdict to `REVIEW` — but for the wrong reason, and at a real cost.
+`applyBlur` blurs the WHOLE image, not one region. The stronger blur also degraded the
+`government_warning` block. That breaks case-21's own "back label reads fine" premise.
+Measured: all 5 field-level verdicts came back wrong on that run. Not just the two
+front-label fields the case is designed to test.
+
+Reverted to the modest values above. They keep `government_warning` correct, confirmed by the
+targeted run above.
+
+**C4 — case-23 / case-24, reviewReason corrected to the measured mechanism.** TRO-535 swept
+`OCR_CONFIDENCE_FLOOR` from 60 to 50, already merged 2026-08-12.
+
+Confirmed in the post-sweep artifacts before editing anything: `eval-report.json` (measured
+2026-08-12T22:15:52.776Z) records both cases' `routerVerdict.warningChannel: "dual"`. The
+second, OCR channel now participates. The old floor discarded it. Both cases'
 `routerVerdict.actualReviewReason` already reads `WARNING_MISMATCH`, not the manifest's old
-`LOW_IMAGE_QUALITY`. Changed, for each case: `expected.reviewReason` from `LOW_IMAGE_QUALITY`
-to `WARNING_MISMATCH`; the `governmentWarning` field's reason text, which named "extraction
-confidence is low" — the mechanism the floor sweep replaced; the `notes` field, which now
-records TRO-469/LH-021's original prediction on the record, next to TRO-535's and this
-ticket's correction of it, rather than deleting the original claim.
+`LOW_IMAGE_QUALITY`.
+
+Changed, for each case:
+
+- `expected.reviewReason` from `LOW_IMAGE_QUALITY` to `WARNING_MISMATCH`.
+- The `governmentWarning` field's reason text. It named "extraction confidence is low," the
+  mechanism the floor sweep replaced.
+- The `notes` field. It now records TRO-469/LH-021's original prediction on the record, next
+  to this ticket's correction of it, rather than deleting the original claim.
 
 Re-checked live, this ticket: case-23 router stage `labelVerdictCorrect: true`,
-`reviewReasonCorrect: true` (`WARNING_MISMATCH`, haiku $0.004695 + resolver $0.009938). case-24
-the same (haiku $0.004740 + resolver $0.010146). **Observed, not this ticket's job to fix:**
-on both cases, the cascade end state (post-resolver) flips back to an incorrect `PASS` —
-`resolverOutcome: "resolved"`. This is not new. TRO-538's own CHANGES.md entry already names
-case-23 and case-24 among the cases the resolver flips from a correct router `REVIEW` to an
-incorrect `PASS`.
+`reviewReasonCorrect: true` (`WARNING_MISMATCH`). Cost: haiku $0.004695 plus resolver
+$0.009938. case-24 the same: haiku $0.004740 plus resolver $0.010146.
+
+**Observed, not this ticket's job to fix:** on both cases, the cascade end state
+(post-resolver) flips back to an incorrect `PASS`. `resolverOutcome` reads `"resolved"` on
+both. This is not new. TRO-538's own CHANGES.md entry already names case-23 and case-24. The
+resolver flips both from a correct router `REVIEW` to an incorrect `PASS` — a pre-existing
+pattern, not new here.
 
 **C5 — case-24 duplicates case-23's print size. Owner decision, not taken.** Both render
 `TINY_WARNING_FONT_SIZE_PX = 9` on the same canvas (`scripts/golden/render.ts:227`, `:249`,
@@ -106,50 +130,58 @@ incorrect `PASS`.
 ticket's own instruction not to decide it.
 
 **C6/C7 — case-28 and case-29. Measured; no corpus edit.** Read before editing, per the
-orchestrator's scope ruling. `eval-report.json` and `benchmark-report.json` (both measured
-2026-08-12T22:30:58.027Z or later) agree: the cascade end state (post-resolver) resolves both
-cases to `FAIL`, matching the manifest's expectation exactly as written.
+orchestrator's scope ruling. `eval-report.json` and `benchmark-report.json` agree, both
+measured 2026-08-12T22:30:58.027Z or later. The cascade end state (post-resolver) resolves
+both cases to `FAIL`, matching the manifest's expectation exactly as written.
 
-- case-28: `cascadeVerdict.actualLabelVerdict: "FAIL"` (`labelVerdictCorrect: true`);
-  `class_type` resolves `RESOLVED_MISMATCH` (both artifacts agree).
-- case-29: `cascadeVerdict.actualLabelVerdict: "FAIL"` (`labelVerdictCorrect: true`);
-  `brand_name` resolves `RESOLVED_MISMATCH` (both artifacts agree).
+- case-28: `cascadeVerdict.actualLabelVerdict: "FAIL"`, correct. `class_type` resolves
+  `RESOLVED_MISMATCH`, in both artifacts.
+- case-29: `cascadeVerdict.actualLabelVerdict: "FAIL"`, correct. `brand_name` resolves
+  `RESOLVED_MISMATCH`, in both artifacts.
 
-The router stage alone still reads `REVIEW` / `AMBIGUOUS_BRAND` on both cases (unchanged,
-matches the original diagnosis) — the resolver is what completes the correct `FAIL`. Per the
-orchestrator's ruling, this is the "expectations correct as written" branch: no manifest edit,
-no rubric change. `KNOWN_VECTOR_GAPS` stays empty. case-29 keeps its `V8` tag as that vector's
-only carrier.
+The router stage alone still reads `REVIEW` / `AMBIGUOUS_BRAND` on both cases, unchanged,
+matching the original diagnosis. The resolver is what completes the correct `FAIL`.
 
-**C8 — case-17. Not touched.** Per the orchestrator's scope ruling — not even the optional
+Per the orchestrator's ruling, this is the "expectations correct as written" branch. No
+manifest edit, no rubric change. `KNOWN_VECTOR_GAPS` stays empty. case-29 keeps its `V8` tag
+as that vector's only carrier.
+
+**C8 — case-17. Not touched.** Per the orchestrator's scope ruling. Not even the optional
 opacity / `bandHeight` strengthening the diagnosis floated. case-17's variance is TRO-543's
 measured story now.
 
-**Code fix found by this ticket's own tests: `applyDegradation`'s dispatcher,
-`scripts/golden/degrade.ts`.** The `"low-light"` case built its `applyLowLight` params object
-by hand, forwarding only `region` and `brightnessFactor`. A new test caught it before any live
-run: a manifest entry naming `contrastFactor` / `noiseAmplitude` built byte-identical to one
-without them. Fixed by forwarding both new keys. `src/lib/golden-set/loader.ts`'s
-`DEGRADATION_PARAM_SHAPE` also gained the two new optional keys for `"low-light"` — the
-loader's own closed-schema check rejected case-21's manifest entry outright until this landed.
+**Code fix found by this ticket's own tests.** `applyDegradation`'s `"low-light"` dispatch
+case, `scripts/golden/degrade.ts`, built its `applyLowLight` params object by hand. It
+forwarded only `region` and `brightnessFactor`.
 
-**Tests.** `scripts/golden/degrade.test.ts`: 9 new cases for `contrastFactor` /
-`noiseAmplitude` — byte-identical defaults, directional pixel checks, range rejection,
-determinism, and one case that proves the dispatcher forwards the new params (red without the
-dispatcher fix above). `scripts/golden/images.test.ts` and
-`scripts/eval/warning-golden-cases.test.ts` updated to match the new manifest content they
-pin (case-21's `degradations` array; case-23/24's `WARNING_MISMATCH`) — not weakened, both
-still assert an exact value, now the corrected one. `pnpm test`: 1741/1741 pass. `pnpm
-typecheck`, `pnpm lint`: clean. `pnpm golden:verify`: PASS, 32 cases checked, vector coverage
-unchanged (`KNOWN_VECTOR_GAPS` still empty; V4 and V8 keep their existing carriers).
+A new test caught the gap before any live run. A manifest entry naming `contrastFactor` /
+`noiseAmplitude` built byte-identical to one without them. Fixed by forwarding both new keys.
 
-**The `verified` flag.** Every edited case — `case-21`, `case-23`, `case-24`, `case-25`,
-`case-26` — keeps `verified: false`. This ticket is a machine edit. `golden-set/README.md:81-85`
+`src/lib/golden-set/loader.ts`'s `DEGRADATION_PARAM_SHAPE` also gained the two new optional
+keys for `"low-light"`. Without it, the loader's own closed-schema check rejects case-21's
+manifest entry outright.
+
+**Tests.** `scripts/golden/degrade.test.ts` gains 9 new cases for `contrastFactor` /
+`noiseAmplitude`. They cover byte-identical defaults, directional pixel checks, range
+rejection, and determinism. One more case proves the dispatcher forwards the new params — red
+without the dispatcher fix above.
+
+`scripts/golden/images.test.ts` and `scripts/eval/warning-golden-cases.test.ts` are updated to
+match the new manifest content they pin. That is case-21's `degradations` array, and
+case-23/24's `WARNING_MISMATCH`. Neither test is weakened; both still assert one exact value,
+now the corrected one.
+
+`pnpm test`: 1741/1741 pass. `pnpm typecheck`, `pnpm lint`: clean. `pnpm golden:verify`: PASS,
+32 cases checked. Vector coverage is unchanged: `KNOWN_VECTOR_GAPS` still empty, V4 and V8
+keep their existing carriers.
+
+**The `verified` flag.** Every edited case keeps `verified: false`: `case-21`, `case-23`,
+`case-24`, `case-25`, `case-26`. This ticket is a machine edit. `golden-set/README.md:81-85`
 reserves `verified: true` for a human sign-off. Troy: these five need review.
 
-**Measured, full-corpus, real, live run — the closing evidence, `claude-haiku-4-5` /
-`claude-sonnet-5`, `pnpm eval:check -- --live --full`, measured 2026-08-13T01:47:56.655Z, 32/32
-cases scored, 0 failures, $0.27957.**
+**Measured, full-corpus, real, live run — the closing evidence.** Models: `claude-haiku-4-5` /
+`claude-sonnet-5`. Command: `pnpm eval:check -- --live --full`. Measured
+2026-08-13T01:47:56.655Z, 32/32 cases scored, 0 failures, $0.27957.
 
 | Metric | Before this ticket (TRO-538 baseline) | After this ticket |
 |---|---|---|
@@ -158,55 +190,75 @@ cases scored, 0 failures, $0.27957.**
 | Cascade-verdict accuracy | 68.8% (22/32) | **81.3% (26/32)** |
 | Review-reason accuracy | 35.7% (5/14) | 58.3% (7/12) |
 
-Extraction accuracy is unchanged, as expected — this ticket edits expectations and pixels, not
-the extractor. `baseline.json` is promoted from this exact report (`ticket`, `measuredAt`,
-`manifestVersion`, `manifestContentHash`, `caseIds`, `summary` — the identical field selection
-`check.ts`'s own `--update-baseline` branch writes), not from a second live run: the
-already-committed `eval-report.json` this run just produced already carries every field a
-promotion needs, and re-spending ~$0.28 to regenerate an identical report would not be a more
-honest number, only a more expensive one. `pnpm eval:check` (cheap mode) now passes against
-this baseline.
+Extraction accuracy is unchanged, as expected. This ticket edits expectations and pixels, not
+the extractor.
 
-**Attribution — checked case by case, not assumed.** Router-verdict accuracy's full +2 (24 to
-26) is this ticket's own doing: `git show HEAD:scripts/eval/results/eval-report.json`'s
-pre-ticket router-wrong set is exactly `{case-17, case-19, case-21, case-22, case-25, case-26,
-case-28, case-29}` (8 cases). This run's router-wrong set is that same 8 minus `case-25` and
-`case-26` — the two cases C1/C2 fix — and nothing else moved. Cascade-verdict accuracy's +4 (22
-to 26) splits: +2 from the same two cases (case-25/26 never escalate, so router-correct means
-cascade-correct too), and +2 from `case-16` and `case-19` — neither one this ticket edited.
-Both flipped cascade-wrong to cascade-correct because their RESOLVER call returned a different
-outcome this run (`case-16`: `resolved` in the pre-ticket run, `needs-human` here; `case-19`:
-`needs-human` in the pre-ticket run, `resolved` here) — ordinary resolver-call variance on an
-untouched case, the same kind of run-to-run model variance TRO-543 measures directly on
-case-17. **Derived, not claimed as this ticket's fix:** the cascade-accuracy headline number
-overstates what C1 through C8 changed by 2 of 32 cases. The router-accuracy number does not.
+`baseline.json` is promoted from this exact report, not from a second live run. It uses the
+same field selection `check.ts`'s own `--update-baseline` branch writes: `ticket`,
+`measuredAt`, `manifestVersion`, `manifestContentHash`, `caseIds`, `summary`. The
+already-committed `eval-report.json` this run just produced carries every field a promotion
+needs. Re-spending roughly $0.28 to reproduce an identical report would not make the number
+more honest, only more expensive. `pnpm eval:check` (cheap mode) now passes against this
+baseline.
 
-**Total measured spend, this ticket, all real `claude-haiku-4-5` / `claude-sonnet-5` API
-calls: $0.33795.** Six targeted `--live --case=<id>` runs while verifying each correction
-(case-25 $0.004675, case-26 $0.004795, case-23 $0.014633, case-24 $0.014886, case-21 modest
-$0.004685, case-21 stronger-variant experiment $0.014706 — reverted, kept for the record above)
-plus the one full-corpus run, $0.27957.
+**Attribution — checked case by case, not assumed.** Router-verdict accuracy's full +2 gain
+(24 to 26) is this ticket's own doing.
 
-**Not verified by this ticket.** Whether Troy wants case-21's genuinely-degraded pixels to also
-close S6 (confidence-based `LOW_IMAGE_QUALITY` routing has no deterministic signal) — a
-separate, already-diagnosed defect this ticket does not fix. Whether the cascade-level
-resolver regression TRO-538 first raised as an open question — a correct router `REVIEW`
-flipped to an incorrect `PASS` — warrants a resolver-prompt change. TRO-538's own run named
-four cases (case-16, case-18, case-23, case-24); this run reproduces three of the four
-(case-18, case-23, case-24) — case-16 did not reproduce this time, per the Attribution note
-above, itself a small piece of evidence that the regression is real but not always the same
-size. This ticket answers nothing further about it.
+The pre-ticket router-wrong set, read from `git show HEAD:scripts/eval/results/eval-report.json`,
+is exactly these 8 cases: `case-17`, `case-19`, `case-21`, `case-22`, `case-25`, `case-26`,
+`case-28`, `case-29`. This run's router-wrong set is that same 8, minus `case-25` and
+`case-26` — the two cases C1/C2 fix. Nothing else moved.
+
+Cascade-verdict accuracy's +4 gain (22 to 26) splits two ways. The first +2 is the same two
+cases: case-25/26 never escalate, so router-correct means cascade-correct too. The second +2
+is `case-16` and `case-19` — neither one this ticket edited.
+
+Both flipped from cascade-wrong to cascade-correct for the same reason: their resolver call
+returned a different outcome this run. `case-16`: `resolved` in the pre-ticket run,
+`needs-human` here. `case-19`: `needs-human` in the pre-ticket run, `resolved` here. This is
+ordinary resolver-call variance on an untouched case — the same kind of run-to-run model
+variance TRO-543 measures directly on case-17.
+
+**Derived, not claimed as this ticket's fix:** the cascade-accuracy headline number overstates
+what C1 through C8 changed, by 2 of 32 cases. The router-accuracy number does not.
+
+**Total measured spend, this ticket: $0.33795, all real `claude-haiku-4-5` /
+`claude-sonnet-5` API calls.**
+
+| Run | Cost |
+|---|---|
+| case-25, targeted `--live --case=<id>` | $0.004675 |
+| case-26, targeted `--live --case=<id>` | $0.004795 |
+| case-23, targeted `--live --case=<id>` | $0.014633 |
+| case-24, targeted `--live --case=<id>` | $0.014886 |
+| case-21, modest params (kept) | $0.004685 |
+| case-21, stronger-variant experiment (reverted, kept for the record) | $0.014706 |
+| Full-corpus `--live --full` (the closing evidence) | $0.27957 |
+| **Total** | **$0.33795** |
+
+**Not verified by this ticket.** Whether Troy wants case-21's genuinely-degraded pixels to
+also close S6 — confidence-based `LOW_IMAGE_QUALITY` routing has no deterministic signal. S6
+is a separate, already-diagnosed defect this ticket does not fix.
+
+Whether the cascade-level resolver regression warrants a resolver-prompt change. TRO-538 first
+raised this as an open question: a correct router `REVIEW` flipped to an incorrect `PASS`.
+
+TRO-538's own run named four cases: case-16, case-18, case-23, case-24. This run reproduces
+three of the four — case-18, case-23, case-24. case-16 did not reproduce this time. Per the
+Attribution note above, that is itself a small piece of evidence: the regression is real, but
+not always the same size. This ticket answers nothing further about it.
 
 **How to run it.** `pnpm golden:verify` — schema and vector-coverage check. `pnpm test` — unit
 suite, including the new `degrade.ts` regression tests. `pnpm eval:check -- --live
---case=<id>` for a single-case re-check (cents each). `pnpm eval:check -- --live --full
---update-baseline` to re-measure and re-promote the whole corpus for real (~$0.28).
+--case=<id>` for a single-case re-check, cents each. `pnpm eval:check -- --live --full
+--update-baseline` to re-measure and re-promote the whole corpus for real, roughly $0.28.
 
-**Rollback.** `git revert` this ticket's commit(s). `golden-set/images/case-21-low-light-front-
-label.jpg` reverts with the manifest change; `pnpm golden:build` after the revert regenerates
-it to match. `scripts/eval/results/eval-report.json` and `scripts/eval/baseline.json` need a
-fresh `--live --full --update-baseline` run to re-establish the pre-ticket numbers — both are
-working artifacts, committed for evidence, not source, the same rollback shape TRO-535's own
+**Rollback.** `git revert` this ticket's commit(s). The `case-21` image reverts with the
+manifest change. `pnpm golden:build` after the revert regenerates it to match.
+
+`scripts/eval/results/eval-report.json` and `scripts/eval/baseline.json` need a fresh `--live
+--full --update-baseline` run to re-establish the pre-ticket numbers. Both are working
+artifacts, committed for evidence, not source. That is the same rollback shape TRO-535's own
 entry above uses.
 
 ## TRO-543 — LH-038 · Measure verdict variance (2026-08-12)

@@ -10,7 +10,8 @@
  * color pair below is checked by `src/app/globals-contrast.test.ts`
  * against the real WCAG formula, not eyeballed — no purple-gradient AI
  * slop, no emoji-driven design. System font stack only — no network font
- * fetch, so the page renders identically offline and in CI.
+ * fetch, so the page never waits on a download, offline or in CI. The
+ * OS's own font substitution still varies the exact glyphs by platform.
  */
 
 :root {

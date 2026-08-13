@@ -38,7 +38,11 @@ function readRootColorTokens(cssText: string): Record<string, string> {
 
 describe("globals.css color palette (TRO-573)", () => {
   it("is light-only -- no prefers-color-scheme: dark block", () => {
-    expect(css).not.toMatch(/prefers-color-scheme:\s*dark/);
+    // Matches an actual `@media (prefers-color-scheme: dark)` rule, not the
+    // bare string -- this file's own header comment names
+    // "prefers-color-scheme" while explaining why the file has none, and a
+    // loose string match would break the moment that wording shifted.
+    expect(css).not.toMatch(/@media\b[^{]*\(\s*prefers-color-scheme\s*:\s*dark\s*\)/);
   });
 
   const tokens = readRootColorTokens(css);

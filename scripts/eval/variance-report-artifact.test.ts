@@ -8,16 +8,24 @@
  * 2026-08-13.
  *
  * DELIBERATE COUPLING, STATED OUT LOUD. This test reads a measured artifact
- * by design. It exists to prove the authorized sweep actually ran, at the
- * scope Troy authorized, with a real non-zero measured cost and full
- * provenance — not to re-prove the arithmetic inside `variance-analysis.ts`
- * (the pure-function suite already owns that). Before the sweep ran, this
- * test is RED: the artifact did not exist on disk at all. After a clean
- * `--live --full --repeats=3` sweep is committed, this test is GREEN. If a
- * future change commits a narrower report over this one (fewer cases, fewer
- * repeats, an incomplete sweep), this test goes red again — that IS a real
- * coverage gap, not a false alarm, so it is never weakened to pass a
- * narrower artifact.
+ * by design. What it actually proves: the COMMITTED FILE, on disk right
+ * now, records the authorized 32-case x 3-repeat scope, a positive total
+ * cost, and full provenance (model IDs, commit SHA, manifest hash) — the
+ * shape and values `variance.ts` writes after a real, live, `--full
+ * --repeats=3` sweep. It does NOT independently confirm that a live API
+ * call produced this file — a hand-edited JSON matching this shape would
+ * pass too. That confirmation lives outside a unit test: the sweep's own
+ * console log, the independently-recomputed manifest hash noted in this
+ * ticket's `CHANGES.md` entry, and Troy's authorization record. This test's
+ * real job is narrower and still valuable: catch a future commit that
+ * silently narrows or corrupts the artifact this ticket produced. Not to
+ * re-prove the arithmetic inside `variance-analysis.ts` (the pure-function
+ * suite already owns that). Before the sweep ran, this test was RED: the
+ * artifact did not exist on disk at all. After the sweep's report was
+ * committed, this test went GREEN. If a future change commits a narrower
+ * report over this one (fewer cases, fewer repeats, an incomplete sweep),
+ * this test goes red again — that IS a real coverage gap, not a false
+ * alarm, so it is never weakened to pass a narrower artifact.
  */
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -42,12 +50,17 @@ describe("variance-report.json — the TRO-543 Part 2 authorized sweep artifact"
     // just 32 in length -- a duplicate case ID could still satisfy a bare
     // length check while covering fewer than 32 real cases.
     expect(report.caseIds).toHaveLength(32);
-    expect(new Set(report.caseIds).size).toBe(32);
+    const caseIdSet = new Set(report.caseIds);
+    expect(caseIdSet.size).toBe(32);
     expect(report.requestedFull).toBe(true);
     expect(report.summary.caseCount).toBe(32);
-    // summary.perCase carries one row per case -- the same population
-    // caseIds names, not a narrower or wider set.
+    // summary.perCase carries one row per case -- the SAME 32 case IDs
+    // caseIds names, not merely a same-sized but different set. A row-count
+    // match alone cannot catch two collections that each have 32 entries
+    // but disagree on which 32.
     expect(report.summary.perCase).toHaveLength(32);
+    const perCaseIdSet = new Set(report.summary.perCase.map((c) => c.caseId));
+    expect(perCaseIdSet).toEqual(caseIdSet);
 
     // K = 3 repeats -- exactly what Troy authorized. Not MAX_REPEATS (10),
     // and not silently narrowed to fewer.
@@ -61,6 +74,22 @@ describe("variance-report.json — the TRO-543 Part 2 authorized sweep artifact"
     expect(report.summary.incompleteCaseCount).toBe(0);
     expect(report.runs).toHaveLength(32 * 3);
     expect(report.failures).toHaveLength(0);
+
+    // Every case ran repeats 1, 2, and 3 -- exactly once each. This checks
+    // the real distribution of runs.json, independent of
+    // incompleteCaseCount (which is computed FROM this same data by
+    // variance-analysis.ts -- a bug shared between the writer and this
+    // check would not show up as a mismatch there).
+    const repeatIndexesByCase = new Map<string, number[]>();
+    for (const run of report.runs) {
+      const existing = repeatIndexesByCase.get(run.caseId) ?? [];
+      existing.push(run.repeatIndex);
+      repeatIndexesByCase.set(run.caseId, existing);
+    }
+    expect(repeatIndexesByCase.size).toBe(32);
+    for (const [caseId, indexes] of repeatIndexesByCase) {
+      expect(indexes.slice().sort((a, b) => a - b), `case ${caseId}`).toEqual([1, 2, 3]);
+    }
 
     // Real measured cost. Never a fabricated or zero placeholder
     // (CLAUDE.md: "never fabricate a number").

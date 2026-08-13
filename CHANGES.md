@@ -63,21 +63,28 @@ carries every field Part 1's own discipline requires:
 
 **New regression test, red first.** `scripts/eval/variance-report-artifact.test.ts` loads the
 committed artifact straight off disk. It is not a synthetic fixture. `report-validation.test.ts`
-already owns that job. This test asserts the 32 x 3 contract instead: 32 distinct case IDs,
-`requestedFull: true`, 3 repeats, 0 incomplete cases, 96 runs, 0 failures, a positive total
-cost, both model IDs, a commit SHA, and a 64-character manifest hash. It was red before the
-sweep ran — the artifact did not exist (`ENOENT`). It is green now. The coupling is
-deliberate: this test proves the authorized sweep ran, at the authorized scope. It does not
+already owns that job. This test asserts the 32 x 3 contract instead: 32 distinct case IDs
+(matching, not just same-sized, between `caseIds` and `summary.perCase`), `requestedFull: true`,
+3 repeats, every case's runs at exactly indexes 1/2/3, 0 incomplete cases, 96 runs, 0 failures,
+a positive total cost, both model IDs, a commit SHA, and a 64-character manifest hash. It was
+red before the sweep ran — the artifact did not exist (`ENOENT`). It is green now.
+
+**What this test proves, precisely.** It proves the committed file, on disk right now, has the
+authorized shape and values. It does not independently prove a live API call produced that
+file — a hand-edited JSON matching the same shape would pass too. The proof that the sweep
+really ran live lives outside this test: the sweep's own console log, and the
+independently-recomputed manifest hash this entry states above. This test's real job is
+narrower: catch a future commit that silently narrows or corrupts this artifact. It does not
 re-prove `variance-analysis.ts`'s own arithmetic — the pure-function suite already does that.
 
 **How to run it.** Do not re-run the live sweep without new written authorization — this was
 the one authorized run. `pnpm eval:variance` alone, no flags, reads this committed report
 back at zero cost.
 
-**Rollback.** `git revert` this entry's commit. No schema change. Reverting drops the
-committed artifact and the new test; `report-validation.ts`'s `validateVarianceReport` (Part
-1) is untouched and keeps working against no committed report, the same "no report yet" path
-it already handles.
+**Rollback.** `git revert` this ticket's Part 2 commits on `feat/lh-038-variance-sweep`. No
+schema change. Reverting drops the committed artifact and the new test;
+`report-validation.ts`'s `validateVarianceReport` (Part 1) is untouched and keeps working
+against no committed report, the same "no report yet" path it already handles.
 
 **Not done here, on purpose.** No fix for the variance — no retry, no lower temperature, no
 self-consistency vote. No golden-set expectation changed, case-17 included. No entry in

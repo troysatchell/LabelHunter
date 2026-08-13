@@ -315,21 +315,38 @@ describe("validateVarianceReport", () => {
   // TRO-543 Part 2 (a review finding, triaged): haikuModel/sonnetModel/
   // commitSha/requestedFull used to pass through this validator with no
   // check at all — a caller reading them off the "validated" return value
-  // was trusting the cast, not a real check. These four cases prove the
-  // fix: each field now fails loudly on a missing or wrongly-typed value.
-  it("rejects a missing or empty haikuModel", () => {
+  // was trusting the cast, not a real check. These cases prove the fix:
+  // each field now fails loudly on an absent, empty, or wrongly-typed
+  // value. The absent-key case (destructured out, not merely set to a
+  // falsy value) proves a field genuinely MISSING from a hand-edited or
+  // truncated JSON file is caught the same way — `candidate.haikuModel`
+  // reads as `undefined` either way, but only the destructured case proves
+  // the check does not depend on the key being present at all.
+  it("rejects a missing, empty, or wrongly-typed haikuModel", () => {
+    const { haikuModel: _drop, ...rest } = validVarianceReport();
+    expect(() => validateVarianceReport(rest, "variance-report.json")).toThrow(/haikuModel/);
     expect(() => validateVarianceReport(validVarianceReport({ haikuModel: "" }), "variance-report.json")).toThrow(/haikuModel/);
     expect(() => validateVarianceReport(validVarianceReport({ haikuModel: 7 }), "variance-report.json")).toThrow(/haikuModel/);
   });
 
-  it("rejects a missing or empty sonnetModel", () => {
+  it("rejects a missing, empty, or wrongly-typed sonnetModel", () => {
+    const { sonnetModel: _drop, ...rest } = validVarianceReport();
+    expect(() => validateVarianceReport(rest, "variance-report.json")).toThrow(/sonnetModel/);
     expect(() => validateVarianceReport(validVarianceReport({ sonnetModel: "" }), "variance-report.json")).toThrow(/sonnetModel/);
     expect(() => validateVarianceReport(validVarianceReport({ sonnetModel: null }), "variance-report.json")).toThrow(/sonnetModel/);
   });
 
-  it("rejects a missing or empty commitSha", () => {
+  it("rejects a missing, empty, or wrongly-typed commitSha", () => {
+    const { commitSha: _drop, ...rest } = validVarianceReport();
+    expect(() => validateVarianceReport(rest, "variance-report.json")).toThrow(/commitSha/);
     expect(() => validateVarianceReport(validVarianceReport({ commitSha: "" }), "variance-report.json")).toThrow(/commitSha/);
     expect(() => validateVarianceReport(validVarianceReport({ commitSha: 12345 }), "variance-report.json")).toThrow(/commitSha/);
+  });
+
+  it("rejects a whitespace-only haikuModel, sonnetModel, or commitSha — non-empty means real content, not just a non-zero length", () => {
+    expect(() => validateVarianceReport(validVarianceReport({ haikuModel: "   " }), "variance-report.json")).toThrow(/haikuModel/);
+    expect(() => validateVarianceReport(validVarianceReport({ sonnetModel: "\t\n" }), "variance-report.json")).toThrow(/sonnetModel/);
+    expect(() => validateVarianceReport(validVarianceReport({ commitSha: "  " }), "variance-report.json")).toThrow(/commitSha/);
   });
 
   it("rejects a non-boolean requestedFull", () => {

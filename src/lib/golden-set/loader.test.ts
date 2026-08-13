@@ -663,22 +663,93 @@ describe("validateManifest", () => {
       ).toThrow(GoldenSetValidationError);
     });
   });
+
+  // TRO-529 / LH-024 — the new "photographed" provenance value: a real
+  // camera photograph of a real label, not code and not a model. Its
+  // imagePath convention is DIFFERENT from every other provenance
+  // (assets/golden/references/<original-filename>, not
+  // golden-set/images/<caseId>) — see GoldenSetProvenance's own comment
+  // (types.ts) for why. Red first against the pre-TRO-529 loader: neither
+  // "photographed" (an unrecognized enum member) nor the
+  // assets/golden/references/ path prefix (rejected by the
+  // golden-set/images/-only convention check) validate on that loader.
+  describe("validateManifest — photographed provenance (TRO-529 / LH-024)", () => {
+    const photographedCase = (overrides: Partial<GoldenSetCase> = {}): GoldenSetCase =>
+      validCase({
+        caseId: "case-35-clean-match-real-photo-flat-scan",
+        imagePath: "assets/golden/references/alcohol-warning-label-1200x596-235563604.jpg",
+        provenance: "photographed",
+        verified: false,
+        label: {
+          ...validCase().label,
+          governmentWarningPrefixBold: true,
+          governmentWarningBodyBold: false,
+        },
+        ...overrides,
+      });
+
+    it("accepts a well-formed photographed case whose imagePath lives under assets/golden/references/", () => {
+      const result = validateManifest(manifest([photographedCase()]));
+      expect(result.cases).toHaveLength(1);
+      expect(result.cases[0].provenance).toBe("photographed");
+    });
+
+    it("accepts governmentWarningPrefixBold/BodyBold = \"unknown\" on a photographed case (TRO-527's whole reason for that state)", () => {
+      const result = validateManifest(
+        manifest([
+          photographedCase({
+            label: {
+              ...photographedCase().label,
+              governmentWarningPrefixBold: "unknown",
+              governmentWarningBodyBold: "unknown",
+            },
+          }),
+        ]),
+      );
+      expect(result.cases[0].label.governmentWarningPrefixBold).toBe("unknown");
+      expect(result.cases[0].label.governmentWarningBodyBold).toBe("unknown");
+    });
+
+    it("rejects a photographed case whose imagePath still points at golden-set/images/ (the wrong convention for this provenance)", () => {
+      const broken = manifest([
+        photographedCase({ imagePath: "golden-set/images/case-35-clean-match-real-photo-flat-scan.jpg" }),
+      ]);
+      try {
+        validateManifest(broken);
+        expect.unreachable("validateManifest should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(GoldenSetValidationError);
+        const problems = (err as GoldenSetValidationError).problems;
+        expect(problems.some((p) => p.includes("assets/golden/references/"))).toBe(true);
+      }
+    });
+
+    it("rejects an unrecognized provenance value even when it reads like a plausible new one", () => {
+      const broken = manifest([
+        // @ts-expect-error -- intentionally malformed input for the red-first test
+        photographedCase({ provenance: "photograph" }),
+      ]);
+      expect(() => validateManifest(broken)).toThrow(GoldenSetValidationError);
+    });
+  });
 });
 
 describe("loadGoldenSetManifest", () => {
   it("loads and validates the committed golden-set manifest", () => {
     const result = loadGoldenSetManifest();
 
-    // PRD §6's own ballpark ("~20-30 generated labels"), plus two deliberate,
+    // PRD §6's own ballpark ("~20-30 generated labels"), plus deliberate,
     // cited additions: TRO-515's net-contents format-variant case (case-30,
-    // closing rubric vector V7) and TRO-469 / LH-021's two warning-relevant
+    // closing rubric vector V7); TRO-469 / LH-021's two warning-relevant
     // cases CP-2 §9.2 findings 4/5 (docs/checkpoints/cp2-warning-subsystem.md)
     // identified as missing — the near-miss band (case-32) and the
     // Surgeon/General capitalization positions (case-31), numbered after
-    // case-30 since TRO-515 landed on main first. 32, not 30 — growth, not
-    // drift.
+    // case-30 since TRO-515 landed on main first; and TRO-529 / LH-024's
+    // five hand-transcribed real-photograph cases (case-35 through case-39
+    // — case-33/case-34 stay reserved for LH-023 / TRO-528, a sibling
+    // ticket not yet landed). 36, not 32 — growth, not drift.
     expect(result.cases.length).toBeGreaterThanOrEqual(20);
-    expect(result.cases.length).toBeLessThanOrEqual(32);
+    expect(result.cases.length).toBeLessThanOrEqual(36);
 
     const ids = result.cases.map((c) => c.caseId);
     expect(new Set(ids).size).toBe(ids.length);

@@ -8,6 +8,19 @@
  * read the committed image bytes and never call `degrade.ts`, so they do
  * not by themselves prove a committed image matches its manifest entry — a
  * manifest edit without a `pnpm golden:build` rerun is not caught here.
+ *
+ * `photographed` cases (TRO-529 / LH-024) are real camera photographs, not
+ * this renderer's output — `render.ts`/`build.ts` never touch them
+ * (`scripts/golden/build.ts`'s own module comment). The JPEG-format and
+ * ~500KB checks below assume a `build.ts`-produced file (always mozjpeg,
+ * always tuned to the render pipeline's own size target) and do not apply
+ * to a photograph whose format and size this repo does not control — see
+ * the "golden-set photographed images" describe block for that
+ * provenance's own, differently-scoped checks. This is a provenance-scoped
+ * exemption, stated here and in CHANGES.md, not a blanket skip: existence,
+ * non-emptiness, and a real decodable raster format are still checked for
+ * every `photographed` case, just under bounds that fit a photograph
+ * instead of a render.
  */
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -19,8 +32,15 @@ import { loadGoldenSetManifest } from "../../src/lib/golden-set/loader";
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const manifest = loadGoldenSetManifest();
 
-/** ~500KB per the ticket's "keep the repo sane" target. */
+/** ~500KB per the ticket's "keep the repo sane" target — `build.ts`-produced images only (see module comment above). */
 const MAX_IMAGE_BYTES = 500 * 1024;
+
+/** A generous ceiling for a real, uncompressed-by-us camera photograph
+ * (TRO-529 / LH-024) — not a repo-size target the way `MAX_IMAGE_BYTES` is
+ * for a rendered image, just a backstop against an accidentally-committed,
+ * unreasonably large file. The largest of the five adopted photographs
+ * (`crown-royal-warning-label-closeup.png`) measures ~1.7MB. */
+const MAX_PHOTOGRAPHED_IMAGE_BYTES = 5 * 1024 * 1024;
 
 describe("golden-set committed images", () => {
   it("has a real, non-empty file at imagePath for every rendered/rendered+degraded case", () => {
@@ -57,7 +77,13 @@ describe("golden-set committed images", () => {
   });
 
   it("decodes every committed image as an actual JPEG, not just a file with a .jpg name", async () => {
-    const renderable = manifest.cases.filter((c) => c.provenance !== "ai-generated");
+    // Scoped to non-ai-generated, non-photographed: build.ts always
+    // mozjpeg-encodes a rendered case's output (this test's own point), but
+    // a photographed case's file is a real camera photograph in whatever
+    // format the camera/export produced — see this file's module comment.
+    const renderable = manifest.cases.filter(
+      (c) => c.provenance !== "ai-generated" && c.provenance !== "photographed",
+    );
     for (const c of renderable) {
       const fullPath = join(REPO_ROOT, c.imagePath);
       if (!existsSync(fullPath)) continue; // covered by the existence test above
@@ -70,7 +96,12 @@ describe("golden-set committed images", () => {
   });
 
   it("keeps every committed image well under the ~500KB repo-size target", () => {
-    const renderable = manifest.cases.filter((c) => c.provenance !== "ai-generated");
+    // Scoped to non-ai-generated, non-photographed — see this file's module
+    // comment: the ~500KB target is a render-pipeline tuning choice, not a
+    // property this repo can impose on a real camera photograph.
+    const renderable = manifest.cases.filter(
+      (c) => c.provenance !== "ai-generated" && c.provenance !== "photographed",
+    );
     for (const c of renderable) {
       const fullPath = join(REPO_ROOT, c.imagePath);
       if (!existsSync(fullPath)) continue; // covered by the existence test above
@@ -78,6 +109,58 @@ describe("golden-set committed images", () => {
       expect(bytes, `${c.caseId}: ${bytes} bytes exceeds the ${MAX_IMAGE_BYTES} byte target`).toBeLessThan(
         MAX_IMAGE_BYTES,
       );
+    }
+  });
+});
+
+describe("golden-set photographed images (TRO-529 / LH-024)", () => {
+  function photographedCases() {
+    return manifest.cases.filter((c) => c.provenance === "photographed");
+  }
+
+  it("has exactly the five adopted real-photograph cases, each with a real, non-empty file under assets/golden/references/", () => {
+    const photographed = photographedCases();
+    expect(photographed.length).toBe(5);
+    for (const c of photographed) {
+      expect(c.imagePath.startsWith("assets/golden/references/"), c.caseId).toBe(true);
+      const fullPath = join(REPO_ROOT, c.imagePath);
+      expect(existsSync(fullPath), `${c.caseId}: expected a file at ${c.imagePath}`).toBe(true);
+      expect(statSync(fullPath).size, `${c.caseId}: ${c.imagePath} exists but is empty`).toBeGreaterThan(0);
+    }
+  });
+
+  it("decodes every photographed case as a real raster image (JPEG or PNG), not a renamed non-image file", async () => {
+    for (const c of photographedCases()) {
+      const fullPath = join(REPO_ROOT, c.imagePath);
+      const metadata = await sharp(fullPath).metadata();
+      expect(["jpeg", "png"], `${c.caseId}: expected jpeg or png, got ${metadata.format}`).toContain(
+        metadata.format,
+      );
+    }
+  });
+
+  it("keeps every photographed case under a generous, non-render-pipeline size ceiling", () => {
+    for (const c of photographedCases()) {
+      const fullPath = join(REPO_ROOT, c.imagePath);
+      const bytes = statSync(fullPath).size;
+      expect(
+        bytes,
+        `${c.caseId}: ${bytes} bytes exceeds the ${MAX_PHOTOGRAPHED_IMAGE_BYTES} byte backstop`,
+      ).toBeLessThan(MAX_PHOTOGRAPHED_IMAGE_BYTES);
+    }
+  });
+
+  it("keeps every photographed case verified: false — only Troy sets that flag (ticket instruction)", () => {
+    for (const c of photographedCases()) {
+      expect(c.verified, c.caseId).toBe(false);
+    }
+  });
+
+  it("records governmentWarningPrefixBold/BodyBold as exactly true, false, or \"unknown\" — never a bare guess or any other string", () => {
+    const allowed = [true, false, "unknown"];
+    for (const c of photographedCases()) {
+      expect(allowed, c.caseId).toContain(c.label.governmentWarningPrefixBold);
+      expect(allowed, c.caseId).toContain(c.label.governmentWarningBodyBold);
     }
   });
 });

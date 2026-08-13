@@ -490,6 +490,69 @@ describe("verifyGoldenSet — rendered+ai-backdrop cases", () => {
   });
 });
 
+// TRO-529 / LH-024 — the new "photographed" provenance and its own
+// imagePath convention (assets/golden/references/<original-filename>, not
+// golden-set/images/<caseId>).
+describe("verifyGoldenSet — photographed cases (TRO-529 / LH-024)", () => {
+  function photographedCase(overrides: Partial<GoldenSetCase> = {}): GoldenSetCase {
+    return baseCase({
+      caseId: "case-photo-1",
+      provenance: "photographed",
+      imagePath: "assets/golden/references/case-photo-1-original-name.jpg",
+      label: {
+        ...baseCase().label,
+        governmentWarningPrefixBold: "unknown",
+        governmentWarningBodyBold: "unknown",
+      },
+      ...overrides,
+    });
+  }
+
+  it("passes when a photographed case's imagePath resolves inside assets/golden/references/", () => {
+    const dir = makeTempDir();
+    const referencesDir = join(dir, "assets/golden/references");
+    mkdirSync(referencesDir, { recursive: true });
+    writeFileSync(join(referencesDir, "case-photo-1-original-name.jpg"), Buffer.from("fake-photo-bytes"));
+    writeFixture(dir, [...validManifestCases(), photographedCase()]);
+
+    const report = verifyGoldenSet({ repoRoot: dir, knownVectorGaps: new Set(["V7"]) });
+
+    expect(report.problems).toEqual([]);
+    expect(report.ok).toBe(true);
+  });
+
+  it("fails when a photographed case's imagePath escapes assets/golden/references/ via path traversal", () => {
+    // A plain wrong prefix (e.g. "golden-set/images/...") is already caught
+    // earlier, at manifest-schema validation (loader.ts's checkCase's own
+    // string-prefix check) — verifyGoldenSet never reaches its own checks
+    // in that case (verify.ts's own step 1: a schema failure short-
+    // circuits). This check exists for what a STRING-prefix test cannot
+    // catch: a value that starts with the right prefix as text but
+    // resolves outside it once "../" segments collapse — the same
+    // reasoning build.ts's resolveImagePath already applies to
+    // golden-set/images/.
+    const dir = makeTempDir();
+    // "assets/golden/references/../../outside-references/evil.jpg" pops
+    // just "references" and "golden" (two ".." for two popped segments),
+    // landing at assets/outside-references/evil.jpg — still outside
+    // assets/golden/references/, which is all this test needs.
+    const outsideDir = join(dir, "assets/outside-references");
+    mkdirSync(outsideDir, { recursive: true });
+    writeFileSync(join(outsideDir, "evil.jpg"), Buffer.from("fake-photo-bytes"));
+    writeFixture(dir, [
+      ...validManifestCases(),
+      photographedCase({ imagePath: "assets/golden/references/../../outside-references/evil.jpg" }),
+    ]);
+
+    const report = verifyGoldenSet({ repoRoot: dir, knownVectorGaps: new Set(["V7"]) });
+
+    expect(report.ok).toBe(false);
+    expect(
+      report.problems.some((p) => p.check === "photographed-image-location" && p.caseId === "case-photo-1"),
+    ).toBe(true);
+  });
+});
+
 describe("verifyGoldenSet — the real committed golden set", () => {
   it("passes with zero problems and reports zero known gaps (V7 closed by TRO-515)", () => {
     // No repoRoot override: checks the actual golden-set/manifest.json and

@@ -143,4 +143,8 @@ describe("parseArtifactGuardArgs", () => {
   it("rejects --out passed more than once", () => {
     expect(() => parseArtifactGuardArgs(["--out=a.json", "--out=b.json"])).toThrow(/--out may be passed at most once/);
   });
+
+  it("rejects --out= with no path, instead of silently falling back to the default", () => {
+    expect(() => parseArtifactGuardArgs(["--out="])).toThrow(/--out requires a non-empty path/);
+  });
 });

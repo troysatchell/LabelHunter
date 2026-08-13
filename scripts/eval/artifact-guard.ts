@@ -44,7 +44,7 @@ export interface ArtifactGuardArgs {
   readonly force: boolean;
 }
 
-const OUT_FLAG = /^--out=(.+)$/;
+const OUT_FLAG = /^--out=(.*)$/;
 const FORCE_FLAG = "--force";
 
 /**
@@ -63,17 +63,27 @@ export function parseArtifactGuardArgs(argv: readonly string[]): { guard: Artifa
   const force = argv.includes(FORCE_FLAG);
   const rest = argv.filter((a) => a !== FORCE_FLAG && !OUT_FLAG.test(a));
   const out = outMatches.length === 1 ? OUT_FLAG.exec(outMatches[0])![1] : null;
+  if (out === "") {
+    throw new Error("artifact-guard: --out requires a non-empty path, e.g. --out=scratch/compare.json.");
+  }
   return { guard: { out, force }, rest };
+}
+
+function refusalError(target: string): Error {
+  return new Error(
+    `artifact-guard: refusing to overwrite existing file at "${target}". Pass --force to overwrite it ` +
+      `deliberately, or --out=<path> to write a separate copy without touching the committed one.`,
+  );
 }
 
 /**
  * Resolves the path a guarded write will actually target: `guard.out`
  * (resolved against `repoRoot` when relative) if the caller passed
  * `--out=<path>`, otherwise `defaultPath`. Throws when a file already
- * exists at that resolved path and `guard.force` is not set — the TRO-559
- * fix itself. Split out from the actual `writeFileSync` (in
- * `writeGuardedJsonArtifact` below) so a test can assert the refusal
- * without needing to clean up a real write.
+ * exists at that resolved path and `guard.force` is not set — a fast,
+ * friendly pre-check. The actual guarantee against clobbering is enforced
+ * atomically in `writeGuardedJsonArtifact` below, which closes the race
+ * window between this check and the real write.
  *
  * The error message always names both escape hatches — never a silent
  * failure.
@@ -81,10 +91,7 @@ export function parseArtifactGuardArgs(argv: readonly string[]): { guard: Artifa
 export function resolveGuardedOutputPath(params: { repoRoot: string; defaultPath: string; guard: ArtifactGuardArgs }): string {
   const target = params.guard.out !== null ? path.resolve(params.repoRoot, params.guard.out) : params.defaultPath;
   if (existsSync(target) && !params.guard.force) {
-    throw new Error(
-      `artifact-guard: refusing to overwrite existing file at "${target}". Pass --force to overwrite it ` +
-        `deliberately, or --out=<path> to write a separate copy without touching the committed one.`,
-    );
+    throw refusalError(target);
   }
   return target;
 }
@@ -104,6 +111,21 @@ export function writeGuardedJsonArtifact(params: {
 }): string {
   const target = resolveGuardedOutputPath({ repoRoot: params.repoRoot, defaultPath: params.defaultPath, guard: params.guard });
   mkdirSync(path.dirname(target), { recursive: true });
-  writeFileSync(target, JSON.stringify(params.content, null, 2) + "\n");
+  const payload = JSON.stringify(params.content, null, 2) + "\n";
+  if (params.guard.force) {
+    writeFileSync(target, payload);
+    return target;
+  }
+  // "wx" creates the file exclusively and fails on EEXIST, so a file created
+  // between the existsSync check above and this write still cannot be
+  // clobbered — the actual guarantee lives here, not in the check above.
+  try {
+    writeFileSync(target, payload, { flag: "wx" });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EEXIST") {
+      throw refusalError(target);
+    }
+    throw err;
+  }
   return target;
 }

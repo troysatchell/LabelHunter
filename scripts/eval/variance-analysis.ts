@@ -326,12 +326,11 @@ export interface VarianceReport {
   readonly sonnetModel: string;
   readonly manifestVersion: string;
   /**
-   * SHA-256 of `golden-set/manifest.json`'s raw bytes, once TRO-538 /
-   * LH-033's `scripts/eval/manifest-hash.ts` lands on `main`. `null` until
-   * then — that module does not exist on this branch yet (LH-038's own
-   * brief says so explicitly). TODO(TRO-538 / LH-033): once it lands, wire
-   * `hashManifestFile(DEFAULT_MANIFEST_PATH)` into `variance.ts` and drop
-   * this comment. An absent hash is never a reason to block or fail this
+   * SHA-256 of `golden-set/manifest.json`'s raw bytes. `variance.ts`
+   * writes it via `hashManifestFile(DEFAULT_MANIFEST_PATH)`
+   * (`scripts/eval/manifest-hash.ts`), the same call `check.ts` makes.
+   * Stays nullable: an older report written before the hash landed is
+   * still valid. An absent hash is never a reason to block or fail this
    * report — it means one less staleness check available on a future
    * baseline-style comparison, not a defect in this run.
    */

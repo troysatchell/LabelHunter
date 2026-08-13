@@ -100,7 +100,8 @@ spends real money at N x K scale.
 
 **Rollback.** `git revert` this ticket's commits. No schema change. No committed data file. No
 `docs/approach.md` entry exists yet to revert. `package.json`'s new `eval:variance` script and
-the two new `scripts/eval/variance*.ts` files disappear with the revert.
+the three new `scripts/eval/variance*.ts` files disappear with the revert. The revert also
+undoes this ticket's edits to `args.ts`, `report-validation.ts`, and their tests.
 
 **Not done here, on purpose.**
 - No fix for the variance. CP-1 already names it as a property of the model, not a defect this

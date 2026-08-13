@@ -244,6 +244,12 @@ export function validateVarianceReport(parsed: unknown, filePath: string): Varia
   const candidate = parsed as Record<string, unknown>;
   const problems: string[] = [];
   if (typeof candidate.measuredAt !== "string") problems.push('"measuredAt" must be a string');
+  // string OR null — VarianceReport allows a hash-less report by design
+  // (an absent hash is one less staleness check, not a defect), unlike
+  // EvalReport's required string above.
+  if (candidate.manifestContentHash !== null && typeof candidate.manifestContentHash !== "string") {
+    problems.push('"manifestContentHash" must be a string or null');
+  }
   if (typeof candidate.repeats !== "number" || !Number.isSafeInteger(candidate.repeats) || candidate.repeats < 1) {
     problems.push('"repeats" must be a positive integer');
   }

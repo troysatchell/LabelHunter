@@ -306,6 +306,12 @@ describe("validateVarianceReport", () => {
     expect(() => validateVarianceReport(validVarianceReport({ totalCostUsd: "0.19" }), "variance-report.json")).toThrow(/totalCostUsd/);
   });
 
+  it("accepts manifestContentHash as a string or as null, and rejects any other type", () => {
+    expect(() => validateVarianceReport(validVarianceReport({ manifestContentHash: null }), "variance-report.json")).not.toThrow();
+    expect(() => validateVarianceReport(validVarianceReport({ manifestContentHash: "abc123" }), "variance-report.json")).not.toThrow();
+    expect(() => validateVarianceReport(validVarianceReport({ manifestContentHash: 7 }), "variance-report.json")).toThrow(/manifestContentHash/);
+  });
+
   it("collects multiple problems in one error rather than stopping at the first", () => {
     try {
       validateVarianceReport({}, "variance-report.json");

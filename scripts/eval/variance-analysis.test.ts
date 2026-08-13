@@ -411,8 +411,11 @@ describe("buildVarianceReport", () => {
     const report = buildVarianceReport({ ...baseInput, caseIds: ["case-17"], repeats: 1, runs, failures: [] });
     const c17 = report.summary.accuracySpread.perRun[0];
     expect(c17.labelVerdictAccuracy).toEqual({ total: 1, correct: 1, rate: 1 });
-    const reason: ReviewReason | null = runs[0].cascadeVerdict.actualReviewReason;
-    expect(reason).toBe("AMBIGUOUS_BRAND");
+    // Assert on the REPORT's own perCase output, not the input fixture —
+    // asserting `runs[0]`'s field back at itself proves nothing about
+    // buildVarianceReport (review finding, orchestrator pass).
+    const stability = report.summary.perCase.find((c) => c.caseId === "case-17");
+    expect(stability?.headlineReasons).toEqual(["AMBIGUOUS_BRAND"]);
   });
 
   it("sorts caseIds with the same plain comparator computeCorpusStability's perCase uses -- both orderings agree", () => {

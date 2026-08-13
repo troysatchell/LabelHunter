@@ -58,6 +58,55 @@ here. The number is not adjusted toward the plan's prediction; it is what was me
 Each site was read by hand. Every one is a real return-value decision over a collection
 whose non-emptiness the code never proves inline. None looked like a false positive.
 
+**Round 2 review fix — a quantifier's result assigned to a local variable is now traced
+one hop.** Replay calibration against a historical review finding (TRO-464,
+`factory/replay/vacuous-empty-quantifier.v1.json`) found a real miss: `deriveOutcome`'s
+`.every()` in `response.ts` assigns its ternary result to `const outcome`, then returns it
+as `return { outcome, fields }`. `reachesDecisionSink` only climbed the call's own AST
+ancestry. It never followed a value through a variable. `const ok = xs.every(p); return
+ok;` went unflagged, even though `return xs.every(p);` already was — the same decision,
+spelled two ways.
+
+The fix, bounded to one hop: when a quantifier's result (directly, or through a
+pass-through ternary) is the initializer of a `const`/`let` with a plain identifier name,
+the rule now looks in the same function for a later read of that variable. A read counts
+only when it is a direct decision use: the whole expression of a `return`, the whole test
+of an `if`, the whole value of a property assignment — explicit `{ x: v }` or shorthand
+`{ v }`, two different TypeScript node kinds, both covered — or a bare-statement ternary
+condition. `text.length` is not a direct use of `text`: a derived value is not the same
+decision as the value itself, so a display-only assignment still passes. A variable never
+read again decides nothing, so it is never a sink. The hop does not chain: a read that
+itself only feeds a second variable is not followed further. 4 new tests, 11 total, all
+pass.
+
+**Re-measured backlog: 12, up from 7.** All 5 new sites were read by hand:
+
+- `scripts/eval/benchmark.ts:327`, `:328`, and `scripts/eval/check.ts:178` —
+  `.reduce(fn, 0)` with an explicit initial value. Not genuine: a seeded `.reduce()`
+  returns the seed on an empty array, the correct sum of nothing, not a vacuous wrong
+  answer. The rule does not yet distinguish seeded from unseeded `.reduce()` — a
+  pre-existing gap, invisible until the variable hop could reach these sites' property
+  assignments.
+- `scripts/factory/defect-gates/rules/vacuous-empty-quantifier.ts:58` — the rule's own
+  `.some()` inside its own length-guard detector. Not genuine: on an empty `Block`,
+  `.some()` correctly returns `false` ("no exit statement found"), the right answer, not a
+  vacuous one.
+- `src/server/batch/pairing.ts:70` — `.some()` inside an `else if (imagesForKey.length >
+  1)` branch. Not genuine: the enclosing branch condition already proves `imagesForKey`
+  has more than one element. `isProvablyNonEmpty` recognizes a preceding early-exit guard,
+  not an enclosing branch condition — a second pre-existing gap, also newly visible only
+  through the variable hop.
+
+None of the 5 new sites is a genuine defect, and none breaks the fix's own bound — one
+hop, `const`/`let` only, same function, read afterward, no chaining. Each traces to a
+separate, already-existing gap elsewhere in the rule, exposed only now that the variable
+hop can see past a local assignment. Recorded as measured; not fixed this round.
+
+**Replay recall: 1.0 (2/2), up from 0.5.** Both `TRO-464` corpus rows (`response.ts`,
+`queue.ts`) now hit. The corpus is still 2 rows, so this recall is corroboration, not a
+statistically meaningful result on its own — see `factory/replay/
+vacuous-empty-quantifier.v1.json` and the task-6 report for the full analysis.
+
 **How to run it.**
 ```bash
 source .factory-env && pnpm test -- scripts/factory/defect-gates/rules/vacuous-empty-quantifier.test.ts

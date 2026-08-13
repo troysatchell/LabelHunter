@@ -62,6 +62,63 @@ function isProvablyNonEmpty(receiver: ts.Expression, sourceFile: ts.SourceFile):
 }
 
 /**
+ * True when a node's own value is read directly at a decision point.
+ *
+ * Checked shapes: the whole expression of a return, the whole test of an
+ * if, the whole value of a property assignment (`{ outcome: x }` or the
+ * shorthand `{ outcome }` — the same sink, two spellings TypeScript parses
+ * as different node kinds), or a bare-statement ternary's condition. This
+ * is deliberately shallow — one level up, with no further climbing through
+ * a transforming expression. `return t;` is a direct use of `t`.
+ * `return t.length;` is not a direct use of `t`, even though the number it
+ * returns is derived from `t` — a derived value is not the same decision
+ * as the value itself.
+ */
+function isDirectSinkUse(node: ts.Node): boolean {
+  const parent = node.parent;
+  if (!parent) return false;
+  if (ts.isReturnStatement(parent) && parent.expression === node) return true;
+  if (ts.isIfStatement(parent) && parent.expression === node) return true;
+  if (ts.isPropertyAssignment(parent) && parent.initializer === node) return true;
+  if (ts.isShorthandPropertyAssignment(parent) && parent.name === node) return true;
+  if (ts.isConditionalExpression(parent) && parent.condition === node) {
+    return parent.parent !== undefined && ts.isExpressionStatement(parent.parent);
+  }
+  return false;
+}
+
+/**
+ * True when a quantifier's result, assigned to a local variable, is later
+ * read as a direct decision value — one hop through that one variable.
+ *
+ * Bounded on purpose, per review: only a `const`/`let` with a plain
+ * identifier name (no destructuring, no `var`), only inside the function
+ * that declares it, and only one hop. A read that itself only feeds a
+ * second variable is not followed further — that would need a second hop.
+ * A variable declared but never read again decides nothing, so a
+ * zero-read variable is not a sink.
+ */
+function reachesSinkThroughVariable(declaration: ts.VariableDeclaration, sourceFile: ts.SourceFile): boolean {
+  if (!ts.isIdentifier(declaration.name)) return false;
+  if (!(ts.getCombinedNodeFlags(declaration) & ts.NodeFlags.BlockScoped)) return false;
+
+  let fn: ts.Node | undefined = declaration.parent;
+  while (fn && !ts.isFunctionLike(fn)) fn = fn.parent;
+  if (!fn || !("body" in fn) || !fn.body) return false;
+
+  const name = declaration.name.text;
+  const declarationEnd = declaration.getEnd();
+  let hit = false;
+  walk(fn.body as ts.Node, (n) => {
+    if (hit) return;
+    if (!ts.isIdentifier(n) || n === declaration.name || n.text !== name) return;
+    if (n.getStart(sourceFile) <= declarationEnd) return; // only a later read
+    if (isDirectSinkUse(n)) hit = true;
+  });
+  return hit;
+}
+
+/**
  * True when the call's result drives a program decision.
  *
  * A ternary used as a bare statement decides by side effect, not by value —
@@ -71,8 +128,11 @@ function isProvablyNonEmpty(receiver: ts.Expression, sourceFile: ts.SourceFile):
  * looking. This stops a display-only ternary (its value only builds a
  * string) from counting as a decision, while a ternary that feeds a
  * return, an outer ternary condition, or a property assignment still does.
+ *
+ * A result assigned to a local variable is also traced, one hop, through
+ * `reachesSinkThroughVariable` — see that function for the exact bounds.
  */
-function reachesDecisionSink(call: ts.CallExpression): boolean {
+function reachesDecisionSink(call: ts.CallExpression, sourceFile: ts.SourceFile): boolean {
   let current: ts.Node | undefined = call;
   let child: ts.Node = call;
   while (current?.parent) {
@@ -88,6 +148,9 @@ function reachesDecisionSink(call: ts.CallExpression): boolean {
       continue;
     }
     if (ts.isPropertyAssignment(current)) return true;
+    if (ts.isVariableDeclaration(current) && current.initializer === child) {
+      return reachesSinkThroughVariable(current, sourceFile);
+    }
     if (ts.isFunctionLike(current)) return false;
   }
   return false;
@@ -105,7 +168,7 @@ function checkSource(filePath: string, text: string, _ctx: RuleContext): Finding
 
     const receiver = node.expression.expression;
     if (isProvablyNonEmpty(receiver, sourceFile)) return;
-    if (!reachesDecisionSink(node)) return;
+    if (!reachesDecisionSink(node, sourceFile)) return;
 
     const fnName = enclosingFunctionName(node);
     findings.push({

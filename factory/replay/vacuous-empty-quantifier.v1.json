@@ -5,14 +5,14 @@
     "total": 2,
     "resolvable": 2,
     "unresolvable": 0,
-    "hits": 1,
-    "recall": 0.5
+    "hits": 2,
+    "recall": 1
   },
   "outcomes": [
     {
       "ticket": "TRO-464",
       "resolved": true,
-      "hit": false
+      "hit": true
     },
     {
       "ticket": "TRO-464",

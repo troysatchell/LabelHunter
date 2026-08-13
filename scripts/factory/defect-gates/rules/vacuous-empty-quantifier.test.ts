@@ -74,4 +74,51 @@ describe("vacuous-empty-quantifier", () => {
     expect(findings).toHaveLength(2);
     expect(findings[0].identity).not.toBe(findings[1].identity);
   });
+
+  it("flags a quantifier's result assigned to a variable, then returned", () => {
+    const findings = check(`
+      function gate(xs: X[]) {
+        const ok = xs.every(p);
+        return ok;
+      }
+    `);
+    expect(findings).toHaveLength(1);
+  });
+
+  it("does not flag a quantifier's result assigned to a variable used only for display", () => {
+    // Same case as "does not flag a quantifier used only for display" above,
+    // restated directly against the one-hop variable read: text.length
+    // derives from text, but is not a direct read of text itself.
+    const findings = check(`
+      function label(items: I[]) {
+        const text = items.every(done) ? "all done" : "in progress";
+        return text.length;
+      }
+    `);
+    expect(findings).toEqual([]);
+  });
+
+  it("flags a quantifier's result assigned to a variable, then returned via object shorthand", () => {
+    // TRO-464 / response.ts's real historical shape: `return { outcome, fields };`.
+    // Shorthand is a ShorthandPropertyAssignment node, a different AST kind
+    // than the explicit `{ outcome: outcome }` PropertyAssignment, but the
+    // same sink — a property assignment, not a transforming expression.
+    const findings = check(`
+      function deriveOutcome(fields: F[]) {
+        const outcome = fields.every(p) ? "resolved" : "needs-human";
+        return { outcome, fields };
+      }
+    `);
+    expect(findings).toHaveLength(1);
+  });
+
+  it("does not flag a quantifier's result assigned to a variable that is never read again", () => {
+    const findings = check(`
+      function gate(xs: X[]) {
+        const unused = xs.every(p);
+        return 42;
+      }
+    `);
+    expect(findings).toEqual([]);
+  });
 });

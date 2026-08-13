@@ -503,8 +503,17 @@ export const reviewQueue = pgTable(
     index("review_queue_reason_idx").on(table.reason),
     // The review-queue UI's default view is "what's still unresolved" —
     // a partial index keeps that scan cheap as the table grows.
+    //
+    // Both keys, `createdAt` then `id`, since migration 0007 (TRO-507).
+    // The list query's keyset page boundary is a row comparison on the
+    // PAIR, `(created_at, id) > (cursor_created_at, cursor_id)`, and its
+    // `ORDER BY` uses the same pair. A `createdAt`-only index served the
+    // pair with the leading column alone, and Postgres re-checked the
+    // whole comparison as a filter and then sorted (measured, see
+    // `../../server/review-queue/list.ts`). Both keys let the index answer
+    // the boundary and the order together.
     index("review_queue_unresolved_idx")
-      .on(table.createdAt)
+      .on(table.createdAt, table.id)
       .where(sql`${table.disposition} IS NULL`),
     // TRO-511's own claim query's WHERE clause, almost verbatim — mirrors
     // `batch_queue_items_claim_idx`'s reasoning (CP-3 §2.2): keeps the scan

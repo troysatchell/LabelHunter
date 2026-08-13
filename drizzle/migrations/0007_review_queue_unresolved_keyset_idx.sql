@@ -1,0 +1,25 @@
+-- TRO-507 keyset paging: give `review_queue_unresolved_idx` both sort keys.
+-- The list query compares the pair `(created_at, id)` and orders by the same
+-- pair. A `created_at`-only index served the pair with its leading column
+-- alone. `src/server/review-queue/list.ts` carries the measured plans.
+--
+-- Lock posture, and why this migration does not expand-and-backfill.
+-- Both statements below take an ACCESS EXCLUSIVE lock on `review_queue`.
+-- Migration 0006's type change takes the same lock. Render runs
+-- `pnpm db:migrate` as a pre-deploy step, while the previous version still
+-- serves traffic, so the lock blocks live reads of this table while it is
+-- held.
+--
+-- Measured on this worktree's Postgres at localhost:5434, on the real
+-- `review_queue` table seeded to 20,000 unresolved rows: DROP INDEX 3.03 ms,
+-- CREATE INDEX 18.01 ms, and 0006's `SET DATA TYPE timestamp (3)` 139.94 ms.
+-- A separate probe table gave 601.70 ms for the same type change at 100,000
+-- rows. This project has no production traffic figure, so the row count it
+-- would reach is not measured. An expand-and-backfill migration removes the
+-- lock, and costs a second column, a backfill, and two more deploys. That
+-- price buys nothing at a table this size. Derived, not measured: the same
+-- statements scale roughly with row count, so a table near one million rows
+-- would hold the lock for seconds, and that is where expand-and-backfill
+-- starts to pay.
+DROP INDEX "review_queue_unresolved_idx";--> statement-breakpoint
+CREATE INDEX "review_queue_unresolved_idx" ON "review_queue" USING btree ("created_at","id") WHERE "review_queue"."disposition" IS NULL;

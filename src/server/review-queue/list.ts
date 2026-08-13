@@ -22,18 +22,32 @@ import type { ReviewQueueListItem, ReviewQueueListPage, ReviewQueueResolverStatu
  * normal operation, so there is no anomaly here to defend against.
  *
  * The `WHERE` clause matches `review_queue_unresolved_idx` (`schema.ts`) —
- * a partial index on `createdAt` `WHERE disposition IS NULL` — by design,
- * not by accident. Observed via `EXPLAIN` against this worktree's database
- * (empty table, so a measurement of the filter path only, not a load test):
- * Postgres picks a `Bitmap Index Scan` on this index for the `disposition
- * IS NULL` filter, then a separate `Sort` node for `ORDER BY createdAt` —
- * a bitmap scan does not return rows in index order, so the sort step is
- * real at this table size. Whether a larger table's planner instead
- * chooses a plain ordered `Index Scan` that serves both the filter and the
- * order in one pass is not measured here — this module does not fabricate
- * that number. TRO-507's keyset predicate below keeps the same shape: it
- * compares the same `(createdAt, id)` pair the `ORDER BY` already uses, so
- * the leading column the index is built on still leads.
+ * a partial index on `(createdAt, id)` `WHERE disposition IS NULL` — by
+ * design, not by accident. The index carries BOTH keys since migration
+ * 0007 (CodeRabbit finding, local review round 6). It carried `createdAt`
+ * alone before that, which the keyset predicate below could use only as a
+ * leading column.
+ *
+ * Measured with `EXPLAIN (ANALYZE, BUFFERS)` on this worktree's Postgres,
+ * against the real `review_queue` table seeded to 20,000 unresolved rows.
+ * Two cases, because the two indexes differ only in one of them:
+ *
+ * 1. Rows with distinct `createdAt` values, cursor in the middle. The
+ *    `createdAt`-only index gave `Index Cond: (created_at >= …)`, then
+ *    re-checked `ROW(created_at, id) > ROW(…)` as a `Filter`, then ran an
+ *    `Incremental Sort`. The two-key index makes the row comparison itself
+ *    the `Index Cond` and drops the sort node. Warm execution time over
+ *    three runs each: 0.170–0.230 ms before, 0.157–0.260 ms after. The
+ *    ranges overlap. At this size the plan improved and the clock did not.
+ * 2. All 20,000 rows sharing one `createdAt` — one batch filing many
+ *    escalations inside one millisecond. The `createdAt`-only index no
+ *    longer helped at all: the planner chose a `Seq Scan`, reported `Rows
+ *    Removed by Filter: 10001`, and added a top-N heapsort. Two runs:
+ *    10.77 ms and 10.84 ms. The two-key index seeks straight to the cursor
+ *    position: 0.188 ms and 0.190 ms, no filter, no sort.
+ *
+ * Case 2 is why the second key is worth a migration. Not measured: this
+ * table's real production row count, which this project has never run at.
  *
  * `LIMIT` (CodeRabbit local review round 1): an unbounded read of every
  * unresolved item does not scale as the queue grows. A second `ORDER BY`

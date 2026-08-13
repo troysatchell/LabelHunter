@@ -50,6 +50,14 @@ diff` output, not just hand-built diff text.
 behavior on any one run, with no code change. To remove the feature entirely, revert this
 commit — `review-capture.ts`'s public surface only grew; nothing existing changed shape.
 
+**Proven live, on this ticket's own gate run.** The first `gate.sh` run on this branch ran a
+genuine full review — the cap never touches a branch's first review; see the triage section
+below for its findings. A later run, after a real code fix, reported `review completed with
+no findings (scoped since bb2ebce)`: CodeRabbit reviewed only the diff since the last real
+capture, not the whole branch again. A same-SHA re-run of `review-capture.ts` alone (no new
+commit) returned `carried-forward from 783d41a — no changes since that review` in 0.34
+seconds, invoking CodeRabbit zero times.
+
 ## TRO-532 — LH-025 · Stroke-width bold advisory check (2026-08-13)
 
 Advances TH-R9. CP-2 §7.2 named a technique for bold detection and did not try it: binarize

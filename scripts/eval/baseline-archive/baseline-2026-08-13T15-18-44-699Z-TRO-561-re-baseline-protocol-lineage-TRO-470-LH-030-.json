@@ -1,57 +1,57 @@
 {
   "ticket": "TRO-561 (re-baseline protocol; lineage: TRO-470 / LH-030)",
-  "establishedAt": "2026-08-13T22:40:24.815Z",
+  "establishedAt": "2026-08-13T15:18:44.699Z",
   "k": 3,
   "repeats": [
     {
       "repeatIndex": 1,
       "extractionAccuracy": {
-        "total": 185,
-        "correct": 162,
-        "rate": 0.8756756756756757
+        "total": 180,
+        "correct": 157,
+        "rate": 0.8722222222222222
       },
       "cascadeVerdictAccuracy": {
-        "total": 37,
-        "correct": 30,
-        "rate": 0.8108108108108109
+        "total": 36,
+        "correct": 29,
+        "rate": 0.8055555555555556
       }
     },
     {
       "repeatIndex": 2,
       "extractionAccuracy": {
-        "total": 185,
-        "correct": 162,
-        "rate": 0.8756756756756757
+        "total": 180,
+        "correct": 157,
+        "rate": 0.8722222222222222
       },
       "cascadeVerdictAccuracy": {
-        "total": 37,
+        "total": 36,
         "correct": 30,
-        "rate": 0.8108108108108109
+        "rate": 0.8333333333333334
       }
     },
     {
       "repeatIndex": 3,
       "extractionAccuracy": {
-        "total": 185,
-        "correct": 162,
-        "rate": 0.8756756756756757
+        "total": 180,
+        "correct": 158,
+        "rate": 0.8777777777777778
       },
       "cascadeVerdictAccuracy": {
-        "total": 37,
-        "correct": 31,
-        "rate": 0.8378378378378378
+        "total": 36,
+        "correct": 30,
+        "rate": 0.8333333333333334
       }
     }
   ],
   "extractionAccuracyBand": {
-    "min": 0.8756756756756757,
-    "max": 0.8756756756756757,
-    "spread": 0
+    "min": 0.8722222222222222,
+    "max": 0.8777777777777778,
+    "spread": 0.005555555555555536
   },
   "cascadeVerdictAccuracyBand": {
-    "min": 0.8108108108108109,
-    "max": 0.8378378378378378,
-    "spread": 0.027027027027026973
+    "min": 0.8055555555555556,
+    "max": 0.8333333333333334,
+    "spread": 0.02777777777777779
   },
   "perCaseVerdictSets": {
     "case-01-clean-match-spirits": [
@@ -148,9 +148,6 @@
     "case-32-reworded-warning-near-miss-missing-comma": [
       "REVIEW"
     ],
-    "case-33-not-bold-warning-prefix": [
-      "PASS"
-    ],
     "case-35-clean-match-real-photo-flat-scan": [
       "REVIEW"
     ],
@@ -168,8 +165,8 @@
     ]
   },
   "manifestVersion": "1.0.0",
-  "manifestContentHash": "7b1c3bb1326077be2b4b7471d4539a4e1a34e84ce50a9111e061df6fd79ff49e",
-  "goldenSetCommitSha": "9787ff95c2f8975e96048d0e47c1de68d252db0d",
+  "manifestContentHash": "fa3dbcfb60a6ecbd6c2de4ec837c54c72b87e909865ee9429946ac79cc5e0784",
+  "goldenSetCommitSha": "0e6e3e1432f63609ad49febf5445fb866cadaf91",
   "caseIds": [
     "case-01-clean-match-spirits",
     "case-02-clean-match-beer-no-abv",
@@ -202,7 +199,6 @@
     "case-30-clean-match-net-contents-alt-format",
     "case-31-title-case-warning-surgeon-general-lowercase",
     "case-32-reworded-warning-near-miss-missing-comma",
-    "case-33-not-bold-warning-prefix",
     "case-35-clean-match-real-photo-flat-scan",
     "case-36-rotation-real-photo-gentle-curve",
     "case-37-rotation-real-photo-severe-curve-partial-crop",
@@ -211,10 +207,10 @@
   ],
   "haikuModel": "claude-haiku-4-5",
   "sonnetModel": "claude-sonnet-5",
-  "codeCommitSha": "267a62fa8ceab433a40796af249dd526744783d3",
+  "codeCommitSha": "e4ac31e30803d20e35e40215886e259f70fa36a5",
   "costUsd": {
-    "totalUsd": 1.192079,
-    "meanHaikuCallUsd": 0.0046733423423423424,
-    "meanSonnetCallUsd": 0.013202705882352941
+    "totalUsd": 1.203565,
+    "meanHaikuCallUsd": 0.004674416666666666,
+    "meanSonnetCallUsd": 0.013974560000000004
   }
 }

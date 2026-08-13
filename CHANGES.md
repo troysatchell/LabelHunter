@@ -38,6 +38,27 @@ All review-queue server tests pass. All component tests pass. `pnpm typecheck` i
 review-queue e2e spec now asserts the image is visible on the real RSC page against a live
 database — the same assertion `verify.spec.ts` makes on the verification-detail page.
 
+## TRO-579 — case-33 (not-bold ground truth) + the re-baseline it owes (2026-08-13)
+
+**Landed as its own ticket, not TRO-532.** The case-33 addition and its variance-sweep
+consequence below happened after PR #83 (TRO-532) already merged — Troy asked the TRO-532
+agent directly to add the case while reviewing its progress live. Since #83 was closed by the
+time this work was ready, it could not join that PR. TRO-579 carries it instead; the prose
+below is unchanged from the agent's own original entry except this note and the "Confirmed"
+section, which now reports the sweep's real, measured result instead of stating it as owed.
+
+**The re-baseline, run and confirmed.** `pnpm eval:variance -- --live --full --repeats=3
+--establish-baseline`, 37 cases × 3 repeats, **$1.1921 measured** (Troy's authorization,
+2026-08-13, given directly to the orchestrator). 0 script-level failures. Corpus stability
+97.3% (36 of 37 cases returned the same verdict every repeat). Cascade-verdict accuracy band
+81.1%-83.8%. `case-33-not-bold-warning-prefix` itself: PASS/MATCH, stable across all 3 repeats
+— the new case behaves exactly as its `expected` field says, on every run. New baseline
+committed with full provenance: manifest hash `7b1c3bb1...`, golden-set commit `9787ff9`, code
+commit `267a62f`. The superseded baseline is archived, never deleted
+(`scripts/eval/baseline-archive/`). `variance-report-artifact.test.ts` — the test this
+addition broke — now passes: confirmed directly, `pnpm vitest run
+scripts/eval/variance-report-artifact.test.ts`, 2/2.
+
 ## TRO-532 — LH-025 · Stroke-width bold advisory check (2026-08-13)
 
 Advances TH-R9. CP-2 §7.2 named a technique for bold detection and did not try it: binarize
@@ -127,11 +148,12 @@ live `pnpm eval:variance -- --live --full --repeats=3` sweep — real API cost (
 this corpus size, extrapolated from the $0.3961 single-pass full-corpus figure TRO-561's own
 entry records), and `variance.ts`'s own header comment states this sweep is "gated on Troy's
 go-ahead," the same posture TRO-543 Part 2 and TRO-561 both needed their own dedicated
-authorization for. This ticket does not run that sweep unilaterally. `loader.test.ts`'s own
-corpus-size sanity bound (20-36) is updated to 20-37 here, since that bound is deliberately,
-explicitly maintained per addition (its own comment says so) — a mechanical update, not a
-weakening. `variance-report-artifact.test.ts` stays red until the sweep runs; this is stated
-here, not quarantined and not papered over.
+authorization for. This ticket did not run that sweep unilaterally — Troy authorized it
+directly to the orchestrator, and TRO-579's own section above reports the real, measured
+result. `loader.test.ts`'s own corpus-size sanity bound (20-36) is updated to 20-37 here,
+since that bound is deliberately, explicitly maintained per addition (its own comment says
+so) — a mechanical update, not a weakening. `variance-report-artifact.test.ts` was red until
+the sweep ran; see TRO-579 above for the resolution, not stated here as still outstanding.
 
 **How to run it.** `pnpm vitest run src/server/warning/bold-detect.test.ts`. No live API call,
 no database. `measureBoldSignal` is pure pixel math (`sharp`) with no external dependency.

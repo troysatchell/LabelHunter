@@ -151,9 +151,9 @@ verdict accuracy, cost per label, and a cascade-vs-single-model comparison.
 ## What LabelHunter stores, and does not store
 
 - **Only label and application fields.** The database holds what's on the label and what's on
-  the application: brand name, class/type, alcohol content, net contents, government warning
-  text, and a beverage-type selector. No applicant name, address, or other personally
-  identifying information is ever stored.
+  the application. Six fields: brand name, class/type, alcohol content, net contents,
+  government warning text, and a beverage-type selector. No applicant name, address, or other
+  personally identifying information is ever stored.
 - **No reviewer identity.** When a human agent approves or rejects a flagged item, the database
   records the decision. It does not record who made the decision. This is a deliberate design
   choice, not an oversight.

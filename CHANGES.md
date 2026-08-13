@@ -23,12 +23,12 @@ confirmed, not assumed from the merge. `docs/PRD.md:248` already designs the acc
 live in the README for evaluators, so publishing it here is the shipped design, not a leak.
 
 **The confirmation history, in order.** First commit: PR #43 open, URL withheld. Second
-commit: PR #43 merged, but `GET /` still returned 200 with no redirect and
-`GET /api/review-queue` still returned 200 with real data — a stale build, not a live gate, so
-the URL stayed withheld. Third commit (this one): `GET /` now redirects to `/access-code`,
-`GET /api/review-queue` now returns 401 without a credential, and
-`POST /api/access-code` with the real code returns 200 plus a `Set-Cookie`. All three checked
-directly against the live URL. The URL and code are now in the README.
+commit: PR #43 merged. `GET /` still returned 200 with no redirect. `GET /api/review-queue`
+still returned 200 with real data. That is a stale build, not a live gate, so the URL stayed
+withheld. Third commit (this one): `GET /` now redirects to `/access-code`. An unauthenticated
+`GET /api/review-queue` now returns 401. `POST /api/access-code` with the real code returns 200
+plus a `Set-Cookie`. All three checked directly against the live URL. The URL and code are now
+in the README.
 
 **Observed, not derived.** This ticket ran these commands against a fresh worktree:
 `pnpm install`; `pnpm db:migrate` (8 migrations, exit 0); `pnpm typecheck` (exit 0); `pnpm lint`
@@ -42,7 +42,9 @@ container it documents. Copy `.env.local.example` to `.env.local` and set
 `ANTHROPIC_API_KEY`. Run `pnpm db:migrate`. Run `pnpm dev`.
 
 **Rollback.** Delete `README.md`. Remove this changelog entry. No schema or application code
-changed.
+changed. `factory/review-findings.jsonl`'s entries for this ticket stay — that file is an
+append-only audit record, and a revert should not erase the history of what was reviewed and
+why.
 
 ## TRO-486 — LH-065: requirements-audit compare sweep at commit 876a295 (2026-08-13)
 

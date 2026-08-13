@@ -131,6 +131,60 @@ describe("extractWildLabelUsage", () => {
       }),
     ).toThrow(/inconsistent/);
   });
+
+  // Real Gemini token counts are always non-negative integers -- a
+  // fractional or negative count is itself a signal of bad data, not a
+  // value this function should silently accept and feed into a cost
+  // calculation (CodeRabbit finding, round 2).
+  it("throws when promptTokenCount is negative", () => {
+    expect(() =>
+      extractWildLabelUsage({
+        promptTokenCount: -1,
+        candidatesTokenCount: 1120,
+        candidatesTokensDetails: [{ modality: "IMAGE", tokenCount: 1120 }],
+      }),
+    ).toThrow(/non-negative integer/);
+  });
+
+  it("throws when promptTokenCount is a non-integer", () => {
+    expect(() =>
+      extractWildLabelUsage({
+        promptTokenCount: 12.5,
+        candidatesTokenCount: 1120,
+        candidatesTokensDetails: [{ modality: "IMAGE", tokenCount: 1120 }],
+      }),
+    ).toThrow(/non-negative integer/);
+  });
+
+  it("throws when candidatesTokenCount is negative", () => {
+    expect(() =>
+      extractWildLabelUsage({
+        promptTokenCount: 0,
+        candidatesTokenCount: -1,
+        candidatesTokensDetails: [{ modality: "IMAGE", tokenCount: 0 }],
+      }),
+    ).toThrow(/non-negative integer/);
+  });
+
+  it("throws when an IMAGE detail's tokenCount is negative", () => {
+    expect(() =>
+      extractWildLabelUsage({
+        promptTokenCount: 0,
+        candidatesTokenCount: 100,
+        candidatesTokensDetails: [{ modality: "IMAGE", tokenCount: -5 }],
+      }),
+    ).toThrow(/non-negative integer/);
+  });
+
+  it("throws when an IMAGE detail's tokenCount is a non-integer", () => {
+    expect(() =>
+      extractWildLabelUsage({
+        promptTokenCount: 0,
+        candidatesTokenCount: 100,
+        candidatesTokensDetails: [{ modality: "IMAGE", tokenCount: 99.9 }],
+      }),
+    ).toThrow(/non-negative integer/);
+  });
 });
 
 describe("computeWildLabelCostUsd", () => {

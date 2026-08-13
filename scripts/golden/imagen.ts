@@ -319,26 +319,38 @@ interface RawWildLabelUsageMetadata {
  * Derives `WildLabelUsage` from a real API response's `usageMetadata`.
  * Throws — never silently defaults to 0 — when `promptTokenCount`,
  * `candidatesTokenCount`, or a real IMAGE-modality token count is missing,
- * non-numeric, or internally inconsistent (CodeRabbit finding, round 1: a
- * degraded real response must not silently read as "spent $0"; CLAUDE.md's
- * "never fabricate a number" applies to a fabricated zero exactly as much
- * as to a fabricated positive one). `generateWildLabelWithGemini`'s
- * generator does not catch this — a thrown error here aborts the whole
- * call before `generateWildLabelOne` ever writes an image or a sidecar
- * with an under-reported cost.
+ * not a non-negative integer, or internally inconsistent (CodeRabbit
+ * findings, rounds 1-2: a degraded real response must not silently read
+ * as "spent $0", and a fractional or negative count is itself bad data,
+ * not a value to feed into a cost calculation. CLAUDE.md's "never
+ * fabricate a number" applies to a fabricated zero exactly as much as to
+ * a fabricated positive one). `generateWildLabelWithGemini`'s generator
+ * does not catch this — a thrown error here aborts the whole call before
+ * `generateWildLabelOne` ever writes an image or a sidecar with a wrong
+ * cost.
  */
+/** Real Gemini token counts are always non-negative integers — a
+ * fractional or negative count is itself a signal of bad data (CodeRabbit
+ * finding, round 2), not a value worth silently feeding into a cost
+ * calculation. One shared check, so every call site (`promptTokenCount`,
+ * `candidatesTokenCount`, each IMAGE detail's `tokenCount`) applies the
+ * exact same rule. */
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
 export function extractWildLabelUsage(usageMetadata: RawWildLabelUsageMetadata | undefined): WildLabelUsage {
   if (!usageMetadata) {
     throw new Error("imagen: wild-label response carried no usageMetadata -- cannot compute its real cost");
   }
-  if (typeof usageMetadata.promptTokenCount !== "number" || !Number.isFinite(usageMetadata.promptTokenCount)) {
+  if (!isNonNegativeInteger(usageMetadata.promptTokenCount)) {
     throw new Error(
-      `imagen: wild-label response usageMetadata is missing a finite promptTokenCount (got ${JSON.stringify(usageMetadata.promptTokenCount)}) -- cannot compute its real cost`,
+      `imagen: wild-label response usageMetadata's promptTokenCount must be a non-negative integer (got ${JSON.stringify(usageMetadata.promptTokenCount)}) -- cannot compute its real cost`,
     );
   }
-  if (typeof usageMetadata.candidatesTokenCount !== "number" || !Number.isFinite(usageMetadata.candidatesTokenCount)) {
+  if (!isNonNegativeInteger(usageMetadata.candidatesTokenCount)) {
     throw new Error(
-      `imagen: wild-label response usageMetadata is missing a finite candidatesTokenCount (got ${JSON.stringify(usageMetadata.candidatesTokenCount)}) -- cannot compute its real cost`,
+      `imagen: wild-label response usageMetadata's candidatesTokenCount must be a non-negative integer (got ${JSON.stringify(usageMetadata.candidatesTokenCount)}) -- cannot compute its real cost`,
     );
   }
   const imageDetails = (usageMetadata.candidatesTokensDetails ?? []).filter((detail) => detail.modality === "IMAGE");
@@ -349,9 +361,9 @@ export function extractWildLabelUsage(usageMetadata: RawWildLabelUsageMetadata |
   }
   let imageOutputTokenCount = 0;
   for (const detail of imageDetails) {
-    if (typeof detail.tokenCount !== "number" || !Number.isFinite(detail.tokenCount)) {
+    if (!isNonNegativeInteger(detail.tokenCount)) {
       throw new Error(
-        `imagen: wild-label response usageMetadata's IMAGE detail has no finite tokenCount (got ${JSON.stringify(detail.tokenCount)}) -- cannot compute its real image-output cost`,
+        `imagen: wild-label response usageMetadata's IMAGE detail tokenCount must be a non-negative integer (got ${JSON.stringify(detail.tokenCount)}) -- cannot compute its real image-output cost`,
       );
     }
     imageOutputTokenCount += detail.tokenCount;
@@ -407,7 +419,15 @@ export async function generateWildLabelWithGemini(apiKey: string): Promise<WildL
     const response = await client.models.generateContent({
       model: WILD_LABEL_MODEL,
       contents: [{ text: prompt }],
-      config: { responseModalities: ["IMAGE"] },
+      // imageConfig.imageSize makes the request match the sidecar's own
+      // generationMetadata.resolution claim explicitly, rather than only
+      // by coincidence with the SDK's documented default (CodeRabbit
+      // finding, round 2). The SDK docs state "1K" is already the default
+      // when this is omitted -- confirmed against 6 real calls this ticket
+      // made, every one reporting exactly 1120 IMAGE tokens (the 1K tier,
+      // per ai.google.dev/gemini-api/docs/pricing) -- so this is a
+      // forensic-accuracy fix, not a behavior change.
+      config: { responseModalities: ["IMAGE"], imageConfig: { imageSize: WILD_LABEL_RESOLUTION } },
     });
     const imagePart = response.candidates?.[0]?.content?.parts?.find(
       (p: { inlineData?: { data?: string } }) => p.inlineData?.data,

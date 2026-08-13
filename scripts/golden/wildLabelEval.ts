@@ -28,6 +28,7 @@ import { fileURLToPath } from "node:url";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../../src/lib/db/schema";
+import { GoldenSetValidationError, validateManifest } from "../../src/lib/golden-set/loader";
 import type { GoldenSetCase } from "../../src/lib/golden-set/types";
 import { cleanupScratchDirAndPool } from "../latency/cleanup";
 import { REPO_ROOT, runOneCase, type CaseRunOutcome } from "../eval/cascade-runner";
@@ -69,8 +70,17 @@ interface CandidatesFile {
  * loudly), and every case's `imagePath` resolves (after symlinks, via
  * `realpathSync`) to a real, non-empty, regular file INSIDE
  * `golden-set/wild-labels/` — never an absolute path, a `../` escape, or a
- * symlink pointing outside it. Pure and synchronous: no network, so it's
- * unit-testable directly.
+ * symlink pointing outside it. It then runs the FULL case set through the
+ * real, shared `validateManifest` (`src/lib/golden-set/loader.ts`) — the
+ * same schema every manifest case is held to — with `verified` and
+ * `imagePath` patched to their post-fold-in values for that one check
+ * only (never written back to `cases`); see this repo's own
+ * `wildLabelCandidates.test.ts` for the identical technique. Without this,
+ * a candidate missing `application`/`label`/`expected` (or any other
+ * required field) would silently reach `runOneCase` and waste a real, paid
+ * API call on a malformed case instead of failing before any money is
+ * spent (CodeRabbit finding, round 2). Pure and synchronous: no network,
+ * so it's unit-testable directly.
  */
 export function loadWildLabelCandidates(candidatesPath: string = CANDIDATES_PATH): GoldenSetCase[] {
   const raw: unknown = JSON.parse(readFileSync(candidatesPath, "utf8"));
@@ -121,6 +131,30 @@ export function loadWildLabelCandidates(candidatesPath: string = CANDIDATES_PATH
       throw new Error(`wildLabelEval: ${c.caseId}: imagePath "${c.imagePath}" must name a non-empty regular file`);
     }
   }
+
+  // Full schema validation, patched only for the two fields this staging
+  // file is deliberately allowed to differ on (see this function's own
+  // doc comment). Every other field — application, label, expected,
+  // category, vectors, and so on — must be genuinely well-formed before
+  // this script hands a case to a real, paid runOneCase call.
+  const patchedForValidation = cases.map((c) => ({
+    ...c,
+    verified: true,
+    imagePath: c.imagePath.replace("golden-set/wild-labels/", "golden-set/images/"),
+  }));
+  try {
+    validateManifest({ version: "1.0.0", cases: patchedForValidation });
+  } catch (err) {
+    if (err instanceof GoldenSetValidationError) {
+      throw new Error(
+        `wildLabelEval: ${candidatesPath} failed schema validation (${err.problems.length} problem(s), verified/imagePath ` +
+          `patched to their post-fold-in values for this check):\n` +
+          err.problems.map((p) => `  - ${p}`).join("\n"),
+      );
+    }
+    throw err;
+  }
+
   return [...cases];
 }
 

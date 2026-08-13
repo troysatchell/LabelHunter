@@ -73,13 +73,26 @@ scope) so a router-level warning mismatch survives unchanged into the cascade en
 `cascade-runner.ts`'s own "SECOND HONEST LIMIT" comment already documents why it cannot. Added
 an explicit scope note to `golden-set/wild-labels/README.md` instead.
 
+**Review, round 2.** The gate's review step re-reviews the whole branch every run, including
+round 1's own triage prose (`.claude/skills/labelhunter-factory/references/lessons.md` rule
+31). 15 findings this round: 11 minor prose-style re-flags on CHANGES.md and the two READMEs —
+dismissed per rule 31's stop rule, no shipped behavior or factual claim changed. 3 fixed:
+`loadWildLabelCandidates` now runs the full case set through the real `validateManifest`
+(patched the same way its own test does) before any candidate reaches a paid `runOneCase`
+call; `extractWildLabelUsage` now rejects a fractional or negative token count, not only a
+missing one; the wild-label Gemini request now sets `imageConfig.imageSize` explicitly instead
+of relying on the SDK's documented (and, across 6 real calls, consistently observed) "1K"
+default. 1 trivial fixed alongside it (the same `imageConfig` change covers both). 6 new test
+cases (46 → 52).
+
 **Confirmed.** `scripts/golden/wildLabelPrompt.test.ts`, `wildLabelImagen.test.ts`, and
-`wildLabelCandidates.test.ts` are new — 46 test cases (37 initial + 9 from review triage), red
-first in both rounds, green after each implementation. The candidates' schema shape is checked
-against the real, current `GoldenSetCase` validator (`verified`/`imagePath` patched to their
-post-fold-in values for that one check only, never written to disk). `pnpm typecheck` is
-clean. The full 2401-test unit suite and the existing `imagen.test.ts`/`imagenPrompt.test.ts`
-job-1 suites still pass unchanged.
+`wildLabelCandidates.test.ts` are new — 52 test cases across both triage rounds, red first
+every round, green after each implementation. The candidates' schema shape is checked against
+the real, current `GoldenSetCase` validator (`verified`/`imagePath` patched to their
+post-fold-in values for that one check only, never written to disk) — both in the test suite
+and now in `loadWildLabelCandidates` itself. `pnpm typecheck` is clean. The full 2407-test unit
+suite and the existing `imagen.test.ts`/`imagenPrompt.test.ts` job-1 suites still pass
+unchanged.
 
 ## TRO-577 — list surfaces stop hitching while scrolling (2026-08-13)
 

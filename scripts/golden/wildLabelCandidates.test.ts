@@ -140,6 +140,31 @@ describe("loadWildLabelCandidates — error handling", () => {
     }
   });
 
+  it("throws when a case is missing required manifest fields (application/label/expected/category/etc.) -- full schema validation, not just the ad hoc checks", () => {
+    // Passes every ad hoc check above (provenance, verified, imagePath) but
+    // is missing almost every other GoldenSetCase field. The loader must
+    // still catch this via the real, shared validateManifest -- the same
+    // technique wildLabelCandidates.test.ts's own schema-shape test uses
+    // (verified/imagePath patched to their post-fold-in values) -- rather
+    // than silently returning a malformed case a real, paid runOneCase
+    // call would then be handed (CodeRabbit finding, round 2).
+    const file = writeTempFile({
+      cases: [
+        {
+          caseId: "x",
+          provenance: "ai-generated",
+          verified: false,
+          imagePath: "golden-set/wild-labels/case-43-odd-typography-wild-highcontrast-gin.png",
+        },
+      ],
+    });
+    try {
+      expect(() => loadWildLabelCandidates(file)).toThrow(/missing required field/);
+    } finally {
+      cleanup();
+    }
+  });
+
   it("rejects an absolute imagePath, before ever touching the filesystem", () => {
     const file = writeTempFile({
       cases: [{ caseId: "x", provenance: "ai-generated", verified: false, imagePath: "/etc/passwd" }],
@@ -185,8 +210,13 @@ describe("loadWildLabelCandidates — error handling", () => {
   });
 
   it("rejects an imagePath that names a real, empty (zero-byte) file", () => {
-    const emptyFileName = ".tro-530-test-empty-tmp.png";
-    const emptyFilePath = path.resolve(REPO_ROOT, "golden-set/wild-labels", emptyFileName);
+    // A unique mkdtempSync directory INSIDE golden-set/wild-labels/ (not a
+    // fixed filename directly in the real staging directory) so a failed
+    // cleanup or a concurrent test run can never collide with, or leave a
+    // stray file alongside, this repo's real committed candidates
+    // (CodeRabbit finding, round 2).
+    const emptyFileDir = mkdtempSync(path.resolve(REPO_ROOT, "golden-set/wild-labels", ".tro-530-test-"));
+    const emptyFilePath = path.join(emptyFileDir, "empty.png");
     writeFileSync(emptyFilePath, Buffer.alloc(0));
     const file = writeTempFile({
       cases: [
@@ -194,14 +224,14 @@ describe("loadWildLabelCandidates — error handling", () => {
           caseId: "x",
           provenance: "ai-generated",
           verified: false,
-          imagePath: `golden-set/wild-labels/${emptyFileName}`,
+          imagePath: path.relative(REPO_ROOT, emptyFilePath),
         },
       ],
     });
     try {
       expect(() => loadWildLabelCandidates(file)).toThrow(/non-empty regular file/);
     } finally {
-      rmSync(emptyFilePath, { force: true });
+      rmSync(emptyFileDir, { recursive: true, force: true });
       cleanup();
     }
   });

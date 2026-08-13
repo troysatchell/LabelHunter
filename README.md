@@ -173,8 +173,9 @@ LabelHunter makes exactly one outbound call to a public vendor API while it runs
 Anthropic API, for label extraction and resolution. Its own Postgres database is a private,
 same-network dependency, not a public vendor endpoint. A `GOOGLE_API_KEY` variable exists in
 `.env.local.example` for one reason: generating the test-label image set during development
-(`pnpm golden:build`). The deployed, running app never reads it. See `docs/error-states.md`
-for the full dependency table and what happens if the Anthropic endpoint is unreachable.
+(`pnpm golden:build`). The deployed, running app never reads it. `docs/approach.md`'s
+"Outbound dependencies and degradation" section has the full dependency table and what happens
+if the Anthropic endpoint is unreachable.
 
 ## Repository layout
 

@@ -70,6 +70,7 @@ import * as schema from "../../src/lib/db/schema";
 import { SONNET_RESOLVER_MODEL } from "../../src/server/resolver/request";
 import { parseArgs } from "./args";
 import { deriveBatchCostUsd, meanCost } from "./cost";
+import { HARNESS_POOL_OPTIONS } from "./pool-config";
 import type { BatchThroughputRunReport, BatchThroughputWorkerConcurrency } from "./types";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -390,10 +391,12 @@ async function main(): Promise<void> {
   // just configured, before any spend-inducing request (review finding,
   // local review round 8). A short-lived probe pool, closed immediately —
   // the pool for the post-run reads opens later, so nothing idles through
-  // a potentially 30-minute batch. Both hardened settings are copied from
-  // the post-run pool (standing rule 22).
+  // a potentially 30-minute batch. All hardened settings are copied from
+  // the post-run pool (standing rule 22): connectionTimeoutMillis bounds
+  // connection ESTABLISHMENT only, so query_timeout bounds the
+  // established query too (post-merge review finding).
   {
-    const probePool = new Pool({ connectionString, connectionTimeoutMillis: 10_000 });
+    const probePool = new Pool({ connectionString, ...HARNESS_POOL_OPTIONS });
     probePool.on("error", (err) => console.error("measure.ts: unexpected error on idle Postgres client", err));
     try {
       await probePool.query("SELECT 1");
@@ -446,7 +449,7 @@ async function main(): Promise<void> {
   // (scripts/eval/check.ts's own runLive does the same, for the same
   // reason; see that file and scripts/batch-worker/run.ts's own comment on
   // the distinction).
-  const pool = new Pool({ connectionString, connectionTimeoutMillis: 10_000 });
+  const pool = new Pool({ connectionString, ...HARNESS_POOL_OPTIONS });
   pool.on("error", (err) => console.error("measure.ts: unexpected error on idle Postgres client", err));
   const db = drizzle(pool, { schema });
   let sonnetCallCount: number;

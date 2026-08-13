@@ -159,6 +159,22 @@ a:hover {
   font-size: 0.9rem;
 }
 
+/* The auto-fill assist (TRO-576). The status line sits under the photo
+   input; the per-field note sits inside the label, after the label text.
+   Both are quiet metadata — hint-sized, muted — because the values
+   themselves are the content and the assist must never outrank them. */
+.verify-form__assist {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  min-height: 1.2em;
+}
+
+.field__prefill-note {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  font-weight: 400;
+}
+
 .field__input,
 .field__select {
   font: inherit;

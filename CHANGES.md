@@ -4,6 +4,51 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-576 — the verify form fills itself from the label photo (2026-08-13)
+
+**The point.** Sarah: "My agents spend half their day doing what's essentially data entry
+verification" (source-TH.md). Troy asked for it directly: scan a label, and anything the
+photo already shows should fill itself out. Now it does. The agent picks a photo, the
+fields fill, the agent confirms or corrects, and the unchanged verify flow runs.
+
+**The pieces.**
+1. `POST /api/extract` — a new extract-only endpoint. Haiku reads the photo; no comparison,
+   no persistence, no Sonnet (the cascade is the architecture, TH-R19 — an assist gets no
+   exception). The verify route's own rate-limit and daily-budget guards run FIRST, and each
+   call's measured cost is recorded to the same spend ledger. The server maps the extraction
+   to form-shaped values with the comparators' own grammars (`parseAbv`, `parseNetContents`)
+   — one parser per text, never a second copy.
+2. `VerifyForm` — picking a photo calls the assist. Three rules keep it honest:
+   the agent's own typing always wins (tracked by real interaction, never overwritten);
+   every filled value says "Read from your photo" until the agent edits it; and the assist
+   never blocks — any failure quiets to one sentence and manual entry continues.
+3. Designed outcomes, not errors (TH-R20): an illegible photo answers "LabelHunter could
+   not read this photo clearly. Fill in the fields yourself." A readable photo with no
+   readable fields says that instead. A dead service says so and stands down.
+
+**What the assist never does.** It never picks a beverage type the extractor did not read
+exactly. It never clamps an out-of-range ABV into a plausible one — a misread stays empty.
+It never prefills half a net-contents reading. It never writes into the form while a verify
+is in flight, and a stale (superseded) photo reading never lands.
+
+**The trade-off (TH-R23).** A verify that used the assist spends two Haiku calls: the
+assist's and the verify's own. Reusing the assist's extraction server-side needs a draft
+lifecycle and a schema migration — future work, recorded here, not built. A silent backfill
+inside `/api/verify` was rejected outright: it would store extractor output as if the
+applicant asserted it. The agent's confirmation is what makes the application record honest.
+
+**Rollback.** Revert the PR. The form returns to fully manual entry; `/api/verify` is
+untouched either way.
+
+**Confirmed.** 32 tests across the three new/changed layers: the mapping (10 — proof
+halving, out-of-range ABV dropped, unit spelling, unreadable gate), the route (8 — both
+guards run before any spend, designed 400/422/502, production bindings really bound per the
+TRO-482 lesson), and the form (14 — fill/mark/announce, typing wins, note clears on edit,
+unreadable fills nothing, assist failure leaves the manual flow intact, stale reading never
+lands). `pnpm typecheck` and `pnpm lint` are clean. The e2e suite exercises the real assist
+against the fake Anthropic server on every upload. **Not measured:** the assist's real
+latency on the deployed instance.
+
 ## TRO-575 — the review detail shows the label image (2026-08-13)
 
 **The gap.** The review-item page showed per-field text evidence with no label image. A

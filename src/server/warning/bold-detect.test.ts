@@ -427,22 +427,45 @@ describe("measureBoldSignal — golden-set corpus, clean rendered cases (TRO-527
   );
 });
 
-describe("measureBoldSignal — no rendered NON-bold golden-set case exists yet (stated, not papered over)", () => {
-  it("zero warning-bearing manifest cases have governmentWarningPrefixBold === false", () => {
-    // TRO-527's own CHANGES.md entry says so directly: "None of these 32
-    // cases tests a bold violation; that is LH-023's job (case-33,
-    // case-34)." Those two cases are not in the current manifest — this
-    // assertion is this file's own live check that the gap TRO-527 named
-    // is still exactly the gap today, so the acceptance evidence's
-    // "returns not-bold on every rendered non-bold case" line is
-    // VACUOUSLY true against the real corpus right now. `classifyBoldSignal`'s
-    // own "not-bold" test above proves the branch works; it cannot be
-    // proven here against a real image because no such image exists yet.
-    const nonBoldCases = manifest.cases.filter(
-      (c) => c.label.governmentWarningPresent && c.label.governmentWarningPrefixBold === false,
-    );
-    expect(nonBoldCases).toEqual([]);
+/** Every rendered, warning-bearing case whose ground truth is
+ * `governmentWarningPrefixBold: false` — the other half of "returns
+ * not-bold on every rendered non-bold case." Data-driven, like
+ * `cleanRenderedBoldCases` above, rather than a hardcoded caseId, so a
+ * future addition to this band gets covered automatically. */
+const nonBoldCases = manifest.cases.filter(
+  (c) => c.provenance === "rendered" && c.label.governmentWarningPresent && c.label.governmentWarningPrefixBold === false,
+);
+
+describe("measureBoldSignal — golden-set corpus, the non-bold case (case-33)", () => {
+  // TRO-527's own CHANGES.md entry named this exact gap: "None of these 32
+  // cases tests a bold violation; that is LH-023's job (case-33, case-34)."
+  // Troy's own instruction (2026-08-13 session, mid-TRO-532) after seeing
+  // every one of the 30 warning-bearing cases carry
+  // governmentWarningPrefixBold: true: create a real one that does not.
+  // case-33-not-bold-warning-prefix reserves exactly the slot TRO-527's
+  // own note anticipated. A real bold-violation ROUTER check (reading this
+  // ground truth into a verdict) is still LH-023's job, not built here —
+  // this case exists so `not-bold` has one real, rendered image to prove
+  // itself against, alongside the direct `classifyBoldSignal` unit test
+  // above (which needed no image at all).
+
+  it("the manifest now has at least one non-bold, warning-bearing case — the gap TRO-527 named is closed", () => {
+    expect(nonBoldCases.length).toBeGreaterThan(0);
   });
+
+  it.each(nonBoldCases.map((c) => [c.caseId, c.imagePath] as const))(
+    "%s: detects not-bold",
+    async (_caseId, imagePath) => {
+      const crop = await detectAndCrop(imagePath);
+      expect(crop).not.toBeNull();
+      if (!crop) return;
+      const result = await measureBoldSignal(crop);
+      expect(result.signal).toBe("not-bold");
+      expect(result.ratio).not.toBeNull();
+      if (result.ratio !== null) expect(result.ratio).toBeLessThan(BOLD_RATIO_THRESHOLD);
+    },
+    15_000,
+  );
 });
 
 describe("measureBoldSignal — case-23 (and case-24's merge): below the 3px floor, the ticket's own required acceptance case", () => {

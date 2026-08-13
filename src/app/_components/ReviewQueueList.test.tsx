@@ -1,8 +1,24 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { ComponentProps } from "react";
 import { ReviewQueueList } from "./ReviewQueueList";
 import type { ReviewQueueListItemWire } from "../api/review-queue/types";
+import type Link from "next/link";
+
+// next/link renders a plain <a> and drops `prefetch` before it reaches the
+// DOM, so the prop cannot be asserted through the rendered output. This
+// stub surfaces it as a data attribute — the same move the CI-workflow
+// tests make when they assert configuration rather than behavior. TRO-577
+// exists because the DEFAULT prefetch fired a speculative server render
+// per row as it scrolled into view; this pins the opt-out.
+vi.mock("next/link", () => ({
+  default: ({ prefetch, children, ...rest }: ComponentProps<typeof Link>) => (
+    <a {...(rest as Record<string, unknown>)} data-prefetch={String(prefetch)}>
+      {children}
+    </a>
+  ),
+}));
 
 const ITEM: ReviewQueueListItemWire = {
   id: 42,
@@ -42,6 +58,14 @@ describe("ReviewQueueList", () => {
 
     const time = row.querySelector("time");
     expect(time).toHaveAttribute("dateTime", "2026-08-11T14:03:00.000Z");
+  });
+
+  it("disables viewport prefetch on every row link (TRO-577 — the scroll-hitch fix)", () => {
+    render(<ReviewQueueList items={[ITEM]} />);
+    const link = screen.getByRole("link", { name: "Review this item: Old Tom Distillery (#42)" });
+    // `false`, not `undefined`: undefined is the default, which prefetches
+    // on viewport entry — the exact behavior this ticket removes.
+    expect(link).toHaveAttribute("data-prefetch", "false");
   });
 
   it.each([

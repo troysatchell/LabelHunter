@@ -1879,6 +1879,64 @@
       "verified": false
     },
     {
+      "caseId": "case-33-not-bold-warning-prefix",
+      "description": "Warning wording and capitalization are exact, but the GOVERNMENT WARNING prefix does not print bold — 27 CFR 16.22(a)(2)'s other bold rule, not checked by the router (TH-R9's advisory-only signal, TRO-532/TRO-533).",
+      "category": "clean-match",
+      "beverageType": "wine",
+      "imagePath": "golden-set/images/case-33-not-bold-warning-prefix.jpg",
+      "application": {
+        "brandName": "Cinder Hollow Winery",
+        "classType": "Chardonnay",
+        "abvPercent": 13,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Cinder Hollow Winery",
+        "classType": "Chardonnay",
+        "abvPresent": true,
+        "abvText": "13% Alc./Vol.",
+        "abvPercent": 13,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": false,
+        "governmentWarningBodyBold": false
+      },
+      "expected": {
+        "labelVerdict": "PASS",
+        "fields": {
+          "brandName": {
+            "verdict": "MATCH",
+            "reason": "Label brand matches the application exactly."
+          },
+          "classType": {
+            "verdict": "MATCH",
+            "reason": "Label class/type matches the application exactly."
+          },
+          "abv": {
+            "verdict": "MATCH",
+            "reason": "Label states 13% ABV, matching the application."
+          },
+          "netContents": {
+            "verdict": "MATCH",
+            "reason": "Label states 750 mL, matching the application."
+          },
+          "governmentWarning": {
+            "verdict": "MATCH",
+            "reason": "Warning text matches the statute word for word; prefix is all-caps. The router does not check bold type — TH-R9's advisory-only signal, never a verdict input."
+          }
+        }
+      },
+      "notes": "TRO-532 / LH-025: Troy's own instruction (2026-08-13 session) after noticing every one of the 30 warning-bearing cases TRO-527 backfilled carries governmentWarningPrefixBold: true — the golden set had no case at all showing the OTHER value. This is that case: the first real, rendered example of a compliant-except-for-bold-type label, not a synthetic SVG fixture. Reserves the case-33 slot TRO-527's own CHANGES.md entry already named for this purpose (\"LH-023's job (case-33, case-34)\") — a real bold-violation router check is still LH-023's, deliberately not built here; this case exists so `measureBoldSignal`'s `not-bold` branch (TRO-532) has one real, rendered, non-synthetic image to prove itself against, alongside the direct `classifyBoldSignal` unit test. `expected` stays PASS/MATCH throughout: nothing in the router reads either bold field yet (TRO-533's own job, still not done), so a bold-type deviation cannot fail a verdict today no matter how this case's ground truth reads — which is itself a real, corpus-backed demonstration of CP-2 §7.2's \"advisory, never a verdict input\" boundary, not just an assertion in a comment.",
+      "vectors": [],
+      "provenance": "rendered",
+      "verified": false
+    },
+    {
       "caseId": "case-35-clean-match-real-photo-flat-scan",
       "description": "Real, flat, straight-on photograph of a government-warning panel. The only asset in the corpus that measurably shows the statute's required bold prefix.",
       "category": "clean-match",

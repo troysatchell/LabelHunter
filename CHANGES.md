@@ -4,6 +4,57 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-576 — the verify form fills itself from the label photo (2026-08-13)
+
+**The point.** Sarah: "My agents spend half their day doing what's essentially data entry
+verification" (source-TH.md). Troy asked for it directly: scan a label, and anything the
+photo already shows should fill itself out. Now it does. The agent picks a photo, the
+fields fill, the agent confirms or corrects, and the unchanged verify flow runs.
+
+**The pieces.**
+1. `POST /api/extract` — a new extract-only endpoint. Haiku reads the photo. No comparison,
+   no persistence, no Sonnet — the cascade is the architecture (TH-R19), and an assist gets
+   no exception. The verify route's own rate-limit and daily-budget guards run FIRST. Each
+   call's measured cost lands in the same spend ledger, even when the model's response
+   fails validation — the paid call happened either way. The server maps the extraction to
+   form-shaped values with the comparators' own grammars (`parseAbv`, `parseNetContents`).
+   One parser per text, never a second copy.
+2. `VerifyForm` — picking a photo calls the assist. Three rules keep it honest. The agent's
+   own typing always wins; touch is tracked by real interaction, and a touched field is
+   never overwritten. Every filled value says "Read from your photo" until the agent edits
+   it. The assist never blocks — any failure quiets to one sentence, and manual entry
+   continues.
+3. Designed outcomes, not errors (TH-R20): an illegible photo answers "LabelHunter could
+   not read this photo clearly. Fill in the fields yourself." A readable photo with no
+   readable fields says that instead. A dead service says so and stands down.
+
+**What the assist never does.** It never picks a beverage type the extractor did not read
+exactly. It never clamps an out-of-range ABV into a plausible one — a misread stays empty.
+It never prefills half a net-contents reading. It never writes into the form while a verify
+is in flight. A stale (superseded) photo reading never lands. And a photo change clears the
+previous photo's fills first — a partial or unreadable second reading can never leave the
+first photo's values sitting in the form as if the agent had entered them.
+
+**The trade-off (TH-R23).** A verify that used the assist spends two Haiku calls: the
+assist's and the verify's own. Reusing the assist's extraction server-side needs a draft
+lifecycle and a schema migration — future work, recorded here, not built. A silent backfill
+inside `/api/verify` was rejected outright: it would store extractor output as if the
+applicant asserted it. The agent's confirmation is what makes the application record honest.
+
+**Rollback.** Revert the PR. The form returns to fully manual entry; `/api/verify` is
+untouched either way.
+
+**Confirmed.** 46 tests across four layers. The mapping: 10, covering proof halving,
+out-of-range ABV dropped, unit spelling, and the unreadable gate. The route: 9, covering
+both guards before any spend, designed 400/422/502, spend recorded even on a
+validation-failed model response, and production bindings really bound (the TRO-482
+lesson). The client: 10, covering strict per-field response validation. The form: 17,
+covering fill/mark/announce, typing wins, note clears on edit, unreadable fills nothing,
+assist failure leaves manual flow intact, stale readings never land, and a photo change
+clears the prior photo's fills. `pnpm typecheck` and `pnpm lint` are clean. The e2e suite
+exercises the real assist against the fake Anthropic server on every upload.
+**Not measured:** the assist's real latency on the deployed instance.
+
 ## TRO-533 — LH-026 · Surface the bold signal; fix the bold doc drift (2026-08-13)
 
 Advances TH-R9, TH-R15, TH-R20. TRO-532 built `measureBoldSignal` — a pixel measurement, not a

@@ -135,6 +135,48 @@ creates its fixture.
 slug alone. It stops writing `.factory-owner`. Any leftover stamp file elsewhere is inert and
 already gitignored.
 
+## TRO-484 — LH-063: README (2026-08-13)
+
+**What changed.** This ticket adds `README.md` at the repo root. It closes TH-R14, a graded
+deliverable that was MISSING across three sweeps. The content is assembled from material that
+already existed. `docs/PRD.md` §1 supplies what LabelHunter is. `.env.local.example` and
+`package.json`'s scripts block supply the setup and run steps. `docs/PRD.md` §3.1 and §4
+supply the cascade architecture diagram and cost table. `docs/error-states.md` supplies the
+outbound-dependency list. `src/lib/db/schema.ts` and
+`src/server/review-queue/record-disposition.ts:11` supply the data-handling posture.
+`audit/requirements/gaps.md`'s TH-R14 and TH-R6 suggested scope (TRO-486) is the source for
+every piece above.
+
+**The deployed URL and access code are now published.** PR #43 (TRO-482, key protection: access
+code, rate limits, daily spend budget) merged into `main`. This ticket held the URL back
+through two earlier commits until the deployed instance's protection was independently
+confirmed, not assumed from the merge. `docs/PRD.md:248` already designs the access code to
+live in the README for evaluators, so publishing it here is the shipped design, not a leak.
+
+**The confirmation history, in order.** First commit: PR #43 open, URL withheld. Second
+commit: PR #43 merged. `GET /` still returned 200 with no redirect. `GET /api/review-queue`
+still returned 200 with real data. That is a stale build, not a live gate, so the URL stayed
+withheld. Third commit (this one): `GET /` now redirects to `/access-code`. An unauthenticated
+`GET /api/review-queue` now returns 401. `POST /api/access-code` with the real code returns 200
+plus a `Set-Cookie`. All three checked directly against the live URL. The URL and code are now
+in the README.
+
+**Observed, not derived.** This ticket ran these commands against a fresh worktree:
+`pnpm install`; `pnpm db:migrate` (8 migrations, exit 0); `pnpm typecheck` (exit 0); `pnpm lint`
+(0 errors, 1 pre-existing warning); `pnpm test` (169 files, 2108 tests, exit 0); `pnpm build`
+(15 routes, exit 0). `pnpm test:e2e` did **not** run this ticket — it boots a dev server, and
+this ticket changed no application code that suite covers. See this PR's own gate run for exact
+output.
+
+**How to run it.** Follow the README itself. Install dependencies. Start the Postgres
+container it documents. Copy `.env.local.example` to `.env.local` and set
+`ANTHROPIC_API_KEY`. Run `pnpm db:migrate`. Run `pnpm dev`.
+
+**Rollback.** Delete `README.md`. Remove this changelog entry. No schema or application code
+changed. `factory/review-findings.jsonl`'s entries for this ticket stay — that file is an
+append-only audit record, and a revert should not erase the history of what was reviewed and
+why.
+
 ## TRO-565 / TRO-567 — access-gate hardening: eight follow-up findings from PR #43 (2026-08-13)
 
 Eight findings from PR #43's own review (TRO-482, the access-code gate and its rate

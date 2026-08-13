@@ -1,14 +1,28 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   backoffMs,
   decideCapture,
+  diffSince,
+  formatCarriedForwardDetail,
+  isBoringPath,
   isCaptureMeta,
+  isCommentOrBlankLine,
+  isDiffBoring,
+  isFileChangeBoring,
   isRateLimitError,
   MAX_REASONABLE_ATTEMPTS,
+  normalizeReviewMode,
   parseCoderabbitOutput,
   parsePositiveIntEnv,
+  parseUnifiedDiff,
+  planReview,
   runCapture,
   type CaptureMeta,
+  type ParsedDiffFile,
   type RunnerResult,
 } from "./review-capture";
 
@@ -345,5 +359,377 @@ describe("isCaptureMeta", () => {
     expect(isCaptureMeta([])).toBe(false);
     expect(isCaptureMeta("abc1234")).toBe(false);
     expect(isCaptureMeta(42)).toBe(false);
+  });
+});
+
+// TRO-548: gate.sh's review step (G10) re-reviewed the whole branch on
+// EVERY run, including rounds whose only change was the previous round's
+// own triage prose. TRO-544 measured it directly: 11 gate runs, findings
+// regenerating every round (3, 12, 4, 5, 8, 4, 3, 2, 4, 10) even against
+// files already triaged, real substance ending at round 12 of 13. Lessons
+// rule 31 capped this by orchestrator discipline; these tests cover the
+// mechanical cap: skip a re-review when nothing worth reviewing changed,
+// and scope CodeRabbit's own diff to what's new otherwise.
+
+describe("normalizeReviewMode", () => {
+  it("defaults to carry for undefined, empty, or unrecognized input", () => {
+    expect(normalizeReviewMode(undefined)).toBe("carry");
+    expect(normalizeReviewMode("")).toBe("carry");
+    expect(normalizeReviewMode("bogus")).toBe("carry");
+  });
+
+  it("accepts off and full verbatim", () => {
+    expect(normalizeReviewMode("off")).toBe("off");
+    expect(normalizeReviewMode("full")).toBe("full");
+  });
+});
+
+describe("isBoringPath", () => {
+  it("matches the root CHANGES.md exactly", () => {
+    expect(isBoringPath("CHANGES.md")).toBe(true);
+  });
+
+  it("does not match a differently-named or nested CHANGES.md", () => {
+    expect(isBoringPath("docs/CHANGES.md")).toBe(false);
+    expect(isBoringPath("CHANGES.markdown")).toBe(false);
+  });
+
+  it("matches any factory/*.jsonl log", () => {
+    expect(isBoringPath("factory/scorecard.jsonl")).toBe(true);
+    expect(isBoringPath("factory/review-findings.jsonl")).toBe(true);
+  });
+
+  it("does not match a factory file that is not .jsonl", () => {
+    expect(isBoringPath("factory/config.yaml")).toBe(false);
+    expect(isBoringPath("factory/quarantine.json")).toBe(false);
+  });
+
+  it("does not match a .jsonl file outside factory/", () => {
+    expect(isBoringPath("scripts/factory/data.jsonl")).toBe(false);
+  });
+});
+
+describe("isCommentOrBlankLine", () => {
+  it("is true for blank or whitespace-only lines", () => {
+    expect(isCommentOrBlankLine("")).toBe(true);
+    expect(isCommentOrBlankLine("   ")).toBe(true);
+  });
+
+  it("is true for // and /* ... */ style comment lines", () => {
+    expect(isCommentOrBlankLine("// a note")).toBe(true);
+    expect(isCommentOrBlankLine("  // indented note")).toBe(true);
+    expect(isCommentOrBlankLine("/* block open")).toBe(true);
+    expect(isCommentOrBlankLine(" * block continuation")).toBe(true);
+    expect(isCommentOrBlankLine(" */")).toBe(true);
+  });
+
+  it("is true for # and HTML/markdown comment delimiters", () => {
+    expect(isCommentOrBlankLine("# shell or yaml comment")).toBe(true);
+    expect(isCommentOrBlankLine("<!-- markdown comment -->")).toBe(true);
+  });
+
+  it("is false for a real code line", () => {
+    expect(isCommentOrBlankLine("const x = 2;")).toBe(false);
+    expect(isCommentOrBlankLine("  return value;")).toBe(false);
+  });
+
+  it("is false for a line mixing code and a trailing comment", () => {
+    // Starts with code, not a comment marker — real content changed here.
+    expect(isCommentOrBlankLine("const x = 2; // was 1")).toBe(false);
+  });
+});
+
+describe("parseUnifiedDiff", () => {
+  it("collects +/- content lines per file, prefix stripped", () => {
+    const diff = [
+      "diff --git a/src/foo.ts b/src/foo.ts",
+      "index 111..222 100644",
+      "--- a/src/foo.ts",
+      "+++ b/src/foo.ts",
+      "@@ -1 +1 @@",
+      "-const x = 1;",
+      "+const x = 2;",
+    ].join("\n");
+    const files = parseUnifiedDiff(diff);
+    expect(files).toHaveLength(1);
+    expect(files[0].path).toBe("src/foo.ts");
+    expect(files[0].binary).toBe(false);
+    expect(files[0].changedLines).toEqual(["const x = 1;", "const x = 2;"]);
+  });
+
+  it("splits multiple files in one diff into separate entries", () => {
+    const diff = [
+      "diff --git a/CHANGES.md b/CHANGES.md",
+      "index 1..2 100644",
+      "--- a/CHANGES.md",
+      "+++ b/CHANGES.md",
+      "@@ -1,0 +2 @@",
+      "+### TRO-548",
+      "diff --git a/src/foo.ts b/src/foo.ts",
+      "index 3..4 100644",
+      "--- a/src/foo.ts",
+      "+++ b/src/foo.ts",
+      "@@ -1 +1 @@",
+      "-// old",
+      "+// new",
+    ].join("\n");
+    const files = parseUnifiedDiff(diff);
+    expect(files.map((f) => f.path)).toEqual(["CHANGES.md", "src/foo.ts"]);
+    expect(files[1].changedLines).toEqual(["// old", "// new"]);
+  });
+
+  it("flags a binary file and collects no content lines for it", () => {
+    const diff = [
+      "diff --git a/image.png b/image.png",
+      "index 1..2 100644",
+      "Binary files a/image.png and b/image.png differ",
+    ].join("\n");
+    const files = parseUnifiedDiff(diff);
+    expect(files).toHaveLength(1);
+    expect(files[0].binary).toBe(true);
+    expect(files[0].changedLines).toEqual([]);
+  });
+
+  it("returns an empty list for an empty diff", () => {
+    expect(parseUnifiedDiff("")).toEqual([]);
+  });
+
+  it("does not mistake the +++/--- file headers for content lines", () => {
+    const diff = [
+      "diff --git a/src/foo.ts b/src/foo.ts",
+      "--- a/src/foo.ts",
+      "+++ b/src/foo.ts",
+      "@@ -1 +1 @@",
+      "-x",
+      "+y",
+    ].join("\n");
+    expect(parseUnifiedDiff(diff)[0].changedLines).toEqual(["x", "y"]);
+  });
+});
+
+describe("isFileChangeBoring / isDiffBoring", () => {
+  const file = (path: string, changedLines: string[], binary = false): ParsedDiffFile => ({
+    path,
+    binary,
+    changedLines,
+  });
+
+  it("a boring path is boring regardless of its content", () => {
+    expect(isFileChangeBoring(file("CHANGES.md", ["a whole new paragraph of real prose"]))).toBe(true);
+    expect(isFileChangeBoring(file("factory/scorecard.jsonl", ['{"ticket":"x"}']))).toBe(true);
+  });
+
+  it("a non-boring path is boring only when every changed line is comment/blank", () => {
+    expect(isFileChangeBoring(file("src/foo.ts", ["// a", "", "// b"]))).toBe(true);
+    expect(isFileChangeBoring(file("src/foo.ts", ["// a", "const x = 2;"]))).toBe(false);
+  });
+
+  it("a binary file is never boring, even at a boring-looking path", () => {
+    expect(isFileChangeBoring(file("factory/scorecard.jsonl", [], true))).toBe(false);
+  });
+
+  it("no changed files at all is boring — nothing to review", () => {
+    expect(isDiffBoring([])).toBe(true);
+  });
+
+  it("every file must be boring for the whole diff to be boring", () => {
+    const boring = [file("CHANGES.md", ["prose"]), file("src/foo.ts", ["// comment"])];
+    expect(isDiffBoring(boring)).toBe(true);
+    const mixed = [file("CHANGES.md", ["prose"]), file("src/foo.ts", ["const x = 2;"])];
+    expect(isDiffBoring(mixed)).toBe(false);
+  });
+});
+
+describe("planReview", () => {
+  const previous: CaptureMeta = { sha: "aaa1111", capturedAt: "2026-08-13T00:00:00Z", findings: 4 };
+
+  it("off mode never runs, regardless of history", () => {
+    expect(planReview({ mode: "off", previous, currentSha: "bbb2222", diffSincePrevious: [] }, "main")).toEqual({
+      kind: "off",
+    });
+  });
+
+  it("the first review of a branch always runs full, in carry mode", () => {
+    const plan = planReview({ mode: "carry", previous: null, currentSha: "bbb2222", diffSincePrevious: null }, "main");
+    expect(plan).toEqual({ kind: "run", baseArgs: ["--base", "main"], scopedFromSha: null });
+  });
+
+  it("full mode always runs full, even with prior history", () => {
+    const plan = planReview(
+      { mode: "full", previous, currentSha: "bbb2222", diffSincePrevious: [] },
+      "main",
+    );
+    expect(plan).toEqual({ kind: "run", baseArgs: ["--base", "main"], scopedFromSha: null });
+  });
+
+  it("carry mode at the same SHA as the last review carries forward — nothing changed", () => {
+    const plan = planReview(
+      { mode: "carry", previous, currentSha: previous.sha, diffSincePrevious: [] },
+      "main",
+    );
+    expect(plan.kind).toBe("carried-forward");
+    if (plan.kind === "carried-forward") {
+      expect(plan.sha).toBe(previous.sha);
+      expect(plan.findings).toBe(previous.findings);
+    }
+  });
+
+  it("carry mode with a boring diff since the last review carries forward", () => {
+    const boringDiff: ParsedDiffFile[] = [{ path: "CHANGES.md", binary: false, changedLines: ["prose"] }];
+    const plan = planReview(
+      { mode: "carry", previous, currentSha: "bbb2222", diffSincePrevious: boringDiff },
+      "main",
+    );
+    expect(plan.kind).toBe("carried-forward");
+  });
+
+  it("carry mode with a real change since the last review scopes to --base-commit", () => {
+    const realDiff: ParsedDiffFile[] = [{ path: "src/foo.ts", binary: false, changedLines: ["const x = 2;"] }];
+    const plan = planReview(
+      { mode: "carry", previous, currentSha: "bbb2222", diffSincePrevious: realDiff },
+      "main",
+    );
+    expect(plan).toEqual({
+      kind: "run",
+      baseArgs: ["--base-commit", previous.sha],
+      scopedFromSha: previous.sha,
+    });
+  });
+
+  it("carry mode with an uncomputable diff (null) never guesses boring — always runs", () => {
+    const plan = planReview(
+      { mode: "carry", previous, currentSha: "bbb2222", diffSincePrevious: null },
+      "main",
+    );
+    expect(plan).toEqual({
+      kind: "run",
+      baseArgs: ["--base-commit", previous.sha],
+      scopedFromSha: previous.sha,
+    });
+  });
+});
+
+describe("formatCarriedForwardDetail", () => {
+  it("names the carried-forward SHA and reason, per TRO-548's exact wording", () => {
+    const detail = formatCarriedForwardDetail({
+      kind: "carried-forward",
+      sha: "aaa1111222",
+      findings: 4,
+      reason: "no changes since that review",
+    });
+    expect(detail).toContain("carried-forward from aaa1111");
+    expect(detail).toContain("no changes since that review");
+    expect(detail).toContain("4 finding(s)");
+  });
+});
+
+describe("diffSince (real git integration)", () => {
+  function initFixture(): { dir: string; sha: (rev: string) => string } {
+    const dir = mkdtempSync(join(tmpdir(), "lh-review-scope-"));
+    const run = (args: string[]) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
+    run(["init", "-q", "-b", "main"]);
+    run(["config", "user.email", "test@example.com"]);
+    run(["config", "user.name", "Test"]);
+    return {
+      dir,
+      sha: (rev: string) => execFileSync("git", ["rev-parse", rev], { cwd: dir, encoding: "utf8" }).trim(),
+    };
+  }
+
+  function commit(dir: string, msg: string): string {
+    execFileSync("git", ["add", "-A"], { cwd: dir });
+    execFileSync("git", ["commit", "-q", "-m", msg], { cwd: dir });
+    return execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
+  }
+
+  it("classifies a real sequence of boring and real commits correctly end-to-end", () => {
+    const { dir } = initFixture();
+    writeFileSync(join(dir, "CHANGES.md"), "# Changes\n");
+    writeFileSync(join(dir, "foo.ts"), "export const x = 1;\n// a note\n");
+    const c0 = commit(dir, "c0: initial");
+
+    writeFileSync(join(dir, "CHANGES.md"), "# Changes\n\n### TRO-548\n\nMore prose.\n");
+    const c1 = commit(dir, "c1: CHANGES.md only");
+    expect(isDiffBoring(diffSince(dir, c0, c1)!)).toBe(true);
+
+    writeFileSync(join(dir, "foo.ts"), "export const x = 1;\n// an updated note\n");
+    const c2 = commit(dir, "c2: comment-only");
+    expect(isDiffBoring(diffSince(dir, c1, c2)!)).toBe(true);
+
+    writeFileSync(join(dir, "foo.ts"), "export const x = 2;\n// an updated note\n");
+    const c3 = commit(dir, "c3: real code change");
+    expect(isDiffBoring(diffSince(dir, c2, c3)!)).toBe(false);
+
+    // Across the whole span (c0..c3), the real change still makes it non-boring.
+    expect(isDiffBoring(diffSince(dir, c0, c3)!)).toBe(false);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("returns null, never a false boring read, when the SHA cannot be resolved", () => {
+    const { dir } = initFixture();
+    writeFileSync(join(dir, "CHANGES.md"), "# Changes\n");
+    commit(dir, "c0");
+    expect(diffSince(dir, "0000000000000000000000000000000000000000", "HEAD")).toBeNull();
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("decideCapture with scopedFromSha", () => {
+  it("notes the scoped-since SHA in a fresh pass detail", () => {
+    const d = decideCapture({
+      rc: 0,
+      timedOut: false,
+      parsed: { findings: 2, lastError: null },
+      previous: null,
+      currentSha: "bbb2222",
+      scopedFromSha: "aaa1111",
+    });
+    expect(d.status).toBe("pass");
+    expect(d.detail).toContain("scoped since aaa1111");
+  });
+
+  it("omits the scoped-since note when this was a full-branch review", () => {
+    const d = decideCapture({
+      rc: 0,
+      timedOut: false,
+      parsed: { findings: 0, lastError: null },
+      previous: null,
+      currentSha: "bbb2222",
+    });
+    expect(d.detail).not.toContain("scoped since");
+  });
+});
+
+describe("runCapture with baseArgs", () => {
+  it("uses the provided baseArgs instead of the default --base <base>", () => {
+    const runner = vi.fn().mockReturnValue({ rc: 0, stdout: "", stderr: "", timedOut: false });
+    runCapture({
+      base: "main",
+      baseArgs: ["--base-commit", "aaa1111"],
+      currentSha: "bbb2222",
+      previous: null,
+      runner,
+    });
+    expect(runner).toHaveBeenCalledWith(["review", "--agent", "--base-commit", "aaa1111"], expect.any(Number));
+  });
+
+  it("falls back to --base <base> when baseArgs is not provided", () => {
+    const runner = vi.fn().mockReturnValue({ rc: 0, stdout: "", stderr: "", timedOut: false });
+    runCapture({ base: "main", currentSha: "bbb2222", previous: null, runner });
+    expect(runner).toHaveBeenCalledWith(["review", "--agent", "--base", "main"], expect.any(Number));
+  });
+
+  it("threads scopedFromSha through to the decision detail", () => {
+    const runner = vi.fn().mockReturnValue({ rc: 0, stdout: '{"type":"finding"}\n', stderr: "", timedOut: false });
+    const result = runCapture({
+      base: "main",
+      baseArgs: ["--base-commit", "aaa1111"],
+      scopedFromSha: "aaa1111",
+      currentSha: "bbb2222",
+      previous: null,
+      runner,
+    });
+    expect(result.decision.detail).toContain("scoped since aaa1111");
   });
 });

@@ -26,12 +26,11 @@
  * `eval-report.json`, and THEN runs the same baseline comparison against
  * the fresh numbers. This is the expensive, deliberate, human-or-agent-
  * invoked mode — never automatic, matching `scripts/latency/measure.ts`'s
- * own real-money discipline. `--full` runs the whole 31-case golden set
- * instead of the default 8-case sample (`args.ts`); `--update-baseline`
- * promotes a clean `--live` run's numbers into the committed baseline (see
- * `args.ts` for why this is always a separate, explicit flag, never a
- * `--live` side effect); `--case=<id>` runs one named case for debugging
- * and never touches the committed report or baseline.
+ * own real-money discipline. `--full` runs the whole golden set instead of
+ * the default 8-case sample (`args.ts`); `--case=<id>` runs one named case
+ * for debugging and never touches the committed report or baseline.
+ * `--update-baseline` no longer writes `baseline.json` here (TRO-561) —
+ * see "THE BASELINE IS A BAND, NOT A POINT" below for where that moved.
  *
  * SCOPE: verdict accuracy is scored at the ROUTER level — does
  * `routeLabel`'s real output (via `handleVerifyRequest`, the same
@@ -48,6 +47,38 @@
  * real golden-set images end-to-end (as of this ticket, no production code
  * path calls it yet) — but its output is reported, never scored against a
  * fabricated ground truth the manifest does not have.
+ *
+ * THE BASELINE IS A BAND, NOT A POINT (TRO-561). `scripts/eval/baseline.json`
+ * used to pin the floor to one historical run's exact number — TRO-543 / LH-038
+ * measured a real 3.2-point call-to-call spread on unchanged code against
+ * unchanged images, so a floor pinned to the TOP of that spread failed two
+ * of three honest re-runs. The baseline is now a K-repeat band
+ * (`EvalBaseline`, `types.ts`) established by the re-baseline protocol —
+ * `scripts/eval/variance.ts`'s `--establish-baseline`, which extends the
+ * existing `eval:variance` sweep rather than adding a second cascade path.
+ * `compareToBaseline` (`baseline-compare.ts`) reports THREE DISTINCT
+ * problem classes, never conflated into one undifferentiated list:
+ * `"accuracy-below-band"` (a real regression — a headline rate fell below
+ * its own measured floor), `"stale-baseline"` (the corpus moved since the
+ * band was measured — a staleness question, fixed by re-running the
+ * protocol, not by finding a code regression that is not there), and
+ * `"coverage-mismatch"` (the current run's case set does not cover the
+ * band's own cases — run `--live --full`).
+ *
+ * CHEAP-MODE STALE-BASELINE IS A LOUD WARNING, NOT A BLOCK. Cheap mode runs
+ * on EVERY push, on every ticket's gate, regardless of whether that ticket
+ * touched `golden-set/`. If a `"stale-baseline"` problem alone (no
+ * accuracy-below-band, no coverage-mismatch) blocked cheap mode, then any
+ * PR merging after a corpus edit would fail CI for a reason it did not
+ * cause, until someone spent real API money re-baselining — the exact
+ * "gate cries wolf, gets routed around" failure this whole ticket exists to
+ * fix, just relocated onto a new axis. So: a `"stale-baseline"`-only result
+ * prints loudly (never silently) and STILL PASSES (exit 0) in cheap mode;
+ * `"accuracy-below-band"` or `"coverage-mismatch"`, in either mode, still
+ * fails. Live mode fails on `"stale-baseline"` too — an operator who just
+ * spent real money on a `--live` sweep should be stopped and pointed at the
+ * re-baseline protocol before trusting a comparison against a corpus that
+ * has already moved on.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -59,12 +90,12 @@ import { HAIKU_EXTRACTOR_MODEL } from "../../src/server/extractor";
 import { SONNET_RESOLVER_MODEL } from "../../src/server/resolver";
 import { cleanupScratchDirAndPool } from "../latency/cleanup";
 import { parseEvalArgs, resolveCaseIds, validateCheckArgs } from "./args";
-import { compareToBaseline } from "./baseline-compare";
+import { compareToBaseline, formatBandLine, hasProblemClass, type RegressionCheckResult } from "./baseline-compare";
 import { REPO_ROOT, runOneCase, type CaseRunOutcome } from "./cascade-runner";
 import { hashManifestFile } from "./manifest-hash";
 import { validateEvalBaseline, validateEvalReport } from "./report-validation";
 import { buildEvalReportSummary } from "./summary";
-import type { CascadeCaseResult, EvalBaseline, EvalCaseFailure, EvalReport } from "./types";
+import type { CascadeCaseResult, EvalBaseline, EvalCaseFailure, EvalReport, EvalReportSummary } from "./types";
 
 const REPORT_PATH = path.resolve(REPO_ROOT, "scripts/eval/results/eval-report.json");
 const BASELINE_PATH = path.resolve(REPO_ROOT, "scripts/eval/baseline.json");
@@ -97,15 +128,44 @@ function printCaseLine(outcome: CaseRunOutcome, index: number, total: number): v
   );
 }
 
-function printRegressionResult(result: { regressed: boolean; reasons: string[] }): void {
-  if (!result.regressed) {
-    console.log("check.ts: PASS — accuracy at or above the committed baseline.");
-    return;
+/** Prints the two banded metrics' own pass/fail line in TRO-561's
+ * variance-aware language ("78.1% is within the measured 78.1-81.3% band")
+ * on EVERY run, pass or fail — a silent pass would leave a reader unable to
+ * tell "within band" from "not checked at all". */
+function printBandLines(summary: EvalReportSummary, baseline: EvalBaseline): void {
+  console.log(`check.ts: ${formatBandLine("extraction accuracy", summary.extractionAccuracy.rate, baseline.extractionAccuracyBand, baseline.k)}`);
+  console.log(
+    `check.ts: ${formatBandLine("cascade-verdict accuracy", summary.cascadeVerdictAccuracy.rate, baseline.cascadeVerdictAccuracyBand, baseline.k)}`,
+  );
+}
+
+/**
+ * Prints `result`'s problems grouped by class and decides PASS/WARN/FAIL —
+ * see this file's own module comment for the cheap-vs-live mode split.
+ * Cheap mode downgrades a `"stale-baseline"`-ONLY result to a loud,
+ * non-blocking warning; every other case (any `"accuracy-below-band"` or
+ * `"coverage-mismatch"` problem, in either mode; ANY problem at all in live
+ * mode) fails. Returns the decision so callers set `process.exitCode`
+ * themselves rather than this function reaching into global state.
+ */
+function printComparisonResult(mode: "live" | "cheap", result: RegressionCheckResult): "pass" | "warn" | "fail" {
+  if (result.problems.length === 0) {
+    console.log("check.ts: PASS — both banded rates are at or above the committed baseline band's floor, manifest and coverage match.");
+    return "pass";
   }
-  console.error(`check.ts: FAIL — ${result.reasons.length} problem(s) vs the committed baseline:`);
-  for (const reason of result.reasons) {
-    console.error(`  - ${reason}`);
+
+  const anyBlocking = hasProblemClass(result, "accuracy-below-band") || hasProblemClass(result, "coverage-mismatch");
+  const staleOnly = mode === "cheap" && !anyBlocking;
+
+  if (staleOnly) {
+    console.warn(`check.ts: WARNING — ${result.problems.length} stale-baseline problem(s), NOT blocking cheap mode (see this file's module comment):`);
+    for (const p of result.problems) console.warn(`  - [${p.problemClass}] ${p.message}`);
+    return "warn";
   }
+
+  console.error(`check.ts: FAIL — ${result.problems.length} problem(s) vs the committed baseline band:`);
+  for (const p of result.problems) console.error(`  - [${p.problemClass}] ${p.message}`);
+  return "fail";
 }
 
 async function runLive(args: ReturnType<typeof parseEvalArgs>): Promise<void> {
@@ -201,13 +261,13 @@ async function runLive(args: ReturnType<typeof parseEvalArgs>): Promise<void> {
     `check.ts: extraction accuracy ${(summary.extractionAccuracy.rate * 100).toFixed(1)}% (${summary.extractionAccuracy.correct}/${summary.extractionAccuracy.total})`,
   );
   console.log(
-    `check.ts: router-verdict accuracy ${(summary.routerVerdictAccuracy.rate * 100).toFixed(1)}% (${summary.routerVerdictAccuracy.correct}/${summary.routerVerdictAccuracy.total}) — scored BEFORE any resolver call`,
+    `check.ts: router-verdict accuracy ${(summary.routerVerdictAccuracy.rate * 100).toFixed(1)}% (${summary.routerVerdictAccuracy.correct}/${summary.routerVerdictAccuracy.total}) — scored BEFORE any resolver call; reported only, not banded (see EvalBaseline's own doc comment, types.ts)`,
   );
   console.log(
     `check.ts: cascade-verdict accuracy ${(summary.cascadeVerdictAccuracy.rate * 100).toFixed(1)}% (${summary.cascadeVerdictAccuracy.correct}/${summary.cascadeVerdictAccuracy.total}) — the cascade's END STATE, resolver merge included`,
   );
   console.log(
-    `check.ts: review-reason accuracy ${(summary.reviewReasonAccuracy.rate * 100).toFixed(1)}% (${summary.reviewReasonAccuracy.correct}/${summary.reviewReasonAccuracy.total})`,
+    `check.ts: review-reason accuracy ${(summary.reviewReasonAccuracy.rate * 100).toFixed(1)}% (${summary.reviewReasonAccuracy.correct}/${summary.reviewReasonAccuracy.total}) — reported only, not banded (small REVIEW-only sample)`,
   );
   // PRD §3.7 / CP-2 §8.4's warning upgrade-ladder segmentation (TRO-469 /
   // LH-021) — reported, not gated (baseline-compare.ts's own module
@@ -237,59 +297,67 @@ async function runLive(args: ReturnType<typeof parseEvalArgs>): Promise<void> {
     return;
   }
 
+  // TRO-561: check.ts no longer writes scripts/eval/baseline.json. The
+  // baseline is a K-repeat band now (EvalBaseline, types.ts), and a single
+  // --live run has no K and no spread to band from — writing one here would
+  // reopen exactly the "floor pinned to one draw" defect this ticket fixes,
+  // via a second, inconsistent write path (this file's own module comment:
+  // "do NOT build a second cascade path"). The re-baseline protocol
+  // (variance.ts's --establish-baseline) is the only path that writes
+  // baseline.json now.
   if (args.updateBaseline) {
-    const baseline: EvalBaseline = {
-      ticket: report.ticket,
-      establishedAt: report.measuredAt,
-      manifestVersion: report.manifestVersion,
-      manifestContentHash: report.manifestContentHash,
-      caseIds: report.caseIds,
-      summary: report.summary,
-    };
-    writeFileSync(BASELINE_PATH, JSON.stringify(baseline, null, 2) + "\n");
-    console.log(`check.ts: wrote ${BASELINE_PATH} (baseline updated from this run — no regression check against the old baseline).`);
-    process.exitCode = 0;
+    console.error(
+      "check.ts: --update-baseline no longer writes scripts/eval/baseline.json (TRO-561: the baseline is a K-repeat band, not one " +
+        "run's point). Use the re-baseline protocol instead: pnpm eval:variance -- --live --full --repeats=3 --establish-baseline.",
+    );
+    process.exitCode = 1;
     return;
   }
 
   if (!existsSync(BASELINE_PATH)) {
-    console.error(`check.ts: no committed baseline at ${BASELINE_PATH}. Run --live --update-baseline first to establish one.`);
+    console.error(
+      `check.ts: no committed baseline at ${BASELINE_PATH}. Run the re-baseline protocol first: ` +
+        "pnpm eval:variance -- --live --full --repeats=3 --establish-baseline.",
+    );
     process.exitCode = 1;
     return;
   }
   const baseline = validateEvalBaseline(JSON.parse(readFileSync(BASELINE_PATH, "utf8")), BASELINE_PATH);
-  const regressionResult = compareToBaseline(report, baseline);
-  printRegressionResult(regressionResult);
-  process.exitCode = regressionResult.regressed ? 1 : 0;
+  printBandLines(report.summary, baseline);
+  const comparison = compareToBaseline(report, baseline);
+  const decision = printComparisonResult("live", comparison);
+  process.exitCode = decision === "fail" ? 1 : 0;
 }
 
 function runCheap(): void {
+  const REBASELINE_HINT = "pnpm eval:variance -- --live --full --repeats=3 --establish-baseline";
   if (!existsSync(REPORT_PATH)) {
     console.error(
-      `check.ts: no committed eval report at ${REPORT_PATH}. This is expected before the first --live run. ` +
-        "Run: pnpm eval:check -- --live --update-baseline",
+      `check.ts: no committed eval report at ${REPORT_PATH}. This is expected before the first --live run. Run: ${REBASELINE_HINT}`,
     );
     process.exitCode = 1;
     return;
   }
   if (!existsSync(BASELINE_PATH)) {
-    console.error(`check.ts: no committed baseline at ${BASELINE_PATH}. Run: pnpm eval:check -- --live --update-baseline`);
+    console.error(`check.ts: no committed baseline at ${BASELINE_PATH}. Run: ${REBASELINE_HINT}`);
     process.exitCode = 1;
     return;
   }
   const report = validateEvalReport(JSON.parse(readFileSync(REPORT_PATH, "utf8")), REPORT_PATH);
   const baseline = validateEvalBaseline(JSON.parse(readFileSync(BASELINE_PATH, "utf8")), BASELINE_PATH);
   console.log(
-    `check.ts: cheap mode — comparing the committed report (measured ${report.measuredAt}) against the committed baseline (established ${baseline.establishedAt}). No live call made.`,
+    `check.ts: cheap mode — comparing the committed report (measured ${report.measuredAt}) against the committed baseline band ` +
+      `(K=${baseline.k}, established ${baseline.establishedAt}). No live call made.`,
   );
   if (report.failures.length > 0) {
     console.error(`check.ts: FAIL — the committed report itself recorded ${report.failures.length} case failure(s); it does not represent a clean run.`);
     process.exitCode = 1;
     return;
   }
-  const regressionResult = compareToBaseline(report, baseline);
-  printRegressionResult(regressionResult);
-  process.exitCode = regressionResult.regressed ? 1 : 0;
+  printBandLines(report.summary, baseline);
+  const comparison = compareToBaseline(report, baseline);
+  const decision = printComparisonResult("cheap", comparison);
+  process.exitCode = decision === "fail" ? 1 : 0;
 }
 
 async function main(): Promise<void> {

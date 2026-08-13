@@ -9,25 +9,44 @@
  * for by the PRD line verbatim, but a queue a reviewer can churn through
  * smoothly is the kind of thing TH-R22 asks this ticket to name as a
  * differentiator, not bury.
+ *
+ * **Paging (TRO-507).** The endpoint returns one page and says whether
+ * more items follow. This component shows that fact and offers "Load
+ * more", which appends the next page. Before this, a queue deeper than 100
+ * items showed the first 100 as if they were all of them — a reviewer had
+ * no way to know anything was missing, which is the wrong side of
+ * TH-R10/TH-R20 ("uncertain beats wrong; always show the reason").
  */
 import { useEffect, useState } from "react";
 import { fetchReviewQueue, ReviewQueueClientError } from "../_lib/review-queue-client";
-import type { ReviewQueueListItemWire } from "../api/review-queue/types";
+import type { ReviewQueueListItemWire, ReviewQueueListResponse } from "../api/review-queue/types";
 import { ReviewQueueList } from "./ReviewQueueList";
 
 type Phase =
   | { status: "loading" }
-  | { status: "refreshing"; items: ReviewQueueListItemWire[] }
-  | { status: "success"; items: ReviewQueueListItemWire[] }
+  | { status: "refreshing"; items: ReviewQueueListItemWire[]; nextCursor: string | null }
+  | { status: "success"; items: ReviewQueueListItemWire[]; nextCursor: string | null }
+  | { status: "loading-more"; items: ReviewQueueListItemWire[]; nextCursor: string }
   | { status: "error"; message: string }
-  | { status: "refresh-error"; items: ReviewQueueListItemWire[]; message: string };
+  | { status: "refresh-error"; items: ReviewQueueListItemWire[]; nextCursor: string | null; message: string };
 
 export interface ReviewQueueBrowserProps {
-  /** Injected in tests; defaults to the real network call. */
-  fetchItems?: () => Promise<ReviewQueueListItemWire[]>;
+  /** Injected in tests; defaults to the real network call. `after` reads
+   * the page following that cursor. */
+  fetchItems?: (after?: string) => Promise<ReviewQueueListResponse>;
 }
 
-export function ReviewQueueBrowser({ fetchItems = fetchReviewQueue }: ReviewQueueBrowserProps) {
+const DEFAULT_ERROR_MESSAGE = "LabelHunter could not load the review queue. Try again.";
+
+function messageFor(error: unknown): string {
+  return error instanceof ReviewQueueClientError ? error.message : DEFAULT_ERROR_MESSAGE;
+}
+
+function defaultFetchItems(after?: string): Promise<ReviewQueueListResponse> {
+  return fetchReviewQueue({ after });
+}
+
+export function ReviewQueueBrowser({ fetchItems = defaultFetchItems }: ReviewQueueBrowserProps) {
   const [phase, setPhase] = useState<Phase>({ status: "loading" });
   const [requestId, setRequestId] = useState(0);
 
@@ -42,18 +61,21 @@ export function ReviewQueueBrowser({ fetchItems = fetchReviewQueue }: ReviewQueu
   useEffect(() => {
     let cancelled = false;
     fetchItems().then(
-      (items) => {
-        if (!cancelled) setPhase({ status: "success", items });
+      (page) => {
+        if (!cancelled) setPhase({ status: "success", items: page.items, nextCursor: page.nextCursor });
       },
       (error: unknown) => {
         if (cancelled) return;
-        const message = error instanceof ReviewQueueClientError ? error.message : "LabelHunter could not load the review queue. Try again.";
         // A failed manual refresh keeps the rows on screen, next to the
         // error, instead of replacing a working list with a bare error
         // panel — the same reason `refresh()` below keeps rows mounted
         // while the request is in flight (CodeRabbit finding, local
         // review round 3).
-        setPhase((current) => (current.status === "refreshing" ? { status: "refresh-error", items: current.items, message } : { status: "error", message }));
+        setPhase((current) =>
+          current.status === "refreshing"
+            ? { status: "refresh-error", items: current.items, nextCursor: current.nextCursor, message: messageFor(error) }
+            : { status: "error", message: messageFor(error) },
+        );
       },
     );
     return () => {
@@ -71,9 +93,50 @@ export function ReviewQueueBrowser({ fetchItems = fetchReviewQueue }: ReviewQueu
     // too, not only a successful refresh — the first version of this fix
     // checked only "success" (CodeRabbit finding, local review round 4).
     setPhase((current) =>
-      current.status === "success" || current.status === "refresh-error" ? { status: "refreshing", items: current.items } : { status: "loading" },
+      current.status === "success" || current.status === "refresh-error"
+        ? { status: "refreshing", items: current.items, nextCursor: current.nextCursor }
+        : { status: "loading" },
     );
     setRequestId((id) => id + 1);
+  }
+
+  // A refresh restarts the queue from its first page, so the reviewer
+  // never ends up with page 3 of a queue that has since changed. Loading
+  // more, by contrast, APPENDS: the rows already read stay put.
+  //
+  // Every state update below is guarded on this request's own cursor still
+  // being the one in flight, so a refresh started while a page was loading
+  // wins and the late page is discarded rather than appended to a list it
+  // no longer belongs to.
+  //
+  // "refresh-error" runs this too, not only "success". That state holds a
+  // real cursor — a failed page load keeps the cursor it failed on, and a
+  // failed refresh keeps the last good page's cursor — and the UI already
+  // renders "Load more" for it. Accepting only "success" left that button
+  // on screen, enabled, doing nothing (CodeRabbit finding, local review
+  // round 6). The retry reuses the same cursor, so the page the reviewer
+  // never received is the page that is asked for again.
+  function loadMore() {
+    if (phase.status !== "success" && phase.status !== "refresh-error") return;
+    if (phase.nextCursor === null) return;
+    const cursor = phase.nextCursor;
+    setPhase({ status: "loading-more", items: phase.items, nextCursor: cursor });
+    fetchItems(cursor).then(
+      (page) => {
+        setPhase((latest) =>
+          latest.status === "loading-more" && latest.nextCursor === cursor
+            ? { status: "success", items: [...latest.items, ...page.items], nextCursor: page.nextCursor }
+            : latest,
+        );
+      },
+      (error: unknown) => {
+        setPhase((latest) =>
+          latest.status === "loading-more" && latest.nextCursor === cursor
+            ? { status: "refresh-error", items: latest.items, nextCursor: cursor, message: messageFor(error) }
+            : latest,
+        );
+      },
+    );
   }
 
   if (phase.status === "loading") {
@@ -97,10 +160,12 @@ export function ReviewQueueBrowser({ fetchItems = fetchReviewQueue }: ReviewQueu
   }
 
   const isRefreshing = phase.status === "refreshing";
+  const isLoadingMore = phase.status === "loading-more";
+  const hasMore = phase.nextCursor !== null;
 
   return (
     <>
-      <button type="button" className="secondary-button" disabled={isRefreshing} onClick={refresh}>
+      <button type="button" className="secondary-button" disabled={isRefreshing || isLoadingMore} onClick={refresh}>
         {isRefreshing ? "Refreshing…" : "Refresh"}
       </button>
       {phase.status === "refresh-error" && (
@@ -110,6 +175,20 @@ export function ReviewQueueBrowser({ fetchItems = fetchReviewQueue }: ReviewQueu
         </div>
       )}
       <ReviewQueueList items={phase.items} />
+      {hasMore && (
+        <div className="review-queue-more">
+          {/* The list on screen is not the whole queue. Say so plainly,
+              next to the control that reads the rest — a reviewer must
+              never have to work out that items are missing (TH-R3: no
+              instructions needed; TH-R20: always show the reason). */}
+          <p className="review-queue-more__notice" role="status">
+            You are seeing the {phase.items.length} oldest items. More items are waiting.
+          </p>
+          <button type="button" className="secondary-button" disabled={isLoadingMore || isRefreshing} onClick={loadMore}>
+            {isLoadingMore ? "Loading more…" : "Load more"}
+          </button>
+        </div>
+      )}
     </>
   );
 }

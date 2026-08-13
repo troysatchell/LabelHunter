@@ -73,6 +73,1513 @@ label may not support.
 
 **Rollback.** Revert this commit range. The prompt reverts to the CP-1 bytes approved on
 2026-08-10, and rule 1 reverts to the length test.
+## TRO-561 — Urgent: band the eval baseline, name three distinct G8 failure classes (2026-08-13)
+
+Advances TH-R17, TH-R19. Restores an honestly-green CI `verify` step. Blocks TRO-486's sweep and
+every submission accuracy figure.
+
+**The bug.** `scripts/eval/baseline.json` pinned the accuracy floor to one historical run's exact
+number. TRO-543 measured a real 3.2-point call-to-call spread on unchanged code against unchanged
+images. The committed baseline sat at 81.3%, the top of that spread. Two of three honest re-runs
+of unchanged code failed the gate. PR #63 merged main under a Troy-approved G8 exception because
+of this.
+
+**The fix — a band, not a point.** `scripts/eval/baseline.json` is now a K-repeat band
+(`EvalBaseline`, `scripts/eval/types.ts`). It records:
+
+- K, and each repeat's own extraction accuracy and cascade-verdict accuracy.
+- The resulting `[min, max]` band for each metric.
+- Every case's own observed verdict set.
+- Model IDs, and real measured per-call and total cost.
+- `establishedAt`, the code commit SHA, and the golden-set corpus identity —
+  `manifestContentHash` plus the commit that last touched `golden-set/`.
+
+The gate floor is the band's own measured minimum. `check.ts` prints each banded metric's own line
+in variance-aware language, pass or fail: "78.1% is within the measured 78.1%-81.3% band" or "74.0%
+is BELOW the measured 78.1%-81.3% band."
+
+Bands exactly two headline rates: extraction accuracy and cascade-verdict accuracy — the two named
+in the original bug report. `routerVerdictAccuracy` and `reviewReasonAccuracy` stay in every report
+and print on every run. Neither is banded or gated. `cascadeVerdictAccuracy` is already documented
+(TRO-538 / LH-033) as the cascade's real end state — the number to trust. `routerVerdictAccuracy` is
+an earlier, diagnostic-only stage. `reviewReasonAccuracy` scores a small REVIEW-only subset. This
+matches `baseline-compare.ts`'s own pre-existing rule: report per-field breakdowns and
+`warningSegmentation` as diagnostic detail, but never gate on them.
+
+**Three distinct problem classes**, never conflated into one undifferentiated list
+(`scripts/eval/baseline-compare.ts`'s `ComparisonProblemClass`):
+
+1. `accuracy-below-band` — a headline rate fell below its own measured floor. A real regression.
+2. `stale-baseline` — the current run's manifest hash (or version) disagrees with the baseline's.
+   The corpus moved since the band was measured. The fix is the re-baseline protocol, not a
+   regression hunt.
+3. `coverage-mismatch` — the current run's case set does not cover every case the band was measured
+   over. The fix is `--live --full`, not a regression hunt.
+
+**Cheap-mode decision for `stale-baseline`.** Cheap mode (`pnpm eval:check`, no flags) runs on every
+push, on every ticket's gate, whether or not that push touched `golden-set/`. A `stale-baseline`-only
+result (no accuracy or coverage problem) prints a loud warning and still exits 0 in cheap mode —
+never silent, never blocking. `accuracy-below-band` or `coverage-mismatch`, in either mode, still
+fails. Live mode fails on `stale-baseline` too. An operator who just spent real money on a `--live`
+sweep should stop. Re-baseline before trusting a comparison against a moved corpus.
+
+Without this split, any PR merging after an unrelated corpus edit would fail CI for a reason it did
+not cause. That is the exact "gate cries wolf" failure this ticket exists to fix — relocated onto a
+new axis, not removed.
+
+**The re-baseline protocol — standing, not one-time.** There is no "final" golden set to wait for.
+`scripts/eval/variance.ts`'s new `--establish-baseline` flag extends the existing `eval:variance`
+sweep — it does not add a second cascade path:
+
+```
+pnpm eval:variance -- --live --full --repeats=3 --establish-baseline
+```
+
+On a clean sweep this does three things, all from the same sweep — no second paid live call:
+
+1. Archives the current `baseline.json` under `scripts/eval/baseline-archive/` (never deleting
+   measured history — TRO-539's own precedent).
+2. Writes the new band baseline.
+3. Refreshes `scripts/eval/results/eval-report.json` from the same sweep's own repeat 1.
+
+Every future ticket that changes `golden-set/` content — adds a case, edits ground truth, merges or
+removes a case — runs this protocol as part of its own work. It commits the new band, with its own
+measured SHA, alongside its change. The `stale-baseline` problem class is the routine detector that
+enforces this: a corpus edit lands with no re-baseline, `manifestContentHash` stops matching, and
+`pnpm eval:check` says so by name.
+
+`check.ts`'s own `--update-baseline` no longer writes `baseline.json` — a single `--live` run has no
+K and no spread to band from. It now errors and points at the protocol above.
+
+**The one authorized live sweep.** `pnpm eval:variance -- --live --full --repeats=3
+--establish-baseline`, run against the merged 36-case corpus (golden-set commit `0e6e3e1`, TRO-529's
+five photographed cases included) at code commit `e4ac31e`.
+
+| Metric | Value |
+| -- | -- |
+| K | 3 |
+| N | 36 cases |
+| Failures | 0 |
+| Extraction accuracy band | 87.2%-87.8% (spread 0.56 pt) |
+| Cascade-verdict accuracy band | 80.6%-83.3% (spread 2.78 pt) |
+| Corpus stability | 97.2% (35/36 cases returned the same verdict every repeat) |
+| Measured cost | **$1.2036** total (mean Haiku call $0.0047, mean Sonnet call $0.0140) |
+
+`case-19-rotation-mild-correctable` is the one unstable case: REVIEW once, then PASS twice — the
+same kind of real call-to-call variance TRO-543 first measured on case-17.
+
+**Cost accounting — an earlier attempt was killed by my own tooling, not by the cascade.** The first
+attempt at this sweep ran in this agent's foreground shell, capped at a 10-minute timeout. The
+golden set had grown to 36 cases: 108 real cascade calls. The sweep did not finish inside 10
+minutes. The tool killed it mid-run, after 68 case-repeats (through `case-23`), before any artifact
+was written.
+
+That real API spend is not recoverable. Summing every printed `haiku $` line from that run's
+captured log gives **$0.3172**. This is a lower bound: it counts Haiku only. The log format for
+this script does not print resolver cost per line, and this run may have escalated at least one
+REVIEW case to the resolver.
+
+The second attempt ran the sweep as a detached background process. This agent polled it with
+repeated short foreground checks — never a background-and-stop wait — until it completed cleanly at
+the $1.2036 measured above. **Total real spend across both attempts: approximately $1.52.**
+
+This is not a cascade failure, and it is not a reason to distrust the resulting band. It is a
+process-management mistake in how this ticket's own agent ran the first attempt. This entry reports
+it in full rather than folding it quietly into the final number.
+
+**The invariant: this ticket's own changes do not alter cascade behavior.** The brief requires proof
+that this PR's diff touches measurement and comparison tooling only. That proof makes the sweep
+above a valid main-state baseline. The check: `git diff 350f21f..8024626 --stat -- src/` — the
+commit range covering every file this ticket's own commit touched, before the corpus-only merge.
+It returns nothing. Zero files under `src/`.
+
+The full file list this ticket's own commit touched: `.github/workflows/ci.yml` (a comment) and
+fourteen files under `scripts/eval/`. Every `src/` change visible in this branch's final diff came
+from merging `origin/main` — TRO-529's own gated, already-merged golden-set work — not from this
+ticket.
+
+**G6 — red before the comparison rewrite, green after.** `scripts/eval/baseline-compare.test.ts`
+(the rewritten regression suite) run against the pre-TRO-561 `scripts/eval/baseline-compare.ts`
+(`git show 350f21f:scripts/eval/baseline-compare.ts`, swapped in temporarily, then restored — never
+committed):
+
+```text
+ Test Files  1 failed (1)
+      Tests  20 failed (20)
+```
+
+Every failure was `TypeError: Cannot read properties of undefined (reading 'extractionAccuracy')`
+(the old function reads `baseline.summary`, which a band baseline no longer has) or
+`formatBandLine is not a function` / `hasProblemClass is not a function` (neither existed yet) — the
+right reason, not an import error or a typo.
+
+Green, run against this ticket's rewritten `baseline-compare.ts`:
+
+```text
+ Test Files  1 passed (1)
+      Tests  20 passed (20)
+```
+
+**The three failure classes, demonstrated with real CLI output.** Each demonstration ran
+`pnpm eval:check` (cheap mode, zero cost) against a scratch copy of the real, sweep-produced
+`eval-report.json`, perturbed in memory and never committed; the real file was restored
+byte-identical after each run (`diff` confirmed).
+
+A run at the band floor passes (the real committed state — extraction accuracy sits at exactly
+repeat 1's own measured rate, cascade-verdict accuracy too):
+
+```text
+check.ts: extraction accuracy 87.2% is within the measured 87.2%-87.8% band (K=3).
+check.ts: cascade-verdict accuracy 80.6% is within the measured 80.6%-83.3% band (K=3).
+check.ts: PASS — both banded rates are at or above the committed baseline band's floor, manifest and coverage match.
+```
+
+A run clearly below the band fails, classified `accuracy-below-band` (cascade-verdict accuracy
+forced to 55.6%):
+
+```text
+check.ts: cascade-verdict accuracy 55.6% is BELOW the measured 80.6%-83.3% band (K=3).
+check.ts: FAIL — 1 problem(s) vs the committed baseline band:
+  - [accuracy-below-band] cascade-verdict accuracy 55.6% is BELOW the measured 80.6%-83.3% band (K=3).
+```
+
+A hash-mismatched baseline reports `stale-baseline`, not a regression, and does not block cheap mode
+(`manifestContentHash` forced to a bogus value, everything else untouched):
+
+```text
+check.ts: WARNING — 1 stale-baseline problem(s), NOT blocking cheap mode (see this file's module comment):
+  - [stale-baseline] manifest content changed: current run's manifest hash "deadbeef-not-the-real-hash" does not match the baseline band's "fa3dbcfb60a6ecbd6c2de4ec837c54c72b87e909865ee9429946ac79cc5e0784" — golden-set/manifest.json's content moved since the band was measured, even if manifestVersion did not. Run the re-baseline protocol: pnpm eval:variance -- --live --full --repeats=3 --establish-baseline.
+```
+
+Exit code: 0. A coverage gap reports as its own class (`case-39` dropped from the current run's
+`caseIds` and `cases`):
+
+```text
+check.ts: FAIL — 1 problem(s) vs the committed baseline band:
+  - [coverage-mismatch] coverage mismatch: current run did not include 1 case(s) the baseline band was measured over (case-39-rotation-real-photo-coppola-wraparound) — run --live --full to cover the whole golden set before comparing.
+```
+
+**Gate verdict.** `pnpm eval:check` (cheap mode, the same command CI's "Eval harness not regressed"
+step and gate G8 both run, unconditionally, on every push):
+
+```text
+check.ts: extraction accuracy 87.2% is within the measured 87.2%-87.8% band (K=3).
+check.ts: cascade-verdict accuracy 80.6% is within the measured 80.6%-83.3% band (K=3).
+check.ts: PASS — both banded rates are at or above the committed baseline band's floor, manifest and coverage match.
+```
+
+**Gate.** The first full `gate.sh` run on this branch caught two real findings: `defect-gate`
+(`vacuous-empty-quantifier`, two `.every()` calls over a possibly-empty collection in
+`report-validation.ts`) and a stale hardcoded `32` in `variance-report-artifact.test.ts` (TRO-529
+grew the corpus to 36 cases with no update to that file). Both fixed, with new tests. Final
+`gate.sh --skip-review` (review already attempted once, below — not retried, to respect the shared
+CodeRabbit cap):
+
+```text
+  [ok ] typecheck              clean
+  [ok ] lint                   clean
+  [ok ] build                  built
+  [ok ] tests                  no new failures vs baseline
+  [ok ] tests:not-weakened     -56 / +178 test line(s) — net gain; reviewer should confirm removals are corrections
+  [ok ] regression-test        66 test case(s) added
+  [ok ] changes-entry          entry for TRO-561 present; structure valid
+  [ok ] eval-not-regressed     accuracy >= committed baseline
+  [ok ] scope                  20 file(s) changed
+  [ok ] defect-gate            no introduced violations
+  [skip] review                 disabled for this run
+
+=== TRO-561: pass ===
+```
+
+This branch's merge with `origin/main` pulled in PR #62's gate-exception mechanism and TRO-560's
+extracted `review-capture.ts` — this is the post-merge `gate.sh`, not the one this branch was cut
+from.
+
+**Review.** One local CodeRabbit capture attempt, per the revised (2026-08-13) shared-cap protocol:
+attempt once, do not retry on a cap/timeout. Result: `rc=124` (timed out). The CLI streamed 4
+finding records before the timeout killed it, but the capture never completed, so
+`review-capture.ts` never persisted their content (`coderabbit.json` only writes on a completed
+capture) — nothing to triage from this attempt. Full attempt record:
+`.factory/coderabbit-capture.json`. **Final state: unreviewed-with-attempt-recorded.** PR-level
+review is the authoritative channel for this ticket; a further local retry, if any, is the
+orchestrator's call, not this agent's.
+
+**Timestamp discipline.** `establishedAt`/`measuredAt` are ISO strings. This code generates each one
+once, in-process, via `new Date().toISOString()`, and copies it through verbatim (`baseline-band.ts`,
+`check.ts`). No code or test in this ticket round-trips a timestamp through Postgres or re-parses it
+into a `Date` for an equality check. That means no exposure to the bug the parallel session hit:
+Postgres `timestamptz` keeps microseconds, but a JS `Date` truncates to milliseconds, so a
+round-tripped equality check can silently fail.
+
+**Do NOT, honored.** No number was lowered to pass. G8 was not disabled or weakened. It is stricter
+in one direction: a real regression on either banded metric still fails both modes. It is more
+honest in the other: a corpus move alone no longer masquerades as a regression. No measured history
+was deleted — the old baseline lives on in `scripts/eval/baseline-archive/`. The variance itself was
+not "fixed"; TRO-543's finding stands. This ticket only changed how the gate reads it. `golden-set/`
+content was not touched by this ticket's own commits.
+
+## TRO-506, TRO-512, TRO-507, TRO-524 — The review-queue persistence layer and the UI that reads it (2026-08-13)
+
+**What changed.** Four tickets share one root cause. That cause is the review queue's
+persistence layer and the screen that reads it.
+
+### TRO-506 and TRO-512 — two workers could pay twice for one Sonnet call
+
+`resolveEscalatedLabel` checked for an existing `review_queue` row. It then called Sonnet. It
+then wrote the result. Two callers for one `verificationId` both passed the check. Both bought a
+call. The unique index stopped the second write. Nothing stopped the second call.
+
+The fix is CP-3 §3.3's own prescription. `src/server/resolver/reservation.ts` takes an atomic
+per-verification reservation before the model call. Postgres serializes that one statement, so
+exactly one caller wins. The winner calls Sonnet. Every other caller reuses a resolution that
+already exists. A caller with no resolution to reuse waits for the winner's, bounded, then throws
+a named `ResolverReservationTimeoutError`. No second call starts. A failed model call releases
+the reservation, so a retry proceeds at once.
+
+CP-3 §12 open question 2 left two decisions to this ticket. This entry answers both.
+
+1. **A reservation gets its own lease.** The lease lives in
+   `review_queue.resolver_reserved_until` (migration 0005). It does not piggyback on
+   `batch_queue_items`. A later caller takes over an expired reservation, so a caller that dies
+   mid-call never blocks the row forever. The lease is 120 seconds. That is CP-3 §3.2's own
+   value, and twice the resolver client's 60-second timeout.
+2. **The conflict action is `DO UPDATE ... WHERE`, not `DO NOTHING`.** TRO-511 shipped after CP-3
+   was written. The verify route now pre-files a bare row. `DO NOTHING` would therefore find a
+   row for every single-label escalation, and no caller would ever resolve one. The `WHERE`
+   clause keeps CP-3's guarantee exactly: it matches nothing while a live reservation exists.
+3. **A release must prove it still owns the lease.** `reserveReviewQueueEntry` returns the exact
+   lease it won. `releaseReviewQueueReservation` requires that lease back and matches on it.
+   Without this, the double-pay returns through the release path. A caller whose model call
+   outlives its own lease loses the row to a later caller by design. Its eventual failure would
+   then clear the *new* holder's live reservation, because the row is still unresolved and
+   unskipped at that moment. A third caller could reserve and buy a second Sonnet call while the
+   second was still running. Found by CodeRabbit on PR #60.
+4. **The lease is written through `date_trunc('milliseconds', ...)`.** Postgres `timestamptz`
+   keeps microseconds, and this driver returns the column as a string. A JavaScript `Date` holds
+   milliseconds. Observed: an untruncated lease of `14:40:15.312121+00` came back as
+   `14:40:15.312`, so rule 3's predicate could never match its own row. Truncating at the source
+   makes the value exactly representable on both sides. This is the same precision problem
+   migration 0006 fixes for `created_at`, solved at the single writer rather than in the column.
+
+TRO-512's second half is the coordinated display change. A reserved row exists before Sonnet
+answers. "No suggestion on this row" now means one of four things. Each row carries a
+`resolverStatus`, and the list prints one plain sentence for it. An item being checked never
+reads the same as one the escalation cap skipped.
+
+### TRO-507 — the queue hid everything past the first 100 items
+
+`listUnresolvedReviewQueue` returned the first 100 items and said nothing about the rest. A
+reviewer saw a complete-looking list that was not one. That is the wrong side of TH-R10/TH-R20,
+on the feature TH-R22 names as this project's differentiator.
+
+The list now returns one page plus a `nextCursor`. The cursor is a keyset position on
+`(createdAt, id)`, the pair the query already orders by. A concurrent insert or disposal
+therefore cannot make a row skip a page, the way OFFSET can. `GET /api/review-queue` accepts
+`limit` and `after`. It validates both and answers 400 with the reason. `ReviewQueueBrowser` says
+"More items are waiting" and offers "Load more" whenever a cursor exists. The 100-item page
+ceiling is unchanged. This ticket added a way to read past that ceiling, not a bigger number.
+
+One real defect surfaced while testing this. `review_queue.created_at` stored microseconds. A
+cursor is built from the JavaScript `Date` the driver returns, which carries milliseconds. The
+truncated cursor compared as "before" the row it came from. The next page therefore served that
+row again, forever. Migration 0006 drops the column to millisecond precision, which is exactly
+what a cursor can name.
+
+### TRO-524 — E2E runs left unresolved rows behind
+
+The suite seeds through the real product surface, so every run files real `review_queue` rows.
+`scripts/e2e/cleanup.ts` deletes every application whose brand carries `fixtures.ts`'s own `e2e-`
+tag. The cascade removes the label image, the verification, and the review-queue row. Playwright
+runs the cleanup in global setup, before the suite. A run that crashes never reaches a teardown,
+and those are the runs that leave rows behind. No spec assertion was weakened.
+
+### Review round 6 — what the local CodeRabbit round changed
+
+Six of seven findings became changes. The seventh is dismissed below, with its measurements.
+
+- **"Load more" was a dead button after a failed page load.** A failed page load leaves the
+  browser in the `refresh-error` state, holding the cursor it failed on. `loadMore` ran only from
+  the `success` state. The button stayed on screen and enabled, and did nothing. It now runs from
+  `refresh-error` too, and reuses the same cursor. Regression test:
+  `src/app/_components/ReviewQueueBrowser.test.tsx`.
+- **An empty page may no longer promise more items.** `list.ts` builds `nextCursor` from the last
+  item of the page it returns. "No items" and "more items follow" cannot both be true. The client
+  validator now rejects that pair. Regression test: `src/app/_lib/review-queue-client.test.ts`.
+- **Migration 0007 gives `review_queue_unresolved_idx` both sort keys.** The index carried
+  `created_at` alone. The keyset page boundary compares the pair `(created_at, id)`. Measured
+  plans are in `src/server/review-queue/list.ts`. The short version: with distinct timestamps the
+  plan improves and the clock does not. With 20,000 rows sharing one timestamp, the old index ran
+  10.77 ms and the new index ran 0.188 ms.
+- **The E2E cleanup test now creates its fixtures inside its own `try`.** A failure while
+  building the second fixture used to leave the first one's rows behind for good.
+- **The resolver-status test now reads the page after an anchor cursor.** Sibling test files
+  share this database. Enough sibling rows could fill the first page and hide the four fixtures.
+
+**Dismissed: the ACCESS EXCLUSIVE lock migrations 0006 and 0007 take.** The review asked for
+expand-and-backfill, or a scheduled maintenance window.
+
+First, the prior question: is 0006 needed at all? It is. Method: revert this worktree's column
+to the default microsecond precision, run the review-queue suites, then restore it. Reverted,
+`src/app/api/review-queue/route.test.ts` failed. It failed with the exact repeat the migration
+exists to stop. One queue id came back on page after page, and the walk never reached the next
+row. Restored, all 56 tests passed. Dropping 0006 would mean redesigning the cursor to carry
+microseconds, which means teaching the driver to return this column as text.
+
+Both migrations take that lock, and
+Render runs `pnpm db:migrate` as a pre-deploy step while the previous version still serves
+traffic. The lock is therefore real, and it blocks live reads of this one table while it is held.
+Measured on this worktree's Postgres, on the real `review_queue` table seeded to 20,000
+unresolved rows:
+
+- 0006's type change held the lock for 139.94 ms.
+- 0007's `DROP INDEX` held it for 3.03 ms.
+- 0007's `CREATE INDEX` held it for 18.01 ms.
+
+A separate probe table gave 601.70 ms for the same type change at 100,000 rows.
+Expand-and-backfill removes the lock. It costs a second column, a backfill, and two more
+deploys. That price buys nothing at this table size. `0007`'s own SQL comment carries this
+reasoning. It names roughly one million rows as the point to revisit the decision. That row
+count is derived from the measurements above, not measured.
+## TRO-553 / TRO-560 — gate trust: G6 exception path, honest stale-review reporting (2026-08-13)
+
+Both tickets share one root cause: the gate reported states it could not back with evidence.
+G6 failed every docs-only and test-only ticket even when no red-first case was possible. G10
+could report a `pass`-looking `warn` on a diff nobody had actually reviewed. This PR fixes
+both without weakening either gate.
+
+**Which gate certified this branch.** `scripts/factory/gate.sh` itself changed in this PR.
+Every run quoted below as "green" used the MODIFIED gate — the one this PR ships, not the
+gate that shipped on `main` at `96d59f4`. The final full-gate run at the end of this entry
+uses this PR's own gate to certify this PR's own branch. That is correct, not a conflict of
+interest. It is itself evidence the new code path works.
+
+### TRO-553 — G6 human-approved exception path
+
+**What was found.** `G6: regression-test` in `gate.sh` counted added `it(`/`test(` lines and
+failed the gate at zero. Three real tickets have no such line to add:
+
+1. TRO-547 (test-repair): no production change exists to write a red-first case against.
+2. TRO-472 (CP-3 checkpoint walkthrough): docs only, no test code.
+3. TRO-544 (config-only): resolved differently, by writing a real test. Named here because it
+   is the third occurrence, not because it needed this mechanism.
+
+Three occurrences crossed the factory's own recurrence threshold
+(`factory/config.yaml`'s `recurrenceLadder.gateCheck: 3`).
+
+**What changed.**
+- `scripts/factory/gate-exceptions.ts` (new): `resolveException(ticket, gate, file)` reads
+  `factory/gate-exceptions.json` and returns one of three states — `none` (no matching
+  record), `unapproved` (a record exists but its `approver` field is empty or missing), or
+  `approved` (a record exists with a named approver). Only `approved` lets G6 pass. A CLI at
+  the bottom (`gate-exceptions.ts check --ticket T --gate G`) prints the outcome as one JSON
+  line for `gate.sh` to read.
+- `factory/gate-exceptions.json` (new): the exception record. Each entry names a ticket, a
+  gate id, a reason, an approver, a date, and (for provenance) a PR number. A `$comment` block
+  states the rule in the file itself: only the orchestrator writes an entry, and only after
+  Troy's approval already exists on the named Linear ticket. An agent must never add its own
+  entry — the code enforces only the mechanical half of that (a non-empty approver), not the
+  provenance behind it.
+- `scripts/factory/gate.sh` G6: when zero test cases are added, it now checks
+  `gate-exceptions.ts` before failing. A `none` or `unapproved` result falls straight through
+  to the exact same fail text G6 has always produced. An `approved` result produces a NEW
+  status, `pass-with-exception`, with a detail line naming the approver, the date, and the
+  reason — written to both the console line and `gate-result.json`'s `detail` field, since
+  they share one variable.
+- `scripts/factory/gate.sh` `record()`: added an icon (`ok*`) for `pass-with-exception`, so
+  the console output reads honestly instead of showing a plain `ok` for a gate that did not
+  pass on its own merits.
+
+**Fixture data.** `factory/gate-exceptions.json` encodes three real approved instances (a
+third, TRO-542, arrived mid-PR — see review round 3 below for the G8 wiring it needed):
+- TRO-547 (G6/regression-test, test-only, PR #50): approved by Troy, 2026-08-13. This date
+  and approver are the same fact TRO-553's own ticket description states as pending sign-off
+  — OBSERVED from the ticket text, not inferred.
+- TRO-472 (G6/regression-test, docs-only, PR #18, LH-CP3 checkpoint): approver Troy, date
+  2026-08-12. The date is DERIVED from the ticket's `completedAt` timestamp
+  (2026-08-12T03:12:37Z) — Linear's comment list on TRO-472 is empty, so no explicit dated
+  approval comment exists to cite directly. Flagging this rather than presenting it as equally
+  certain as TRO-547's record.
+- TRO-542 (G8/eval-not-regressed): approver Troy, date 2026-08-13. OBSERVED — supplied directly
+  by the orchestrator mid-PR, with the reason quoted verbatim in review round 3 below.
+
+**Byte-identical behavior for ordinary tickets.** A ticket with no record in
+`gate-exceptions.json` gets `state: "none"` from `resolveException`, and G6 falls through to
+literally the same fail string as before this PR. `gate-exceptions.test.ts` proves this
+directly, including for TRO-553 itself (this ticket's own branch has no exception record —
+it earns G6 the ordinary way, by adding real test cases).
+
+### TRO-560 — honest stale-review reporting, kept error detail
+
+**What was found.** G10 (review capture) fell back to a previous run's findings on `rc!=0`.
+Nothing signaled the fallback was stale. The line read like a clean pass on a diff nobody had
+actually reviewed. TRO-508's comment (2026-08-13) traced a real occurrence: the coderabbit CLI
+reports its error as a `{"type":"error",...}` JSON line on STDOUT, not stderr. `gate.sh`
+pointed readers at `.factory/coderabbit.err` instead — the exact file the CLI leaves empty on
+this failure. The real diagnostic sat unread, one file over.
+
+**What changed.**
+- `scripts/factory/review-capture.ts` (new): the full G10 orchestration, extracted out of
+  `gate.sh` so its decision logic is unit-tested, matching the pattern
+  `scripts/factory/defect-gates/run.ts` already established for G11.
+  - `parseCoderabbitOutput` reads the CLI's JSONL stdout directly and keeps the last
+    `type: "error"` line. This is the fix for the empty-`.err` defect.
+  - `decideCapture` returns one of three states:
+    1. Fresh `pass` (rc=0).
+    2. `warn` — no fallback exists. Names the real failure reason.
+    3. `warn` — a stale fallback exists. Names the SHA the old findings were captured at,
+       names current `HEAD`, and says "this diff has NOT been reviewed", verbatim, so grep
+       or a human eye catches it immediately.
+
+    A re-run at the SAME sha (nothing changed since the last real capture) says "still
+    current" instead. Genuinely reviewed content must never read as stale.
+  - `runCapture` retries only a `rate_limit`-typed error. Retries are bounded by
+    `CR_MAX_ATTEMPTS` (default 3 total attempts, 2 retries), with exponential backoff
+    (`backoffMs`, default 2s/4s, capped at 20s). Any other failure type does not retry.
+    Unbounded retries were explicitly out of scope for this ticket.
+  - The CLI writes `.factory/coderabbit-capture.json` on every run, success or failure. It
+    records each attempt's rc, timeout flag, finding count, and parsed error, plus the final
+    attempt's raw stderr. Nothing is thrown away.
+  - `.factory/coderabbit.meta.json` (new) records the SHA and finding count of the last
+    SUCCESSFUL capture. `decideCapture` compares this against `HEAD` to decide fresh vs.
+    stale.
+- `scripts/factory/gate.sh` G10: replaced with a single call to
+  `review-capture.ts`, parsing its one-line JSON result the same way G11 already parses
+  `defect-gate.json`. G10 stays advisory — `record review "${CR_STATUS}" ...` only ever
+  receives `pass` or `warn` from `decideCapture`, never `fail`.
+
+**Forced-failure run (real, not simulated in this prose).** Ran `review-capture.ts` against a
+fake `coderabbit` binary reproducing TRO-508's exact artifact (rate_limit error on stdout,
+empty stderr, rc=1). Run outside this repo; output not committed.
+
+```console
+$ PATH=<fake-bin>:$PATH CR_MAX_ATTEMPTS=2 CR_BACKOFF_BASE_MS=50 CR_TIMEOUT_MS=5000 \
+    tsx scripts/factory/review-capture.ts --base main --out-dir <tmp>
+```
+
+```json
+{"status":"warn","detail":"review did not complete (capture failed: rc=1, rate_limit: Rate limit exceeded — see .factory/coderabbit-capture.json)"}
+```
+
+`coderabbit-capture.json` retained both attempts' full `rate_limit` diagnostic. `coderabbit.err`
+was empty, exactly as in the real TRO-508 report. It is no longer the only place a reader is
+told to look.
+
+A second run seeded `coderabbit.meta.json` with findings captured at a different SHA:
+
+```json
+{"status":"warn","detail":"5 finding(s) from an earlier run at a1b2c3d — HEAD is now 96d59f4; this diff has NOT been reviewed (capture failed: rc=1, rate_limit: Rate limit exceeded — see .factory/coderabbit-capture.json)"}
+```
+
+`coderabbit.json` and `coderabbit.meta.json` were left untouched. A failed attempt's empty
+output never overwrites the stale fallback.
+
+### Tests
+
+- `scripts/factory/gate-exceptions.test.ts` (15 cases): `resolveException` state transitions
+  (`none`/`unapproved`/`approved`); an empty, whitespace-only, or omitted approver field never
+  reads as approved; `parseExceptionsFile` rejects a document with no `exceptions` array;
+  `formatApprovedNote`'s exact output is pinned (with and without a PR number); five tests
+  load the REAL committed `factory/gate-exceptions.json` and assert both TRO-547 and TRO-472
+  resolve to `approved`, while an unlisted ticket (TRO-553 itself) resolves to `none`.
+- `scripts/factory/review-capture.test.ts` (29 cases): `parseCoderabbitOutput` against the
+  literal JSONL text TRO-508's comment quoted; `decideCapture`'s three states, including the
+  same-SHA "still current" case and a partial/truncated capture that must never persist;
+  `backoffMs` growth and cap; `parsePositiveIntEnv`'s fallback on an unset, empty, zero,
+  negative, or non-numeric value; `runCapture`'s retry bound, its refusal to retry a
+  non-rate-limit failure, and its clamp to at least one attempt.
+- Red confirmed for the right reason before implementation: both suites failed with
+  `Cannot find module` (the modules did not exist yet), not an assertion or import typo.
+  Green after implementation and after the review round below: 44/44 passing, confirmed
+  again inside the full gate run below.
+
+### Review round 1 — 12 findings, 8 fixed, 4 dismissed
+
+A completed (not rate-limited) `gate.sh` run against this branch surfaced 12 real findings.
+All 12 are in `factory/review-findings.jsonl`, tagged TRO-553 or TRO-560 by subject file.
+
+**Fixed:**
+- `gate-exceptions.ts`'s CLI arg parser read a following flag as a value when the value was
+  missing (`--ticket --gate x` would have set `ticket` to `"--gate"`). Now a value starting
+  with `--` reads as missing.
+- `formatApprovedNote` had no pinned test even though `gate.sh` now consumes its exact output.
+  Added two tests.
+- `gate.sh` reconstructed the pass-with-exception note a second time in an inline script,
+  instead of using `gate-exceptions.ts`'s own `formatApprovedNote` — two independent templates
+  for one string. The CLI now emits the formatted `note` field; `gate.sh` reads it directly.
+- `Number(process.env.CR_MAX_ATTEMPTS ?? 3)` resolves an empty-string env var to `0`, not
+  `NaN` — a `maxAttempts` of `0` would have skipped the retry loop's body entirely and
+  reported `warn` without ever invoking `coderabbit`. Added `parsePositiveIntEnv` and clamped
+  `maxAttempts >= 1` inside `runCapture` itself, so a direct caller cannot bypass it either.
+- `process.exit(0)` immediately after `process.stdout.write()` can truncate a pending pipe
+  write before `gate.sh`'s command substitution reads it. `main()` now returns naturally on
+  success; the catch path sets `process.exitCode = 1` instead of calling `process.exit(1)`.
+- No test asserted that a partial capture (rc != 0 with `findings > 0`) is never persisted.
+  This is not hypothetical: the full `gate.sh` run below hit exactly this case for real —
+  the CLI's own timeout killed a capture that had already streamed 3 finding-type lines.
+  Added the test.
+- Two CHANGES.md prose fixes: code fences gained language tags and blank-line spacing, and an
+  ellipsis in a command example was replaced with the real env vars (ASD-STE100's no-ellipsis
+  rule). Separately, the `decideCapture`/`runCapture` bullets exceeded the 25-word sentence
+  limit; split into shorter sentences and a numbered list.
+
+**Dismissed:**
+- A claim that `gate-exceptions.test.ts` has 12 cases and 32/32 pass overall. Wrong: the
+  authoritative count, from `vitest --reporter=verbose`, was 13 cases and 33/33 passing at
+  the time of the finding (now 15/44 after this round's additions). `false-positive-review`.
+- Writing `coderabbit.err` only when `persistFresh` is true or stderr is non-empty, to match
+  `coderabbit.json`'s freshness handling. The ORIGINAL gate.sh also overwrote `.err` on every
+  run, pass or fail — the suggestion would be a new behavior, not a restoration, and `.err` is
+  deliberately just "latest attempt's raw stderr," never read by decision logic.
+- Replacing `__dirname` with `fileURLToPath(import.meta.url)` in the test file. `__dirname`
+  already works under this repo's vitest+ESM setup, with two existing precedents
+  (`scripts/latency/deployed-artifact.test.ts`, `src/server/warning/ocr-startup.test.ts`).
+- Replacing the `spawnSync("sleep", ...)` backoff with `Atomics.wait`. A deliberate simplicity
+  and portability choice — retries are rare (at most 2), so the subprocess overhead is
+  negligible, and there is no functional defect.
+
+`node scripts/factory/review-ledger.mjs report`: every category these 12 findings landed in
+(`correctness`, `boundary-validation`, `test-coverage`, `prose-style`, `false-positive-review`,
+`resource-timeout`) was already past the 3-ticket gate-check threshold before this PR —
+TRO-508's existing backlog, not a new crossing this PR needs to escalate.
+
+### Review round 2 — 5 findings, 3 fixed, 2 dismissed per lessons rule 31
+
+A second completed review capture, against the round 1 commit, found 5 more. Two real bugs
+in round 1's own fixes, one real gap in `gate.sh`, and two prose nitpicks on already-edited
+CHANGES.md text.
+
+**Fixed:**
+- `parsePositiveIntEnv` checked `n > 0` before flooring. A positive fraction below 1 (for
+  example `CR_TIMEOUT_MS=0.5`) passed that check, then floored to `0` — the exact value the
+  function exists to refuse. Now checks the FLOORED value's sign. Added a `"0.5"` test.
+- `runCapture`'s `Math.max(1, Math.floor(opts.maxAttempts))` clamp does not handle `NaN` or
+  `Infinity` from a direct caller: `Math.max` with `NaN` is always `NaN` (the retry loop then
+  runs zero times — the exact bug this clamp exists to prevent), and `Infinity` produces an
+  unbounded retry loop, out of scope for this ticket. Added a `Number.isFinite` guard that
+  falls back to the default attempt count on either. Added `NaN` and `Infinity` tests.
+- `gate.sh`'s G6 had no branch for `gate-exceptions.ts`'s own `"error"` state (a malformed
+  `factory/gate-exceptions.json`). It silently fell through to the generic no-test-added
+  message instead of naming the real parse error. Added an `elif` branch; verified by hand
+  against a deliberately malformed file.
+
+**Dismissed, per lessons rule 31:** two more 25-word sentence-length findings against
+CHANGES.md prose already edited in round 1. Neither changes shipped behavior or a factual
+claim — the recurring nitpick-on-prose pattern rule 31 names by name (TRO-544: 13 rounds, real
+substance ending at round 12). Stopping the review loop here rather than fix-iterating prose a
+third time; the two real code findings in this same round were fixed above, so this is not a
+blanket "ignore round 2" — only the two prose items are deferred.
+
+Tests after round 2: 47/47 (44 from round 1, plus the 3 new cases above).
+
+### Review round 3 — 7 findings, 3 fixed, 4 dismissed per lessons rule 31
+
+A third live review capture, against the round 2 commit, found 7 more. Four were the same
+25-word sentence-length pattern on already-edited prose (dismissed, per rule 31 again). Three
+were real: one MAJOR finding on the mechanism's own core trust property.
+
+**Fixed:**
+- **`gate-exceptions.json` was read from the ticket branch's own working tree, not from
+  `BASE_REF`.** This meant an agent COULD self-approve: edit its own branch's copy, add an
+  entry naming itself `"approver": "Troy"`, and G6 would honor it — directly contradicting
+  this PR's own "agents must not be able to self-approve" requirement. Not hypothetical:
+  manually demonstrated an uncommitted, fabricated `TRO-9999` entry resolving `approved` when
+  read from the working tree, and `none` when read the fixed way. Fixed by materializing
+  `GATE_EXCEPTIONS` from `BASE_REF` before G1 runs — the exact discipline `gate.sh` already
+  uses for the quarantine baseline, with no working-tree fallback (unlike quarantine's, since
+  the trust property here matters more than quarantine's bootstrap convenience). An entry now
+  takes effect only once the commit adding it has already landed on the base branch.
+- `runCapture`'s `Number.isFinite` guard (round 2) blocked `NaN`/`Infinity` but had no upper
+  bound on a large finite value. `CR_MAX_ATTEMPTS=1000` would have been accepted as "bounded,"
+  technically true but not operationally — against the ticket's own "unbounded retries are
+  not in scope" line. Added `MAX_REASONABLE_ATTEMPTS = 10`, a hard ceiling regardless of what
+  a caller requests.
+- `loadPreviousMeta` did a bare `as CaptureMeta` type assertion with no runtime shape check
+  (lessons rule 13). A corrupted or hand-edited `coderabbit.meta.json` could produce a
+  half-populated object and an `"undefined finding(s) at undefined"` detail string. Added
+  `isCaptureMeta`, a runtime guard that returns `null` on any schema mismatch.
+
+**Dismissed, per lessons rule 31:** four more 25-word sentence-length findings on CHANGES.md
+prose already restructured in rounds 1 and 2. None changes shipped behavior or a factual
+claim.
+
+**A third exception instance, added mid-round by the orchestrator (TRO-542, G8).** While this
+round was in progress, the orchestrator supplied a third real, human-approved exception:
+TRO-542, gate `eval-not-regressed` (G8), approved by Troy 2026-08-13. Reason: the committed
+accuracy baseline (81.3%) sits at the top of TRO-543's measured variance band
+(78.1%-81.3%), so an honest run of unchanged code can fail the single-run comparison on
+variance alone, compounded by 31-vs-32-case corpus drift (TRO-556) — TRO-561 is the systemic
+fix. `resolveException` already took `gate` as a parameter, so adding the record cost nothing
+structurally. What DID need building: G8's `gate.sh` block never called the exception
+mechanism at all — G6 was its only caller. Rather than duplicate G6's ~15-line inline check a
+second time (the exact "two independent templates" shape review round 1's finding #9 already
+flagged once), extracted a shared `check_gate_exception <result_id> <gate_id>
+<fallback_detail>` function, called from both G6 and G8. Manually verified both directions:
+TRO-542 against `eval-not-regressed` resolves `pass-with-exception`; TRO-542 checked against
+`regression-test` (the wrong gate) resolves `none` and fails — the exception is gate-scoped,
+not ticket-scoped. Two new tests load the real committed file and assert both.
+
+Tests after round 3: 55/55 (17 in `gate-exceptions.test.ts`, 38 in `review-capture.test.ts`).
+
+### Not this ticket's job
+
+- The GitHub-App-level "pass — Review rate limited" surface (TRO-508's comment, PR #53) is a
+  different system (the GitHub status API), not `gate.sh`'s CLI capture — out of scope here.
+- Canonicalizing the ledger's fragmented category slugs (`prose-style` vs.
+  `prose-style-nitpick`, etc., flagged in TRO-508's 2026-08-13 comment) is TRO-508's own
+  close-out, not this PR's.
+
+### Gate evidence
+
+Full `gate.sh` run at the end of this PR (this PR's own modified gate, per the note above):
+verdict quoted in the PR body. Three full runs happened during development, in order:
+
+1. First full run hit the CLI's own 360s timeout on G10 (a real, non-simulated demonstration
+   of the partial-capture case round 1's test now covers).
+2. Second full run's review step completed for real and produced the 12 findings in review
+   round 1 above — itself additional evidence this PR's own G10 fix works on a live capture.
+3. Third full run's review step completed again and produced the 5 findings in review round 2
+   above.
+
+The FINAL full run before this PR opens uses `--skip-review`, per lessons rule 31: round 2's
+only remaining findings were prose nitpicks on already-edited text, and re-running review a
+third time would only continue that loop, not add evidence. `typecheck`/`lint`/`build`/
+`tests`/`regression-test`/`changes-entry`/`scope`/`defect-gate` all still run in that final
+call — only the live review capture is skipped. `--fast` inner-loop runs were used throughout
+development; `build` and `review` are `skip` under `--fast` by design, not evidence of
+anything.
+
+**Known non-blocking failure: G8 (`eval-not-regressed`) fails on this branch, for a reason
+this PR did not introduce and is not this PR's job to fix.** After merging `origin/main`
+twice mid-PR (to pick up two sibling tickets' merges), G8 started failing:
+`golden-set/manifest.json`'s content moved since the committed baseline was established
+(TRO-516's already-merged corpus edit), and 3 accuracy metrics read as regressed against that
+stale baseline. VERIFIED this is pre-existing on `main` itself, not caused by this PR: ran
+`pnpm eval:check` in a clean `git worktree add` checkout of `origin/main` HEAD (`350f21f`,
+detached, no branch changes at all) and got the byte-identical 5-problem failure. This
+branch's own commits never touch `golden-set/`, `scripts/eval/`, or any router/resolver file
+— every file G8's failure cites arrived via the `origin/main` merges, not this PR's own work.
+This is exactly the corpus/baseline-drift class TRO-556 and TRO-561 already track (TRO-561's
+own worktree exists, freshly provisioned against the same `main` commit, as this entry is
+written) — and exactly the scenario TRO-542's exception record above documents, but that
+record is scoped to ticket TRO-542 alone; this ticket has no matching record, and this PR's
+own non-negotiable ("agents must not be able to self-approve") means it cannot add itself
+one. Reported here rather than hidden or worked around. The true, complete, final verdict —
+including this failure — is quoted verbatim in the PR body and this session's final report.
+## TRO-529 — LH-024 · Real-label reference cases + reference provenance record (2026-08-13)
+
+Advances TH-R10, TH-R12. Every one of the golden set's 31 cases was synthetic. Each was an
+HTML/CSS render, or a `degrade.ts` transform over one. `assets/golden/references/` held six
+real photographs that no code touched. This ticket adopts five of them.
+
+**Trademark decision — SETTLED, Troy, 2026-08-12 (Linear TRO-529):** "using the trademarked
+images is fine." That decision covers all five warning close-ups. Two show a live trademark:
+Crown Royal, and Francis Ford Coppola Winery. Every case built from them records a test
+fixture. None makes a compliance claim about the real product it happens to photograph.
+
+**New provenance value: `"photographed"`** (`src/lib/golden-set/types.ts`). `"rendered"` and
+`"rendered+degraded"` are HTML/CSS a script drew. `"ai-generated"` and `"rendered+ai-backdrop"`
+are pixels a generative model predicted. `"photographed"` is neither: a person pointed a
+camera at a real, physical label. It follows a DIFFERENT `imagePath` convention:
+`assets/golden/references/<original-filename>`, not `golden-set/images/<caseId>`. The file
+predates its case. It IS the forensic evidence. Renaming it to fit the render pipeline's
+convention would throw that away. `src/lib/golden-set/loader.ts`'s `checkCase` enforces the
+new prefix and skips the "basename must equal caseId" rule for this one provenance.
+
+**Five new cases, `case-35` through `case-39`** (`golden-set/manifest.json`, 31 → 36 cases).
+`case-33`/`case-34` stay reserved for LH-023 / TRO-528, a sibling ticket not yet landed. Both
+are blocked by the same LH-022 prerequisite. This ticket deliberately numbers around it.
+
+The five transcriptions, character for character, correcting nothing. Edit distance is the
+case-folded Levenshtein distance against `CANONICAL_WARNING_TEXT`. `evaluateCandidate()`
+(`src/server/warning/wording-compare.ts`) computed each one — never hand-counted:
+
+| Case | Condition | Edit distance | Differing characters |
+|---|---|---|---|
+| `case-35-clean-match-real-photo-flat-scan` | flat scan, straight on | 0 | none — exact match |
+| `case-36-rotation-real-photo-gentle-curve` | gentle curve | 0 | none — exact match |
+| `case-37-rotation-real-photo-severe-curve-partial-crop` | strong curve, shallow DOF | 116 | most of the body — the bottle's curvature crops the right portion of every printed line out of frame; bracketed `[cut]` markers record exactly where, never filled in from memory of the canonical text |
+| `case-38-glare-real-photo-crown-royal` | curved, gold on maroon, glare | 0 | none — exact match |
+| `case-39-rotation-real-photo-coppola-wraparound` | extreme wrap-around curvature | 0 | none — exact match |
+
+case-37's distance is real. This entry reports it as the ticket requires. But it reflects the
+length of the missing, out-of-frame text, not a wording deviation on the physical label. Its
+own `notes` field says so, so a future reader does not read it as a near-miss or reworded-
+warning finding.
+
+**Every other TH-R11 field, read from what each image actually prints** (`golden-set/README.md`
+has the full case-by-case list). Three of the five print an ABV statement in frame: 10.5%,
+15.1%, 14.5%. Two do not. Two print a net-contents statement: 750ML, and 750 mL / 750 ML.
+Three do not. None prints a brand name or class/type. All five are close crops of the warning
+panel alone, not full labels. Fields the photograph does not show record
+`"(not shown in this crop)"` for text fields, or `"not visible"` for the net-contents unit
+sentinel, rather than a fictional plausible-looking value. Their `expected` field verdict is
+`NEEDS_REVIEW`, never `MATCH` or `MISMATCH` — a real extractor working from the same crop
+could not verify them either. `application` fields stay a fictional filed record, the same
+convention every other golden-set case uses. Crown Royal's `application` is the one exception
+in spirit, not in mechanism: it uses the real product's own public classification (Blended
+Canadian Whisky, 40% ABV) as descriptive filed data, not a claim about what its crop shows.
+
+**`governmentWarningPrefixBold` / `governmentWarningBodyBold`** (TRO-527 / LH-022's `"unknown"`
+state, built for exactly this ticket): `true`/`false` on `case-35` only. Its measured
+prefix/body stroke-width ratio (2.2, `docs/reference-photo-provenance.md`) is the one clean,
+unambiguous, non-named-product reading in the batch. The other four record
+`"unknown"`/`"unknown"`: no measurable stroke-width separation on `case-36` or `case-37`, an
+ambiguous 1–3px range on named product `case-38`, and an unusable measurement on named product
+`case-39`. A `false` on a named, shipped, COLA-approved product would be a fabricated
+compliance accusation, not a measurement. Recording `"unknown"` instead is the ticket's own
+instruction, applied plainly.
+
+**Every case: `verified: false`.** Only Troy confirms a hand transcription is exactly right.
+The loader does not gate the eval harness on `verified` for this provenance.
+`ai-generated`/`rendered+ai-backdrop` are different: their own risk is a generated image
+silently failing to render its spec's exact text. Nothing here was generated, so that risk
+does not apply.
+
+**Necessary related fix, not asked for but required to avoid corrupting these photographs:**
+`scripts/golden/build.ts`'s `main()` filtered `renderable` as `provenance !== "ai-generated"`.
+That filter INCLUDED `photographed` cases. The next `pnpm golden:build` run would have
+rendered each one's placeholder application/label fields as HTML. It would have silently
+overwritten the real photograph at the same file path with synthetic drawn text, destroying
+the one thing each case exists to test. Fixed by excluding `photographed` too, with a comment
+explaining why. The same latent gap existed in `scripts/golden/renderSmoke.ts` — it picks the
+first non-`ai-generated` case to smoke-render, harmless today only because `case-01` still
+comes first in manifest order, but it would render a `photographed` case's placeholder text if
+the manifest were ever reordered. It also existed in `scripts/golden/render.test.ts`, which
+iterates every non-`ai-generated` case through `buildLabelHtml` and crashed outright on
+`governmentWarningPrefixBold: "unknown"` (see Tests below). All three now exclude
+`photographed` explicitly.
+
+**`scripts/golden/images.test.ts` — provenance-scoped exemption, not a blanket skip.** The
+JPEG-decode and ~500 KB checks assume a `build.ts`-produced file: always mozjpeg, always tuned
+to the render pipeline's own size target. `case-38`'s file is a 1.7 MB PNG — a real photograph,
+neither JPEG nor render-pipeline-sized, by nature. Both checks now exclude `photographed`
+explicitly, with a comment stating why. A new `"golden-set photographed images"` describe block
+gives that provenance its own, honestly different checks: file exists and is non-empty,
+`imagePath` starts with `assets/golden/references/`, decodes as a real JPEG or PNG, stays
+under a generous 5 MB backstop, `verified: false`, and a valid bold-flag type. The 5 MB figure
+is not a repo-size target — a real photograph's size is not this repo's to tune.
+
+**`scripts/golden/verify.ts` — one new check, `photographed-image-location`.** The loader's
+`imagePath` prefix rule is a plain string check. It does not catch a crafted value like
+`assets/golden/references/../../../etc/passwd`, which also starts with that prefix as text.
+`verify.ts` now resolves every `photographed` case's `imagePath` and confirms it stays inside
+`assets/golden/references/` — the same path-traversal hardening `build.ts`'s `resolveImagePath`
+already applies to `golden-set/images/`. `pnpm golden:verify`: "Checked 36 golden-set case(s).
+PASS: golden set is consistent."
+
+**Provenance doc.** `docs/reference-photo-provenance.md` was written 2026-08-12, before this
+ticket. It already named what each of the six files in `assets/golden/references/` shows,
+where it came from, and whether a live trademark appears. This ticket updates its "Read by
+code" column for the five adopted files. It cross-references each to its new `caseId`. It adds
+an explicit "these are test fixtures, not compliance assessments" statement, the ticket's own
+requirement. It also corrects two of its own earlier notes against a direct re-read of the
+photographs: `case-37`'s file and `case-39`'s file both have a legible warning where the doc
+had called full transcription "a guess." Both corrections are marked plainly as corrections,
+not silent rewrites. The sixth file, `spirits-bottle-01.jpg` (a full bottle shot, not a
+warning close-up), stays documented but NOT adopted. It belongs to the parked realistic-corpus
+backdrop track (LH-028); the doc says so. The source/licence gap for four of the five adopted
+files (no photographer, no URL, no licence on record) is unchanged by this ticket. Troy's
+trademark call authorizes ADOPTION, not the missing provenance itself. The doc's own "what to
+fix" list still names the gap.
+
+**Spend: one live eval run, five cases, `--case=<id>` each.** This never uses `--full`, and
+never touches the committed `eval-report.json`/`baseline.json` — `check.ts`'s own `--case`
+contract. Measured cost: **$0.1236** (haiku + resolver combined, five cases). Every case's
+real router verdict landed on `REVIEW`, matching this ticket's own hand-authored
+`expected.labelVerdict` for all five (`labelVerdictCorrect: true`, 5/5). A REVIEW on a hard
+case is a pass, per the ticket's own acceptance line, not a failure to explain away:
+
+| Case | Actual verdict | Expected verdict | Actual reviewReason | Expected reviewReason | Cost (haiku + resolver) |
+|---|---|---|---|---|---|
+| `case-35` | REVIEW | REVIEW | `LOW_IMAGE_QUALITY` | `LOW_IMAGE_QUALITY` | $0.0217 |
+| `case-36` | REVIEW | REVIEW | `LOW_IMAGE_QUALITY` | `MISSING_REQUIRED_FIELD` | $0.0240 |
+| `case-37` | REVIEW | REVIEW | `LOW_IMAGE_QUALITY` | `LOW_IMAGE_QUALITY` | $0.0282 |
+| `case-38` | REVIEW | REVIEW | `LOW_IMAGE_QUALITY` | `LOW_IMAGE_QUALITY` | $0.0242 |
+| `case-39` | REVIEW | REVIEW | `LOW_IMAGE_QUALITY` | `MISSING_REQUIRED_FIELD` | $0.0255 |
+
+Two cases' `reviewReason` diverged from this ticket's hand-authored guess: `case-36` and
+`case-39`. The real image-quality assessment leaned toward `LOW_IMAGE_QUALITY` more readily
+than the by-hand "at least half the required fields absent" arithmetic in this ticket's own
+design notes predicted. This is reported, not fixed. The label-level verdict is what the
+ticket's acceptance line grades, and it matched on every case. Extraction accuracy on
+brand/class/net-contents fields the photograph does not show was, as expected, low. Haiku
+correctly returned nothing for a field that is not in frame. The extraction scorer cannot call
+that "correct" against any ground-truth string, by construction — see `extraction-scoring.ts`.
+The extractor's own `imageQuality` self-report flagged `"cropped"` on every case, and, on the
+harder ones, `"rotation"`/`"glare"`/`"low_light"` too. That is direct evidence the pipeline
+sees these as the imperfect photographs they are, not confidently misreading them.
+
+**Tests.** Red-first in `src/lib/golden-set/loader.test.ts`, describe block "validateManifest —
+photographed provenance (TRO-529 / LH-024)": four new tests, run against the pre-change loader
+first. Confirmed red for the right reason: an unrecognized `"photographed"` enum value AND a
+rejected `assets/golden/references/` imagePath prefix, not an import error or typo:
+
+```text
+- cases[0] (case-35-...): imagePath "assets/golden/references/..." must start with "golden-set/images/"
+- cases[0] (case-35-...): imagePath basename "..." must match caseId "case-35-..."
+- cases[0] (case-35-...): field "provenance" must be one of rendered, rendered+degraded, ai-generated, rendered+ai-backdrop, got "photographed"
+```
+
+Green after `types.ts`/`loader.ts`'s changes — all 52 tests in the file pass, including the
+pre-existing suite. Also bumped `loadGoldenSetManifest`'s own cardinality assertion (31 → 36),
+matching the "growth, not drift" convention every prior corpus-size change in this file
+follows. Added coverage in `scripts/golden/images.test.ts` (a new describe block, seven tests)
+and `scripts/golden/verify.test.ts` (two tests for the new path-traversal check: one exercises
+the plain-wrong-prefix path that manifest-schema validation already catches earlier, one
+exercises the traversal case `verify.ts`'s own new check exists for).
+
+`scripts/golden/render.test.ts` needed its own fix, discovered by running the full suite, not
+predicted in advance. It iterated every non-`ai-generated` manifest case through
+`buildLabelHtml`, which now includes the five `photographed` cases. `warningSpanFontWeight`
+(`render.ts`, built by TRO-527 specifically for this future) throws on
+`governmentWarningPrefixBold: "unknown"` by design — "no pixel means we don't know." Excluding
+`photographed` from this file's `renderableCases` filter fixed all five resulting failures at
+once. The throw itself needed no change; it fired exactly as TRO-527 designed it to.
+
+**Full suite:** `pnpm test` — 160 files, 1939 tests, all green. `pnpm typecheck` and `pnpm
+lint` both clean (one pre-existing, unrelated `next/image` warning in `DetailView.tsx`).
+
+**Not verified / left for Troy.** Every one of the five transcriptions is this agent's own
+careful read of the photograph, cross-checked against the real `evaluateCandidate()` for the
+wording/caps half. It is not a second human's independent confirmation. `verified` stays
+`false` on all five, exactly as the ticket requires — only Troy sets that flag. Source/licence
+for four of the five adopted files (everything but the Crown Royal photo, which is Troy's own)
+remains unrecorded, as `docs/reference-photo-provenance.md` already said before this ticket.
+
+**New problems noticed, not fixed here (each a candidate for its own ticket):**
+- `scripts/golden/batchFixture.ts` pairs a case to its ZIP entry by `basename(imagePath)`
+  (PRD §3.5's own pairing rule). For a `photographed` case, that basename is the photograph's
+  original filename (e.g. `crown-royal-warning-label-closeup.png`), not a `caseId`-shaped
+  name. That is cosmetically inconsistent with every other entry in a demo batch export,
+  though still correctly self-paired. Not a correctness bug. Not fixed here, since this
+  ticket's scope is adoption plus provenance, not the demo-batch exporter.
+- The real router's `reviewReason` choice for `case-36`/`case-39` (`LOW_IMAGE_QUALITY` over
+  this ticket's predicted `MISSING_REQUIRED_FIELD`) suggests the live `imageQuality.legible`
+  VLM self-report triggers the label-level image-quality blocker more readily on a real,
+  imperfect photograph than the "at least half the required fields absent" rule alone would.
+  Worth a closer look once more real-photograph evidence exists. Not resolved here.
+- LH-023 / TRO-528 (`case-33`/`case-34`, bold-isolating rendered cases) is still `Todo` in
+  Linear as of this ticket. This ticket numbers around it on purpose. Whoever lands LH-023
+  next should not need to renumber anything here.
+- Review round 1 caught this ticket's own `photographed-image-location` check
+  (`scripts/golden/verify.ts`) using a plain `rel.startsWith("..")` test. That test would
+  false-positive on a same-directory filename that itself starts with two literal dots (e.g.
+  `..photo.jpg`), confusing "starts with the two characters .." for "escapes via a `..`
+  segment." Fixed here with a whole-segment check. `scripts/golden/build.ts`'s own
+  `resolveImagePath` has the identical pre-existing pattern, unfixed here — no real
+  reference-photo filename in this repo starts with two dots, and that function predates this
+  ticket and is untouched by it otherwise.
+
+**Review triage (round 1, 12 findings, 8 fixed, 2 dismissed, 2 folded into the "new problems"
+list above):**
+- 3 doc-consistency findings (`golden-set/README.md`): "fourth production method" corrected to
+  "fifth" (it lists all 4 other existing methods alongside itself); the realistic-corpus-track
+  paragraph's stale "assets/golden/references/ is still empty" claim corrected; "four
+  curved/warped real photographs" corrected to "three" (`case-36`, `case-37`, `case-39` — the
+  actual new rotation cases). All fixed.
+- 3 prose-style findings (`golden-set/README.md`, `CHANGES.md`, this ticket's own
+  `docs/reference-photo-provenance.md` update): several new sentences exceeded CLAUDE.md's
+  ASD-STE100 25-word limit. Fixed — every flagged paragraph rewritten to short, complete
+  sentences.
+- 1 prose-style finding (`CHANGES.md`): a fenced code block had no language identifier
+  (markdownlint MD040). Fixed — tagged `text`.
+- 1 test-coverage finding (`src/lib/golden-set/loader.test.ts`): the "unknown" bold test
+  asserted only `governmentWarningPrefixBold`, not `governmentWarningBodyBold`, despite the
+  test's own name and setup covering both. Fixed.
+- 1 test-coverage finding (`scripts/golden/images.test.ts`): the bold-flag type test accepted
+  any string, not just `true`/`false`/`"unknown"`. Fixed — now asserts exact membership.
+- 1 boundary-validation finding (`scripts/golden/verify.ts`): the path-traversal check's edge
+  case, above. Fixed.
+- 2 dismissed, both `false-positive-review`: a suggestion to block adoption pending per-file
+  licence records on the four unattributed photographs (contradicts the ticket's own SETTLED
+  trademark decision quoted at the top of this entry — the source/licence gap is explicitly
+  flagged as open, not a blocker, in both the ticket and `docs/reference-photo-provenance.md`'s
+  own "what to fix" list); a suggestion to gate the loader on `verified: true` for
+  `photographed` cases, mirroring `ai-generated` (would make the manifest fail to load until
+  Troy verifies, contradicting the ticket's explicit "keep verified: false, eval harness still
+  runs all five" requirement — `ai-generated`'s gate exists for a text-fidelity risk unique to
+  generative output, and every one of the corpus's other 31 cases is already `verified: false`
+  and already scored by a `--full` sweep by design, so gating this provenance alone would be
+  inconsistent with the whole corpus's established model).
+
+**Rollback.** `git revert` this ticket's commits, in order. They touch
+`src/lib/golden-set/types.ts`, `src/lib/golden-set/loader.ts`, `golden-set/manifest.json`,
+`golden-set/README.md`, `docs/reference-photo-provenance.md`, `scripts/golden/build.ts`,
+`scripts/golden/renderSmoke.ts`, `scripts/golden/verify.ts`, `scripts/eval/args.ts`, and five
+test files. No image bytes were written or deleted by this ticket. The five adopted
+photographs were already committed at their existing paths under `assets/golden/references/`
+before this ticket started. Reverting removes only the manifest cases and code that now
+reference them.
+
+## TRO-542 — LH-037 · Record which LOW_IMAGE_QUALITY trigger fires (2026-08-13)
+
+Advances TH-R10 (stretch), TH-R19. Sequenced after TRO-538, which split `routerVerdict` from
+`cascadeVerdict` and gave this ticket the per-field confidence it measures.
+
+**The corpus moved before this ticket started.** TRO-527 rebuilt every warning-bearing image
+with a bold prefix. TRO-516's own C5 merged case-24 into case-23. The ticket's own tables
+describe a 32-case, pre-bold corpus that no longer exists. Every number below is re-derived
+from the current 31-case corpus, not copied from the ticket text.
+
+**What changed (steps 1-4, the deliverable).**
+
+1. `isLowImageQuality` (`src/server/router/label-blockers.ts:20-53`) now returns the CP-1 §5.3
+   rule that fired, not a boolean. Four names: `ILLEGIBLE`, `FIELD_CONFIDENCE`,
+   `PREPROCESSING`, `FIELDS_ABSENT`. Returns `null` when none fired.
+2. `router/index.ts:174-176`: `lowImageQuality` stays a plain boolean (`trigger !== null`).
+   The rollup and precedence logic at `router/index.ts:216` and `:288-292` read that boolean
+   exactly as before this ticket. Unchanged behavior, confirmed by the full unit and golden-set
+   suite staying green: 160 files, 1932 tests, 0 failures.
+3. `LabelRouterResult` (`router/types.ts`) gains `lowImageQualityTrigger: LowImageQualityTrigger
+   | null`. The eval harness carries it through from the ROUTER stage —
+   `scripts/eval/verdict-scoring.ts`'s `ActualVerdict.lowImageQualityTrigger` (optional, same
+   convention as `warningChannel`), `scripts/eval/types.ts`'s `VerdictCaseScore` (required,
+   same convention as `warningChannel`). `cascade-runner.ts`'s `mergeResolutionIntoActualVerdict`
+   always reports `null` — its own doc comment already established the router's label-level
+   blocker does not survive a resolver merge, so the trigger that named which rule produced
+   that blocker cannot survive it either.
+4. `image_quality.issues` decision: **the router reads it.** `routeLabel`
+   (`router/index.ts:298-307`) carries `extraction.image_quality.issues` through verbatim on
+   the new `LabelRouterResult.imageQualityIssues`. `grep -rn "image_quality\.issues"
+   src/server --include="*.ts"` now includes a router-side read (`router/index.ts:306`,
+   `router/types.ts:219`), not only the resolver's pre-existing bound check
+   (`resolver/input-validation.ts:187`). This is evidence, never a decision — no branch in
+   `label-blockers.ts` or `index.ts` tests `.issues`.
+   **This does not satisfy CP-1 §4.1.** `.issues` is one more self-report. The two unpaired
+   branches (`ILLEGIBLE`, `FIELD_CONFIDENCE`) are still unpaired. Do not read this change as
+   fixing that gap — it only stops the field being collected by the schema and silently
+   ignored by every module in `router/`.
+   Rejected: dropping `.issues` from `extractor/schema.ts:33-48`. The resolver already
+   serializes the whole extraction, `.issues` included, into Sonnet's prompt
+   (`resolver/user-message.ts:39`'s `buildExtractionBlock`) and validates its length at the
+   boundary (`resolver/input-validation.ts:187`). Dropping it from the schema would also drop
+   it from Sonnet's context — a real behavior change, for a field this ticket only needed to
+   stop ignoring, not remove.
+
+**G6 — red before, green after.** `label-blockers.test.ts` gained a dedicated four-test block
+(one per trigger name) and updated the nine pre-existing `isLowImageQuality` assertions from
+`toBe(true/false)` to `toBe("TRIGGER_NAME"/null)`.
+
+Red, run against the pre-ticket boolean-returning function (`git show HEAD:.../label-blockers.ts`
+swapped in temporarily, then restored — never committed):
+
+```text
+ Test Files  1 failed (1)
+      Tests  14 failed | 9 passed (23)
+```
+
+Every failure was an `AssertionError` comparing a boolean (`true`/`false`) against the expected
+trigger name or `null` — the right reason, not an import error or a typo.
+
+Green, run against this ticket's trigger-returning function:
+
+```text
+ Test Files  1 passed (1)
+      Tests  23 passed (23)
+```
+
+**The one authorized live run.** `pnpm eval:check -- --live --full`, measured
+`2026-08-13T13:39:02.626Z`. 31/31 cases scored, 0 failures. Cost: **$0.2661** (order of
+magnitude matches the ~$0.35 authorization).
+
+Case-20's recorded trigger, quoted directly from `eval-report.json`:
+
+```text
+case-20-rotation-severe-upside-down: routerVerdict.lowImageQualityTrigger = "ILLEGIBLE"
+```
+
+Case-20's `image_quality` reading: `{"legible":"no","issues":["blur","low_resolution"],
+"confidence":0.05}`. `legible: "no"` short-circuits `isLowImageQuality` at its first branch.
+`FIELDS_ABSENT`'s own condition is also true here — all five fields returned "(not read)" —
+but the function never reaches that branch. The ticket's own text asked this exact question:
+"`ILLEGIBLE` may have fired alongside it [`FIELDS_ABSENT`]; nothing in the repo distinguishes
+them." Something now does: the recorded answer is `ILLEGIBLE`, not `FIELDS_ABSENT`, because
+`ILLEGIBLE` is checked first.
+
+**Re-derived measurement, current 31-case corpus** (the ticket's own table format, re-run
+here — not copied from the ticket):
+
+| Signal | Fired |
+| -- | -- |
+| `LOW_IMAGE_QUALITY`, label level | **1 case** (case-20) |
+| `LOW_MODEL_CONFIDENCE`, any field | **0 of 155 field rows** |
+| `LOW_MODEL_CONFIDENCE`, label level | **0 cases** |
+| cases expecting `LOW_IMAGE_QUALITY` | **5** (case-17, 18, 20, 21, 22) |
+
+The ticket's original table measured 7 expecting-cases on the pre-merge 32-case corpus —
+case-23 and case-24 both counted. The current manifest lists 5. Case-23/24's merge (TRO-516
+C5) changed which cases still expect this reason. This ticket did not investigate further; that
+question is out of scope here. The headline finding reproduces exactly: still only one case in
+the whole corpus needs a confidence-driven branch to reach `LOW_IMAGE_QUALITY` — 31 cases now,
+32 before. CP-1 called this outcome in advance (`cp1:1178-1181`): "If it turns out
+to be flat... that is a finding, not a failure."
+
+**Aggregate accuracy — read against TRO-543's own measured variance, not as a fixed number.**
+N=31 cases, K=1 run (this ticket's one authorized live run).
+
+- Extraction accuracy: 95.5% (148/155).
+- Router-verdict accuracy: 83.9% (26/31).
+- Cascade-verdict accuracy: 80.6% (25/31).
+- Review-reason accuracy: 54.5% (6/11).
+
+TRO-543 measured real run-to-run variance on the pre-rebuild 32-case corpus: 78.1%-81.3%
+across three repeats of unchanged code (this file's own TRO-543 entry below, "Accuracy
+spread"). That specific band has not been re-measured on this post-rebuild 31-case corpus
+(TRO-561, TRO-556 both track this open condition). Read every number above as one noisy draw,
+not this system's fixed accuracy — the same discipline TRO-543 already established, now
+stated for a corpus that band was never measured against.
+
+**⚠️ FLAGGED GATE EXCEPTION — `G8: eval-not-regressed` FAILS. Not a regression this ticket
+caused.** `pnpm eval:check` (cheap mode, reading the `eval-report.json` this run just wrote)
+against the still-committed, pre-rebuild `baseline.json`:
+
+```text
+check.ts: FAIL — 5 problem(s) vs the committed baseline:
+  - manifest content changed: current run's manifest hash "2b27d156f6d00271168b965d9051c852af8b7f1fa5e5e6c0b17c8703cb5a1f46" does not match the baseline's "8c9fad3fe780d4ea059681473c793163664708be583c5f7200e75e5c67b21f8f" — golden-set/manifest.json's content moved since the baseline was established, even if manifestVersion did not; re-run --live --update-baseline to refresh it.
+  - stale coverage: current run did not include 1 case(s) the baseline was built from (case-24-tiny-warning-text-miniature-bottle) — run --live --full to cover the whole golden set before comparing.
+  - extraction accuracy regressed: 95.5% (current) < 96.3% (baseline)
+  - cascade-verdict accuracy regressed: 80.6% (current) < 81.3% (baseline)
+  - review-reason accuracy regressed: 54.5% (current) < 58.3% (baseline)
+```
+
+Attribution: **TRO-561** (Urgent, filed 2026-08-13). The committed baseline sits at 81.3% —
+the exact top of TRO-543's measured variance band. A single honest run of unchanged code fails
+this comparison most of the time. **TRO-556**: the committed baseline and report predate
+today's corpus changes — TRO-527's bold-prefix rebuild, TRO-516 C5's case-24 merge. The
+manifest-hash mismatch and the stale-coverage complaint are expected, not this ticket's own
+regression. `baseline.json` stays untouched by this ticket. No `--update-baseline` run; that
+decision is not this ticket's to make. This entry documents the failure instead of hiding it,
+the same pattern TRO-547 established for a G6 exception: flagged, attributed, escalated for
+sign-off, not routed around.
+
+**Committed artifact.** `scripts/eval/results/eval-report.json` — this run's real output,
+replacing the pre-rebuild committed report (TRO-556 already tracked that staleness before this
+ticket started). `scripts/eval/baseline.json` is NOT touched.
+
+**Side effect the fresh report exposed, and fixed.** `scripts/eval/args.test.ts`'s
+`DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS` suite (TRO-541) checks `args.ts`'s pinned map against
+the live committed `eval-report.json` on every run — by design, so a stale value fails loudly.
+This run's own case-17 result moved from `null` (PASS) to `AMBIGUOUS_BRAND`, the exact
+run-to-run variance TRO-543 already measured for that case, with no code change to case-17's
+own path. `args.ts` updates the map and its doc comments to match; `args.test.ts` itself is
+untouched — it was never wrong, it caught real drift.
+
+**Step 5 — not shipped, and CP-1 blesses that as a real outcome.** The ticket's own contrast
+proposal is explicitly unsettled: formulation A (one ratio, whole brand box) provably fails —
+case-17 (glare) and case-01 (clean) both score 9.65 to two decimals. Formulation B (44px
+tiles) is not settled — two runs with different tile parameters reach opposite conclusions on
+case-17, and the ticket's own Do-NOT list forbids adopting a threshold from either table.
+Neither formulation was re-measured here — both tables already exist in the ticket text, and
+re-measuring them across the full corpus was not this ticket's step-1-through-4 deliverable.
+Shipping the measurement without a new signal is the outcome CP-1 itself blesses
+(`cp1:1178-1181`): "If it turns out to be flat... I would say so and lean entirely on the
+deterministic signals. That is a finding, not a failure." No new field on `PreprocessingSignal`
+(`router/types.ts:132-137`). No new branch in `isLowImageQuality`.
+
+**Do-NOT list, checked.**
+
+- `UNUSABLE_CEILING` (`router/confidence.ts:32`): untouched.
+- Case-17's manifest expectation: untouched.
+- No font-unusualness detector.
+- `golden-image-quality.test.ts`: every pre-existing assertion kept, 0 skips, 0 deleted cases —
+  confirmed by the full suite run above.
+- No contrast threshold adopted from either table.
+
+**Files changed.** `src/server/router/label-blockers.ts`, `label-blockers.test.ts`, `types.ts`,
+`index.ts`; `src/server/resolver/index.test.ts`, `test-support.ts`;
+`src/server/batch-queue/resolver-snapshot.test.ts`; `scripts/eval/types.ts`,
+`verdict-scoring.ts`, `cascade-runner.ts`, `cascade-runner.test.ts`, `flagged-fields.test.ts`,
+`benchmark.ts`, `variance-analysis.test.ts`, `summary.test.ts`, `warning-segmentation.test.ts`;
+`scripts/eval/results/eval-report.json`. No schema migration, no DB change, no HTTP response
+change — `route.ts` builds `VerifySuccessResponse` field-by-field from the router result
+(`route.ts:425-442`), never a spread of `LabelRouterResult`, so the two new fields never reach
+the API contract.
+
+**How to run it.** `pnpm test -- src/server/router/label-blockers.test.ts
+src/server/router/golden-image-quality.test.ts`. The committed `eval-report.json` already
+carries the live trigger evidence — `pnpm eval:check` (no flags) reads it back at zero cost.
+
+**Rollback.** `git revert` this ticket's commits. `eval-report.json` reverts to the pre-ticket,
+pre-rebuild committed value along with the code — the same staleness TRO-556 already tracked,
+unresolved either way.
+
+## TRO-546 — case-22's government_warning single-channel MATCH masked an expected NEEDS_REVIEW (2026-08-13)
+
+Advances TH-R9, TH-R17. Three unrelated tickets found the same defect on the same day.
+TRO-534's blocker fix exposed it. TRO-535's new `singleChannelPass` metric caught it live.
+TRO-538's cascade end-state scoring flagged case-22 as correct→wrong, once the resolver's
+real disposition is scored. This ticket is the fix.
+
+**The defect.** `detectWarningRegionClassical` (`src/server/warning/region-detect.ts`)
+called a pixel "ink" when it read below one fixed grey value, 180 out of 255. That rule
+assumes the row's background sits near white.
+
+Case-22's warning block is darkened on its own (`brightnessFactor: 0.3`, region-scoped). The
+rest of the label is normal. Its background lands near grey 76, under the fixed cutoff.
+Every pixel in the block, ink or paper, then reads "dark."
+
+The row-density scan measured about 88% ink coverage there. `MAX_INK_FRACTION` caps that at
+60%. The detector discarded the whole block as "a solid fill, not print." That is the
+opposite of the truth.
+
+Region detection returned `null`. OCR never ran. CP-2 §4.5's OCR-unavailable path fell back
+to the vision channel alone. It read the warning correctly, at high confidence. That is a
+single-channel PASS. The manifest expects NEEDS_REVIEW.
+
+**The measurement (step 1, before touching code).**
+`scripts/eval/tro-546-case22-ocr-region-check.ts` reuses `ocr-floor-sweep.ts`'s exact
+method, as its own script. The method: `preprocessImage` → `detectWarningRegion` →
+`cropForOcr` → `runWarningOcr` → `evaluateCandidate`. It is read-only. It makes no API call.
+
+It ran against the CURRENT golden-set image. TRO-527 merged the same day. TRO-527 rebuilt
+30 of 32 images, including case-22, to add the bold warning prefix.
+
+Measured before this fix: `region: null`, `ocrChannelState: "unavailable"`. That is CP-2
+§4.5's "no candidate at all" state, not a candidate discarded below the confidence floor.
+This result is unchanged from the pre-TRO-527 image. The defect presents identically on the
+rebuilt pixels.
+
+A second session's agent measured the same root cause independently, on this same ticket. It
+posted the finding as a Linear comment on TRO-546: region-crop OCR at confidence 95,
+`EXACT_MATCH`, distance 0; 100 of 100 band rows at 88% ink against the 60% cap; a committed
+live eval run reading Haiku at confidence 0.98 exact. This entry cites that comment as
+corroboration. It is not a substitute for the measurement this ticket committed.
+
+**Confirming OCR should run at all (step 2).** `LABEL_REGIONS.warning` is the fixture's own
+known-correct box for case-22's true warning region. Cropping that region and running the
+shipped `runWarningOcr` on it reads the statutory text back correctly. Confidence 95,
+`EXACT_MATCH`, distance 0 — with no brightness or contrast correction.
+
+This is not a photographic limit. The pixels carry the text. The detector could not find
+them.
+
+**The fix.** Replaced the fixed 180 cutoff with a per-row relative one. A pixel is ink when
+it reads below `DARK_RATIO` (still 180/255) times that row's OWN 85th-percentile grey value.
+That replaces one constant for the whole image.
+
+The anchor is a high percentile, not the median. Print is a documented minority of any row —
+`MAX_INK_FRACTION` caps it at 60%.
+
+The median was the first thing tried. It broke case-23/24 (tiny warning print). At that
+print size, after the row's downscale, much of the row is antialiased edge grey. That pulled
+the 50th-percentile estimate down too far. It mispriced the row's real background.
+
+The fix swept 0.5 through 0.9, against case-22, 23, and 24 together. 0.85 is the value that
+keeps all three (`region-detect.ts`'s `BACKGROUND_PERCENTILE` comment carries the numbers).
+
+On a normal, evenly-lit row, this reproduces the original 180 cutoff exactly. Confirmed with
+a synthetic equivalence test and a full 32-case sweep.
+
+A second, smaller change closed the loop for case-22 specifically. The crop margin
+(`ROW_MARGIN_PX`, `COLUMN_MARGIN_PX`) shrank from 2/4 analysis pixels to 1/1.
+
+Measured directly: the threshold fix alone already found case-22's block correctly. But the
+original margin pushed the crop a few pixels past the block's true edge. That pushed it into
+the label's undegraded surroundings.
+
+Tesseract's single-block page segmentation read that hard illumination seam as structure.
+Same content, margin-only difference: confidence dropped from 95 to 0.
+
+A real photograph has no such knife-edge lighting boundary. This is specific to how this
+fixture's degradation is built — a rectangular region, not a gradient. It is not a property
+of dim lighting in general.
+
+The smaller margin was checked against the full 32-case corpus before landing. No
+regression.
+
+**Result, measured.** `pnpm eval:tro-546-case22-check` measured case-22's OCR channel.
+Artifact committed: `scripts/eval/results/tro-546-case22-ocr-region-check.json`.
+
+Case-22's OCR channel is now `"healthy"`. Classical detection alone finds the region — band
+search never runs. Confidence 95, `EXACT_MATCH`, distance 0, `capsOk: true`.
+
+`pnpm eval:ocr-floor-sweep` also ran locally, to check for regressions across the other 31
+cases. That artifact is TRO-535's, not committed here. Its post-TRO-527 staleness is
+TRO-558's to fix.
+
+28 of 32 warning-bearing cases now have a usable candidate, up from 27. That is exactly the
+one intended addition. Every already-passing case keeps its measured confidence, wording,
+and distance unchanged. Only the crop's padding shrank, by the same fixed amount everywhere.
+
+**What this fix does NOT close.** Restoring the OCR channel does not, by itself, make
+case-22's live verdict match the manifest. With OCR available, both channels now read the
+statutory text correctly. They agree. CP-2 §4.5 scores an agreeing, both-equal pair as PASS.
+That is the same verdict the single-channel path already produced before this fix. It is not
+the manifest's `NEEDS_REVIEW`.
+
+The TH-R9 exposure this ticket closes is real regardless. A statutory field was being
+certified, silently, by one reader. The second reader was unavailable for a code reason, not
+a genuine read failure. That risk is closed, for any real photograph shaped like case-22's
+degradation.
+
+But case-22's own expectation-versus-behavior gap remains open. It is a corpus question, not
+a pipeline one. Is the manifest's `NEEDS_REVIEW` correct for pixels this legible? TRO-516's
+C3 precedent, on case-21, says a pure-brightness transform can darken without degrading
+glyph edges. A real reader then passes it. Or is case-22's degradation too weak for its own
+claimed defect?
+
+Deciding that needs a live Haiku/Sonnet run, against the regenerated image. It also touches
+`src/server/router/golden-image-quality.test.ts`'s fixture (TH-R10's suite). Per this
+ticket's Do-NOT, the manifest stays untouched here. **Proposed as its own ticket,
+Troy-gated, same precedent as TRO-516.**
+
+**How to run it.** `pnpm eval:tro-546-case22-check` re-runs this ticket's measurement. It
+makes no API call.
+
+`pnpm test -- src/server/warning/region-detect.test.ts` runs the regression suite. It
+includes two new TRO-546 tests. One: a synthetic region-scoped brightness drop. One: a real
+case-22 image, end-to-end (detect → crop → OCR → text match). Both were confirmed red
+against the pre-fix threshold, for the right reason — `detectWarningRegionClassical`
+returned `null`. Both are now confirmed green.
+
+**Rollback.** `git revert` this commit. `DARK_PIXEL_THRESHOLD` (180, absolute) and the
+original margins (2/4) return. Case-22's OCR channel goes back to `"unavailable"`. No
+manifest change needs undoing — none was made.
+
+## TRO-522, TRO-521, TRO-520, TRO-523 — E2E suite follow-ups from CodeRabbit (2026-08-13)
+
+**Why one entry covers four tickets.** All four came from the same source. CodeRabbit's
+GitHub-hosted review of PR #36 (TRO-479, the E2E suite) landed after merge. It was
+rate-limited during the PR's open window. Each ticket names one finding from that review.
+
+### TRO-522 — `pnpm test:e2e` now runs in CI as its own job
+
+CI never ran the Playwright suite before this ticket, not even the pre-existing
+`e2e/health.spec.ts`. TRO-479's own agent and CodeRabbit both named this gap, independently.
+
+`.github/workflows/ci.yml` gains a new `e2e` job, separate from the existing `verify` job
+(G4's unit-test check). It gives the suite the same lifecycle it already has locally: its
+own Postgres service, a migration step, then `pnpm test:e2e`. `playwright.config.ts`'s own
+`webServer` array does the rest. It builds and starts the Next.js app. It starts the batch
+worker. It starts `scripts/e2e/fake-anthropic-server.ts` in place of the real Anthropic API.
+
+**No real API spend, by design.** The `e2e` job never sets `E2E_LIVE`. An unset `E2E_LIVE`
+is `playwright.config.ts`'s own signal to use the fake server — the job needs no
+`ANTHROPIC_API_KEY` at all. `E2E_LIVE=1` stays a deliberate, human- or agent-invoked local
+run, never something CI sets on its own.
+
+**Observed, not derived.** `pnpm test:e2e` run locally in this worktree: 12 of 12 tests pass
+in 12.7 seconds, warm build cache. A cold CI runner's first `next build` inside the job will
+run slower than that — not measured, since no CI run has happened yet. `pnpm typecheck`
+reports clean against the workflow and test changes.
+
+**Regression test.** `scripts/deploy/ci-workflow.test.ts` parses `ci.yml` with `js-yaml` —
+the same pattern `scripts/deploy/render-yaml.test.ts` already uses for `render.yaml`. It
+checks five things:
+
+- The file parses.
+- Some job runs `pnpm test:e2e`.
+- That job is not `verify`.
+- No job or step anywhere sets `E2E_LIVE`.
+- The job that runs the suite has its own Postgres service, with a `DATABASE_URL` that
+  matches it, migrated before the suite runs.
+
+Confirmed failing first, for the right reason. Before the workflow change, 4 of the 6 cases
+failed with "no step anywhere in ci.yml runs `pnpm test:e2e`". After the change, no case
+failed.
+
+### TRO-521 — the `E2E_LIVE` skip is now structural isolation, not an in-place skip
+
+Troy already approved `test.skip(E2E_LIVE, "...")` in `e2e/verify.spec.ts` as a narrow,
+documented exception (lessons.md rule 30). The fake server's failure-injection trigger has
+no live-API equivalent, by design. The skip hides no real bug.
+
+CodeRabbit's alternative — isolate the scenario in its own file instead — is a real
+improvement, not a reason to re-litigate the original approval. A `test.skip(` call in a
+gated spec file re-trips CodeRabbit's and G5's own weakened-test pattern on every future
+review pass. That happens even though this one skip is sound. Moving the scenario out
+removes that recurring noise at its source.
+
+**What changed.** The one test using this skip moved to a new file,
+`e2e/verify-fake-only.spec.ts`, with the `test.skip(` call removed. `playwright.config.ts`
+gained a `testIgnore` entry that excludes that one file when `E2E_LIVE=1`. The exclusion now
+lives next to the `E2E_LIVE` decision it depends on, in config, not as a runtime skip inside
+the test body.
+
+**Confirmed both directions, observed, no live API call made.**
+- Default mode: `pnpm exec playwright test --list` reports 12 tests in 5 files, and a full
+  `pnpm test:e2e` run passes all 12.
+- `E2E_LIVE=1 pnpm exec playwright test --list` reports 11 tests in 4 files.
+  `verify-fake-only.spec.ts` is gone from the list entirely. This check spends no real API
+  money. `--list` collects the tests. It never runs them.
+
+No `test.skip(` or `.todo(` call remains anywhere under `e2e/` for this scenario. The
+retry affordance is the behavior the skip existed to protect. That behavior stays fully
+covered by the default (fake) path, unchanged.
+
+### TRO-520 — the no-spend claim now names the default run, not every run
+
+`CHANGES.md`'s TRO-479 entry said "An E2E run never spends real API money." Read plainly,
+that covers `E2E_LIVE=1` too, which is false — that flag exists specifically to spend real
+money on a real cascade run. Fixed in place: "A default `pnpm test:e2e` run never spends real
+API money." The next sentence, describing `E2E_LIVE=1`'s real spend, is unchanged.
+
+### TRO-523 — ASD-STE100 sentence-length pass on the TRO-479 entry
+
+Two passages in the TRO-479 entry ran well past ASD-STE100's 25-word guidance. One is the
+paragraph starting "Confirmed each spec exercises." The other is the sentences around the
+unpairable-rows assertion, in that same paragraph. The worst offender was a single 48-word
+sentence. It listed six break/restore trial mechanisms after a colon. CLAUDE.md's own style
+table names that shape — "a sequence buried inside one prose sentence" — as the thing to
+avoid.
+
+Fixed two ways. The six-item list became an actual bulleted list — CLAUDE.md's own
+prescribed fix for this shape. Every remaining long sentence split into short, active-voice
+sentences. Every trial result stays named. The explanation that each reported problem is now
+asserted against its own list item, not the panel as a whole, stays intact.
+
+### Stale claims corrected in place (rule 17)
+
+TRO-522 and TRO-520 both change what is true about the TRO-479 entry's own claims elsewhere
+in that same entry. Both corrected in place, not left stale two sections away:
+
+- The "flagged gate exception" section (the `test.skip(` discussion) now has a short
+  "Superseded by TRO-521" note pointing at the structural-isolation fix above.
+- The "How to run it" section claimed `pnpm test:e2e` ran as "a separate check." That was an
+  aspiration, not yet true, at the time it was written. It now says plainly that TRO-522
+  built that separate check, and points here.
+
+**How to run it.**
+
+```bash
+source .factory-env
+pnpm db:migrate                       # once, if this worktree is not already current
+pnpm test:e2e                          # fakes the Anthropic API — 12/12 pass, ~13s warm
+E2E_LIVE=1 pnpm exec playwright test --list   # confirms the fake-only file drops out — no spend
+pnpm test -- scripts/deploy/ci-workflow.test.ts   # the new CI regression test, standalone
+pnpm typecheck
+```
+
+**Rollback.** `git revert` this ticket's commits. Reverting the CI job
+(`.github/workflows/ci.yml`) returns CI to never running `pnpm test:e2e` — the original gap.
+Reverting the `e2e/verify-fake-only.spec.ts` split restores the in-place `test.skip(` in
+`e2e/verify.spec.ts`. Troy already approved that shape (lessons.md rule 30), so reverting is
+safe if a real reason to prefer it ever turns up.
+## TRO-526, TRO-525 — E2E fixture builders: row/header column drift, and a real baseline for the corrupt-image test (2026-08-13)
+
+**Source.** Both tickets came from CodeRabbit's post-merge review of PR #36 (TRO-479, the
+E2E suite). Neither was triaged before filing. Both findings checked out as real bugs.
+
+**TRO-526 — `buildManifestCsv` row cells ignored `overrideHeader`.**
+`scripts/e2e/fixtures.ts`'s `buildManifestCsv` honored `overrideHeader` for the header row.
+It always mapped each data row's cells over `MANIFEST_COLUMNS` instead. A malformed-CSV test
+that dropped or reordered a column got a mismatched header and data row. Row width and column
+order both drifted — an accidental second difference, on top of the one the test meant to make.
+
+**The fix.** Each data row now maps its cells over the same column list as the header:
+`overrideHeader` when supplied, `MANIFEST_COLUMNS` otherwise.
+
+**A new boundary check.** `ManifestCsvRow` carries one value per real `ManifestColumn`. So
+there is no value to source for an `overrideHeader` entry `MANIFEST_COLUMNS` does not have.
+`buildManifestCsv` now throws, naming the bad column. It no longer writes an empty or
+`"undefined"` cell that would look like real data. A test that needs a header cell no
+`ManifestColumn` can supply must build that CSV text directly, not through this function.
+
+**Call sites re-read, not blindly re-baselined.** `e2e/batch.spec.ts`'s one `overrideHeader`
+call site drops `beverage_type`. It lists the remaining six real `ManifestColumn` names in
+order, so every name is recognized. The fix changes its row content — now width- and
+order-correct — but not its outcome. `parseManifest` (`src/server/batch/manifest.ts`) checks
+for a missing required column before it ever checks row width. So the spec's assertion
+(`/manifest|missing|column/i`) holds either way. Confirmed by reading `parseManifest`'s check
+order, not by running the Playwright spec — out of this ticket's scope; two other agents own
+`e2e/*.spec.ts` on other branches right now.
+
+**TRO-525 — `buildCorruptImage`'s length assertion had no real baseline.** The test in
+`scripts/e2e/fixtures.test.ts` checked only that the truncated buffer was longer than zero
+bytes. That check would still pass even if `buildCorruptImage` stopped truncating altogether.
+The test now builds a complete JPEG encode of the same image with `sharp`. It asserts the
+truncated buffer is shorter than that complete encode. Measured: the complete encode takes
+about 2ms and produces the same 978-byte result on three repeated runs. It is fast and
+deterministic, so CodeRabbit's suggestion is implemented as written, with no fallback needed.
+
+**How to run it.**
+
+```bash
+pnpm vitest run scripts/e2e/fixtures.test.ts
+```
+
+**Rollback.** Revert this commit. `buildManifestCsv`'s call sites (`e2e/batch.spec.ts`,
+`scripts/e2e/fixtures.test.ts`) do not change their own code either way.
+
+## TRO-516 — C5 execution: merge case-24 into case-23 (2026-08-13)
+
+**Troy's ruling (TRO-516 comment, 2026-08-13):** merge case-24 into case-23. Both cases print
+the government warning at the same 9px size, on the same canvas. The pair samples one print
+size twice. The freed corpus slot goes to a genuinely different sample later. This entry is
+the queued follow-up TRO-541's own CHANGES.md entry names (`CHANGES.md:116`).
+
+**What changed.**
+- `golden-set/manifest.json`: removed the `case-24-tiny-warning-text-miniature-bottle` entry.
+  `case-23-tiny-warning-text-standard-bottle`'s `notes` field now records the merge, plus
+  case-24's own measured numbers (OCR distance 42, confidence 56 — case-23 measured 47 and
+  58), for provenance.
+- `golden-set/images/case-24-tiny-warning-text-miniature-bottle.jpg`: deleted. Git history
+  still holds it.
+- The golden set now holds 31 cases, not 32. `pnpm golden:verify`: "Checked 31 golden-set
+  case(s). PASS: golden set is consistent."
+
+**Tests.**
+- `src/lib/golden-set/loader.test.ts`: new test asserts case-24 is absent from the manifest
+  and case-23 carries the merge note. Red on pre-merge `main` (case-24 present); green after
+  the manifest edit.
+- `scripts/golden/images.test.ts`: dropped case-24 from the render-time-only degradation
+  check. That check's `?? []` fallback for a missing case ID would have let a removed case
+  pass silently, proving nothing — a live case must carry the assertion, not an absent one.
+- `scripts/eval/warning-golden-cases.test.ts`: the case-23/case-24 describe block now covers
+  case-23 alone. Both cases tested the identical reconciler branch — dual-channel, OCR
+  confidence above the 50 floor and below the old 60 floor — at two magic-number confidence
+  values (58 and 56) with byte-identical garbled OCR text. case-23 alone still exercises that
+  branch. No test intent lost.
+- `scripts/golden/render.ts`: removed case-24's now-dead `CASE_STYLE_OVERRIDES` entry.
+
+**Reference sweep.** Grepped the whole repo for `case-24` and for the corpus count `32`.
+
+Updated — living prose or code that describes the corpus as it stands today:
+`golden-set/README.md` (image count and total size, V10 coverage note, category-count
+breakdown), `scripts/eval/args.ts` (`DEFAULT_SAMPLE_CASE_IDS` and `MAX_CASES` doc comments).
+
+Left untouched — dated record of a past measured state, not a claim about today's corpus:
+`CHANGES.md`'s own earlier entries, `docs/diagnostics/2026-08-12-verdict-miss-triage.md`,
+`docs/diagnostics/2026-08-12-fix-tickets.md`, `docs/checkpoints/cp2-warning-subsystem.md`,
+`docs/handoffs/2026-08-12-*.md`, `audit/requirements/*`, `factory/tickets.md`,
+`factory/review-findings.jsonl`, `docs/reference-photo-provenance.md`,
+`scripts/golden/batchFixture.ts`'s printed caveat, `scripts/eval/manifest-hash.ts`'s comment,
+`src/server/warning/reconcile.ts`'s OCR-floor comment, and `src/server/warning/reconcile.test.ts`
+(its two `it` blocks pass literal, historically-measured confidence numbers directly — they
+never load the manifest, so case-24's removal cannot break them, and the numbers stay true as
+a record of what was measured).
+
+Left untouched — committed measurement artifacts; they predate this merge and cover the
+pre-merge 32-case corpus (TRO-556 tracks drift detection): `scripts/eval/results/eval-report.json`,
+`scripts/eval/baseline.json`, `scripts/eval/results/benchmark-report.json`,
+`scripts/eval/results/ocr-floor-sweep.json`, `scripts/batch-throughput/results/local-batch-run.json`.
+
+Left untouched — a non-pinning upper bound, still true at 31 ≤ 32; tightening it would only
+need loosening again once LH-023 adds cases back:
+`src/lib/golden-set/loader.test.ts`'s `expect(result.cases.length).toBeLessThanOrEqual(32)`.
+
+**Rubric-coverage consequence.** This merge takes vector V4 (warning in a notably smaller
+font, `audit/rubric.md:106`) from two cases to one. case-23 is now V4's only instance.
+Single-case coverage is already the norm for V6, V7, V8, and V9. V4 now matches that pattern.
+
+The two cases duplicated print size: both printed the warning at 9px. They differed on
+bottle size. case-23 used a standard bottle. case-24 used a 50 mL miniature. Read V4 as font
+size relative to the label, and the miniature bottle was the more demanding instance.
+
+Per `docs/diagnostics/2026-08-12-verdict-miss-triage.md:11`, both V4 cases currently miss
+their expected verdict. V4 is provable today by exactly one case, and that case currently
+fails.
+
+If the corpus chain (LH-023/LH-024) later judges V4's coverage too thin, the freed slot can
+host a redesigned miniature-bottle V4 case. That decision rides with Troy's corpus rulings,
+not this entry.
+
+**Not this ticket's job.** Setting `verified: true` on case-21/23/25/26 (case-24's own flag
+goes away with the case) stays Troy's, per `golden-set/README.md:81-85` — only a human sets it.
+
+**Roll back.** `git revert` this commit. The deleted image restores from git history in the
+same revert.
+
 ## TRO-543 — LH-038 · Measure verdict variance, Part 2: the authorized sweep (2026-08-13)
 
 Advances TH-R10 (stretch), TH-R17, TH-R19. Part 1 (2026-08-12, below) built the tool and
@@ -2826,8 +4333,9 @@ by dependency injection. A live browser test has no such seam into a separate se
 (`src/server/extractor/index.ts`, `src/server/resolver/index.ts`) both fall back to
 `process.env.ANTHROPIC_BASE_URL` when no client is injected. Production code already has that
 same seam, for the same reason. `playwright.config.ts` points the app's and the worker's
-`webServer` processes at this fake server by default. An E2E run never spends real API money.
-`E2E_LIVE=1 pnpm test:e2e` runs the real cascade against the real API instead. This mirrors
+`webServer` processes at this fake server by default. A default `pnpm test:e2e` run never
+spends real API money. `E2E_LIVE=1 pnpm test:e2e` runs the real cascade against the real API
+instead. This mirrors
 `scripts/eval/check.ts --live`'s own shape: cheap by default, an explicit flag pays for the real
 thing. Every other part of the cascade stays 100% real in every mode: preprocessing, the
 deterministic router and comparators, the warning subsystem (real tesseract.js OCR against the
@@ -2857,17 +4365,24 @@ resolution a static trace cannot follow. This is exactly the class of bug real E
 real production server exists to catch. It would have hit the real deployed Render instance
 too, not only this suite.
 
-**Confirmed each spec exercises the real flow, not a vacuous green run.** Six separate
-break/restore trials, each against a different mechanism the suite depends on: the checklist's
-own MATCH text, the batch progress testid the live-polling assertion waits on, the review
-queue's `AMBIGUOUS_BRAND` reason text, `ErrorPanel`'s `role="alert"`, the fake server's own
-failure-trigger threshold, and the pairing module's unmatched-row reason text. Every trial
-followed the same steps: break it, watch the affected spec fail for the right reason, restore
-it, watch the suite go green again. One trial caught a real gap in the test itself, not in the
-app. The unpairable-rows assertion originally checked the whole problems panel against one
-regex, and either reported problem could satisfy it. It stayed green even with the row-specific
-message broken, because the (unbroken) image-specific message alone still matched the pattern.
-Fixed by asserting each reported problem against its own list item, not the panel as a whole.
+**Confirmed each spec exercises the real flow, not a vacuous green run.** Six break/restore
+trials proved this, one per mechanism the suite depends on:
+
+- The checklist's own MATCH text.
+- The batch progress testid the live-polling assertion waits on.
+- The review queue's `AMBIGUOUS_BRAND` reason text.
+- `ErrorPanel`'s `role="alert"`.
+- The fake server's own failure-trigger threshold.
+- The pairing module's unmatched-row reason text.
+
+Every trial followed the same steps. Break the mechanism. Watch the affected spec fail for the
+right reason. Restore the mechanism. Watch the suite go green again.
+
+One trial caught a real gap in the test itself, not in the app. The unpairable-rows assertion
+originally checked the whole problems panel against one regex. Either reported problem could
+satisfy that regex. The test stayed green even with the row-specific message broken. The
+unbroken image-specific message alone still matched the pattern. The fix asserts each reported
+problem against its own list item, not against the panel as a whole.
 
 **Local CodeRabbit review triage, round 1 (4 findings, 3 fixed, 1 kept as-is with reasoning).**
 - `scripts/e2e/fake-anthropic-server.ts` (major): an unrecognized `model` silently fell through
@@ -2979,6 +4494,12 @@ pass it is not. The call on whether this specific exception is acceptable is lef
 orchestrator's, and ultimately Troy's, own judgment — per gate.sh's own "justify in the PR or
 revert" instruction.
 
+**Superseded by TRO-521.** Troy approved this exact skip (see that ticket's own reference to
+lessons.md rule 30). TRO-521 later replaced it with structural isolation: the scenario moved to
+its own file, `e2e/verify-fake-only.spec.ts`, and `playwright.config.ts` now excludes that file
+under `E2E_LIVE=1` instead of skipping the test in place. No `test.skip(` call for this scenario
+remains anywhere in the tree. See TRO-521's own entry for the mechanism and the reasoning.
+
 **How to run it.**
 
 ```bash
@@ -2989,8 +4510,9 @@ E2E_LIVE=1 pnpm test:e2e    # the real cascade, real API spend — needs a real 
 ```
 
 `scripts/factory/gate.sh` does not run `pnpm test:e2e` itself. G4 only runs `pnpm test`, the
-vitest unit suite. That is unchanged by this ticket. Run `pnpm test:e2e` as a separate check,
-exactly as this ticket's own brief asked for.
+vitest unit suite. That is unchanged by this ticket. At the time of this entry, CI did not run
+`pnpm test:e2e` either — TRO-522 fixed that later with its own separate `e2e` job. See that
+ticket's entry for the CI wiring; this entry's own gap is what TRO-522 closed.
 
 **Rollback.** `git revert` this ticket's commits. `next.config.ts`'s `serverExternalPackages`
 line is safe, and worth keeping, independently of the rest of this PR. Reverting it

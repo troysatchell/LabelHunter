@@ -10,19 +10,24 @@ import type { ExtractedImageQuality } from "../extractor/types";
 import { UNUSABLE_CEILING } from "./confidence";
 import type { FieldState } from "./field-state";
 import { isFieldAbsent } from "./field-state";
-import type { PreprocessingSignal } from "./types";
+import type { LowImageQualityTrigger, PreprocessingSignal } from "./types";
 
 /**
  * `LOW_IMAGE_QUALITY` (CP-1 §5.3). `requiredFieldStates` must be only the
  * fields required for this label's beverage type — an optional field's low
  * confidence does not speak to whether the IMAGE is readable.
+ *
+ * Returns the CP-1 §5.3 rule that fired, one of four names (TRO-542), or
+ * `null` when none did — never a bare boolean. A caller that only needs the
+ * boolean checks `!== null`; `index.ts` does exactly that, so the rollup
+ * behavior below is unchanged from before this ticket.
  */
 export function isLowImageQuality(
   imageQuality: ExtractedImageQuality,
   preprocessing: PreprocessingSignal,
   requiredFieldStates: FieldState[],
-): boolean {
-  if (imageQuality.legible === "no") return true;
+): LowImageQualityTrigger | null {
+  if (imageQuality.legible === "no") return "ILLEGIBLE";
 
   if (imageQuality.legible === "partial") {
     // Skip an override-rejected field here: `overrides.ts` zeroes a field's
@@ -35,19 +40,19 @@ export function isLowImageQuality(
     const anyRequiredFieldUnusable = requiredFieldStates.some(
       (state) => !state.overrideRejected && state.confidence < UNUSABLE_CEILING,
     );
-    if (anyRequiredFieldUnusable) return true;
+    if (anyRequiredFieldUnusable) return "FIELD_CONFIDENCE";
   }
 
-  if (preprocessing.rejected || preprocessing.longEdgePx < 640) return true;
+  if (preprocessing.rejected || preprocessing.longEdgePx < 640) return "PREPROCESSING";
 
   if (requiredFieldStates.length > 0) {
     const absentCount = requiredFieldStates.filter(isFieldAbsent).length;
     // "At least half" without floating-point division: absentCount / total
     // >= 1/2 iff absentCount * 2 >= total.
-    if (absentCount * 2 >= requiredFieldStates.length) return true;
+    if (absentCount * 2 >= requiredFieldStates.length) return "FIELDS_ABSENT";
   }
 
-  return false;
+  return null;
 }
 
 /** Inputs `isConflictingExtraction` needs, gathered once by the caller

@@ -31,6 +31,27 @@ export const FIELD_NAME_LABELS: Record<FieldName, string> = {
 };
 
 /**
+ * What the Sonnet resolver has done for one queued item (TRO-512, CP-3
+ * §3.3). Four states, because the resolver's reservation (TRO-506) made
+ * "no suggestion on this row" mean more than one thing:
+ *
+ * - `"suggested"` — the resolver answered. Its suggestion is on the item's
+ *   own review page.
+ * - `"checking"` — a caller holds a live reservation and is calling Sonnet
+ *   right now. The suggestion is seconds away.
+ * - `"skipped"` — the batch escalation cap (CP-3 §6.2) deliberately never
+ *   sent this label to Sonnet. No suggestion is coming.
+ * - `"waiting"` — nothing is in flight yet.
+ *
+ * The array is the source of truth; the type is derived from it — the same
+ * pattern `src/app/api/verify/types.ts`'s `VERIFY_ERROR_KINDS` uses, so a
+ * client can check a value off the wire belongs to this set before
+ * trusting it.
+ */
+export const REVIEW_QUEUE_RESOLVER_STATUSES = ["suggested", "checking", "skipped", "waiting"] as const;
+export type ReviewQueueResolverStatus = (typeof REVIEW_QUEUE_RESOLVER_STATUSES)[number];
+
+/**
  * One row the queue list shows (PRD §5: "needs-human items with reason").
  * Deliberately thin — just enough for a reviewer to judge which item to
  * open next, per the ticket's own UI bullet ("reason, brief context, link
@@ -49,11 +70,24 @@ export interface ReviewQueueListItem {
    * `src/app/api/verify/route.ts` uses for the live "needs review" flag, so
    * this never says the same fact a second, different way. */
   reasonText: string;
+  /** What the resolver has done for this item (TRO-512). The list shows
+   * it, so a reviewer never has to guess whether a suggestion is coming. */
+  resolverStatus: ReviewQueueResolverStatus;
   brandName: string;
   classType: string;
   beverageType: BeverageType;
   labelVerdict: LabelVerdict;
   createdAt: Date;
+}
+
+/**
+ * One page of the queue (TRO-507). `nextCursor` is `null` only when this
+ * page really is the end — a caller must never present a page with a
+ * `nextCursor` as the whole queue.
+ */
+export interface ReviewQueueListPage {
+  items: ReviewQueueListItem[];
+  nextCursor: string | null;
 }
 
 /** One field's extracted-vs-application comparison, for the review/detail

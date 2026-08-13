@@ -113,6 +113,13 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     doesn't repeat what assistive tech already announces (not "The uploaded label photo" — a
     screen reader already says "image"). (`ux-copy`, 2 tickets: TRO-462, TRO-466.)
 
+26b. **Never union-interleave a CHANGES.md merge conflict — rebuild it.** CHANGES.md is
+    append-at-top, so both sides add at the same offset and a union splices entries together
+    (a five-fence corrupted entry shipped this way once; G7 caught it). Resolution: take
+    `origin/main`'s file whole, then insert your branch's own new entry after the preamble.
+    Union-keep-both stays correct for `factory/scorecard.jsonl` and
+    `factory/review-findings.jsonl` — line-oriented, no structure to corrupt.
+    (Second factory session, 2026-08-13, bitten twice.)
 27. **After merging `origin/main` into a ticket branch, run `pnpm install` even when
     `package.json`/`pnpm-lock.yaml` auto-merge with no conflict markers.** A clean auto-merge
     still doesn't touch `node_modules` on disk — a dependency the merge pulled in from a
@@ -161,6 +168,14 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     claim, record every disposition and stop; do not fix-iterate prose, and do not re-run
     the gate just to re-review. (TRO-544: 13 rounds, 45 findings; real substance ended at
     round 12, and the last round was seven comment-shortening requests against stable files.)
+
+32. **Any ticket that changes `golden-set/` content runs the re-baseline protocol as part of
+    its own work:** `pnpm eval:variance -- --live --full --repeats=3 --establish-baseline`
+    (~$1 at 36 cases), committing the new band with its own golden-set SHA and manifest hash.
+    The `stale-baseline` failure class in `eval:check` is the routine detector — never a
+    reason for a gate exception, and never fixed by editing `baseline.json` by hand. No
+    "final corpus" exists; the band always names which corpus it measured. (TRO-561,
+    2026-08-13 — ended a six-exception day.)
 
 ## Mechanized (no longer prompt-dependent)
 

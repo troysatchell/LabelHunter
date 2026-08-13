@@ -65,7 +65,10 @@ function needsReviewRow(field: RouterFieldKey, reviewReason: ReviewReason | null
 }
 
 function router(fields: FieldResultRow[], labelVerdict: LabelVerdict = "REVIEW", headlineReason: ReviewReason | null = "AMBIGUOUS_BRAND"): LabelRouterResult {
-  return { labelVerdict, headlineReason, fields };
+  // mergeResolutionIntoActualVerdict (the only thing this file tests) never
+  // reads lowImageQualityTrigger/imageQualityIssues — plain, fixed values
+  // here are enough to satisfy the type.
+  return { labelVerdict, headlineReason, fields, lowImageQualityTrigger: null, imageQualityIssues: ["none"] };
 }
 
 /** A clean-PASS row set — every test starts here and overrides only the

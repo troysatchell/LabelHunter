@@ -15,6 +15,7 @@ const ITEM: ReviewQueueListItemWire = {
   beverageType: "spirits",
   labelVerdict: "REVIEW",
   createdAt: "2026-08-11T14:03:00.000Z",
+  resolverStatus: "waiting",
 };
 
 describe("ReviewQueueList", () => {
@@ -41,6 +42,19 @@ describe("ReviewQueueList", () => {
 
     const time = row.querySelector("time");
     expect(time).toHaveAttribute("dateTime", "2026-08-11T14:03:00.000Z");
+  });
+
+  it.each([
+    ["checking", "LabelHunter is checking this item now. Refresh in a moment."],
+    ["skipped", "LabelHunter did not check this item. Read the label yourself."],
+    ["suggested", "LabelHunter has a suggestion for this item."],
+    ["waiting", "LabelHunter has not checked this item yet."],
+  ] as const)("says in plain words what the resolver has done when the status is %s (TRO-512)", (resolverStatus, sentence) => {
+    // CP-3 §3.3: a reserved row and a capped row both used to render as
+    // "no suggestion", and a reviewer could not tell "wait a moment" from
+    // "nothing is coming."
+    render(<ReviewQueueList items={[{ ...ITEM, resolverStatus }]} />);
+    expect(screen.getByTestId("review-queue-row-42")).toHaveTextContent(sentence);
   });
 
   it("renders one row per item, in the order given — the caller (oldest-first API) decides order", () => {

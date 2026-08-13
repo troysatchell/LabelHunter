@@ -23,7 +23,7 @@
 import type { ReviewReason } from "../../src/server/router/types";
 
 /**
- * A fixed, deliberately small subset of the 32-case golden set
+ * A fixed, deliberately small subset of the 31-case golden set
  * (`golden-set/manifest.json`), chosen to span every `LabelVerdict` and a
  * spread of `GoldenSetCategory` values without running (and paying for)
  * the whole set on every `--live` invocation:
@@ -45,23 +45,30 @@ import type { ReviewReason } from "../../src/server/router/types";
  * routes on image quality, never model confidence.
  *
  * TRO-541 / LH-036 replaced the swap claim that used to follow this
- * paragraph with a measured result. The committed `eval-report.json`
- * (`measuredAt: "2026-08-13T01:47:56.655Z"`, 32 cases, from `pnpm
- * eval:check -- --live --full`) shows this eight-case sample producing
- * exactly one distinct `reviewReason`: `MISSING_REQUIRED_FIELD`, on
- * case-12. `DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS` below records that
- * result for every sample case. It uses the router stage — the same
- * stage `EvalReportSummary.reviewReasonAccuracy` scores (`types.ts`'s own
+ * paragraph with a measured result. TRO-542's own authorized `--live
+ * --full` run (`measuredAt: "2026-08-13T13:39:02.626Z"`, 31 cases —
+ * TRO-516 C5 merged case-24 into case-23 between the two runs) refreshed
+ * `eval-report.json`, and this sample's own numbers moved with it:
+ * case-17 landed on `AMBIGUOUS_BRAND` this run, not the earlier run's
+ * `null` (PASS). This is exactly the run-to-run variance case-17 is
+ * already known for (`DEFAULT_REPEATS`'s own comment below; CP-1
+ * `temperature: 0` is not a promise of identical output). The other
+ * seven sample cases were unchanged. `DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS`
+ * below records the current committed report's result for every sample
+ * case. It uses the router stage — the same stage
+ * `EvalReportSummary.reviewReasonAccuracy` scores (`types.ts`'s own
  * comment on that field). `args.test.ts` checks the constant against the
- * same committed report on every test run.
+ * same committed report on every test run, so a drift like this one
+ * fails loudly instead of going unnoticed.
  *
- * In that same run, no case produced `LOW_MODEL_CONFIDENCE` or
- * `AMBIGUOUS_NET_CONTENTS` — two of the eight `ReviewReason` members.
- * This is a property of that one run, not a claim about what the
- * pipeline can or cannot produce elsewhere. Live-model output varies run
- * to run; `DEFAULT_REPEATS`'s own comment below already records that
- * variance for case-17's REVIEW/PASS split. TRO-541 records this gap. It
- * is not a fix for the gap.
+ * In this run, `MISSING_REQUIRED_FIELD` (case-12) and `AMBIGUOUS_BRAND`
+ * (case-17) are the only two `reviewReason` values this eight-case
+ * sample produced — two of the eight `ReviewReason` members. This is a
+ * property of this one run, not a claim about what the pipeline can or
+ * cannot produce elsewhere. Live-model output varies run to run;
+ * `DEFAULT_REPEATS`'s own comment below already records that variance
+ * for case-17's REVIEW/PASS split. TRO-541 records this gap. It is not a
+ * fix for the gap.
  *
  * Not a statistically representative sample — eight cases cannot be. It
  * is a cheap, fast smoke set covering both REVIEW-escalation and
@@ -84,19 +91,23 @@ export const DEFAULT_SAMPLE_CASE_IDS: readonly string[] = [
 /**
  * This map records which `ReviewReason` each `DEFAULT_SAMPLE_CASE_IDS`
  * case actually produced, in the committed `eval-report.json` run this
- * repo carries now (`measuredAt: "2026-08-13T01:47:56.655Z"`, 32 cases,
- * from `pnpm eval:check -- --live --full`). It uses the router stage —
- * `VerdictCaseScore.actualReviewReason` on `routerVerdict`, the same
- * stage `EvalReportSummary.reviewReasonAccuracy` scores (`types.ts`'s own
- * comment on that field). `null` means the router verdict was PASS or
- * FAIL, with no `reviewReason`.
+ * repo carries now (`measuredAt: "2026-08-13T13:39:02.626Z"`, 31 cases,
+ * from TRO-542's own authorized `pnpm eval:check -- --live --full`). It
+ * uses the router stage — `VerdictCaseScore.actualReviewReason` on
+ * `routerVerdict`, the same stage `EvalReportSummary.reviewReasonAccuracy`
+ * scores (`types.ts`'s own comment on that field). `null` means the
+ * router verdict was PASS or FAIL, with no `reviewReason`.
  *
- * This is a snapshot of one measured run (TRO-541 / LH-036). It is not a
- * claim about what the pipeline can or cannot produce on a different
- * run — `DEFAULT_REPEATS`'s own comment below already records real
- * run-to-run variance for case-17. `args.test.ts` checks this map
- * against the same committed report on every test run, so a stale value
- * here fails loudly instead of drifting silently from measured reality.
+ * This is a snapshot of one measured run (TRO-541 / LH-036, refreshed by
+ * TRO-542). It is not a claim about what the pipeline can or cannot
+ * produce on a different run — `DEFAULT_REPEATS`'s own comment below
+ * already records real run-to-run variance for case-17, and this exact
+ * map is the second time that variance changed a committed value here:
+ * `case-17-glare-front-label` moved from `null` (PASS) to
+ * `"AMBIGUOUS_BRAND"` between the two runs, with no code change to
+ * case-17's own path. `args.test.ts` checks this map against the same
+ * committed report on every test run, so a stale value here fails loudly
+ * instead of drifting silently from measured reality.
  */
 export const DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS: Readonly<Record<string, ReviewReason | null>> = {
   "case-01-clean-match-spirits": null,
@@ -105,14 +116,15 @@ export const DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS: Readonly<Record<string, Revie
   "case-08-title-case-warning-prefix-only": null,
   "case-12-missing-warning-spirits": "MISSING_REQUIRED_FIELD",
   "case-14-case-variant-brand-stones-throw": null,
-  "case-17-glare-front-label": null,
+  "case-17-glare-front-label": "AMBIGUOUS_BRAND",
   "case-25-odd-typography-script-brand": null,
 };
 
 /**
  * Hard ceiling on how many cases one `--live` invocation may run — the
- * golden set's own size (32 cases today). `--full` already reaches this
- * ceiling by design; this constant exists so a future larger golden set
+ * golden set's own size (36 cases today, TRO-529 / LH-024's 5 real-
+ * photograph cases included). `--full` already reaches this ceiling by
+ * design; this constant exists so a future larger golden set
  * cannot silently make one careless invocation far more expensive than any
  * operator intended, the same backstop role `scripts/latency/args.ts`'s
  * `MAX_RUNS` plays there. No CLI override — raise it here, deliberately, if
@@ -275,25 +287,34 @@ export interface VarianceCliArgs extends EvalCliArgs {
    * field, not a value comparison, to decide whether an explicit
    * `--repeats` was passed without the required `--live`. */
   repeatsExplicit: boolean;
+  /** TRO-561's re-baseline protocol entry point: after this sweep
+   * completes cleanly, promote its own measured numbers into a new band
+   * baseline (`scripts/eval/baseline.json`), archiving the old one first
+   * (never deleting measured history). `validateVarianceArgs` requires
+   * `--live --full` alongside it — a band baseline built from a partial
+   * sample would misrepresent gate coverage. */
+  establishBaseline: boolean;
 }
 
 const REPEATS_FLAG = /^--repeats=(\d+)$/;
+const ESTABLISH_BASELINE_FLAG = "--establish-baseline";
 
 /**
  * Parses `variance.ts`'s CLI args: every flag `parseEvalArgs` already
  * understands (`--live`, `--full`, `--case=<id>`, `--update-baseline`) plus
- * `--repeats=<k>`. Does not duplicate `parseEvalArgs` — LH-038's brief:
- * reuse it, write no second parser for the flags it already owns.
- * `--repeats=<k>` is pulled out of `argv` before the remainder is handed to
- * `parseEvalArgs`, since that function rejects any argument it does not
- * itself recognize.
+ * `--repeats=<k>` and `--establish-baseline` (TRO-561). Does not duplicate
+ * `parseEvalArgs` — LH-038's brief: reuse it, write no second parser for
+ * the flags it already owns. Both new flags are pulled out of `argv`
+ * before the remainder is handed to `parseEvalArgs`, since that function
+ * rejects any argument it does not itself recognize.
  */
 export function parseVarianceArgs(argv: readonly string[]): VarianceCliArgs {
   const repeatsMatches = argv.filter((a) => REPEATS_FLAG.test(a));
   if (repeatsMatches.length > 1) {
     throw new Error(`eval args: --repeats may be passed at most once, got ${repeatsMatches.length}.`);
   }
-  const rest = argv.filter((a) => !REPEATS_FLAG.test(a));
+  const establishBaseline = argv.includes(ESTABLISH_BASELINE_FLAG);
+  const rest = argv.filter((a) => !REPEATS_FLAG.test(a) && a !== ESTABLISH_BASELINE_FLAG);
   const base = parseEvalArgs(rest);
 
   let repeats = DEFAULT_REPEATS;
@@ -310,24 +331,36 @@ export function parseVarianceArgs(argv: readonly string[]): VarianceCliArgs {
     );
   }
 
-  return { ...base, repeats, repeatsExplicit: repeatsMatches.length === 1 };
+  return { ...base, repeats, repeatsExplicit: repeatsMatches.length === 1, establishBaseline };
 }
 
 /**
  * `variance.ts`-specific validation, the same shape as `validateCheckArgs`
  * for `check.ts`: a bare `pnpm eval:variance` is cheap mode, so
- * `--full`/`--case=<id>`/`--repeats=<k>` — which only mean anything on a
- * real sweep — must come with an explicit `--live`. `--update-baseline` is
- * rejected outright: this runner has no baseline to update, the same
- * explicit-rejection precedent `benchmark.ts` sets for the identical
- * situation ("silently ignoring a typo'd flag would be more confusing than
- * rejecting it").
+ * `--full`/`--case=<id>`/`--repeats=<k>`/`--establish-baseline` — which
+ * only mean anything on a real sweep — must come with an explicit
+ * `--live`. `--update-baseline` is rejected outright: this runner has a
+ * DIFFERENT, band-shaped baseline flag now (`--establish-baseline`, TRO-561)
+ * — the same explicit-rejection precedent `benchmark.ts` sets for a typo'd
+ * flag ("silently ignoring it would be more confusing than rejecting it").
+ * `--establish-baseline` additionally requires `--full`: a band baseline
+ * built from a partial sample would misrepresent gate coverage (TRO-561's
+ * own re-baseline protocol always runs the whole golden set).
  */
 export function validateVarianceArgs(args: VarianceCliArgs): void {
   if (args.updateBaseline) {
-    throw new Error("eval args: --update-baseline is not supported by the variance runner — it has no baseline to update.");
+    throw new Error(
+      "eval args: --update-baseline is not supported by the variance runner — use --establish-baseline instead " +
+        "(TRO-561: the baseline is a K-repeat band, established here, not a single-run point).",
+    );
   }
-  if ((args.full || args.caseId !== null || args.repeatsExplicit) && !args.live) {
-    throw new Error("eval args: --full/--case=<id>/--repeats=<k> only affect a --live run — pass --live to select a sample.");
+  if ((args.full || args.caseId !== null || args.repeatsExplicit || args.establishBaseline) && !args.live) {
+    throw new Error("eval args: --full/--case=<id>/--repeats=<k>/--establish-baseline only affect a --live run — pass --live to select a sample.");
+  }
+  if (args.establishBaseline && !args.full) {
+    throw new Error(
+      "eval args: --establish-baseline requires --full — a band baseline built from a partial sample would misrepresent gate coverage. " +
+        "Run: pnpm eval:variance -- --live --full --repeats=3 --establish-baseline",
+    );
   }
 }

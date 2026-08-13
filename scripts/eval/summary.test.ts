@@ -93,6 +93,8 @@ function verdictCase(
     actualReviewReason: opts.expectedLabelVerdict === "REVIEW" && opts.reviewReasonCorrect ? "LOW_IMAGE_QUALITY" : null,
     reviewReasonCorrect: opts.reviewReasonCorrect,
     warningChannel: opts.warningChannel ?? null,
+    lowImageQualityTrigger:
+      opts.expectedLabelVerdict === "REVIEW" && opts.reviewReasonCorrect ? "FIELDS_ABSENT" : null,
     fields: [
       {
         field: "brand_name",

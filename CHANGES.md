@@ -43,7 +43,7 @@ longer exists. TRO-527 rebuilt every image, adding the bold ground-truth prefix.
 merged case-24 into case-23. TRO-529 added five real-photograph cases, case-35 through case-39.
 The current golden set has 36 cases, not 32.
 
-Re-measured via the new guarded path. `pnpm eval:ocr-floor-sweep` refused on the first attempt,
+The re-measurement used the new guarded path. `pnpm eval:ocr-floor-sweep` refused on the first attempt,
 because the stale file already existed. That is a live demonstration: TRO-559's fix works
 against the exact file its own bug report names. `pnpm eval:ocr-floor-sweep -- --force` then
 wrote the fresh measurement, deliberately:

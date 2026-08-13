@@ -553,7 +553,7 @@ a wrong PASS delays a catch, a wrong FAIL accuses a compliant producer of a fede
 > The current golden set has 36 cases (`golden-set/manifest.json`, commit
 > `0e6e3e1432f63609ad49febf5445fb866cadaf91`).
 >
-> Re-swept with the same script, same method: read-only, no API call. The artifact is
+> The re-sweep used the same script and the same method: read-only, no API call. The artifact is
 > `scripts/eval/results/ocr-floor-sweep.json`, re-measured against the commit above. 31 of the 36
 > cases are warning-bearing with a usable OCR candidate. The confidences no longer form a clean
 > two-value split. The new real-photograph rotation cases land across a wider range, and some of

@@ -112,6 +112,12 @@ export function writeGuardedJsonArtifact(params: {
   guard: ArtifactGuardArgs;
   content: unknown;
 }): string {
+  if (params.content === undefined) {
+    // JSON.stringify(undefined) returns the JS value undefined, not a
+    // string. String-concatenating it below would write the literal text
+    // "undefined" instead of JSON. Fail loudly instead of writing that.
+    throw new Error("artifact-guard: content must not be undefined — refusing to write invalid JSON.");
+  }
   const target = resolveGuardedOutputPath({ repoRoot: params.repoRoot, defaultPath: params.defaultPath, guard: params.guard });
   mkdirSync(path.dirname(target), { recursive: true });
   const payload = JSON.stringify(params.content, null, 2) + "\n";

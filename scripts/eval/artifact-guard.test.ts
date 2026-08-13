@@ -77,6 +77,16 @@ describe("writeGuardedJsonArtifact", () => {
     expect(JSON.parse(readFileSync(outPath, "utf8"))).toEqual({ n: 2 });
   });
 
+  it("rejects undefined content instead of writing the literal text \"undefined\"", () => {
+    const repoRoot = makeTempDir();
+    const defaultPath = path.join(repoRoot, "results", "artifact.json");
+
+    expect(() =>
+      writeGuardedJsonArtifact({ repoRoot, defaultPath, guard: { out: null, force: false }, content: undefined }),
+    ).toThrow(/content must not be undefined/);
+    expect(existsSync(defaultPath)).toBe(false);
+  });
+
   it("--force deliberately overwrites the default path", () => {
     const repoRoot = makeTempDir();
     const defaultPath = path.join(repoRoot, "results", "artifact.json");

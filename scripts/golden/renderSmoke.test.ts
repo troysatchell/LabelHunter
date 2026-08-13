@@ -59,6 +59,8 @@ describe("runRenderSmoke", () => {
                 governmentWarningPresent: true,
                 governmentWarningText: "GOVERNMENT WARNING: test.",
                 governmentWarningPrefixAllCaps: true,
+                governmentWarningPrefixBold: true,
+                governmentWarningBodyBold: false,
               },
               expected: {
                 labelVerdict: "PASS",

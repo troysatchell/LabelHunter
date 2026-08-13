@@ -4,6 +4,137 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-557 — worktree.sh stamps the provisioning session; refuses cross-session reuse (2026-08-13)
+
+**The bug.** Two orchestrator sessions provisioned TRO-546 within 60 seconds of each other.
+`worktree.sh` keyed worktree reuse on the ticket slug alone. The second run printed one
+easily-missed line, "worktree already exists, reusing it." It kept the first session's branch
+checkout. It also dropped the first session's database. The first session still had that
+database open. Both sessions then worked in the same worktree at once. Reconstructing ownership
+afterward took a three-message exchange. The evidence came from `stat` and `git reflog`.
+
+**The fix.** Every successful `worktree.sh` run now writes an ownership stamp, `.factory-owner`.
+The stamp records the caller's session id, its pid, its host, an ISO timestamp, and the branch.
+A worktree reuse compares the caller's session id against the stamp first.
+
+- **Same session.** The script behaves the same as before. It reuses the worktree and resets
+  the database.
+- **Different session, or no readable stamp.** The script refuses. It exits with status 2. It
+  states the consequence in plain words: "Re-provisioning resets a database another session may
+  be using." It prints the stamp too, so a human does not need to reconstruct ownership from
+  disk state.
+- **`--steal`.** The script reassigns the stamp to the caller and proceeds. Use this flag only
+  for a deliberate takeover.
+
+**Session identity.** No caller is guaranteed to have a single "session id." This fix uses
+`$CLAUDE_CODE_SESSION_ID`. The Claude Code CLI sets this variable for the life of one session.
+Every subshell that session spawns inherits it. It stays the same across repeated invocations
+from that session. `$$` does not: it is a fresh process id on every single call.
+`FACTORY_SESSION_ID` overrides it explicitly. Use it for a caller outside Claude Code that wants
+a stable identity of its own, or for a test. A caller with neither variable set gets a value
+that never matches itself on retry. Every reuse then needs `--steal`. That is a real usability
+cost for a caller outside Claude Code. It is not a safety hole. An unidentifiable caller
+defaults to refusal. It never gets silent trust of a stranger's database.
+
+**Known limitation.** An orchestrator session can restart as a new Claude Code process. That
+process gets a new session id. It then sees its own prior worktrees as owned by someone else.
+It needs `--steal` to continue them. This ticket did not measure the fix against two real,
+concurrent Claude Code processes. It set `$CLAUDE_CODE_SESSION_ID` to two different values
+instead. Those values stood in for two sessions. That is the exact variable a real second
+session would present. The substitution exercises the real mechanism. It does not mock the
+mechanism away.
+
+**Confirmed.** `scripts/factory/worktree-owner.test.ts` runs the real script against a
+disposable git repo and a disposable database. Both live on the same Postgres server this
+worktree's own `DATABASE_URL` already points at. The test provisions the worktree under one
+session id. It writes a marker table. It then attempts reuse under a different session id. It
+checks for exit code 2. It checks that the marker table still exists, untouched. The test then
+confirms two more behaviors. A same-session retry still resets the database. This reset is
+pre-existing behavior, and this ticket must not remove it. `--steal` proceeds and reassigns the
+stamp to the new session. The test first failed for the right reason: against the pre-fix
+script, it failed because no `.factory-owner` file existed yet.
+
+A second test case covers a stamp file that exists but has no `FACTORY_OWNER_SESSION` line. See
+the CodeRabbit triage note below for what that case caught.
+
+**CodeRabbit review triage, 7 rounds, 17 findings, 12 fixed, 4 dismissed, 1 new-ticket
+(TRO-572, the concurrent-invocation lock race — a real, unresolved gap, not dismissed).**
+
+Round 1:
+- `scripts/factory/worktree.sh` (major): the stamp-read pipeline, `grep | cut`, could abort the
+  whole script under `set -euo pipefail`. A stamp file present but missing the
+  `FACTORY_OWNER_SESSION` line made `grep` exit 1. `cut` still exited 0 on the empty input.
+  `pipefail` keeps `grep`'s non-zero status instead. `set -e` then killed the script before it
+  reached the refusal path. A legacy or corrupted stamp crashed provisioning outright, instead
+  of refusing it cleanly. The fix adds `|| true` to the substitution. The test adds a
+  regression case: a stamp file missing that one field. That case first failed for the right
+  reason too — exit 1, not 2, against the pre-fix code.
+- `scripts/factory/worktree-owner.test.ts` (minor): `uniqueTicket()` built its fixture ticket id
+  from `Date.now()` and `process.pid`. Two runners can share a pid within the same millisecond.
+  A shared ticket id would then race two test runs onto the same fixture database. The test now
+  uses `crypto.randomUUID()`.
+
+Round 2:
+- `scripts/factory/worktree-owner.test.ts` (minor): `cleanupFixture` only logged a cleanup
+  failure. A cleanup-only failure — the worktree, the database, or the temp directory did not
+  go away — then passed the test silently. The test adds `withFixture`, a wrapper every test
+  case now runs through. It fails the test on a cleanup-only failure. It still only logs a
+  cleanup failure that happens after the test body itself already failed. That earlier failure
+  is the one that must reach the report.
+- `scripts/factory/worktree.sh` (minor): the argument-parsing loop accepted any unrecognized
+  `--flag` as a silent no-op, and any positional argument past the third as silently ignored.
+  A typo like `--steel` shifted into `BASE_REF` instead of failing loudly. Both cases now exit
+  2 with the usage line.
+- `CHANGES.md` (minor): two sentences read "Confirmed the test fails..." with no explicit
+  subject. This entry now names the subject directly, in those two sentences and throughout.
+
+Round 3:
+- `scripts/factory/worktree-owner.test.ts` (minor): `withFixture`'s new cleanup-propagation
+  code read `if (primaryError)`, a truthiness check. A falsy thrown value (`throw undefined`,
+  `throw 0`) would misread as "no failure," and let a cleanup failure mask the real one. The
+  test now tracks a `bodyFailed` boolean instead.
+- `scripts/factory/worktree-owner.test.ts` (major): `runWorktreeSh`'s `spawnSync` call set no
+  `timeout`. `spawnSync` blocks the whole worker thread. The test's own 60-second `it(...)`
+  limit could not catch a hung `worktree.sh` process. That limit relies on the event loop
+  running. A synchronous hang freezes the event loop itself. The test now passes its own
+  `timeout: 45_000` to `spawnSync`.
+
+Round 4 (2 fixed, 1 dismissed, 1 new-ticket):
+- `CHANGES.md` (minor, fixed): one sentence in the round-3 timeout note ran past the 25-word
+  description limit. Split into three shorter sentences.
+- `CHANGES.md` (minor, fixed): "How to run it" named `.factory-env` and Postgres but not
+  `docker` itself. The test calls `docker ps` before it creates its fixture, so a `docker` CLI
+  with daemon access is also a real prerequisite. Named it.
+- `scripts/factory/worktree.sh` (major, dismissed): reject a symlinked `.factory-owner`, and
+  write the stamp through a temp file with an atomic rename. This is real hardening against a
+  symlink attack in general. It does not fit this file's own threat model. The worktree
+  directory is not attacker-controlled. `git worktree add` creates it fresh, on one operator's
+  own machine, for one operator's own factory. An attacker with write access to it could
+  replace `worktree.sh` itself. That is a far larger problem this hardening would not touch.
+  Two sibling files this same function writes, `.env.local` and `.factory-env`, use the same
+  plain `cat >` write. `.factory-owner` now uses that same write. Atomic-write discipline on
+  only the new file would be inconsistent with the function around it. This codebase does not
+  defend against that threat anywhere else.
+- `scripts/factory/worktree.sh` (major, dismissed): add a per-worktree lock so two truly
+  concurrent invocations — same session, or two `--steal` calls — cannot both pass the
+  ownership check and then race on the database reset. This is a real gap. It is a different
+  problem from this ticket's own scope, which is refusing a reuse from a DIFFERENT session.
+  The incident this ticket fixes was two sessions roughly 60 seconds apart, not two invocations
+  at the same instant. A real fix needs a held lock (`flock` or equivalent). That lock must
+  span ownership validation, the database reset, and the stamp write together. That is a
+  bigger, separate change. This entry records the gap for a follow-up ticket. This ticket does
+  not build that fix.
+
+**How to run it.** Run `pnpm test -- scripts/factory/worktree-owner.test.ts`. It needs no setup
+beyond the worktree's own `.factory-env`. That means the same `DATABASE_URL` and reachable
+Postgres container every other factory test already needs. It also needs a `docker` CLI on
+`PATH`, with access to the daemon. The test calls `docker ps` to find that container before it
+creates its fixture.
+
+**Rollback.** `git revert` this commit. `worktree.sh` goes back to keying reuse on the ticket
+slug alone. It stops writing `.factory-owner`. Any leftover stamp file elsewhere is inert and
+already gitignored.
+
 ## TRO-570 — first-time-user walkthrough and accessibility assessment (2026-08-13)
 
 **What this is.** TH-R3's bar is a named person, not a lint rule: "something my mother could

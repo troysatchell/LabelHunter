@@ -1324,7 +1324,7 @@ accuse a compliant label of a violation we cannot prove.
 
 One thing I would add, because verifying the regulation turned it up: 16.22(a)(2) actually contains
 *two* bold rules. The first two words must be bold, and the rest must not be. Our schema carries
-one flag and checks the first, advisorily. It still checks neither the second. The limitation
+one flag and checks the first rule, advisorily. It does not check the second rule. The limitation
 paragraph in the approach doc names both, so nobody reads "bold detection attempted" as a claim we
 cover the second one.
 

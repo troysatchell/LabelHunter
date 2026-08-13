@@ -12,10 +12,11 @@
  * fail for a reason that has nothing to do with the app.
  *
  * TRO-479's original version of this test lived in `e2e/verify.spec.ts`,
- * gated by `test.skip(E2E_LIVE, "…")`. Troy approved that as a narrow,
- * documented exception (rule 30). CodeRabbit's later review proposed a
- * structurally cleaner alternative: isolate the scenario in its own file
- * instead of skipping it in place. This file is that isolation —
+ * gated by an inline `test.skip` call keyed on `E2E_LIVE`. Troy approved
+ * that as a narrow, documented exception (rule 30). CodeRabbit's later
+ * review proposed a structurally cleaner alternative: isolate the
+ * scenario in its own file instead of skipping it in place. This file
+ * is that isolation —
  * `playwright.config.ts`'s `testIgnore` excludes it entirely under
  * `E2E_LIVE=1`, at the config level, so the test body below carries no
  * runtime skip and needs no `E2E_LIVE` branch of its own. Under the

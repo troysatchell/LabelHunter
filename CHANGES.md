@@ -149,6 +149,14 @@ sign-off, not routed around.
 replacing the pre-rebuild committed report (TRO-556 already tracked that staleness before this
 ticket started). `scripts/eval/baseline.json` is NOT touched.
 
+**Side effect the fresh report exposed, and fixed.** `scripts/eval/args.test.ts`'s
+`DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS` suite (TRO-541) checks `args.ts`'s pinned map against
+the live committed `eval-report.json` on every run — by design, so a stale value fails loudly.
+This run's own case-17 result moved from `null` (PASS) to `AMBIGUOUS_BRAND`, the exact
+run-to-run variance TRO-543 already measured for that case, with no code change to case-17's
+own path. `args.ts` updates the map and its doc comments to match; `args.test.ts` itself is
+untouched — it was never wrong, it caught real drift.
+
 **Step 5 — not shipped, and CP-1 blesses that as a real outcome.** The ticket's own contrast
 proposal is explicitly unsettled: formulation A (one ratio, whole brand box) provably fails —
 case-17 (glare) and case-01 (clean) both score 9.65 to two decimals. Formulation B (44px

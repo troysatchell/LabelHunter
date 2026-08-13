@@ -17,6 +17,11 @@
 # resetting a database that session may still be using. Pass --steal to
 # reassign ownership and proceed anyway.
 #
+# Two invocations for the SAME ticket landing at once serialize on a
+# per-ticket lock (TRO-572) rather than both racing the database reset — see
+# the lock's own comment below for why the ownership stamp alone cannot
+# catch that case.
+#
 set -euo pipefail
 
 USAGE="usage: worktree.sh <TICKET-ID> <branch-name> [base-ref] [--steal]"
@@ -108,6 +113,61 @@ if ! docker ps --format '{{.Names}}' | grep -qx "$PG_CONTAINER"; then
   echo "    -p 127.0.0.1:${PG_PORT}:5432 postgres:16-alpine" >&2
   exit 1
 fi
+
+# --- per-ticket lock (TRO-572) ----------------------------------------------
+# TRO-557 refuses a reuse from a DIFFERENT session, but only by comparing a
+# stamp file written near the END of a successful provision (after the
+# database is dropped/recreated and the port is claimed). Two invocations for
+# the SAME ticket -- the same session calling twice at once, or two --steal
+# calls landing together -- can both pass that check before either has
+# written anything, then both proceed to DROP/CREATE the database and both
+# `cd` into the same worktree to run `pnpm install`/`db:migrate` at once.
+# That is a genuine data race, not merely a UX gap (TRO-557's own review
+# triage scoped it out on purpose: cross-session refusal, not intra-session
+# mutual exclusion).
+#
+# `mkdir` is atomic on every filesystem this factory runs on, and this
+# machine has no `flock` binary (macOS ships none by default) -- so `mkdir`
+# is both the portable choice and the one that needs no new dependency.
+# Exactly one concurrent invocation can create LOCK_DIR; every other one
+# waits, or breaks a lock left behind by a crashed same-host holder.
+LOCK_DIR="${WT_PATH}.lock"
+LOCK_POLLS=0
+LOCK_MAX_POLLS=300 # ~60s at 0.2s/poll
+while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+  # Stale-lock recovery: a lock directory a crashed invocation left behind,
+  # on THIS host, whose pid no longer exists, would otherwise block forever.
+  # There is no reliable way to check a pid's liveness on a different host,
+  # so a lock stamped from elsewhere always waits out its holder (or needs a
+  # human to remove it) instead of being auto-broken.
+  if [ -f "${LOCK_DIR}/owner" ]; then
+    LOCK_HOST="$(sed -n 's/^HOST=//p' "${LOCK_DIR}/owner" 2>/dev/null || true)"
+    LOCK_PID="$(sed -n 's/^PID=//p' "${LOCK_DIR}/owner" 2>/dev/null || true)"
+    if [ "$LOCK_HOST" = "$(hostname)" ] && [ -n "$LOCK_PID" ] && ! kill -0 "$LOCK_PID" 2>/dev/null; then
+      echo "  lock:      breaking a stale lock from dead pid ${LOCK_PID} on this host" >&2
+      rm -rf "$LOCK_DIR"
+      continue
+    fi
+  fi
+  if [ "$LOCK_POLLS" -eq 0 ]; then
+    echo "  lock:      another invocation is provisioning ${TICKET} -- waiting..." >&2
+  fi
+  LOCK_POLLS=$(( LOCK_POLLS + 1 ))
+  if [ "$LOCK_POLLS" -gt "$LOCK_MAX_POLLS" ]; then
+    echo "ERROR: timed out waiting for the lock on ${TICKET} (${LOCK_DIR})." >&2
+    echo "       If no other worktree.sh invocation for ${TICKET} is really" >&2
+    echo "       running, remove it: rm -rf '${LOCK_DIR}'" >&2
+    exit 2
+  fi
+  sleep 0.2
+done
+# Released on ANY exit -- success, error, or signal -- so a failed or
+# interrupted provision never leaves the next invocation waiting forever.
+trap 'rm -rf "$LOCK_DIR"' EXIT
+{
+  echo "PID=$$"
+  echo "HOST=$(hostname)"
+} > "${LOCK_DIR}/owner"
 
 # --- 2. worktree ------------------------------------------------------------
 if git worktree list --porcelain | grep -qx "worktree ${WT_PATH}"; then

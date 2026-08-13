@@ -849,10 +849,10 @@ plus a zero-cost local validation). The real deployed measurement stays blocked 
    combined figure. `haiku` and `ocr` run concurrently (CP-2 §4.4) but are measured
    independently. Their reported durations can overlap. They are not meant to sum to the total.
    A non-200 response carries no header — an early error means at least one stage never ran. The
-   harness parses this header off the `Response` object either mode produces
-   (`parseServerTimingHeader`) — the in-process mode reads it off the same object
-   `handleVerifyRequest` returns; `--url` mode reads it off the real HTTP response. Either way,
-   every successful run's samples roll into a per-stage `stageBreakdownMs` summary
+   harness parses this header with `parseServerTimingHeader`. Both modes read it off a
+   `Response` object. The in-process mode reads the object `handleVerifyRequest` returns.
+   `--url` mode reads the real HTTP response. Either way, every successful run's samples roll
+   into a per-stage `stageBreakdownMs` summary
    (`scripts/latency/stage-breakdown.ts`), reusing the same `summarizeLatencies` the overall
    p50/p95 already uses. Only a successful run's samples ever count.
 

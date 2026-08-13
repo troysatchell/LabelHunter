@@ -121,13 +121,17 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     origin/main merge; the third worktree resolving it got the same failure pre-empted only
     because this rule existed by then.
 
-28. **Never background `gate.sh` (or anything else) and wait for its own completion
-    notification.** Only the orchestrator's top-level shell receives background-task
-    notifications — a sub-agent backgrounding its own process and then waiting gets no signal
-    and simply stalls, with real committed work sitting unpushed. Run `gate.sh` in the
-    foreground and wait for it to print an actual verdict line before doing anything else. Hit
-    twice in one session (TRO-473, TRO-474) — both times the work itself was fine, safely
-    committed, just never pushed or reported.
+28. **Never background `gate.sh` (or anything else) and then end your turn to wait for its
+    completion notification.** Only the orchestrator's top-level shell receives background-task
+    notifications — a sub-agent that backgrounds a process and stops gets no signal and simply
+    stalls, with real committed work sitting unpushed. Hit twice in one session (TRO-473,
+    TRO-474), then twice more in one wave (TRO-543 Part 2, TRO-527, 2026-08-13) where both
+    agents read a shell time limit as permission to background "with a monitor" — one cited
+    this rule as justification. The rule for long commands: raise the foreground timeout (the
+    shell tool accepts up to 10 minutes) and wait for the actual verdict line. If a run can
+    genuinely exceed that, poll it yourself in repeated short foreground checks inside your own
+    loop — process alive? result file's `ranAt` newer than your start? — until the verdict
+    exists. Ending your turn to "wait for the monitor" IS the stall this rule bans.
 29. **A `try/catch` guards a synchronous throw, not automatically an async one.** Code that runs
     after the `catch` block, or inside a bare `Promise.all`, still needs its own guard — a
     rejected promise there propagates unhandled, or (in `Promise.all`) discards every other

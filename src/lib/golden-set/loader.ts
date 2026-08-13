@@ -491,7 +491,7 @@ function checkLabel(problems: string[], where: string, raw: unknown): void {
       `${w}: field "governmentWarningText" must be non-empty when governmentWarningPresent is true`,
     );
   }
-  checkField(
+  const prefixAllCapsOk = checkField(
     problems,
     w,
     raw,
@@ -499,7 +499,7 @@ function checkLabel(problems: string[], where: string, raw: unknown): void {
     isBoolean,
     "a boolean",
   );
-  checkField(
+  const prefixBoldOk = checkField(
     problems,
     w,
     raw,
@@ -507,7 +507,7 @@ function checkLabel(problems: string[], where: string, raw: unknown): void {
     isBooleanOrUnknown,
     'a boolean or "unknown"',
   );
-  checkField(
+  const bodyBoldOk = checkField(
     problems,
     w,
     raw,
@@ -515,6 +515,53 @@ function checkLabel(problems: string[], where: string, raw: unknown): void {
     isBooleanOrUnknown,
     'a boolean or "unknown"',
   );
+  // Only check the cross-field invariant once every field it reads
+  // (governmentWarningPresent and all three flags) has already passed its
+  // own type check — a case with a malformed flag gets that one clear
+  // error, not a second, confusing one derived from a value already known
+  // to be wrong.
+  if (warningPresentOk && prefixAllCapsOk && prefixBoldOk && bodyBoldOk) {
+    checkWarningAbsentFlags(problems, w, raw);
+  }
+}
+
+/**
+ * The three government-warning formatting flags, keyed by their `label`
+ * field name. Every one of the three carries the same "false (including
+ * when the warning is absent)" rule documented on `GoldenLabelFields`
+ * (types.ts) — `checkWarningAbsentFlags` enforces it as real, executable
+ * code, not just that comment (TRO-555; lessons rule 19).
+ */
+const GOVERNMENT_WARNING_FORMATTING_FLAGS = [
+  "governmentWarningPrefixAllCaps",
+  "governmentWarningPrefixBold",
+  "governmentWarningBodyBold",
+] as const;
+
+/**
+ * A formatting claim about text that is not on the label is meaningless.
+ * When `governmentWarningPresent` is `false`, all three formatting flags
+ * must be `false` too — never `true`, and never `"unknown"` for the two
+ * flags that allow it. Only runs when `governmentWarningPresent` itself
+ * already validated as the boolean `false`; a case whose `present` field
+ * failed its own type check gets that error only, not a confusing
+ * second error derived from a value we already know is wrong.
+ */
+function checkWarningAbsentFlags(
+  problems: string[],
+  where: string,
+  raw: Record<string, unknown>,
+): void {
+  if (raw.governmentWarningPresent !== false) {
+    return;
+  }
+  for (const key of GOVERNMENT_WARNING_FORMATTING_FLAGS) {
+    if (raw[key] !== false) {
+      problems.push(
+        `${where}: field "${key}" must be false when governmentWarningPresent is false, got ${JSON.stringify(raw[key])}`,
+      );
+    }
+  }
 }
 
 function checkFieldExpectation(

@@ -4,6 +4,62 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-572 — worktree.sh: a per-ticket lock serializes truly concurrent invocations (2026-08-13)
+
+**The gap.** TRO-557 refuses a worktree reuse from a DIFFERENT session. It checks a
+`.factory-owner` stamp for that. The stamp is written late — after the database reset and the
+port claim. Two invocations for the SAME ticket can land at once. One session might call twice.
+Two `--steal` calls might land together. Either way, both could pass the ownership check before
+one wrote the stamp. Both would then race `DROP DATABASE ... WITH (FORCE)` / `CREATE DATABASE`.
+Both would `cd` into the same worktree and run `pnpm install` and `pnpm db:migrate` at once.
+TRO-557's own review triage named this gap. It scoped the gap out on purpose: cross-session
+refusal, not intra-session mutual exclusion.
+
+**The fix.** `worktree.sh` now takes a per-ticket lock. It wraps the whole provision/reuse
+critical section: worktree add or reuse, database reset, port claim, install, and migration.
+`mkdir` is the lock primitive. It is atomic on every filesystem this factory runs on. This
+machine has no `flock` binary — macOS ships none by default — so `mkdir` needs no new
+dependency. A losing invocation polls every 0.2 s, for up to about 60 s. It prints one "waiting"
+line. Two failure modes get specific handling:
+
+- **A crashed holder on the same host.** The lock directory records the holder's pid and
+  hostname. A waiter checks the pid with `ps -p`, not `kill -0`. `kill -0` fails for two
+  different reasons: a genuinely dead pid, or a live one this user cannot signal. Treating both
+  as dead would break a live holder's lock. `ps -p` reports existence regardless of who owns
+  the process. A second lock, `REAP_LOCK`, gates the actual break: at most one waiter may
+  inspect-and-maybe-remove a stale lock at a time. Two earlier versions of this fix moved the
+  lock directory aside to inspect it first, then put it back if it turned out live. Both left a
+  real gap: while the content sat outside its normal path, a different invocation's `mkdir`
+  could win that gap, even during the brief window before a live lock got put back. Two
+  processes could then each believe they held the lock alone. `REAP_LOCK` closes that gap for
+  good: the lock directory never moves, so it never disappears from its normal path, so no
+  other `mkdir` can ever succeed against it while one waiter is deciding.
+- **An unreachable holder on a different host.** There is no reliable way to check a pid's
+  liveness on another machine. A lock stamped from elsewhere always waits out its holder. The
+  timeout message asks a human to CONFIRM no invocation for that ticket is really running.
+  Confirm that first, before removing the lock by hand (`rm -rf <worktree-dir>.lock`). An
+  unconditional removal instruction would risk deleting a live holder's lock.
+
+The lock releases on any exit — success, error, or an interrupted script — through a
+`trap ... EXIT`. That trap re-checks its own pid against the owner file before deleting
+anything, so a process only ever removes a lock it still actually owns. A failed provision
+never leaves the next invocation waiting forever.
+
+**Confirmed.** `scripts/factory/worktree-lock.test.ts`, four new cases against the real script,
+a disposable git repo, and a disposable database on the same Postgres server this worktree's own
+`DATABASE_URL` points at:
+1. A held lock blocks a second invocation, which proceeds once the lock releases.
+2. A stale lock from a dead same-host pid breaks immediately instead of waiting ~60 s.
+3. Two real, truly concurrent invocations for the same ticket both succeed. Neither raises a
+   postgres error. The database is left in a valid, queryable state.
+4. Three waiters racing to break the exact same stale lock — the exact fan-out where both
+   earlier TOCTOU holes showed up — never let two of them hold it at once.
+
+All 4 new tests pass, plus the 2 pre-existing `worktree-owner.test.ts` (TRO-557) cases, unaffected
+(`pnpm vitest run scripts/factory/worktree-lock.test.ts scripts/factory/worktree-owner.test.ts`,
+observed 2026-08-13, plus 5 repeated runs of the full suite with no flake). `pnpm
+typecheck` and `pnpm lint` are clean.
+
 ## TRO-574 — TH-R7's dependency degradation table now lives in a graded deliverable (2026-08-13)
 
 **The gap.** TH-R7 asks docs to name every outbound dependency and what the app does when one

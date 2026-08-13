@@ -60,8 +60,25 @@ after the merge with `origin/main`, so they read TRO-527's re-rendered golden im
 | case-11-reworded-warning-clause-two | `mead` / "Mead" / 0.99 | identical | FAIL — matches TH-R9's expectation |
 
 Haiku cost: $0.0046 and $0.0047. No golden case changed verdict. Two runs cannot separate a
-prompt effect from model variance. The amendment's effect on the full corpus is therefore **not
-measured**. A `pnpm eval:check -- --live --full` sweep would measure it.
+prompt effect from model variance.
+
+**The full-corpus sweep, now measured.** The earlier claim that this amendment's effect was
+"not measured" is superseded. `pnpm eval:check -- --live --full` ran against the 36-case corpus
+after TRO-561 landed its band baseline. Cost $0.3961, 36 of 36 cases scored, 0 failed:
+
+| Metric | This branch | Committed band (K=3) | Verdict |
+|---|---|---|---|
+| Extraction accuracy | 87.2% (157/180) | 87.2% – 87.8% | within band |
+| Cascade-verdict accuracy | 80.6% (29/36) | 80.6% – 83.3% | within band |
+
+`check.ts` reports **PASS** — both banded rates sit at or above the band floor, and the
+manifest hash and case coverage both match the baseline's own corpus.
+
+An earlier run of this branch drew 78.1% cascade accuracy and read as a regression. It was
+not one. That run measured the 32-case corpus against a point baseline pinned to the *top* of
+an unmeasured variance band. Judged against a real band on the corpus the baseline was built
+from, this change does not move either rate outside normal run-to-run variation. TRO-561 is
+what made the difference between those two readings visible.
 
 **Not done here, deliberately.** `src/server/extractor/schema.ts` still leaves `beverage_type`
 free-form with no enum. An enum would close the vocabulary asymmetry at source. It is a CP-1

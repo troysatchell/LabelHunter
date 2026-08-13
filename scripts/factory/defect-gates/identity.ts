@@ -15,7 +15,10 @@ export function violationIdentity(
   enclosingFunctionName: string,
   nodeText: string,
 ): string {
-  const normalised = nodeText.replace(/\s+/g, "");
+  const normalised = nodeText
+    .replace(/\s+/g, " ")
+    .replace(/\s*([^\w\s])\s*/g, "$1")
+    .trim();
   return createHash("sha256")
     .update([ruleId, repoRelativePath, enclosingFunctionName, normalised].join("|"))
     .digest("hex");

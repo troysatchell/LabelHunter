@@ -41,18 +41,35 @@ const BASE_LABEL: GoldenLabelFields = {
   governmentWarningPresent: true,
   governmentWarningText: "GOVERNMENT WARNING: test text.",
   governmentWarningPrefixAllCaps: true,
+  governmentWarningPrefixBold: true,
+  governmentWarningBodyBold: false,
 };
 
 describe("buildLabelHtml", () => {
   it("embeds every rendered case's exact government warning text, byte-compared", () => {
+    // TRO-527 / LH-022: buildWarningHtml now splits the warning into two
+    // spans at the first colon, so the raw HTML no longer holds the full
+    // warning as one contiguous substring — a `<span>` boundary sits in the
+    // middle. Checking each half separately (still an exact, byte-compared
+    // substring check, no paraphrasing tolerated) keeps this test's original
+    // guarantee; "government warning bold prefix/body split" below proves
+    // the stronger claim that the two halves rejoin to the original string.
     const withWarning = renderableCases.filter((c) => c.label.governmentWarningPresent);
     expect(withWarning.length).toBeGreaterThan(0);
 
     for (const c of withWarning) {
       const html = buildLabelHtml(c);
+      const colonIndex = c.label.governmentWarningText.indexOf(":");
+      expect(colonIndex, `${c.caseId}: warning text must contain a colon`).toBeGreaterThanOrEqual(0);
+      const expectedPrefix = c.label.governmentWarningText.slice(0, colonIndex + 1);
+      const expectedBody = c.label.governmentWarningText.slice(colonIndex + 1);
       expect(
-        html.includes(c.label.governmentWarningText),
-        `${c.caseId}: rendered HTML must contain the spec's exact warning text`,
+        html.includes(expectedPrefix),
+        `${c.caseId}: rendered HTML must contain the spec's exact warning prefix`,
+      ).toBe(true);
+      expect(
+        html.includes(expectedBody),
+        `${c.caseId}: rendered HTML must contain the spec's exact warning body`,
       ).toBe(true);
     }
   });
@@ -97,7 +114,10 @@ describe("buildLabelHtml", () => {
       label: {
         ...BASE_LABEL,
         brandName: `Ampersand & Bros. <script>`,
-        governmentWarningText: `A & B < C > "D" 'E'`,
+        // Colon placed in the prefix half, same as every real case, so
+        // splitGovernmentWarning's invariant (TRO-527 / LH-022) still holds
+        // for this synthetic fixture.
+        governmentWarningText: `A & B: < C > "D" 'E'`,
       },
     };
 
@@ -106,10 +126,73 @@ describe("buildLabelHtml", () => {
     // misparses the document. " and ' need no escaping — every
     // interpolation lands in text content, never a quoted attribute — and
     // leaving them alone keeps the exact-text guarantee a plain substring
-    // check (see case-14's STONE'S THROW in the test above).
+    // check (see case-14's STONE'S THROW in the test above). The warning
+    // text is checked as its two split-and-escaped halves (prefix, then
+    // body) rather than one contiguous run — see the byte-compared test
+    // above for why.
     expect(html.includes("<script>")).toBe(false);
     expect(html.includes("Ampersand &amp; Bros. &lt;script&gt;")).toBe(true);
-    expect(html.includes(`A &amp; B &lt; C &gt; "D" 'E'`)).toBe(true);
+    expect(html.includes(`A &amp; B:`)).toBe(true);
+    expect(html.includes(` &lt; C &gt; "D" 'E'`)).toBe(true);
+  });
+});
+
+describe("government warning bold prefix/body split (TRO-527 / LH-022)", () => {
+  // Red-first regression test: before render.ts splits the warning at the
+  // first colon, buildLabelHtml emits the whole warning as one unweighted
+  // text node — neither span exists, so the `.not.toBeNull()` checks below
+  // fail on a real assertion, not an import/type error (CLAUDE.md rule 6).
+  it("renders the government warning as a bold-eligible prefix span and a body span that rejoin byte for byte", () => {
+    const withWarning = renderableCases.filter((c) => c.label.governmentWarningPresent);
+    expect(withWarning.length).toBeGreaterThan(0);
+
+    // Matches escapeHtml's own three-entity encoding (& < >) in reverse —
+    // the case texts here never contain a literal "&lt;"-shaped substring,
+    // so this round-trips cleanly for every one of the 32 cases.
+    const unescapeHtml = (s: string) =>
+      s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+
+    for (const c of withWarning) {
+      const html = buildLabelHtml(c);
+      const prefixMatch = html.match(
+        /<span class="warningPrefix" style="font-weight: (\d+);">([\s\S]*?)<\/span>/,
+      );
+      const bodyMatch = html.match(
+        /<span class="warningBody" style="font-weight: (\d+);">([\s\S]*?)<\/span>/,
+      );
+      expect(prefixMatch, `${c.caseId}: expected a warningPrefix span`).not.toBeNull();
+      expect(bodyMatch, `${c.caseId}: expected a warningBody span`).not.toBeNull();
+
+      const rejoined = unescapeHtml(prefixMatch![2]) + unescapeHtml(bodyMatch![2]);
+      expect(
+        rejoined,
+        `${c.caseId}: prefix + body must reconstruct the exact warning text byte for byte`,
+      ).toBe(c.label.governmentWarningText);
+
+      const expectedPrefixWeight = c.label.governmentWarningPrefixBold === true ? "700" : "400";
+      const expectedBodyWeight = c.label.governmentWarningBodyBold === true ? "700" : "400";
+      expect(prefixMatch![1], `${c.caseId}: prefix font-weight`).toBe(expectedPrefixWeight);
+      expect(bodyMatch![1], `${c.caseId}: body font-weight`).toBe(expectedBodyWeight);
+    }
+  });
+
+  it("splits at the FIRST colon only, never a later one inside the body", () => {
+    const caseWithExtraColon: RenderableCase = {
+      caseId: "case-99-synthetic-extra-colon",
+      label: {
+        ...BASE_LABEL,
+        governmentWarningText: "GOVERNMENT WARNING: Note: this clause has a second colon.",
+        governmentWarningPrefixBold: true,
+        governmentWarningBodyBold: false,
+      },
+    };
+    const html = buildLabelHtml(caseWithExtraColon);
+    expect(html).toContain(
+      '<span class="warningPrefix" style="font-weight: 700;">GOVERNMENT WARNING:</span>',
+    );
+    expect(html).toContain(
+      '<span class="warningBody" style="font-weight: 400;"> Note: this clause has a second colon.</span>',
+    );
   });
 });
 

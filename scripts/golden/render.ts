@@ -257,9 +257,6 @@ const CASE_STYLE_OVERRIDES: Record<string, StyleOverride> = {
   "case-23-tiny-warning-text-standard-bottle": {
     warningFontSizePx: TINY_WARNING_FONT_SIZE_PX,
   },
-  "case-24-tiny-warning-text-miniature-bottle": {
-    warningFontSizePx: TINY_WARNING_FONT_SIZE_PX,
-  },
   "case-25-odd-typography-script-brand": {
     brandFontFamily: SCRIPT_FONT_STACK,
   },

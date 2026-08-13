@@ -120,13 +120,17 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     Union-keep-both stays correct for `factory/scorecard.jsonl` and
     `factory/review-findings.jsonl` — line-oriented, no structure to corrupt.
     (Second factory session, 2026-08-13, bitten twice.)
-27. **After merging `origin/main` into a ticket branch, run `pnpm install` even when
-    `package.json`/`pnpm-lock.yaml` auto-merge with no conflict markers.** A clean auto-merge
-    still doesn't touch `node_modules` on disk — a dependency the merge pulled in from a
-    sibling PR (e.g. a new package another ticket added) fails typecheck/build with "Cannot
-    find module" until installed. Hit independently on two worktrees resolving the same
-    origin/main merge; the third worktree resolving it got the same failure pre-empted only
-    because this rule existed by then.
+27. **After merging `origin/main` into a ticket branch, run `pnpm install` and `pnpm
+    db:migrate`, even when `package.json`/`pnpm-lock.yaml` auto-merge with no conflict
+    markers.** A clean auto-merge still doesn't touch `node_modules` on disk — a dependency
+    the merge pulled in from a sibling PR (e.g. a new package another ticket added) fails
+    typecheck/build with "Cannot find module" until installed. The same merge also leaves the
+    worktree database on its old schema if a sibling PR added a migration. A live corpus run
+    then fails cases with `SERVICE: could not save this verification` instead of a clear
+    migration error — 17 of 36 cases, $0.089 spent for nothing, reported by a peer session
+    validating PR #57/TRO-502 (2026-08-13). Hit independently on two worktrees resolving the
+    same origin/main merge; the third worktree resolving it got the same install failure
+    pre-empted only because this rule existed by then.
 
 28. **Never background `gate.sh` (or anything else) and then end your turn to wait for its
     completion notification.** Only the orchestrator's top-level shell receives background-task
@@ -170,7 +174,10 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     round 12, and the last round was seven comment-shortening requests against stable files.)
 
 32. **Any ticket that changes `golden-set/` content runs the re-baseline protocol as part of
-    its own work:** `pnpm eval:variance -- --live --full --repeats=3 --establish-baseline`
+    its own work:** if the worktree merged `origin/main` since provisioning, run `pnpm
+    db:migrate` first (rule 27) — a stale schema fails cases with `SERVICE: could not save
+    this verification` and reads as a corpus regression, not a migration gap. Then run
+    `pnpm eval:variance -- --live --full --repeats=3 --establish-baseline`
     (~$1 at 36 cases), committing the new band with its own golden-set SHA and manifest hash.
     The `stale-baseline` failure class in `eval:check` is the routine detector — never a
     reason for a gate exception, and never fixed by editing `baseline.json` by hand. No

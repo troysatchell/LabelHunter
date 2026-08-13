@@ -315,12 +315,50 @@ elif [ ! -d scripts/factory/defect-gates ]; then
   record defect-gate skip "not installed"
 else
   DG_LOG="$OUT_DIR/defect-gate.log"
-  if FACTORY_BASE_REF="${BASE_REF}" pnpm exec tsx scripts/factory/defect-gates/run.ts > "$DG_LOG" 2>&1; then
-    DG_N="$(grep -c '  FAIL  ' "$DG_LOG" || true)"; DG_N="${DG_N:-0}"
-    record defect-gate pass "no introduced violations"
+  DG_JSON="$OUT_DIR/defect-gate.json"
+  FACTORY_BASE_REF="${BASE_REF}" pnpm exec tsx scripts/factory/defect-gates/run.ts > "$DG_LOG" 2>&1
+  DG_EXIT=$?
+  # Read the real per-rule counts from defect-gate.json instead of grepping the
+  # log for "FAIL" — a report-only rule's introduced findings print as
+  # "report", never "FAIL", so a FAIL-only grep is blind to them. That blindness
+  # is exactly what let the old code hardcode "no introduced violations" on
+  # every pass, even a pass hiding real report-only findings. Three real
+  # outcomes, told apart honestly: a clean pass, a pass that still carries
+  # report-only findings (name the count and the pin), and a blocking failure
+  # (name the count). A rule that errored is named too — an error must never
+  # read as zero violations.
+  DG_SUMMARY="$(node -e '
+    const fs = require("fs");
+    const doc = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const errored = [];
+    let blockingN = 0;
+    let reportOnlyN = 0;
+    const reportNotes = [];
+    for (const r of doc.rules) {
+      if (r.status === "error") { errored.push(r.id + ": " + r.error); continue; }
+      if (r.mode === "blocking") { blockingN += r.introduced.length; continue; }
+      if (r.introduced.length > 0) {
+        reportOnlyN += r.introduced.length;
+        reportNotes.push(r.id + " (report-only, pinned before activation " + r.pin.activatedAt + ")");
+      }
+    }
+    if (errored.length > 0) {
+      process.stdout.write(errored.length + " rule(s) errored — " + errored.join("; "));
+    } else if (blockingN > 0) {
+      process.stdout.write(blockingN + " introduced violation(s) — see .factory/defect-gate.json");
+    } else if (reportOnlyN > 0) {
+      process.stdout.write(
+        "no BLOCKING violations — " + reportOnlyN +
+        " introduced violation(s) under report-only rule(s): " + reportNotes.join(", "),
+      );
+    } else {
+      process.stdout.write("no introduced violations");
+    }
+  ' "$DG_JSON" 2>/dev/null)"
+  if [ "$DG_EXIT" -eq 0 ]; then
+    record defect-gate pass "${DG_SUMMARY:-no introduced violations}"
   else
-    DG_N="$(grep -c '  FAIL  ' "$DG_LOG" || true)"; DG_N="${DG_N:-0}"
-    record defect-gate fail "${DG_N} introduced violation(s) — see .factory/defect-gate.json"
+    record defect-gate fail "${DG_SUMMARY:-defect-gate run failed — see .factory/defect-gate.log}"
   fi
 fi
 

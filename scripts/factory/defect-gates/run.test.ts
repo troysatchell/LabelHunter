@@ -1,5 +1,9 @@
+import { execSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildDocument } from "./run";
+import { buildDocument, changedTsFiles } from "./run";
 import type { Finding, RuleResult } from "./types";
 
 function finding(identity: string): Finding {
@@ -65,5 +69,54 @@ describe("buildDocument", () => {
     });
     expect(doc.rules[0].status).toBe("error");
     expect(doc.exitCode).toBe(1);
+  });
+});
+
+/** Runs a git command in a scratch repo, using an explicit test identity. */
+function scratchGit(cwd: string, args: string): string {
+  return execSync(`git -c user.email=t@t -c user.name=t ${args}`, { cwd, encoding: "utf8" }).trim();
+}
+
+describe("changedTsFiles", () => {
+  it("excludes a deleted path and does not crash on one, but keeps an added path", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dg-run-"));
+    try {
+      scratchGit(dir, "init -q");
+      writeFileSync(join(dir, "a.ts"), "export const a = 1;\n");
+      scratchGit(dir, "add a.ts");
+      scratchGit(dir, 'commit -q -m "add a"');
+      const baseSha = scratchGit(dir, "rev-parse HEAD");
+
+      // Branch: delete a.ts (the ENOENT trigger — Critical 1), add b.ts.
+      execSync(`rm ${join(dir, "a.ts")}`);
+      writeFileSync(join(dir, "b.ts"), "export const b = 1;\n");
+      scratchGit(dir, "add -A");
+      scratchGit(dir, 'commit -q -m "delete a, add b"');
+
+      const changed = changedTsFiles(dir, baseSha);
+      expect(changed).not.toContain("a.ts");
+      expect(changed).toContain("b.ts");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a modified path", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dg-run-"));
+    try {
+      scratchGit(dir, "init -q");
+      writeFileSync(join(dir, "a.ts"), "export const a = 1;\n");
+      scratchGit(dir, "add a.ts");
+      scratchGit(dir, 'commit -q -m "add a"');
+      const baseSha = scratchGit(dir, "rev-parse HEAD");
+
+      writeFileSync(join(dir, "a.ts"), "export const a = 2;\n");
+      scratchGit(dir, "add a.ts");
+      scratchGit(dir, 'commit -q -m "modify a"');
+
+      expect(changedTsFiles(dir, baseSha)).toEqual(["a.ts"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

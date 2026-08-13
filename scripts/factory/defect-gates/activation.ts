@@ -30,28 +30,69 @@ export function decidePin(input: PinInput): PinDecision {
   return { ...input, mode: "report-only" };
 }
 
-function git(repoRoot: string, args: string[]): { status: number; stdout: string } {
+function git(repoRoot: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync("git", args, { cwd: repoRoot, encoding: "utf8" });
-  return { status: r.status ?? 1, stdout: (r.stdout ?? "").trim() };
+  return { status: r.status, stdout: (r.stdout ?? "").trim(), stderr: (r.stderr ?? "").trim() };
 }
 
-/** Resolves the two git facts decidePin needs. */
+export type PinFacts = { mergeBaseIsAfterActivation: boolean; mainCommitsElapsed: number };
+
+export type PinFactsResult = { ok: true; facts: PinFacts } | { ok: false; error: string };
+
+/**
+ * Resolves the two git facts `decidePin` needs.
+ *
+ * Returns `ok: false` on a real git failure, instead of silently defaulting
+ * to "not activated yet." A swallowed failure here reads exactly like a
+ * branch cut before the rule existed — `mergeBaseIsAfterActivation: false`
+ * — so the rule would run report-only forever, with no signal that
+ * anything went wrong. An unknown or rewritten `activatedAt` must surface,
+ * not disappear.
+ *
+ * `git merge-base --is-ancestor` exits 0 for "yes" and 1 for "no" — both
+ * are real answers. Any other exit code (128 for an invalid ref, for
+ * example) is a git failure, not a "no," and is reported as `ok: false`.
+ */
 export function resolvePinFacts(
   repoRoot: string,
   baseRef: string,
   activatedAt: string,
-): { mergeBaseIsAfterActivation: boolean; mainCommitsElapsed: number } {
-  const mergeBase = git(repoRoot, ["merge-base", "HEAD", baseRef]).stdout;
-  const isAncestor = git(repoRoot, [
-    "merge-base",
-    "--is-ancestor",
-    activatedAt,
-    mergeBase,
-  ]).status === 0;
-  const counted = git(repoRoot, ["rev-list", "--count", `${activatedAt}..${baseRef}`]);
-  const elapsed = counted.status === 0 ? Number.parseInt(counted.stdout, 10) : 0;
-  return {
-    mergeBaseIsAfterActivation: isAncestor,
-    mainCommitsElapsed: Number.isFinite(elapsed) ? elapsed : 0,
-  };
+): PinFactsResult {
+  const mergeBaseResult = git(repoRoot, ["merge-base", "HEAD", baseRef]);
+  if (mergeBaseResult.status !== 0 || !mergeBaseResult.stdout) {
+    return {
+      ok: false,
+      error: `git merge-base HEAD ${baseRef} failed: ${mergeBaseResult.stderr || "no output"}`,
+    };
+  }
+  const mergeBase = mergeBaseResult.stdout;
+
+  const ancestorResult = git(repoRoot, ["merge-base", "--is-ancestor", activatedAt, mergeBase]);
+  if (ancestorResult.status !== 0 && ancestorResult.status !== 1) {
+    return {
+      ok: false,
+      error:
+        `git merge-base --is-ancestor ${activatedAt} ${mergeBase} failed: ` +
+        `${ancestorResult.stderr || "no output"}`,
+    };
+  }
+  const mergeBaseIsAfterActivation = ancestorResult.status === 0;
+
+  const countResult = git(repoRoot, ["rev-list", "--count", `${activatedAt}..${baseRef}`]);
+  if (countResult.status !== 0) {
+    return {
+      ok: false,
+      error:
+        `git rev-list --count ${activatedAt}..${baseRef} failed: ${countResult.stderr || "no output"}`,
+    };
+  }
+  const mainCommitsElapsed = Number.parseInt(countResult.stdout, 10);
+  if (!Number.isFinite(mainCommitsElapsed)) {
+    return {
+      ok: false,
+      error: `git rev-list --count returned a non-numeric result: "${countResult.stdout}"`,
+    };
+  }
+
+  return { ok: true, facts: { mergeBaseIsAfterActivation, mainCommitsElapsed } };
 }

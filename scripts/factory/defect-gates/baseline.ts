@@ -26,14 +26,47 @@ export function fileAtRef(
   return result.stdout;
 }
 
-/** H \ B — violations this branch introduced. These fail the gate. */
-export function introducedFindings(head: Finding[], base: Finding[]): Finding[] {
-  const baseline = new Set(base.map((f) => f.identity));
-  return head.filter((f) => !baseline.has(f.identity));
+/** Counts how many times each identity appears. */
+function countByIdentity(findings: Finding[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const f of findings) counts.set(f.identity, (counts.get(f.identity) ?? 0) + 1);
+  return counts;
 }
 
-/** H ∩ B — violations that already existed. These are reported, never failed. */
+/**
+ * H \ B, compared as a multiset — these fail the gate.
+ *
+ * A plain Set comparison treats identity as either present or absent. A
+ * function with one existing violation that grows a second, structurally
+ * identical one then reports zero introduced findings — the second copy
+ * matches the same Set entry as the first. This decrements one baseline
+ * occurrence per matched head finding instead, so a surplus occurrence is
+ * correctly counted as introduced.
+ */
+export function introducedFindings(head: Finding[], base: Finding[]): Finding[] {
+  const remaining = countByIdentity(base);
+  const introduced: Finding[] = [];
+  for (const f of head) {
+    const n = remaining.get(f.identity) ?? 0;
+    if (n > 0) {
+      remaining.set(f.identity, n - 1);
+    } else {
+      introduced.push(f);
+    }
+  }
+  return introduced;
+}
+
+/** H ∩ B, compared as a multiset — matched occurrences only, reported never failed. */
 export function preExistingFindings(head: Finding[], base: Finding[]): Finding[] {
-  const baseline = new Set(base.map((f) => f.identity));
-  return head.filter((f) => baseline.has(f.identity));
+  const remaining = countByIdentity(base);
+  const preExisting: Finding[] = [];
+  for (const f of head) {
+    const n = remaining.get(f.identity) ?? 0;
+    if (n > 0) {
+      remaining.set(f.identity, n - 1);
+      preExisting.push(f);
+    }
+  }
+  return preExisting;
 }

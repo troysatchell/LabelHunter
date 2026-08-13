@@ -158,4 +158,47 @@ describe("vacuous-empty-quantifier", () => {
     `);
     expect(findings).toHaveLength(1);
   });
+
+  it("flags a length guard written after the quantifier call — position, not presence, decides", () => {
+    // The guard exists in the function, but it comes after the decision it
+    // would need to protect. It guards nothing that already ran.
+    const findings = check(`
+      function gate(xs: X[]) {
+        if (xs.every(p)) { commit(); }
+        if (xs.length === 0) { return; }
+      }
+    `);
+    expect(findings).toHaveLength(1);
+  });
+
+  it("flags a quantifier when the only length guard is inside a sibling nested function", () => {
+    // helper()'s own guard exits helper, not gate. It never runs before,
+    // or in the same scope as, the quantifier call below it.
+    const findings = check(`
+      function gate(xs: X[]) {
+        const helper = () => {
+          if (xs.length === 0) return;
+        };
+        helper();
+        return xs.every(p);
+      }
+    `);
+    expect(findings).toHaveLength(1);
+  });
+
+  it("does not flag a quantifier inside an else-if branch whose own test proves non-emptiness", () => {
+    // The pairing.ts shape: the enclosing branch condition, not a preceding
+    // exit, is what proves the receiver non-empty here.
+    const findings = check(`
+      function gate(xs: X[]) {
+        if (xs.length === 0) {
+          return "empty";
+        } else if (xs.length > 1) {
+          const reason = xs.every(p) ? "a" : "b";
+          return reason;
+        }
+      }
+    `);
+    expect(findings).toEqual([]);
+  });
 });

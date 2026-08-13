@@ -52,20 +52,73 @@ const meta: RuleMeta = {
   ],
 };
 
-/** True when the receiver cannot be empty. */
-function isProvablyNonEmpty(receiver: ts.Expression, sourceFile: ts.SourceFile): boolean {
+/**
+ * True when the receiver cannot be empty at this call site.
+ *
+ * Two provable shapes, beyond a non-empty array literal:
+ *
+ * 1. A preceding early-exit guard, in the same function scope, before the
+ *    call — `if (xs.length === 0) return;`. See `hasPrecedingLengthGuard`.
+ *    "Preceding" is a position check on source offsets, not a search of
+ *    the whole function. A guard written after the call does not count.
+ *    "Same function scope" is a scope check: a guard inside a sibling
+ *    nested function exits THAT function, not this one, so it does not
+ *    count either.
+ * 2. An enclosing branch condition that already proves non-emptiness —
+ *    `else if (xs.length > 1) { ... xs.every(p) ... }`. The call sits
+ *    inside the branch whose own test already establishes the fact. See
+ *    `hasEnclosingLengthGuard`.
+ */
+function isProvablyNonEmpty(
+  call: ts.CallExpression,
+  receiver: ts.Expression,
+  sourceFile: ts.SourceFile,
+): boolean {
   // A literal array with at least one element.
   if (ts.isArrayLiteralExpression(receiver) && receiver.elements.length > 0) return true;
 
-  // A preceding length guard that leaves the function on empty.
   const receiverText = receiver.getText(sourceFile);
   let fn: ts.Node | undefined = receiver.parent;
   while (fn && !ts.isFunctionLike(fn)) fn = fn.parent;
   if (!fn || !("body" in fn) || !fn.body) return false;
 
+  if (hasPrecedingLengthGuard(fn.body as ts.Node, receiverText, call, sourceFile)) return true;
+  if (hasEnclosingLengthGuard(call, receiverText, sourceFile)) return true;
+  return false;
+}
+
+/**
+ * Walks a node without entering a nested function-like node.
+ *
+ * `walk` (the shared AST helper) visits everything, which is correct for
+ * finding every quantifier call in a file. A guard search is different: a
+ * guard inside a sibling nested function guards THAT function's own body,
+ * not the outer function the search is scoped to. This walker prunes at
+ * the function boundary so such a guard is never counted.
+ */
+function walkOwnScope(node: ts.Node, visit: (n: ts.Node) => void): void {
+  visit(node);
+  ts.forEachChild(node, (child) => {
+    if (ts.isFunctionLike(child)) return;
+    walkOwnScope(child, visit);
+  });
+}
+
+/**
+ * True when an `if` mentioning `<receiver>.length` exits before the call,
+ * in the same function scope.
+ */
+function hasPrecedingLengthGuard(
+  fnBody: ts.Node,
+  receiverText: string,
+  call: ts.CallExpression,
+  sourceFile: ts.SourceFile,
+): boolean {
+  const callStart = call.getStart(sourceFile);
   let guarded = false;
-  walk(fn.body as ts.Node, (n) => {
-    if (!ts.isIfStatement(n)) return;
+  walkOwnScope(fnBody, (n) => {
+    if (guarded || !ts.isIfStatement(n)) return;
+    if (n.getStart(sourceFile) >= callStart) return; // must precede the call, not follow it
     const test = n.expression.getText(sourceFile);
     const mentionsLength =
       test.includes(`${receiverText}.length`) || test.includes(`${receiverText}?.length`);
@@ -78,6 +131,59 @@ function isProvablyNonEmpty(receiver: ts.Expression, sourceFile: ts.SourceFile):
     if (exits) guarded = true;
   });
   return guarded;
+}
+
+/** Escapes a string for safe use inside a RegExp literal. */
+function escapeForRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * True when a length comparison, read as the whole test, guarantees the
+ * receiver holds at least one element.
+ *
+ * Covers `.length > N` (N >= 0), `.length >= N` (N >= 1), and `.length
+ * !== 0` / `!= 0`. Not a general arithmetic prover — only the shapes this
+ * rule's calibration corpus (`pairing.ts`) has actually shown.
+ */
+function lengthComparisonProvesNonEmpty(testText: string, receiverText: string): boolean {
+  const pattern = new RegExp(
+    `${escapeForRegExp(receiverText)}\\??\\.length\\s*(>=|>|!==|!=)\\s*(\\d+)`,
+  );
+  const match = testText.match(pattern);
+  if (!match) return false;
+  const n = Number.parseInt(match[2], 10);
+  if (match[1] === ">") return n >= 0;
+  if (match[1] === ">=") return n >= 1;
+  return n === 0; // !== or !=
+}
+
+/**
+ * True when the call sits inside an `if` (or `else if`) branch whose own
+ * condition already proves the receiver non-empty — the `pairing.ts`
+ * shape: `else if (xs.length > 1) { ... xs.every(p) ... }`.
+ *
+ * Climbs from the call to its enclosing `if`, checking that the call sits
+ * in that `if`'s own `then` branch. Stops at the function boundary — a
+ * branch condition in an outer function does not guard an inner one.
+ */
+function hasEnclosingLengthGuard(
+  call: ts.CallExpression,
+  receiverText: string,
+  sourceFile: ts.SourceFile,
+): boolean {
+  let current: ts.Node = call;
+  let parent: ts.Node | undefined = call.parent;
+  while (parent) {
+    if (ts.isFunctionLike(parent)) return false;
+    if (ts.isIfStatement(parent) && parent.thenStatement === current) {
+      const test = parent.expression.getText(sourceFile);
+      if (lengthComparisonProvesNonEmpty(test, receiverText)) return true;
+    }
+    current = parent;
+    parent = parent.parent;
+  }
+  return false;
 }
 
 /**
@@ -199,7 +305,7 @@ function checkSource(filePath: string, text: string, _ctx: RuleContext): Finding
     if (name === "reduce" && node.arguments.length >= 2) return;
 
     const receiver = node.expression.expression;
-    if (isProvablyNonEmpty(receiver, sourceFile)) return;
+    if (isProvablyNonEmpty(node, receiver, sourceFile)) return;
     if (!reachesDecisionSink(node, sourceFile)) return;
 
     const fnName = enclosingFunctionName(node);

@@ -39,6 +39,16 @@ describe("introducedFindings", () => {
     const base = [finding("gone")];
     expect(introducedFindings(head, base)).toEqual([]);
   });
+
+  it("counts a surplus occurrence as introduced, not a Set membership check", () => {
+    // The function already had one "dup" violation (in base). The branch
+    // adds a second, structurally identical one (head has two). A Set
+    // comparison would report zero introduced — both match the same entry.
+    const head = [finding("dup"), finding("dup")];
+    const base = [finding("dup")];
+    expect(introducedFindings(head, base)).toHaveLength(1);
+    expect(preExistingFindings(head, base)).toHaveLength(1);
+  });
 });
 
 describe("preExistingFindings", () => {

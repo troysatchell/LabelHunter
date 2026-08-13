@@ -63,15 +63,29 @@ function sh(cmd: string, cwd: string): string {
   return execSync(cmd, { cwd, encoding: "utf8" }).trim();
 }
 
+/**
+ * Lists this branch's changed `.ts`/`.tsx` files, excluding `.d.ts`.
+ *
+ * `--diff-filter=ACMR` keeps only Added, Copied, Modified, and Renamed
+ * paths. Without it, a deleted or renamed-away path reaches `readFileSync`
+ * downstream and throws `ENOENT` — `engine.ts` then reports `status:
+ * "error"`, which fails the gate on a branch that only deleted a file. A
+ * renamed path still analyses correctly: its new name is Added or
+ * Renamed, so it stays in the list under its current content.
+ */
+export function changedTsFiles(repoRoot: string, baseRef: string): string[] {
+  return sh(`git diff --diff-filter=ACMR ${baseRef}...HEAD --name-only`, repoRoot)
+    .split("\n")
+    .filter((f) => /\.tsx?$/.test(f) && !f.endsWith(".d.ts"));
+}
+
 function main(): void {
   const repoRoot = sh("git rev-parse --show-toplevel", process.cwd());
   const baseRef = process.env.FACTORY_BASE_REF ?? "main";
   const outDir = join(repoRoot, ".factory");
   mkdirSync(outDir, { recursive: true });
 
-  const changed = sh(`git diff ${baseRef}...HEAD --name-only`, repoRoot)
-    .split("\n")
-    .filter((f) => /\.tsx?$/.test(f) && !f.endsWith(".d.ts"));
+  const changed = changedTsFiles(repoRoot, baseRef);
 
   const ctx = {
     files: changed.map((f) => join(repoRoot, f)),
@@ -96,9 +110,25 @@ function main(): void {
       if (before === null) return [];
       return withSource.checkSource(f, before, ctx);
     });
-    const facts = rule.meta.activatedAt
-      ? resolvePinFacts(repoRoot, baseRef, rule.meta.activatedAt)
-      : { mergeBaseIsAfterActivation: true, mainCommitsElapsed: null as number | null };
+    let facts: { mergeBaseIsAfterActivation: boolean; mainCommitsElapsed: number | null } = {
+      mergeBaseIsAfterActivation: true,
+      mainCommitsElapsed: null,
+    };
+    if (rule.meta.activatedAt) {
+      const resolved = resolvePinFacts(repoRoot, baseRef, rule.meta.activatedAt);
+      if (resolved.ok) {
+        facts = resolved.facts;
+      } else {
+        // An unresolved pin must never default to a silently non-blocking
+        // rule (Important 6). Treat it the same as a crashed check: force
+        // status "error", so the gate fails loudly with the real reason,
+        // never a quiet, permanent report-only mode.
+        const idx = results.findIndex((r) => r.id === rule.meta.id);
+        if (idx !== -1) {
+          results[idx] = { ...results[idx], status: "error", error: resolved.error };
+        }
+      }
+    }
     pins[rule.meta.id] = decidePin({
       activatedAt: rule.meta.activatedAt,
       mergeBaseIsAfterActivation: facts.mergeBaseIsAfterActivation,

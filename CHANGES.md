@@ -4,6 +4,197 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-508 — Final review fix wave: gate false-failures, fabricated pass message, guard scope, replay CLI (2026-08-12)
+
+**Why.** A final whole-branch review of this ticket's work found two false-failure/false-pass
+defects in the gate itself, plus four correctness and process gaps. All six are fixed in this
+single wave. No test was weakened and no quarantine entry was widened to reach green.
+
+**Critical 1 — a deleted file crashed the gate.** `run.ts`'s changed-file list came from `git
+diff ${baseRef}...HEAD --name-only`, which includes deleted and renamed-away paths. A deleted
+path reached `readFileSync` downstream and threw `ENOENT`; `engine.ts` correctly reported
+`status: "error"`, which failed the gate on any branch that only deleted a `.ts` file — a false
+failure this engine must never produce. Fix: `--diff-filter=ACMR` on the diff, keeping only
+Added, Copied, Modified, and Renamed paths. The list-building logic is now the exported
+`changedTsFiles(repoRoot, baseRef)`, with two new tests in `run.test.ts` against a real scratch
+git repo: one commits a delete-and-add and confirms the deleted path is excluded and nothing
+throws, the other confirms a modified path is still kept.
+
+**Critical 2 — the gate fabricated "no introduced violations" over real findings.** `gate.sh`'s
+G11 block computed `DG_N` from the run log and then discarded it, hardcoding the pass message.
+A rule running `report-only` exits 0 *with findings*, so the gate recorded a clean pass while
+violations existed — the exact defect this subsystem exists to eliminate, shipped inside the
+tool that eliminates it. It also compounds: `vacuous-empty-quantifier`'s `activatedAt` is a
+commit on this branch, so every branch already in flight at merge time runs report-only, and
+would have hit this exact silent case. Fix: G11 now reads real per-rule counts from
+`.factory/defect-gate.json` (`mode`, `introduced`, `pin.activatedAt`) via a small `node -e`
+script — the same idiom the `tests` gate already uses for JSON parsing — and reports one of
+four honest outcomes: blocking/no-findings (pass, "no introduced violations"), report-only/
+findings (pass, but names the count and the activation pin), blocking/findings (fail, names the
+count), or a rule that errored (fail, names it — an error must never read as zero violations,
+the fourth outcome the old code also got wrong: it would have reported "0 introduced
+violation(s)" for a crashed rule too).
+
+**Important 3 — identity comparison ignored multiplicity.** `baseline.ts`'s
+`introducedFindings` used a `Set` of identities. A function with one existing violation that
+grows a second, structurally identical one reported zero introduced findings — the second copy
+matched the same `Set` entry as the first, and the gate stayed silent on a real new defect. Fix:
+`introducedFindings`/`preExistingFindings` now compare as a multiset — a per-identity count,
+decremented as each head finding is matched against the baseline, so a surplus occurrence is
+correctly reported as introduced. New test in `baseline.test.ts`: two identical-identity
+findings in head, one in base, asserts exactly one introduced and one pre-existing.
+
+**Important 4 (with deferred item 6) — a guard that did not guard.** `isProvablyNonEmpty` in
+`vacuous-empty-quantifier.ts` walked the *entire* enclosing function for any `if` mentioning
+`<receiver>.length`, with no check that the guard came before the quantifier call and no scope
+check. Two real false negatives: a guard written *after* the decision, and a guard inside a
+sibling nested arrow function (its exit guards that function, not the outer one). The doc
+comment always said "preceding"; the code never checked position. Fix: the guard search
+(`hasPrecedingLengthGuard`) now requires the `if` to start before the call and walks with a new
+`walkOwnScope` helper that prunes at nested function boundaries, so a sibling function's guard
+is never counted. Deferred item 6 (the `pairing.ts` `else if`-branch shape) is fixed alongside
+it: `hasEnclosingLengthGuard` climbs from the call to its enclosing `if`, and recognizes a
+branch condition like `else if (xs.length > 1) { ... }` as proof the receiver is non-empty
+inside that branch — the mechanism the old code lacked entirely for this shape (it only
+happened to pass `pairing.ts` itself because `.some` was already excluded from the checked
+method set for an unrelated reason). Four new tests: guard-before (must not flag, pre-existing
+test), guard-after (must flag), guard-in-nested-function (must flag), `else if` guard (must not
+flag).
+
+**Re-measured repo-wide count: 4, unchanged from the round-3 measurement.** Same four sites,
+same lines: `scripts/eval/report-validation.ts:95`, `:100`, `src/app/_lib/review-queue-
+client.ts:108`, `src/server/resolver/response.ts:186`. The position/scope/`else-if` fix did not
+change the count — this codebase has no guard-after, nested-function, or bare `else if`-guarded
+`.every`/`.reduce` site today outside the rule's own test fixtures. This is a real measurement,
+not an assumption: hand-verified by re-running the same `pnpm exec tsx -e` scan used in round 3,
+excluding `scripts/factory/defect-gates/` per the standing self-exclusion policy.
+
+**Important 5 — the replay harness had no entrypoint.** Nothing outside `replay.test.ts` called
+`replayRule` or `loadLedger`. `factory/replay/vacuous-empty-quantifier.v1.json` was committed as
+calibration evidence, but no command could regenerate it, and spec §12.1's re-measure workflow
+had no entrypoint. Fix: `scripts/factory/defect-gates/replay-cli.ts`. Run it with:
+
+```bash
+source .factory-env && pnpm exec tsx scripts/factory/defect-gates/replay-cli.ts vacuous-empty-quantifier
+```
+
+It loads `factory/review-findings.jsonl` (override with `--ledger`), selects the rule's own
+`replayCorpus`, replays it, and writes `factory/replay/<rule>.v<version>.json` (override with
+`--out`). Run against this repo, the regenerated file is **byte-identical** to the committed
+one (`git diff` on the file is empty after running it) — the file and the command that produces
+it are now confirmed to agree.
+
+**Important 6 (with deferred item 2) — a git failure degraded to permanent, silent
+report-only.** `activation.ts`'s `resolvePinFacts` swallowed any git failure into
+`{ mergeBaseIsAfterActivation: false, mainCommitsElapsed: 0 }` — indistinguishable from "branch
+predates activation," so an unknown or rewritten `activatedAt` disabled the rule forever with no
+signal. It also conflated `git merge-base --is-ancestor`'s real "no" answer (exit 1) with a
+process failure (any other nonzero exit, e.g. 128 for an invalid ref) by collapsing both into
+`status !== 0`. Fix: `resolvePinFacts` now returns `{ ok: true, facts }` or `{ ok: false, error
+}`, distinguishing a real "no" from a git failure at each of its three git calls. `run.ts`'s
+caller treats `ok: false` the same as a crashed rule check — it forces that rule's result
+`status` to `"error"`, which fails the gate loudly with the real reason, never a quiet permanent
+report-only mode. Three new tests in `activation.test.ts` against a scratch git repo:
+`resolvePinFacts` resolving real facts on the success path, reporting `ok: false` for an
+unresolvable (fake) `activatedAt`, and reporting `ok: false` for an unresolvable `baseRef`.
+
+**Documentation accuracy correction.** The round-3 entry below states "Precision on this
+measurement: 4/4 among reported findings." Read on its own, that can be misread as spec §12.3's
+"≥ 80% true-positive or exemptible" ship criterion having been *measured* and met. It was not.
+What exists is 4 hand-verified sites (read by hand, not adjudicated against an independent
+reviewer), two of the four (`report-validation.ts`'s `isStringArray`/`isReviewQueueListResponse`
+shape check sites) carrying disclosed doubt rather than a settled genuine/false-positive call,
+over a replay corpus of 2 rows — both from the same ticket, `TRO-464`. That is a real, useful
+measurement. It is not the rigorous adjudicated-corpus precision figure §12.3 describes, and
+this entry should not be read as claiming it is.
+
+**Follow-up, recorded explicitly rather than left as only a code comment: restore `.some`
+detection under a negating context.** Round 3 removed `.some` from `QUANTIFIERS` entirely to
+close a false positive (a bare `.some()` returning `false` on empty is the safe default, not a
+vacuous-truth defect). That also removed the only path to detecting `!xs.some(bad)` — a real
+vacuous assertion, since "no bad items" holds trivially over zero items. That ruling was mine;
+the final review found it over-broad, and I accept the correction. Future work: detect a
+`.some()` call specifically when it sits under a `!` (or `=== false`) at its decision sink,
+re-admitting the negated case without reopening the bare-`.some()` false positive round 3 fixed.
+
+**Negative-tested, both directions, on the real `gate.sh`** (`--skip-review` used only to stay
+inside the working timeout; every other gate ran for real in both runs):
+
+Run 1 — probe committed (`src/lib/__dg-probe.ts`, a real unguarded `.every()`):
+```
+=== factory gate: TRO-508 (base main) ===
+
+  [ok ] typecheck              clean
+  [ok ] lint                   clean
+  [ok ] build                  built
+  [ok ] tests                  no new failures vs baseline
+  [ok ] tests:not-weakened     no tests skipped or assertions removed
+  [ok ] regression-test        63 test case(s) added
+  [ok ] changes-entry          entry for TRO-508 present; structure valid
+  [ok ] eval-not-regressed     accuracy >= committed baseline
+  [ok ] scope                  25 file(s) changed
+  [FAIL] defect-gate            1 introduced violation(s) — see .factory/defect-gate.json
+  [skip] review                 disabled for this run
+
+=== TRO-508: fail ===
+evidence: .factory/gate-result.json
+gate exit: 1
+```
+
+Run 2 — probe removed:
+```
+=== factory gate: TRO-508 (base main) ===
+
+  [ok ] typecheck              clean
+  [ok ] lint                   clean
+  [ok ] build                  built
+  [ok ] tests                  no new failures vs baseline
+  [ok ] tests:not-weakened     no tests skipped or assertions removed
+  [ok ] regression-test        63 test case(s) added
+  [ok ] changes-entry          entry for TRO-508 present; structure valid
+  [ok ] eval-not-regressed     accuracy >= committed baseline
+  [ok ] scope                  24 file(s) changed
+  [ok ] defect-gate            no introduced violations
+  [skip] review                 disabled for this run
+
+=== TRO-508: pass ===
+evidence: .factory/gate-result.json
+gate exit: 0
+```
+
+**A third case, tested directly since neither run above exercises it: report-only with
+findings.** Neither negative-test run above puts the one shipped rule into `report-only` mode
+(its `activatedAt` already predates `HEAD`'s merge-base on this branch), so the case Critical 2
+actually fixes — a report-only rule with real findings — needed a direct check. Ran the G11
+`node -e` summary script from `gate.sh` against a synthetic `.factory/defect-gate.json` with one
+`report-only` rule carrying 2 introduced findings. Output:
+```
+no BLOCKING violations — 2 introduced violation(s) under report-only rule(s): vacuous-empty-quantifier (report-only, pinned before activation deadbeefdeadbeefdeadbeefdeadbeefdeadbeef)
+```
+Confirms the fix: this exact input previously recorded "no introduced violations."
+
+**How to run it.**
+```bash
+source .factory-env && pnpm test -- scripts/factory/defect-gates/
+pnpm typecheck && pnpm lint
+pnpm exec tsx scripts/factory/defect-gates/replay-cli.ts vacuous-empty-quantifier
+```
+
+**Test execution.** 7 test files, 63 tests, all pass (up from 54 before this wave — 9 new
+tests: 1 in `baseline.test.ts`, 2 in `run.test.ts`, 3 in `activation.test.ts`, 4 in
+`vacuous-empty-quantifier.test.ts`). `pnpm typecheck` — clean. `pnpm lint` — 0 errors, 1
+pre-existing unrelated warning in `DetailView.tsx`.
+
+**Files changed:** `scripts/factory/defect-gates/run.ts`, `run.test.ts`, `baseline.ts`,
+`baseline.test.ts`, `activation.ts`, `activation.test.ts`,
+`rules/vacuous-empty-quantifier.ts`, `rules/vacuous-empty-quantifier.test.ts`, `gate.sh`
+(G11 block). **File added:** `scripts/factory/defect-gates/replay-cli.ts`. **File regenerated,
+byte-identical:** `factory/replay/vacuous-empty-quantifier.v1.json`.
+
+**Rollback.** Each fix is independently revertible per-file; none changes another file's public
+contract except `activation.ts`'s `resolvePinFacts`, whose only caller (`run.ts`) was updated in
+the same commit.
+
 ## TRO-508 — Wire the defect gate in as G11, before review capture (2026-08-12)
 
 **What changed.** `scripts/factory/defect-gates/run.ts` runs every registered rule, compares
@@ -260,6 +451,11 @@ caller-specific business question this AST rule cannot settle, so both stay repo
 human triage rather than silently auto-exempted. Precision on this measurement: 4/4 among
 reported findings — one of the four (`response.ts:186`) genuine as a defence-in-depth gap
 rather than a live defect.
+
+**Correction (final review fix wave, see the top-of-file entry with this same date): this "4/4"
+figure is not spec §12.3's adjudicated ship-criterion precision.** It is 4 sites read by hand,
+two carrying disclosed doubt, over a 2-row replay corpus. Read plainly, not as a claim that the
+≥ 80% ship bar was measured and met.
 
 **Replay recall unaffected: still 1.0 (2/2).** Both corpus rows are `.every` cases;
 removing `.some` from the checked set does not touch them. Confirmed by re-running the

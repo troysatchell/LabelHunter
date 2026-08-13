@@ -65,6 +65,7 @@ import type { BatchPreviewSuccessResponse } from "../../src/app/api/batch/previe
 import type { BatchStartSuccessResponse } from "../../src/app/api/batch/start/types";
 import { HAIKU_EXTRACTOR_MODEL } from "../../src/server/extractor/request";
 import { computeSonnetCallCapThreshold } from "../../src/server/batch-queue/escalation-cap";
+import { BATCH_JOB_STATUSES } from "../../src/lib/db/enums";
 import * as schema from "../../src/lib/db/schema";
 import { SONNET_RESOLVER_MODEL } from "../../src/server/resolver/request";
 import { parseArgs } from "./args";
@@ -223,6 +224,41 @@ function validatePreviewResponse(payload: unknown): BatchPreviewSuccessResponse 
   return payload as BatchPreviewSuccessResponse;
 }
 
+/** Named invariants (standing rule 13) for every poll-body field this
+ * script uses or persists into the artifact. The poll loop runs this on
+ * every response — a malformed 200 body fails the run loudly instead of
+ * writing invalid values into the committed artifact (review finding,
+ * local review round 11). */
+function validateProgressResponse(payload: unknown): BatchProgressResponse {
+  const p = payload as Partial<BatchProgressResponse>;
+  const isoOrNull = (v: unknown): boolean => v === null || (typeof v === "string" && !Number.isNaN(Date.parse(v)));
+  const counts = [p.totalCount, p.processedCount, p.autoVerifiedCount, p.passCount, p.failCount, p.resolvedBySonnetCount, p.needsHumanCount, p.failedCount];
+  const throughputOk =
+    p.throughput === null ||
+    (typeof p.throughput === "object" &&
+      p.throughput !== undefined &&
+      Number.isFinite(p.throughput.itemsPerMinute) &&
+      p.throughput.itemsPerMinute >= 0 &&
+      Number.isFinite(p.throughput.avgMsPerItem) &&
+      p.throughput.avgMsPerItem >= 0);
+  const shareOk = p.autoVerifiedShare === null || (typeof p.autoVerifiedShare === "number" && p.autoVerifiedShare >= 0 && p.autoVerifiedShare <= 1);
+  const ok =
+    (BATCH_JOB_STATUSES as readonly string[]).includes(p.status as string) &&
+    counts.every(isNonNegativeSafeInteger) &&
+    isoOrNull(p.startedAt) &&
+    isoOrNull(p.completedAt) &&
+    throughputOk &&
+    shareOk;
+  if (!ok) {
+    throw new Error(
+      `measure.ts: GET /api/batch/:id response is malformed — status=${String(p.status)}, ` +
+        `counts=${JSON.stringify(counts)}, startedAt=${String(p.startedAt)}, completedAt=${String(p.completedAt)}, ` +
+        `throughput=${JSON.stringify(p.throughput)}, autoVerifiedShare=${String(p.autoVerifiedShare)}`,
+    );
+  }
+  return payload as BatchProgressResponse;
+}
+
 /** Named invariant (standing rule 13): `batchJobId` is a POSITIVE safe
  * integer — it drives the poll URL and every SQL read for the rest of
  * the run. `queuedCount` is a non-negative safe integer. */
@@ -258,7 +294,7 @@ async function pollUntilTerminal(
     if (!response.ok) {
       throw new Error(`measure.ts: GET /api/batch/${batchJobId} returned ${response.status}`);
     }
-    const progress = (await response.json()) as BatchProgressResponse;
+    const progress = validateProgressResponse(await response.json());
     console.log(
       `  ${progress.status}: ${progress.processedCount}/${progress.totalCount} processed` +
         ` (auto-verified ${progress.autoVerifiedCount}, resolved-by-Sonnet ${progress.resolvedBySonnetCount},` +

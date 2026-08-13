@@ -224,6 +224,11 @@ named invariants (`batchJobId` positive, counts non-negative safe integers). Als
 one overlong sentence in the deployment-history note. Dismissed: a fourth re-bullet
 request, same stop rule.
 
+Round 11 met the bar once more, then ended: poll responses — the values the artifact
+persists — still crossed an unchecked cast. `validateProgressResponse` now checks the
+status enum, every counter, both timestamps, throughput, and the share on every poll. A
+fifth re-bullet request was dismissed under the same stop rule.
+
 **Do NOT.** No column was added to `batch_jobs` — every input already existed. No claim was
 extrapolated past this run's real 32 items to TH-R4's 200-300 label reference.
 

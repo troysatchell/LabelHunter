@@ -57,7 +57,7 @@ script, it failed because no `.factory-owner` file existed yet.
 A second test case covers a stamp file that exists but has no `FACTORY_OWNER_SESSION` line. See
 the CodeRabbit triage note below for what that case caught.
 
-**CodeRabbit review triage, 3 rounds, 7 findings, all fixed.**
+**CodeRabbit review triage, 4 rounds, 11 findings, 9 fixed, 2 dismissed.**
 
 Round 1:
 - `scripts/factory/worktree.sh` (major): the stamp-read pipeline, `grep | cut`, could abort the
@@ -93,14 +93,42 @@ Round 3:
   `throw 0`) would misread as "no failure," and let a cleanup failure mask the real one. The
   test now tracks a `bodyFailed` boolean instead.
 - `scripts/factory/worktree-owner.test.ts` (major): `runWorktreeSh`'s `spawnSync` call set no
-  `timeout`. `spawnSync` blocks the whole worker thread. A hung `worktree.sh` process could not
-  be caught by the test's own 60-second `it(...)` limit — that limit relies on the event loop
-  running, and a synchronous hang freezes the event loop itself. The test now passes its own
+  `timeout`. `spawnSync` blocks the whole worker thread. The test's own 60-second `it(...)`
+  limit could not catch a hung `worktree.sh` process. That limit relies on the event loop
+  running. A synchronous hang freezes the event loop itself. The test now passes its own
   `timeout: 45_000` to `spawnSync`.
+
+Round 4 (2 fixed, 2 dismissed):
+- `CHANGES.md` (minor, fixed): one sentence in the round-3 timeout note ran past the 25-word
+  description limit. Split into three shorter sentences.
+- `CHANGES.md` (minor, fixed): "How to run it" named `.factory-env` and Postgres but not
+  `docker` itself. The test calls `docker ps` before it creates its fixture, so a `docker` CLI
+  with daemon access is also a real prerequisite. Named it.
+- `scripts/factory/worktree.sh` (major, dismissed): reject a symlinked `.factory-owner`, and
+  write the stamp through a temp file with an atomic rename. This is real hardening against a
+  symlink attack in general. It does not fit this file's own threat model. The worktree
+  directory is not attacker-controlled. `git worktree add` creates it fresh, on one operator's
+  own machine, for one operator's own factory. An attacker with write access to it could
+  replace `worktree.sh` itself. That is a far larger problem this hardening would not touch.
+  Two sibling files this same function writes, `.env.local` and `.factory-env`, use the same
+  plain `cat >` write. `.factory-owner` now uses that same write. Atomic-write discipline on
+  only the new file would be inconsistent with the function around it. This codebase does not
+  defend against that threat anywhere else.
+- `scripts/factory/worktree.sh` (major, dismissed): add a per-worktree lock so two truly
+  concurrent invocations — same session, or two `--steal` calls — cannot both pass the
+  ownership check and then race on the database reset. This is a real gap. It is a different
+  problem from this ticket's own scope, which is refusing a reuse from a DIFFERENT session.
+  The incident this ticket fixes was two sessions roughly 60 seconds apart, not two invocations
+  at the same instant. A real fix needs a held lock (`flock` or equivalent). That lock must
+  span ownership validation, the database reset, and the stamp write together. That is a
+  bigger, separate change. This entry records the gap for a follow-up ticket. This ticket does
+  not build that fix.
 
 **How to run it.** Run `pnpm test -- scripts/factory/worktree-owner.test.ts`. It needs no setup
 beyond the worktree's own `.factory-env`. That means the same `DATABASE_URL` and reachable
-Postgres container every other factory test already needs.
+Postgres container every other factory test already needs. It also needs a `docker` CLI on
+`PATH`, with access to the daemon. The test calls `docker ps` to find that container before it
+creates its fixture.
 
 **Rollback.** `git revert` this commit. `worktree.sh` goes back to keying reuse on the ticket
 slug alone. It stops writing `.factory-owner`. Any leftover stamp file elsewhere is inert and

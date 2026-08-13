@@ -4,6 +4,99 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-543 — LH-038 · Measure verdict variance, Part 2: the authorized sweep (2026-08-13)
+
+Advances TH-R10 (stretch), TH-R17, TH-R19. Part 1 (2026-08-12, below) built the tool and
+measured a free retrospective number from five earlier ad hoc runs. This entry is Part 2: the
+one real, paid sweep Troy authorized. It reports the sweep's own measured numbers, not a
+derived estimate.
+
+**Authorization.** Recorded on the Linear ticket, 2026-08-13: 32 cases x 3 repeats, the full
+golden set. Part 1's own derived estimate for this scope was ~$0.88, at a 40.6% escalation
+rate observed on one earlier run. TRO-538 had already merged, so the harness scores the
+cascade's real end state, not the router's pre-resolution stage.
+
+**The command, run once.** `pnpm eval:variance -- --live --full --repeats=3`. One invocation.
+No retries, no second sweep.
+
+**The measured result.** N=32 cases, K=3 repeats, 96 real cascade runs, 0 failures. Corpus
+stability: 30 of 32 cases (93.8%) returned the identical label verdict across all K=3 repeats.
+
+**Two unstable cases (N=2 of 32):**
+- `case-16-case-variant-brand-extra-words` (K=3): REVIEW, REVIEW, PASS. Two runs carried
+  headline reason `LOW_MODEL_CONFIDENCE`; the third carried none. The manifest expects
+  REVIEW / AMBIGUOUS_BRAND.
+- `case-19-rotation-mild-correctable` (K=3): PASS, REVIEW, PASS. The one REVIEW run carried
+  `LOW_MODEL_CONFIDENCE`. The manifest expects PASS.
+
+**Case-17 held steady this time, and stayed wrong.** Part 1's own finding named
+`case-17-glare-front-label` as the unstable case: 3 REVIEW, 2 PASS across five earlier
+committed runs. This sweep's own K=3 repeats returned PASS all three times. That is stable.
+But every run disagrees with the manifest's REVIEW / LOW_IMAGE_QUALITY expectation.
+TRO-516's finding C8 already ruled on this case's own pixels. This entry does not relitigate
+that ruling. It changes no manifest expectation. The instability itself moved to two
+different cases this run, not case-17. CP-1 already names the reason: `temperature: 0`
+variance is a property of the model, not a property of one fixed case.
+
+**Accuracy spread.** Across the K=3 repeats, label-verdict accuracy on the same N=32 cases
+ranged from 78.1% (25/32, repeats 2 and 3) to 81.3% (26/32, repeat 1). That is a 3.2-point
+spread from unchanged code against unchanged images. Read every single-run accuracy figure
+against this spread. A single run's number is one draw from this range. It is not the
+system's fixed accuracy.
+
+**Cost: measured, not derived.** Total **$0.8346**. 96 Haiku calls, mean $0.004670 each,
+$0.4483 total. 37 of 96 case-runs escalated to the Sonnet resolver (38.5%), mean $0.010439
+each, $0.3862 total. The measured total sits below Part 1's derived $0.88 estimate at the
+40.6% rate. That derivation held.
+
+**The artifact.** `scripts/eval/results/variance-report.json`, committed with this entry. It
+carries every field Part 1's own discipline requires:
+
+- K verdicts and K headline reasons per case, the modal verdict, and a per-case stability rate.
+- Corpus stability and the accuracy spread's lowest and highest rate.
+- Real per-call and total costs.
+- `measuredAt`: `2026-08-13T12:30:00.795Z`.
+- Exact model IDs: `claude-haiku-4-5`, `claude-sonnet-5`.
+- Commit SHA: `850ba51d4bdef22d0aa95e1e26babdc616e5f425`.
+- Manifest content hash: `8c9fad3fe780d4ea059681473c793163664708be583c5f7200e75e5c67b21f8f`.
+  Independently recomputed from the committed manifest's own SHA-256 during review. It matches.
+
+**New regression test, red first.** `scripts/eval/variance-report-artifact.test.ts` loads the
+committed artifact straight off disk. It is not a synthetic fixture. `report-validation.test.ts`
+already owns that job. This test asserts the 32 x 3 contract instead:
+
+- 32 distinct case IDs, matching (not just same-sized) between `caseIds` and `summary.perCase`.
+- `requestedFull: true`, and 3 repeats.
+- Every case's runs at exactly indexes 1, 2, and 3.
+- 0 incomplete cases, 96 runs, 0 failures.
+- A positive total cost, both model IDs, a commit SHA, and a 64-character manifest hash.
+
+It was red before the sweep ran — the artifact did not exist (`ENOENT`). It is green now.
+
+**What this test proves, precisely.** It proves the committed file, on disk right now, has the
+authorized shape and values. It does not independently prove a live API call produced that
+file — a hand-edited JSON matching the same shape would pass too. That proof is external to
+this test: the sweep's own real-time console output during the run, and Troy's authorization
+record on the Linear ticket. The manifest content hash is a different kind of provenance. It
+confirms which golden-set version the run used. It does not prove the run was live. This
+test's real job is narrower than either of those: catch a future commit that silently narrows
+or corrupts this artifact. It does not re-prove `variance-analysis.ts`'s own arithmetic — the
+pure-function suite already does that.
+
+**How to run it.** Do not re-run the live sweep without new written authorization — this was
+the one authorized run. `pnpm eval:variance` alone, no flags, reads this committed report
+back at zero cost.
+
+**Rollback.** `git revert` this ticket's Part 2 commits on `feat/lh-038-variance-sweep`. No
+schema change. Reverting drops the committed artifact, the new test, and this Part 2's own
+hardening of `report-validation.ts`'s `validateVarianceReport` (the `haikuModel`/`sonnetModel`/
+`commitSha`/`requestedFull` checks). Part 1's own original `validateVarianceReport` behavior —
+working against no committed report at all — is unaffected either way.
+
+**Not done here, on purpose.** No fix for the variance — no retry, no lower temperature, no
+self-consistency vote. No golden-set expectation changed, case-17 included. No entry in
+`docs/approach.md` — TRO-485 has not created that file yet. This finding, and Part 1's, both
+belong there once it exists.
 ## TRO-539 — LH-034 · The paid deployed run: TH-R2 returns to VERIFIED (2026-08-13)
 
 Advances TH-R2, TH-R15, TH-R19. This entry covers ticket steps 5, 7, 8, and 9 — the real,

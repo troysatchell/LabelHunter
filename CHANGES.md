@@ -56,7 +56,7 @@ from the current 31-case corpus, not copied from the ticket text.
 Red, run against the pre-ticket boolean-returning function (`git show HEAD:.../label-blockers.ts`
 swapped in temporarily, then restored — never committed):
 
-```
+```text
  Test Files  1 failed (1)
       Tests  14 failed | 9 passed (23)
 ```
@@ -66,7 +66,7 @@ trigger name or `null` — the right reason, not an import error or a typo.
 
 Green, run against this ticket's trigger-returning function:
 
-```
+```text
  Test Files  1 passed (1)
       Tests  23 passed (23)
 ```
@@ -77,7 +77,7 @@ magnitude matches the ~$0.35 authorization).
 
 Case-20's recorded trigger, quoted directly from `eval-report.json`:
 
-```
+```text
 case-20-rotation-severe-upside-down: routerVerdict.lowImageQualityTrigger = "ILLEGIBLE"
 ```
 
@@ -126,7 +126,7 @@ stated for a corpus that band was never measured against.
 caused.** `pnpm eval:check` (cheap mode, reading the `eval-report.json` this run just wrote)
 against the still-committed, pre-rebuild `baseline.json`:
 
-```
+```text
 check.ts: FAIL — 5 problem(s) vs the committed baseline:
   - manifest content changed: current run's manifest hash "2b27d156f6d00271168b965d9051c852af8b7f1fa5e5e6c0b17c8703cb5a1f46" does not match the baseline's "8c9fad3fe780d4ea059681473c793163664708be583c5f7200e75e5c67b21f8f" — golden-set/manifest.json's content moved since the baseline was established, even if manifestVersion did not; re-run --live --update-baseline to refresh it.
   - stale coverage: current run did not include 1 case(s) the baseline was built from (case-24-tiny-warning-text-miniature-bottle) — run --live --full to cover the whole golden set before comparing.

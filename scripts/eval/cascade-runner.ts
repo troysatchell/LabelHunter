@@ -435,6 +435,21 @@ export async function runOneCase(
           "routeLabel is pure and deterministic; this means the harness captured different inputs than route.ts actually used — a harness bug, not a case result.",
       );
     }
+    // TRO-542 (CodeRabbit finding): the same consistency check, on
+    // `headlineReason` — `actualVerdict` below reports `body.headlineReason`
+    // (the trusted, real HTTP response) but `lowImageQualityTrigger` from
+    // `routerResult` (the re-derived value, the only place a trigger exists
+    // at all). `labelVerdict` agreeing does not, by itself, prove
+    // `headlineReason` agrees too — two different reasons can both roll up
+    // to REVIEW. Catch that gap here, before it can pair a body-sourced
+    // headline with a routerResult-sourced trigger that names a different
+    // run's decision.
+    if (routerResult.headlineReason !== body.headlineReason) {
+      throw new Error(
+        `cascade-runner.ts: case "${caseSpec.caseId}" — re-derived router headlineReason "${routerResult.headlineReason}" disagrees with the response body's "${body.headlineReason}". ` +
+          "routeLabel is pure and deterministic; this means the harness captured different inputs than route.ts actually used — a harness bug, not a case result.",
+      );
+    }
 
     const extractionScore = scoreExtraction(caseSpec, capturedExtraction);
     const actualVerdict: ActualVerdict = {
@@ -450,8 +465,8 @@ export async function runOneCase(
       warningChannel: extractWarningChannel(capturedWarningResult),
       // TRO-542: `body` (the HTTP response) carries no trigger field of its
       // own — read it straight off `routerResult`, the re-derived
-      // `LabelRouterResult` this function already verified agrees with
-      // `body.labelVerdict` above.
+      // `LabelRouterResult` this function already verified agrees with both
+      // `body.labelVerdict` and `body.headlineReason` above.
       lowImageQualityTrigger: routerResult.lowImageQualityTrigger,
     };
     const routerVerdictScore = scoreVerdict(caseSpec, actualVerdict, capturedExtraction);

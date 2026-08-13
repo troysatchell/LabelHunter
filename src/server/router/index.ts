@@ -302,8 +302,11 @@ export function routeLabel(
     lowImageQualityTrigger,
     // TRO-542 step 4: the router reads `image_quality.issues` here — carried
     // through verbatim, evidence only, never a decision input (see
-    // `LabelRouterResult.imageQualityIssues`'s own doc comment).
-    imageQualityIssues: extraction.image_quality.issues,
+    // `LabelRouterResult.imageQualityIssues`'s own doc comment). Copied, not
+    // the original array reference — `routeLabel` is documented pure, and a
+    // caller must not be able to mutate the input `extraction` and silently
+    // change an already-returned result (CodeRabbit finding).
+    imageQualityIssues: [...extraction.image_quality.issues],
   };
 }
 

@@ -9,33 +9,33 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 Advances TH-R9, TH-R12. 27 CFR 16.22(a)(2) has two bold rules: the "GOVERNMENT WARNING:"
 prefix must print bold, and the rest of the statement must not. The golden set could not
 express either rule before this ticket. Every one of the 32 cases rendered the whole warning
-at one font weight — a measured prefix/body stroke-width ratio of 1.00, against a real
-compliant label's 2.2 (`factory/tickets.md` § LH-022).
+at one font weight. The measured prefix/body stroke-width ratio was 1.00. A real compliant
+label's ratio is 2.2 (`factory/tickets.md` § LH-022).
 
 **What changed.** Added two required fields to `GoldenLabelFields`
 (`src/lib/golden-set/types.ts`): `governmentWarningPrefixBold` and
 `governmentWarningBodyBold`, each typed `boolean | "unknown"`. `"unknown"` exists for a real
-photograph a careful human reader cannot call either way — a `false` there would be a
+photograph a careful human reader cannot call either way. A `false` there would be a
 fabricated compliance claim against a shipped product. LH-024's hand-transcribed real-label
-cases will use it; none of this manifest's 32 cases needs it, since this repo controls every
+cases will use it. None of this manifest's 32 cases needs it, since this repo controls every
 one of their renders.
 
 `src/lib/golden-set/loader.ts` validates the two new fields the same way it validates
 `governmentWarningPrefixAllCaps` — required, `boolean | "unknown"`.
 
 `scripts/golden/render.ts` now splits a case's warning text at the FIRST colon
-(`splitGovernmentWarning`, `scripts/golden/render.ts:281`) and renders the prefix and body as
-two separately-weighted `<span>`s (`buildWarningHtml`, `scripts/golden/render.ts:319`), driven
-by the case's own bold ground truth. `warningSpanFontWeight` throws on `"unknown"` — this
-renderer draws real pixels, and no pixel means "we don't know." A case with `"unknown"` bold
-ground truth must use a different provenance and never reach this function.
+(`splitGovernmentWarning`, `scripts/golden/render.ts:281`). It renders the prefix and body as
+two separately-weighted `<span>`s (`buildWarningHtml`, `scripts/golden/render.ts:319`), each
+driven by the case's own bold ground truth. `warningSpanFontWeight` throws on `"unknown"` —
+this renderer draws real pixels, and no pixel means "we don't know." A case with `"unknown"`
+bold ground truth must use a different provenance and never reach this function.
 
 Backfilled all 32 cases in `golden-set/manifest.json`. The 30 cases with a warning get
 `governmentWarningPrefixBold: true`, `governmentWarningBodyBold: false` — the statutorily
 compliant setting. None of these 32 cases tests a bold violation; that is LH-023's job
 (case-33, case-34). The 2 missing-warning cases (case-12, case-13) get `false`/`false`,
 matching `governmentWarningPrefixAllCaps`'s own "false, including when absent" convention.
-Case-24's existence and every other case's identity stayed untouched — TRO-516 C5 (merge
+Case-24's existence and every other case's identity stayed untouched. TRO-516 C5 (merge
 case-24 into case-23) is queued behind this ticket, to avoid concurrent manifest surgery.
 
 Ran `pnpm golden:build`. 30 of 32 images changed pixels — every case with a warning. The 2
@@ -43,21 +43,21 @@ missing-warning cases are byte-identical: an absent warning renders nothing, so 
 fields never reach the page for those two.
 
 **Regression test.** `scripts/golden/render.test.ts`, describe block "government warning bold
-prefix/body split (TRO-527 / LH-022)". Confirmed red first: against the old renderer (one
-unweighted text node) and the old manifest (fields absent), both new tests failed on a real
+prefix/body split (TRO-527 / LH-022)". Confirmed red first, against the old renderer (one
+unweighted text node) and the old manifest (fields absent). Both new tests failed on a real
 assertion — no `warningPrefix`/`warningBody` span found — not an import or type error. One
 test proves, for all 30 warning-bearing cases, that `prefix + body` reconstructs the case's
-`governmentWarningText` byte for byte, and that each span carries its case's recorded weight.
-The other proves the split happens at the FIRST colon only, using a synthetic case whose body
-itself contains a second colon.
+`governmentWarningText` byte for byte. It also proves each span carries its case's recorded
+weight. The other test proves the split happens at the FIRST colon only, using a synthetic
+case whose body itself contains a second colon.
 
 Adapted two pre-existing `render.test.ts` tests to the new two-span shape. The exact-warning-
-text test now checks the prefix and body substrings separately — a `<span>` boundary now sits
-between them, so the old single contiguous-substring check no longer holds. The HTML-escaping
-test's synthetic warning text now carries a colon in its prefix half, matching every real
-case; it still checks both halves stay exactly escaped, no paraphrasing tolerated either side.
-Updated the five other test fixtures that build a full `GoldenLabelFields` literal
-(`scripts/eval/test-support.ts`, `scripts/golden/build.test.ts`,
+text test now checks the prefix and body substrings separately. A `<span>` boundary now sits
+between them, so the old single contiguous-substring check no longer holds. The
+HTML-escaping test's synthetic warning text now carries a colon in its prefix half, matching
+every real case. It still checks both halves stay exactly escaped — no paraphrasing tolerated
+on either side. Updated the five other test fixtures that build a full `GoldenLabelFields`
+literal (`scripts/eval/test-support.ts`, `scripts/golden/build.test.ts`,
 `scripts/golden/renderSmoke.test.ts`, `scripts/golden/verify.test.ts`,
 `src/lib/golden-set/loader.test.ts`) to carry the two new required fields.
 
@@ -71,15 +71,40 @@ manifest. `pnpm golden:verify` checks the manifest and images stay consistent.
 `manifestContentHash: "8c9fad3f…"`. This ticket changed `golden-set/manifest.json`'s content
 (two new fields per case), so the manifest's live hash is now `"f2587e8e…"` — the two no
 longer match. Per this ticket's brief, a rebuild must not trigger a paid live eval to repair
-this correspondence. `pnpm eval:check`'s cheap mode still passes: it compares the report and
+this correspondence. `pnpm eval:check`'s cheap mode still passes. It compares the report and
 the baseline to each other, not to the live manifest, and those two still agree with each
 other. The next `--live` eval run, whenever a future ticket runs one, will refresh both files
 against the current manifest and images.
+
+A real gap follows from this: nothing today warns when the live manifest drifts from a
+committed report's hash. CodeRabbit's review of this PR flagged the same gap (round 1,
+finding: CHANGES.md, major, `test-coverage`) — recorded in the review ledger as a new-ticket
+candidate rather than fixed here, since fixing it means either deleting real, honestly-
+measured evidence or adding a new check to `eval:check`, and this ticket's brief forbids
+spending on a live eval to paper over the mismatch instead.
 
 **Rollback.** `git revert` this ticket's commits, in order. They touch
 `src/lib/golden-set/types.ts`, `src/lib/golden-set/loader.ts`, `scripts/golden/render.ts`,
 six test files, `golden-set/manifest.json`, and the 30 changed images together. Reverting all
 of them returns the golden set to its pre-TRO-527 state.
+
+**CodeRabbit review triage (4 findings, 1 fixed, 2 batched to a new ticket, 1 dismissed):**
+- `src/lib/golden-set/loader.ts` (minor, `boundary-validation`): the loader never rejects
+  `governmentWarningPrefixBold` / `governmentWarningBodyBold` = `true`/`"unknown"` when
+  `governmentWarningPresent` is `false`. Real gap — but the pre-existing sibling field
+  `governmentWarningPrefixAllCaps` has the identical unenforced convention already, so fixing
+  only the two new fields here would leave the schema inconsistent. New-ticket: add the
+  cross-field check symmetrically for all three fields, with loader tests.
+- `CHANGES.md` (minor, `prose-style`): several sentences in this entry exceeded ASD-STE100's
+  25-word limit. Fixed — split into shorter sentences, same content.
+- `CHANGES.md` (major, `test-coverage`): the committed eval artifact's `manifestContentHash`
+  no longer matches the live manifest (see "Known limit" above). New-ticket, not fixed here —
+  this ticket's brief explicitly forbids running a paid live eval to repair it.
+- `scripts/golden/render.ts` (minor, `false-positive-review`): suggested guarding the
+  `"unknown"` bold case by checking the case's `provenance`. Dismissed — `RenderableCase`
+  carries no `provenance` field, and no `GoldenSetProvenance` value for a real-photograph case
+  exists yet (that's LH-024's job). Cannot validate against a type that does not exist yet;
+  the current throw already gives a clear, specific error.
 
 ## TRO-547 — BatchProgressBrowser poll test asserted a value a correct poll overwrites (2026-08-12)
 

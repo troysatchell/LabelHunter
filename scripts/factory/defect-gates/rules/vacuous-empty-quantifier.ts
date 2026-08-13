@@ -49,8 +49,10 @@ function isProvablyNonEmpty(receiver: ts.Expression, sourceFile: ts.SourceFile):
 /**
  * True when the call's result drives a program decision.
  *
- * A ternary's condition is not itself a sink. What matters is where the
- * ternary's own value goes next, so the walk passes through it and keeps
+ * A ternary used as a bare statement decides by side effect, not by value —
+ * `p ? doA() : doB();` is the same decision as an if/else, so it is a sink.
+ * Otherwise a ternary's condition is not itself a sink. What matters is
+ * where its value goes next, so the walk passes through it and keeps
  * looking. This stops a display-only ternary (its value only builds a
  * string) from counting as a decision, while a ternary that feeds a
  * return, an outer ternary condition, or a property assignment still does.
@@ -63,7 +65,13 @@ function reachesDecisionSink(call: ts.CallExpression): boolean {
     current = current.parent;
     if (ts.isReturnStatement(current)) return true;
     if (ts.isIfStatement(current) && current.expression === child) return true;
-    if (ts.isConditionalExpression(current) && current.condition === child) continue;
+    if (ts.isConditionalExpression(current) && current.condition === child) {
+      // A ternary used as a bare statement decides by side effect, not by value.
+      // Its branches are the decision, so it is a sink.
+      if (current.parent && ts.isExpressionStatement(current.parent)) return true;
+      // Otherwise the ternary only passes a value along. Keep climbing.
+      continue;
+    }
     if (ts.isPropertyAssignment(current)) return true;
     if (ts.isFunctionLike(current)) return false;
   }

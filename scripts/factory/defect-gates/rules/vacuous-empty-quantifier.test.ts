@@ -57,6 +57,15 @@ describe("vacuous-empty-quantifier", () => {
     expect(findings).toEqual([]);
   });
 
+  it("flags a bare-statement ternary that chooses a side effect", () => {
+    const findings = check(`
+      function gate(items: I[]) {
+        items.every(p) ? doA() : doB();
+      }
+    `);
+    expect(findings).toHaveLength(1);
+  });
+
   it("reports the enclosing function in the identity, so two call sites differ", () => {
     const findings = check(`
       function one(xs: X[]) { return xs.every(p); }

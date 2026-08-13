@@ -16,7 +16,7 @@ the boolean result decides something — a display-only use is not flagged.
 - `scripts/factory/defect-gates/ast.ts` — shared AST helpers: `parse`, `walk`,
   `enclosingFunctionName`, `lineOf`. Not specific to this rule; every future rule can use it.
 - `scripts/factory/defect-gates/rules/vacuous-empty-quantifier.ts` — the rule.
-- `scripts/factory/defect-gates/rules/vacuous-empty-quantifier.test.ts` — 6 tests.
+- `scripts/factory/defect-gates/rules/vacuous-empty-quantifier.test.ts` — 7 tests.
 
 **A fix to the plan's own reference code.** The task brief's example `reachesDecisionSink`
 treated a ternary's condition as an immediate sink. It never checked where the ternary's
@@ -28,10 +28,24 @@ not itself a sink. The walk now passes through the `ConditionalExpression` node 
 climbing. A ternary counts as a decision only when its own result later reaches a real
 sink — a return, an outer `if`, or a property assignment. The walk already treats every
 other non-sink node this way: a `BinaryExpression` in an `||` chain, for example, gets
-climbed through, not stopped at. All 6 tests pass with this one-line change.
+climbed through, not stopped at.
+
+**Round 1 review fix — a bare-statement ternary is also a sink.** That first fix over-
+corrected: it made every `ConditionalExpression` a pure pass-through, so a ternary used
+only for its side effects — `items.every(p) ? doA() : doB();` — went unflagged, even
+though `if (items.every(p)) { doA(); } else { doB(); }` is the same decision and was
+already flagged. A bare-statement ternary decides by side effect, not by value, so it is
+now a sink too: when the `ConditionalExpression`'s own parent is an `ExpressionStatement`,
+the rule flags it before climbing further. A display ternary (its value feeds a variable,
+not a statement) still passes through unflagged. Added a regression test for the
+bare-statement case. All 7 tests pass.
 
 **Measured backlog, not a target.** The plan's own spec predicted about 4 sites on `main`.
-The real count, run over `src/**/*.ts` and `scripts/**/*.ts` excluding test files, is 7:
+The measured count, run over `src/**/*.ts` and `scripts/**/*.ts` excluding test files, is
+7 — unchanged by the round-1 fix. A repo-wide grep for `.every(`/`.some(`/`.reduce(`
+followed directly by `?` found no bare-statement-ternary use of a quantifier anywhere in
+this codebase outside the rule's own test file, so the new sink type had nothing to catch
+here. The number is not adjusted toward the plan's prediction; it is what was measured:
 
 - `scripts/eval/report-validation.ts:95` — `.every(isReliabilityBucket)`
 - `scripts/eval/report-validation.ts:100` — `.every((v) => typeof v === "string")`

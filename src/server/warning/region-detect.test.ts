@@ -339,6 +339,13 @@ describe("region detection + crop + real OCR — a real golden-set label image",
       const image = readFileSync("golden-set/images/case-22-low-light-warning-block.jpg");
       const result = await detectWarningRegion(image, async (crop) => runWarningOcr(crop));
       expect(result).toBeNull();
+      // Pinned separately, not just implied by the combined result above:
+      // `detectWarningRegion` only returns null when BOTH its own methods
+      // do (this file's own module code, a few lines above). Naming each
+      // method's own null result states plainly which real detector failed,
+      // not only that the pipeline's final answer was null.
+      expect(await detectWarningRegionClassical(image)).toBeNull();
+      expect(await detectWarningRegionByBandSearch(image, async (crop) => runWarningOcr(crop))).toBeNull();
     },
     15_000,
   );

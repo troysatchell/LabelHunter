@@ -21,7 +21,7 @@ import { readFileSync } from "node:fs";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { loadGoldenSetManifest } from "../../lib/golden-set/loader";
-import { cropForOcr, detectWarningRegion } from "./region-detect";
+import { cropForOcr, detectWarningRegion, detectWarningRegionByBandSearch, detectWarningRegionClassical } from "./region-detect";
 import { runWarningOcr } from "./ocr";
 import {
   BOLD_RATIO_THRESHOLD,
@@ -574,8 +574,15 @@ describe("measureBoldSignal — golden-set corpus, degraded cases: each case's O
       // — the same "no region, not this ticket's function" outcome case-19
       // and case-20 already document above, not a regression in this
       // ticket's own bold-detect logic.
+      const image = readFileSync("golden-set/images/case-22-low-light-warning-block.jpg");
       const crop = await detectAndCrop("golden-set/images/case-22-low-light-warning-block.jpg");
       expect(crop).toBeNull();
+      // Named separately, not just implied by `crop === null` above:
+      // `detectWarningRegion` only returns null when BOTH its own methods
+      // do, so this states plainly which real detector failed on this
+      // image, matching region-detect.test.ts's own TRO-563 case-22 test.
+      expect(await detectWarningRegionClassical(image)).toBeNull();
+      expect(await detectWarningRegionByBandSearch(image, async (c) => runWarningOcr(c))).toBeNull();
     },
     15_000,
   );

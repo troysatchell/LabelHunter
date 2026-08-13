@@ -65,17 +65,19 @@ Until then, run LabelHunter locally with the steps below.
    cp .env.local.example .env.local
    ```
 
-5. Open `.env.local` and set `ANTHROPIC_API_KEY`. Leave `DATABASE_URL` as it is — it already
-   matches the container above. Leave `GOOGLE_API_KEY` blank. The running app never reads it
-   (see "What LabelHunter does not call" below).
+5. Open `.env.local`.
 
-6. Run the database migrations.
+6. Set `ANTHROPIC_API_KEY`. Leave `DATABASE_URL` as it is — it already matches the container
+   above. Leave `GOOGLE_API_KEY` blank. The running app never reads it (see "What LabelHunter
+   does not call" below).
+
+7. Run the database migrations.
 
    ```bash
    pnpm db:migrate
    ```
 
-7. Start the app.
+8. Start the app.
 
    ```bash
    pnpm dev

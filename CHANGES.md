@@ -13,15 +13,16 @@ already existed. `docs/PRD.md` §1 supplies what LabelHunter is. `.env.local.exa
 supply the cascade architecture diagram and cost table. `docs/error-states.md` supplies the
 outbound-dependency list. `src/lib/db/schema.ts` and
 `src/server/review-queue/record-disposition.ts:11` supply the data-handling posture.
-`audit/requirements/gaps.md`'s TH-R14 and TH-R6 suggested scope (TRO-486) is the source for all
-of it.
+`audit/requirements/gaps.md`'s TH-R14 and TH-R6 suggested scope (TRO-486) is the source for
+every piece above.
 
 **The deployed URL is deliberately not published yet.** PR #43 (TRO-482, key protection: access
 code, rate limits, daily spend budget) is open and unmerged. The live instance has no
-protection against uninvited use and makes real, billed Anthropic API calls. The README does
-not name the instance's address at all, rather than name it with a caveat — a caveat next to a
-live, searchable address does not stop someone from using the address. Once #43 merges, add the
-URL and access code to the "Try it" section.
+protection against uninvited use and makes real, billed Anthropic API calls. The README omits
+the instance's address entirely. A caveat next to a live, searchable address would not stop
+someone from using it. Once #43 merges, add the URL and access code to the "Try it" section —
+`docs/PRD.md:248` already designs the access code to live in the README for evaluators, so
+publishing it there then is the shipped design, not a leak.
 
 **Observed, not derived.** This ticket ran these commands against a fresh worktree:
 `pnpm install`; `pnpm db:migrate` (8 migrations, exit 0); `pnpm typecheck` (exit 0); `pnpm lint`
@@ -30,11 +31,11 @@ URL and access code to the "Try it" section.
 this ticket changed no application code that suite covers. See this PR's own gate run for exact
 output.
 
-**How to run it.** Follow the README itself: install dependencies, start the Postgres
-container it documents, copy `.env.local.example` to `.env.local` and set
-`ANTHROPIC_API_KEY`, run `pnpm db:migrate`, then run `pnpm dev`.
+**How to run it.** Follow the README itself. Install dependencies. Start the Postgres
+container it documents. Copy `.env.local.example` to `.env.local` and set
+`ANTHROPIC_API_KEY`. Run `pnpm db:migrate`. Run `pnpm dev`.
 
-**Rollback.** Delete `README.md` and remove this changelog entry. No schema or application code
+**Rollback.** Delete `README.md`. Remove this changelog entry. No schema or application code
 changed.
 
 ## TRO-486 — LH-065: requirements-audit compare sweep at commit 876a295 (2026-08-13)

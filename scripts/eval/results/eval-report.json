@@ -1,11 +1,11 @@
 {
   "ticket": "TRO-470 / LH-030",
-  "measuredAt": "2026-08-12T22:15:52.776Z",
+  "measuredAt": "2026-08-13T01:47:56.655Z",
   "mode": "live",
   "haikuModel": "claude-haiku-4-5",
   "sonnetModel": "claude-sonnet-5",
   "manifestVersion": "1.0.0",
-  "manifestContentHash": "98ae09d5d62752d2f98712f27ea2dbcd6e595c673ccba791821a157349be3663",
+  "manifestContentHash": "8c9fad3fe780d4ea059681473c793163664708be583c5f7200e75e5c67b21f8f",
   "caseIds": [
     "case-01-clean-match-spirits",
     "case-02-clean-match-beer-no-abv",
@@ -76,19 +76,19 @@
     },
     "routerVerdictAccuracy": {
       "total": 32,
-      "correct": 24,
-      "rate": 0.75
+      "correct": 26,
+      "rate": 0.8125
     },
     "fieldVerdictAccuracyByField": {
       "brand_name": {
         "total": 32,
-        "correct": 28,
-        "rate": 0.875
+        "correct": 29,
+        "rate": 0.90625
       },
       "class_type": {
         "total": 32,
-        "correct": 29,
-        "rate": 0.90625
+        "correct": 30,
+        "rate": 0.9375
       },
       "alcohol_content": {
         "total": 32,
@@ -107,9 +107,9 @@
       }
     },
     "reviewReasonAccuracy": {
-      "total": 14,
-      "correct": 5,
-      "rate": 0.35714285714285715
+      "total": 12,
+      "correct": 7,
+      "rate": 0.5833333333333334
     },
     "warningSegmentation": {
       "total": 32,
@@ -136,8 +136,8 @@
     },
     "cascadeVerdictAccuracy": {
       "total": 32,
-      "correct": 22,
-      "rate": 0.6875
+      "correct": 26,
+      "rate": 0.8125
     },
     "extractionReliabilityDiagram": [
       {
@@ -361,10 +361,10 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2700,
-        "outputTokens": 373,
+        "outputTokens": 412,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.004565
+        "usd": 0.00476
       },
       "resolverCost": null,
       "resolverOutcome": null,
@@ -1449,14 +1449,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3558,
-        "outputTokens": 645,
+        "outputTokens": 1009,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.013566000000000002
+        "usd": 0.017206
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 9727,
+      "resolverDurationMs": 12225,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -1822,7 +1822,7 @@
         "issues": [
           "none"
         ],
-        "confidence": 0.95
+        "confidence": 0.99
       },
       "beverageType": {
         "value": "beer",
@@ -2356,14 +2356,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3342,
-        "outputTokens": 139,
+        "outputTokens": 127,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.008074
+        "usd": 0.007954
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 3986,
+      "resolverDurationMs": 3007,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -2550,7 +2550,7 @@
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 3674,
+      "resolverDurationMs": 2771,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -3030,20 +3030,20 @@
         "caseId": "case-16-case-variant-brand-extra-words",
         "category": "case-variant-brand",
         "expectedLabelVerdict": "REVIEW",
-        "actualLabelVerdict": "PASS",
-        "labelVerdictCorrect": false,
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
         "expectedReviewReason": "AMBIGUOUS_BRAND",
-        "actualReviewReason": null,
+        "actualReviewReason": "LOW_MODEL_CONFIDENCE",
         "reviewReasonCorrect": false,
         "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
             "expectedVerdict": "NEEDS_REVIEW",
-            "actualVerdict": "MATCH",
-            "correct": false,
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true,
             "confidence": 0.99,
-            "actualReviewReason": null
+            "actualReviewReason": "LOW_MODEL_CONFIDENCE"
           },
           {
             "field": "class_type",
@@ -3090,14 +3090,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3552,
-        "outputTokens": 181,
+        "outputTokens": 913,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.008914
+        "usd": 0.016234000000000002
       },
-      "resolverOutcome": "resolved",
+      "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 4046,
+      "resolverDurationMs": 10681,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -3304,7 +3304,7 @@
             "expected": "Copper Kettle Spirits",
             "actual": "Copper Kettle Spirits",
             "detail": "Haiku read the brand name correctly.",
-            "confidence": 0.99
+            "confidence": 1
           },
           {
             "field": "classType",
@@ -3312,7 +3312,7 @@
             "expected": "Vodka",
             "actual": "Vodka",
             "detail": "Haiku read the class/type correctly.",
-            "confidence": 0.99
+            "confidence": 1
           },
           {
             "field": "abv",
@@ -3320,7 +3320,7 @@
             "expected": "40%",
             "actual": "40%",
             "detail": "Haiku read the correct ABV.",
-            "confidence": 0.99
+            "confidence": 1
           },
           {
             "field": "netContents",
@@ -3328,7 +3328,7 @@
             "expected": "750 mL",
             "actual": "750 ml",
             "detail": "Haiku read the correct net contents.",
-            "confidence": 0.99
+            "confidence": 1
           },
           {
             "field": "governmentWarning",
@@ -3356,7 +3356,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -3364,7 +3364,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -3372,7 +3372,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -3380,7 +3380,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -3409,7 +3409,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -3417,7 +3417,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -3425,7 +3425,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -3433,7 +3433,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -3456,26 +3456,26 @@
       },
       "resolverCost": {
         "model": "claude-sonnet-5",
-        "inputTokens": 3495,
-        "outputTokens": 310,
+        "inputTokens": 3485,
+        "outputTokens": 312,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
         "usd": 0.01009
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 5306,
+      "resolverDurationMs": 4129,
       "imageQuality": {
         "legible": "yes",
         "issues": [
           "none"
         ],
-        "confidence": 0.98
+        "confidence": 0.99
       },
       "beverageType": {
         "value": "spirits",
         "evidence": "Vodka",
-        "confidence": 0.99
+        "confidence": 1
       }
     },
     {
@@ -3584,10 +3584,10 @@
         "caseId": "case-19-rotation-mild-correctable",
         "category": "rotation",
         "expectedLabelVerdict": "PASS",
-        "actualLabelVerdict": "REVIEW",
-        "labelVerdictCorrect": false,
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": true,
         "expectedReviewReason": null,
-        "actualReviewReason": "LOW_MODEL_CONFIDENCE",
+        "actualReviewReason": null,
         "reviewReasonCorrect": true,
         "warningChannel": null,
         "fields": [
@@ -3626,10 +3626,10 @@
           {
             "field": "government_warning",
             "expectedVerdict": "MATCH",
-            "actualVerdict": "NEEDS_REVIEW",
-            "correct": false,
+            "actualVerdict": "MATCH",
+            "correct": true,
             "confidence": 0.92,
-            "actualReviewReason": "LOW_MODEL_CONFIDENCE"
+            "actualReviewReason": null
           }
         ]
       },
@@ -3644,14 +3644,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 4042,
-        "outputTokens": 500,
+        "outputTokens": 341,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.013083999999999998
+        "usd": 0.011493999999999999
       },
-      "resolverOutcome": "needs-human",
+      "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 6771,
+      "resolverDurationMs": 3883,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -3831,14 +3831,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3753,
-        "outputTokens": 456,
+        "outputTokens": 434,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.012066
+        "usd": 0.011845999999999999
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 6513,
+      "resolverDurationMs": 6357,
       "imageQuality": {
         "legible": "no",
         "issues": [
@@ -4268,9 +4268,9 @@
         "expectedLabelVerdict": "REVIEW",
         "actualLabelVerdict": "REVIEW",
         "labelVerdictCorrect": true,
-        "expectedReviewReason": "LOW_IMAGE_QUALITY",
+        "expectedReviewReason": "WARNING_MISMATCH",
         "actualReviewReason": "WARNING_MISMATCH",
-        "reviewReasonCorrect": false,
+        "reviewReasonCorrect": true,
         "warningChannel": "dual",
         "fields": [
           {
@@ -4321,7 +4321,7 @@
         "expectedLabelVerdict": "REVIEW",
         "actualLabelVerdict": "PASS",
         "labelVerdictCorrect": false,
-        "expectedReviewReason": "LOW_IMAGE_QUALITY",
+        "expectedReviewReason": "WARNING_MISMATCH",
         "actualReviewReason": null,
         "reviewReasonCorrect": false,
         "warningChannel": null,
@@ -4379,14 +4379,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3479,
-        "outputTokens": 312,
+        "outputTokens": 298,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.010078
+        "usd": 0.009938
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 4612,
+      "resolverDurationMs": 3513,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -4413,7 +4413,7 @@
             "expected": "Pocketful Spirits",
             "actual": "Pocketful Spirits",
             "detail": "Haiku read the brand name correctly.",
-            "confidence": 0.99
+            "confidence": 1
           },
           {
             "field": "classType",
@@ -4421,7 +4421,7 @@
             "expected": "Bourbon Whiskey",
             "actual": "Bourbon Whiskey",
             "detail": "Haiku read the class/type correctly.",
-            "confidence": 0.99
+            "confidence": 1
           },
           {
             "field": "abv",
@@ -4429,7 +4429,7 @@
             "expected": "40%",
             "actual": "40%",
             "detail": "Haiku read the correct ABV.",
-            "confidence": 0.99
+            "confidence": 1
           },
           {
             "field": "netContents",
@@ -4437,7 +4437,7 @@
             "expected": "50 mL",
             "actual": "50 ml",
             "detail": "Haiku read the correct net contents.",
-            "confidence": 0.99
+            "confidence": 1
           },
           {
             "field": "governmentWarning",
@@ -4455,9 +4455,9 @@
         "expectedLabelVerdict": "REVIEW",
         "actualLabelVerdict": "REVIEW",
         "labelVerdictCorrect": true,
-        "expectedReviewReason": "LOW_IMAGE_QUALITY",
+        "expectedReviewReason": "WARNING_MISMATCH",
         "actualReviewReason": "WARNING_MISMATCH",
-        "reviewReasonCorrect": false,
+        "reviewReasonCorrect": true,
         "warningChannel": "dual",
         "fields": [
           {
@@ -4465,7 +4465,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -4473,7 +4473,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -4481,7 +4481,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -4489,7 +4489,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -4508,7 +4508,7 @@
         "expectedLabelVerdict": "REVIEW",
         "actualLabelVerdict": "PASS",
         "labelVerdictCorrect": false,
-        "expectedReviewReason": "LOW_IMAGE_QUALITY",
+        "expectedReviewReason": "WARNING_MISMATCH",
         "actualReviewReason": null,
         "reviewReasonCorrect": false,
         "warningChannel": null,
@@ -4518,7 +4518,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -4526,7 +4526,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -4534,7 +4534,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -4542,7 +4542,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -4558,22 +4558,22 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2700,
-        "outputTokens": 408,
+        "outputTokens": 369,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.004739999999999999
+        "usd": 0.0045449999999999996
       },
       "resolverCost": {
         "model": "claude-sonnet-5",
-        "inputTokens": 3513,
-        "outputTokens": 294,
+        "inputTokens": 3503,
+        "outputTokens": 313,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.009966
+        "usd": 0.010136000000000001
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 5663,
+      "resolverDurationMs": 3933,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -4584,7 +4584,7 @@
       "beverageType": {
         "value": "spirits",
         "evidence": "Bourbon Whiskey",
-        "confidence": 0.99
+        "confidence": 1
       }
     },
     {
@@ -4639,19 +4639,19 @@
       "routerVerdict": {
         "caseId": "case-25-odd-typography-script-brand",
         "category": "odd-typography",
-        "expectedLabelVerdict": "REVIEW",
+        "expectedLabelVerdict": "PASS",
         "actualLabelVerdict": "PASS",
-        "labelVerdictCorrect": false,
-        "expectedReviewReason": "LOW_MODEL_CONFIDENCE",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
         "actualReviewReason": null,
-        "reviewReasonCorrect": false,
+        "reviewReasonCorrect": true,
         "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
-            "expectedVerdict": "NEEDS_REVIEW",
+            "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
-            "correct": false,
+            "correct": true,
             "confidence": 0.98,
             "actualReviewReason": null
           },
@@ -4692,19 +4692,19 @@
       "cascadeVerdict": {
         "caseId": "case-25-odd-typography-script-brand",
         "category": "odd-typography",
-        "expectedLabelVerdict": "REVIEW",
+        "expectedLabelVerdict": "PASS",
         "actualLabelVerdict": "PASS",
-        "labelVerdictCorrect": false,
-        "expectedReviewReason": "LOW_MODEL_CONFIDENCE",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
         "actualReviewReason": null,
-        "reviewReasonCorrect": false,
+        "reviewReasonCorrect": true,
         "warningChannel": "dual",
         "fields": [
           {
             "field": "brand_name",
-            "expectedVerdict": "NEEDS_REVIEW",
+            "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
-            "correct": false,
+            "correct": true,
             "confidence": 0.98,
             "actualReviewReason": null
           },
@@ -4819,12 +4819,12 @@
       "routerVerdict": {
         "caseId": "case-26-odd-typography-blackletter-class-type",
         "category": "odd-typography",
-        "expectedLabelVerdict": "REVIEW",
+        "expectedLabelVerdict": "PASS",
         "actualLabelVerdict": "PASS",
-        "labelVerdictCorrect": false,
-        "expectedReviewReason": "LOW_MODEL_CONFIDENCE",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
         "actualReviewReason": null,
-        "reviewReasonCorrect": false,
+        "reviewReasonCorrect": true,
         "warningChannel": "dual",
         "fields": [
           {
@@ -4837,9 +4837,9 @@
           },
           {
             "field": "class_type",
-            "expectedVerdict": "NEEDS_REVIEW",
+            "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
-            "correct": false,
+            "correct": true,
             "confidence": 0.95,
             "actualReviewReason": null
           },
@@ -4872,12 +4872,12 @@
       "cascadeVerdict": {
         "caseId": "case-26-odd-typography-blackletter-class-type",
         "category": "odd-typography",
-        "expectedLabelVerdict": "REVIEW",
+        "expectedLabelVerdict": "PASS",
         "actualLabelVerdict": "PASS",
-        "labelVerdictCorrect": false,
-        "expectedReviewReason": "LOW_MODEL_CONFIDENCE",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
         "actualReviewReason": null,
-        "reviewReasonCorrect": false,
+        "reviewReasonCorrect": true,
         "warningChannel": "dual",
         "fields": [
           {
@@ -4890,9 +4890,9 @@
           },
           {
             "field": "class_type",
-            "expectedVerdict": "NEEDS_REVIEW",
+            "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
-            "correct": false,
+            "correct": true,
             "confidence": 0.95,
             "actualReviewReason": null
           },
@@ -5293,14 +5293,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3531,
-        "outputTokens": 182,
+        "outputTokens": 170,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.008882
+        "usd": 0.008761999999999999
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 4045,
+      "resolverDurationMs": 3226,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -5480,14 +5480,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3550,
-        "outputTokens": 164,
+        "outputTokens": 166,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.00874
+        "usd": 0.00876
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 4136,
+      "resolverDurationMs": 3233,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -6034,7 +6034,7 @@
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 4417,
+      "resolverDurationMs": 3779,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -6049,6 +6049,6 @@
       }
     }
   ],
-  "totalCostUsd": 0.2706100000000001,
+  "totalCostUsd": 0.27957000000000004,
   "failures": []
 }

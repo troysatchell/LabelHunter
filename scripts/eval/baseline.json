@@ -1,8 +1,8 @@
 {
   "ticket": "TRO-470 / LH-030",
-  "establishedAt": "2026-08-12T22:15:52.776Z",
+  "establishedAt": "2026-08-13T01:47:56.655Z",
   "manifestVersion": "1.0.0",
-  "manifestContentHash": "98ae09d5d62752d2f98712f27ea2dbcd6e595c673ccba791821a157349be3663",
+  "manifestContentHash": "8c9fad3fe780d4ea059681473c793163664708be583c5f7200e75e5c67b21f8f",
   "caseIds": [
     "case-01-clean-match-spirits",
     "case-02-clean-match-beer-no-abv",
@@ -72,19 +72,19 @@
     },
     "routerVerdictAccuracy": {
       "total": 32,
-      "correct": 24,
-      "rate": 0.75
+      "correct": 26,
+      "rate": 0.8125
     },
     "fieldVerdictAccuracyByField": {
       "brand_name": {
         "total": 32,
-        "correct": 28,
-        "rate": 0.875
+        "correct": 29,
+        "rate": 0.90625
       },
       "class_type": {
         "total": 32,
-        "correct": 29,
-        "rate": 0.90625
+        "correct": 30,
+        "rate": 0.9375
       },
       "alcohol_content": {
         "total": 32,
@@ -103,9 +103,9 @@
       }
     },
     "reviewReasonAccuracy": {
-      "total": 14,
-      "correct": 5,
-      "rate": 0.35714285714285715
+      "total": 12,
+      "correct": 7,
+      "rate": 0.5833333333333334
     },
     "warningSegmentation": {
       "total": 32,
@@ -132,8 +132,8 @@
     },
     "cascadeVerdictAccuracy": {
       "total": 32,
-      "correct": 22,
-      "rate": 0.6875
+      "correct": 26,
+      "rate": 0.8125
     },
     "extractionReliabilityDiagram": [
       {

@@ -3,7 +3,7 @@
  * call, no real money.
  */
 import { describe, expect, it } from "vitest";
-import { buildPipelineScope, buildTargetInfo } from "./target-info";
+import { buildPipelineScope, buildTargetInfo, isLoopbackHostname } from "./target-info";
 
 const RENDER_YAML = `
 services:
@@ -47,6 +47,46 @@ describe("buildPipelineScope", () => {
 
   it("produces two different strings for the two boundaries — proves this is derived, not one constant reused", () => {
     expect(buildPipelineScope("in-process")).not.toBe(buildPipelineScope("http"));
+  });
+
+  // CodeRabbit local review round 1 (major): the detailed pipeline
+  // description is this repo's OWN claim, not something --url mode
+  // independently confirms about an arbitrary target.
+  it("hedges the http boundary's pipeline claim as unconfirmed for an arbitrary target", () => {
+    const scope = buildPipelineScope("http");
+    expect(scope).toMatch(/CAVEAT/);
+    expect(scope).toMatch(/never independently confirms/);
+  });
+
+  it("does NOT hedge the in-process boundary — that mode calls this repo's own code directly, a real fact, not a claim about a remote target", () => {
+    expect(buildPipelineScope("in-process")).not.toMatch(/CAVEAT/);
+  });
+});
+
+describe("isLoopbackHostname", () => {
+  it("recognizes localhost, 127.0.0.1, and both IPv6 loopback forms", () => {
+    expect(isLoopbackHostname("localhost")).toBe(true);
+    expect(isLoopbackHostname("127.0.0.1")).toBe(true);
+    expect(isLoopbackHostname("::1")).toBe(true);
+    expect(isLoopbackHostname("[::1]")).toBe(true);
+  });
+
+  it("is case-insensitive (RFC 4343)", () => {
+    expect(isLoopbackHostname("LocalHost")).toBe(true);
+  });
+
+  it("returns false for a real deployed host", () => {
+    expect(isLoopbackHostname("labelhunter-web.onrender.com")).toBe(false);
+  });
+
+  it("returns false for a private-network (but non-loopback) IP — not the same safety guarantee", () => {
+    expect(isLoopbackHostname("192.168.1.50")).toBe(false);
+    expect(isLoopbackHostname("10.0.0.5")).toBe(false);
+  });
+
+  it("returns false for a hostname that merely contains 'localhost' as a substring", () => {
+    expect(isLoopbackHostname("notlocalhost.example.com")).toBe(false);
+    expect(isLoopbackHostname("localhost.attacker.example")).toBe(false);
   });
 });
 

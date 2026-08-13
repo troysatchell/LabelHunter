@@ -40,17 +40,24 @@
  * `ANTHROPIC_BASE_URL` targets `scripts/e2e/fake-anthropic-server.ts`
  * instead of the real Anthropic API. `ANTHROPIC_API_KEY` is NOT required
  * in this mode — the TARGET server holds its own key, not this script.
- * `DATABASE_URL` becomes OPTIONAL: when set, this script still connects
- * directly to clean up the rows it created, exactly like the in-process
- * mode; when unset (the honest case for a run against a real deployed
- * instance this machine has no direct database access to), cleanup is
- * skipped and that fact is recorded in `cleanupSkippedReason`, never
- * silently dropped. The percentile math, exit-code logic, and artifact
- * shape below are shared between both modes — only how one "run" is
- * produced differs (`runOnceInProcess` vs `runOnceHttp`). See
- * `target-info.ts` for how the artifact's own `pipelineScope` and `target`
- * fields are derived fresh from which mode actually ran, never hard-coded
- * (TRO-539's "provenance trap" fix).
+ * `DATABASE_URL` becomes OPTIONAL, and even when set is only trusted for
+ * cleanup against a LOOPBACK target (`localhost`/`127.0.0.1`/`::1` —
+ * `isLoopbackHostname`, `target-info.ts`): a real deployed target's own
+ * database has no reliable relationship to whatever `DATABASE_URL` happens
+ * to be set in the operator's shell, and deleting by `applicationId`
+ * against the WRONG database risks a cross-database ID collision. Cleanup
+ * is skipped whenever it cannot be trusted, and that fact — and why — is
+ * recorded in `cleanupSkippedReason`, never silently dropped. Every real
+ * network request in this mode (`runOnceHttp`) is bounded by one shared
+ * `HTTP_REQUEST_TIMEOUT_MS` deadline covering both the request and the
+ * body read — the same "no request hangs this script forever" discipline
+ * TRO-519 already established server-side for the OCR channel. The
+ * percentile math, exit-code logic, and artifact shape below are shared
+ * between both modes — only how one "run" is produced differs
+ * (`runOnceInProcess` vs `runOnceHttp`). See `target-info.ts` for how the
+ * artifact's own `pipelineScope` and `target` fields are derived fresh
+ * from which mode actually ran, never hard-coded (TRO-539's "provenance
+ * trap" fix).
  *
  * **What is NOT in this measurement, and why.** The Sonnet resolver
  * (LH-014, `src/server/resolver/`) has merged to `main`, but `route.ts`
@@ -78,12 +85,12 @@
  * carries a `Server-Timing` header (`src/app/api/verify/server-timing.ts`)
  * with one entry per PRD §3.8 stage. The in-process mode gets this from
  * the same `Response` object `handleVerifyRequest` returns; `--url` mode
- * reads it off the real HTTP response. `--url` mode additionally
- * summarizes those per-stage samples (`stageBreakdownMs`) the same way the
- * overall total is summarized, reusing `summarizeLatencies` — the
- * in-process mode's own report leaves this `null` today (a possible
- * follow-up, not this ticket's scope: nothing stops wiring it up there
- * too, since the underlying header exists either way).
+ * reads it off the real HTTP response — either way, `route.ts` attaches
+ * the header the same way, so both modes' reports carry a `stageBreakdownMs`
+ * (`stage-breakdown.ts`, reusing `summarizeLatencies`) whenever at least one
+ * run succeeded. Only a SUCCESSFUL run's samples ever count toward it — a
+ * failed or malformed-body run's own duration is never a real per-stage
+ * sample, whatever a response might otherwise claim.
  *
  * **Failure handling.** A run that throws, or that the route answers with a
  * non-200 status, is recorded in the raw log with its own duration and
@@ -113,9 +120,11 @@ import { compareGovernmentWarningFromImage } from "../../src/server/warning";
 import { parseArgs } from "./args";
 import { cleanupScratchDirAndPool } from "./cleanup";
 import { computeExitCode } from "./exit-status";
+import { describeHttpError } from "./http-error";
 import { summarizeLatencies, type LatencySummary } from "./percentile";
 import { parseVerifySuccessBody } from "./response";
-import { buildPipelineScope, buildTargetInfo, type MeasurementBoundary, type TargetInfo } from "./target-info";
+import { buildStageBreakdown } from "./stage-breakdown";
+import { buildPipelineScope, buildTargetInfo, isLoopbackHostname, type MeasurementBoundary, type TargetInfo } from "./target-info";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const RESULTS_PATH = path.resolve(REPO_ROOT, "scripts/latency/results/single-label-verify.json");
@@ -287,6 +296,18 @@ async function runOnceInProcess(
 }
 
 /**
+ * Caps `runOnceHttp`'s whole request — the network round-trip AND the body
+ * read — behind one shared deadline (lessons.md rule 23; CodeRabbit local
+ * review round 1, major). Generous relative to PRD §3.8's own worst-case
+ * ~5s p95 fast-path target: this bounds a genuinely hung or unreachable
+ * target, not a slow-but-working one. `--url` mode must not reintroduce
+ * the exact "no deadline, can hang forever" defect class TRO-519 just
+ * fixed server-side (`OCR_TIMEOUT_MS`, `src/server/warning/ocr.ts`) —
+ * this time on the client side of the same request.
+ */
+const HTTP_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
  * TRO-539's `--url` mode: a real multipart POST over the network to
  * `verifyUrl`, instead of the in-process `handleVerifyRequest` call above.
  */
@@ -300,9 +321,15 @@ async function runOnceHttp(
 ): Promise<RunResult> {
   const formData = buildFormData(imageBytes, imagePath, mediaType, caseSpec);
   const start = performance.now();
+  // ONE signal, reused for both awaits below (fetch AND response.json()) —
+  // the Fetch spec ties body-stream consumption to the same fetch
+  // controller the signal governs, so aborting after headers arrive but
+  // while the body is still streaming correctly rejects response.json()
+  // too, not just the initial connect.
+  const signal = AbortSignal.timeout(HTTP_REQUEST_TIMEOUT_MS);
   let response: Response;
   try {
-    response = await fetch(verifyUrl, { method: "POST", body: formData });
+    response = await fetch(verifyUrl, { method: "POST", body: formData, signal });
   } catch (cause) {
     const durationMs = Math.round(performance.now() - start);
     return {
@@ -310,7 +337,7 @@ async function runOnceHttp(
       durationMs,
       ok: false,
       httpStatus: 0,
-      error: cause instanceof Error ? cause.message : String(cause),
+      error: describeHttpError(cause, signal.aborted, HTTP_REQUEST_TIMEOUT_MS),
     };
   }
 
@@ -327,7 +354,24 @@ async function runOnceHttp(
   let body: unknown = null;
   try {
     body = await response.json();
-  } catch {
+  } catch (cause) {
+    // Two different reasons this catch can fire, told apart by the SAME
+    // shared signal: the deadline fired mid body-read (a real failure —
+    // return it as one below, not silently degrade to a fabricated
+    // "malformed body" 200), or the body just was not valid JSON on a
+    // fully-received response (the pre-existing, intentional degrade to
+    // `body = null`, which parseVerifySuccessBody below turns into a clear
+    // "did not match the expected shape" error).
+    if (signal.aborted) {
+      const durationMs = Math.round(performance.now() - start);
+      return {
+        index,
+        durationMs,
+        ok: false,
+        httpStatus: 0,
+        error: describeHttpError(cause, true, HTTP_REQUEST_TIMEOUT_MS),
+      };
+    }
     body = null;
   }
   const durationMs = Math.round(performance.now() - start);
@@ -490,6 +534,20 @@ async function main(): Promise<void> {
   // URL, so this constructor call cannot throw on a value that already
   // passed that check).
   const verifyUrl = url !== undefined ? new URL("/api/verify", url).toString() : null;
+  const target = buildTargetInfo(url ?? null, readRenderYamlTextOrNull());
+  // TRO-539, CodeRabbit local review round 1 (major): a --url run's own
+  // DATABASE_URL might point at a database that has NOTHING to do with
+  // the target server — e.g. a developer's shell still has last session's
+  // local DATABASE_URL exported while --url now points at a real deployed
+  // instance. Deleting `result.applicationId` in that case risks a
+  // cross-database ID COLLISION: some unrelated row in the WRONG database
+  // that happens to share the same numeric id. Only a loopback target
+  // (localhost/127.0.0.1/::1 — this ticket's own fake-model validation,
+  // and any future local dev-loop use) is treated as "probably the same
+  // database this script is already connected to"; every other --url
+  // target skips the delete and records why (`cleanupSkippedReason`
+  // below), never guesses.
+  const dbCleanupEligible = boundary === "in-process" || (url !== undefined && isLoopbackHostname(new URL(url).hostname));
 
   if (boundary === "in-process" && !process.env.ANTHROPIC_API_KEY) {
     throw new Error(
@@ -576,14 +634,13 @@ async function main(): Promise<void> {
     if (verifyUrl === null) {
       throw new Error("measure.ts: internal invariant violated — http mode reached with no target URL");
     }
-    const target = verifyUrl;
-    requestRunner = (i) => runOnceHttp(i, imageBytes, imagePath, mediaType, caseSpec, target);
+    const targetUrl = verifyUrl;
+    requestRunner = (i) => runOnceHttp(i, imageBytes, imagePath, mediaType, caseSpec, targetUrl);
   }
 
   const runResults: RunResult[] = [];
   const cleanupFailures: CleanupFailure[] = [];
   const cleanupSkippedApplicationIds: number[] = [];
-  const stageSamplesMs: Partial<Record<ServerTimingStage, number[]>> = {};
   let scratchDirCleanupError: string | null = null;
   let closePoolError: string | null = null;
   try {
@@ -595,16 +652,8 @@ async function main(): Promise<void> {
       } else {
         console.log(`  run ${i}/${runs}: ${result.durationMs.toFixed(0)}ms — FAILED: ${result.error}`);
       }
-      if (result.serverTimingMs) {
-        for (const stage of SERVER_TIMING_STAGES) {
-          const value = result.serverTimingMs[stage];
-          if (value !== undefined) {
-            (stageSamplesMs[stage] ??= []).push(value);
-          }
-        }
-      }
       if (result.applicationId !== undefined) {
-        if (db) {
+        if (db && dbCleanupEligible) {
           try {
             await db.delete(schema.applications).where(eq(schema.applications.id, result.applicationId));
           } catch (cleanupError) {
@@ -655,22 +704,24 @@ async function main(): Promise<void> {
 
   const summaryMs = successful.length > 0 ? summarizeLatencies(successful.map((r) => r.durationMs)) : null;
 
-  const stageBreakdownMs: Partial<Record<ServerTimingStage, LatencySummary>> | null =
-    Object.keys(stageSamplesMs).length > 0
-      ? SERVER_TIMING_STAGES.reduce<Partial<Record<ServerTimingStage, LatencySummary>>>((acc, stage) => {
-          const samples = stageSamplesMs[stage];
-          if (samples && samples.length > 0) acc[stage] = summarizeLatencies(samples);
-          return acc;
-        }, {})
-      : null;
+  // stage-breakdown.ts's own job, not inlined here: only a SUCCESSFUL run's
+  // samples ever count (CodeRabbit local review round 1, major) — see that
+  // module's header comment for why this must be structural, not just true
+  // by route.ts's current behavior.
+  const stageBreakdownMs = buildStageBreakdown(runResults);
 
   const cleanupSkippedReason: string | null =
-    cleanupSkippedApplicationIds.length > 0
-      ? `DATABASE_URL not set — ${cleanupSkippedApplicationIds.length} application row(s) left ` +
-        `uncleaned on the target's own database: ${cleanupSkippedApplicationIds.join(", ")}.`
-      : null;
-
-  const target = buildTargetInfo(url ?? null, readRenderYamlTextOrNull());
+    cleanupSkippedApplicationIds.length === 0
+      ? null
+      : !db
+        ? `DATABASE_URL not set — ${cleanupSkippedApplicationIds.length} application row(s) left ` +
+          `uncleaned on the target's own database: ${cleanupSkippedApplicationIds.join(", ")}.`
+        : `--url target host is not localhost/127.0.0.1/::1 — this script cannot safely assume ` +
+          `DATABASE_URL points at the SAME database the target itself uses, so it did not attempt ` +
+          `a delete-by-id (a cross-database ID collision could delete an unrelated row). ` +
+          `${cleanupSkippedApplicationIds.length} application row(s) left uncleaned: ` +
+          `${cleanupSkippedApplicationIds.join(", ")}. Clean these up directly on the target's own ` +
+          `database if needed.`;
 
   const report: HarnessReport = {
     ticket: "TRO-471 / LH-031 (extended by TRO-539 / LH-034: --url mode, Server-Timing breakdown, target provenance)",

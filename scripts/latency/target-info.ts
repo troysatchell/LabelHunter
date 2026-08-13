@@ -55,8 +55,28 @@ export function buildPipelineScope(boundary: MeasurementBoundary): string {
     " Boundary: http -- this run sent a real multipart POST over the network to the target URL " +
     "recorded in this artifact's own target field, and measured wall-clock from just before that " +
     "request to the full response body received, including the Next.js HTTP framing layer and " +
-    "the real network path -- but still excludes a real browser's own upload/render time."
+    "the real network path -- but still excludes a real browser's own upload/render time. " +
+    "CAVEAT: the pipeline description above is this repo's OWN claim about what code the target " +
+    "runs -- an http --url target can in principle be any server. This script never independently " +
+    "confirms the target is running this exact commit (same caveat as this artifact's own model " +
+    "field); it is accurate when --url points at a real deployment of this repo, which is this " +
+    "harness's only intended use."
   );
+}
+
+/** `true` for a hostname that only ever resolves back to THIS machine —
+ * `localhost`, `127.0.0.1`, or the IPv6 loopback in either its bare or
+ * bracketed form. Case-insensitive (RFC 4343). Used by `measure.ts` to
+ * decide whether a `--url` run's `DATABASE_URL` can be trusted as the
+ * SAME database the target itself uses (CodeRabbit local review round 1,
+ * major): a real deployed target's own database is never reachable by
+ * guessing at a hostname, so only a loopback target is treated as
+ * "probably the same database" — see `measure.ts`'s own cleanup-gating
+ * comment for the cross-database delete risk this specifically guards
+ * against. */
+export function isLoopbackHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase();
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1" || normalized === "[::1]";
 }
 
 export interface TargetInfo {

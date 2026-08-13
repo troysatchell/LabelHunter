@@ -83,4 +83,23 @@ describe("parseServerTimingHeader", () => {
     expect(() => parseServerTimingHeader("not a server-timing header at all; ??")).not.toThrow();
     expect(parseServerTimingHeader("not a server-timing header at all; ??")).toEqual({});
   });
+
+  // CodeRabbit local review round 1 (major): a naive comma-split cuts a
+  // quoted desc param's own comma as if it were a new entry.
+  it("does not mis-split a quoted desc param containing a comma", () => {
+    expect(parseServerTimingHeader('haiku;desc="crop, v2";dur=2500.0')).toEqual({ haiku: 2500 });
+  });
+
+  it("handles a quoted-comma entry alongside plain entries on either side", () => {
+    const header = 'preprocess;dur=40.0, haiku;desc="crop, v2";dur=2500.0, router;dur=0.3';
+    expect(parseServerTimingHeader(header)).toEqual({ preprocess: 40, haiku: 2500, router: 0.3 });
+  });
+
+  it("takes the FIRST dur param when an entry has more than one", () => {
+    expect(parseServerTimingHeader("haiku;dur=100.0;dur=200.0")).toEqual({ haiku: 100 });
+  });
+
+  it("accepts a quoted numeric dur value", () => {
+    expect(parseServerTimingHeader('haiku;dur="2500.0"')).toEqual({ haiku: 2500 });
+  });
 });

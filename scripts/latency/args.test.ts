@@ -114,6 +114,16 @@ describe("parseArgs", () => {
     expect(() => parseArgs(["--url=https://labelhunter-web.onrender.com/"])).not.toThrow();
   });
 
+  it("accepts http: and https: --url values", () => {
+    expect(() => parseArgs(["--url=http://localhost:3874"])).not.toThrow();
+    expect(() => parseArgs(["--url=https://labelhunter-web.onrender.com"])).not.toThrow();
+  });
+
+  it("rejects a non-http(s) --url scheme (CodeRabbit local review round 1, minor)", () => {
+    expect(() => parseArgs(["--url=file:///etc/passwd"])).toThrow(/must be http: or https:/);
+    expect(() => parseArgs(["--url=ftp://example.com"])).toThrow(/must be http: or https:/);
+  });
+
   it("parses --note=<text>, including embedded spaces (one argv token)", () => {
     expect(parseArgs(["--note=fake-model validation, not a TH-R2 number"])).toEqual({
       runs: DEFAULT_RUNS,

@@ -116,12 +116,25 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     );
   }
   if (url !== undefined) {
+    // `fetch` only ever sends this over http(s) anyway (measure.ts's
+    // runOnceHttp) — rejecting any other scheme HERE, at parse time, turns
+    // a typo like `--url=htp://...` or a copy-paste of a non-http URL into
+    // an immediate, specific CLI error instead of a much less clear
+    // TypeError out of `fetch` several seconds into a run (CodeRabbit local
+    // review round 1, minor).
+    let parsedUrl: URL;
     try {
-      new URL(url);
+      parsedUrl = new URL(url);
     } catch {
       throw new Error(
         `measure.ts: --url=${JSON.stringify(url)} is not a valid absolute URL ` +
           `(expected e.g. --url=http://localhost:3874 — the harness appends /api/verify itself)`,
+      );
+    }
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      throw new Error(
+        `measure.ts: --url=${JSON.stringify(url)} must be http: or https: (got "${parsedUrl.protocol}") ` +
+          `— this harness sends a real HTTP request, it cannot target any other scheme`,
       );
     }
   }

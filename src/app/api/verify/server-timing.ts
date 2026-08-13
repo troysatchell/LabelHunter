@@ -46,6 +46,43 @@ export function buildServerTimingHeader(stages: StageTimingsMs): string {
 }
 
 /**
+ * Splits `input` on single-character `delimiter`, except where `delimiter`
+ * appears inside a `"`-quoted span — the Server-Timing grammar allows a
+ * quoted `desc` parameter (e.g. `haiku;desc="crop, v2";dur=2500.0`), and a
+ * naive `String.prototype.split` would cut that description's own comma
+ * as if it were a new entry (CodeRabbit local review round 1, major —
+ * confirmed against a real header shaped exactly like that example). Does
+ * not handle a backslash-escaped quote inside a quoted string — a known,
+ * deliberate simplification: this function only ever needs to survive
+ * `buildServerTimingHeader`'s own output (which never quotes anything) and
+ * a reasonably-shaped external header, not the full RFC 7230
+ * `quoted-string` grammar.
+ */
+function splitOutsideQuotes(input: string, delimiter: string): string[] {
+  const parts: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (const ch of input) {
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+      current += ch;
+      continue;
+    }
+    if (ch === delimiter && !inQuotes) {
+      parts.push(current);
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  parts.push(current);
+  return parts;
+}
+
+const STAGE_NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
+const DUR_PARAM_PATTERN = /^dur\s*=\s*"?([0-9]+(?:\.[0-9]+)?)"?$/;
+
+/**
  * Parses a `Server-Timing` header value back into per-stage milliseconds.
  * Defensive (standing rule 13: validate at a boundary a value's shape is
  * only assumed, not guaranteed) — `headerValue` crossed a real HTTP
@@ -56,19 +93,32 @@ export function buildServerTimingHeader(stages: StageTimingsMs): string {
  * parse as a finite non-negative number, is dropped rather than trusted —
  * this function never throws on malformed input, and a caller with an
  * empty result should treat that as "no breakdown available", not crash.
+ *
+ * Each entry is `name` optionally followed by `;param=value` pairs — this
+ * function only looks for `dur` and ignores every other param (`desc`,
+ * anything else), taking the FIRST `dur` if more than one is present. A
+ * `dur` value may be a bare number or a quoted one (`dur="2500.0"`); both
+ * are accepted.
  */
 export function parseServerTimingHeader(headerValue: string): Partial<StageTimingsMs> {
   const result: Partial<StageTimingsMs> = {};
   const knownStages: readonly string[] = SERVER_TIMING_STAGES;
-  for (const rawEntry of headerValue.split(",")) {
+  for (const rawEntry of splitOutsideQuotes(headerValue, ",")) {
     const entry = rawEntry.trim();
     if (!entry) continue;
-    const match = /^([a-zA-Z][a-zA-Z0-9_-]*);dur=([0-9]+(?:\.[0-9]+)?)$/.exec(entry);
-    if (!match) continue;
-    const [, name, durText] = match;
-    if (!knownStages.includes(name)) continue;
-    const dur = Number(durText);
-    if (!Number.isFinite(dur) || dur < 0) continue;
+    const params = splitOutsideQuotes(entry, ";").map((p) => p.trim());
+    const name = params[0];
+    if (!name || !STAGE_NAME_PATTERN.test(name) || !knownStages.includes(name)) continue;
+
+    let dur: number | undefined;
+    for (const param of params.slice(1)) {
+      const match = DUR_PARAM_PATTERN.exec(param);
+      if (match) {
+        dur = Number(match[1]);
+        break;
+      }
+    }
+    if (dur === undefined || !Number.isFinite(dur) || dur < 0) continue;
     result[name as ServerTimingStage] = dur;
   }
   return result;

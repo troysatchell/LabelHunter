@@ -15,7 +15,10 @@ import { deleteLabelImageBlobsWhere, saveLabelImage } from "../../../server/stor
 import { BUDGET_EXHAUSTED_MESSAGE, getTodaySpendUsd, recordSpendUsd } from "../../../server/budget/daily-budget";
 import { createFixedWindowLimiter } from "../../../server/rate-limit/fixed-window";
 import { checkRateLimitPair } from "../../../server/rate-limit/instances";
-import { handleVerifyRequest, type VerifyRouteDeps } from "./route";
+import { handleVerifyRequest, POST as verifyPOST, type VerifyRouteDeps } from "./route";
+import { POST as batchStartPOST } from "../batch/start/route";
+import type { BatchStartErrorResponse } from "../batch/start/types";
+import { BATCH_START_IP_LIMIT, VERIFY_IP_LIMIT } from "../../../server/rate-limit/instances";
 import { parseServerTimingHeader, SERVER_TIMING_STAGES } from "./server-timing";
 import type { VerifyErrorResponse, VerifySuccessResponse } from "./types";
 
@@ -761,5 +764,104 @@ describe("POST /api/verify — real spend recording (TRO-482)", () => {
 
     const spent = await getTodaySpendUsd(db, ISOLATED_NOW);
     expect(spent).toBe(0);
+  });
+});
+
+/**
+ * The production wiring itself (TRO-482, merge review round 1).
+ *
+ * Every other test in this file injects its own `deps`, so every other
+ * test would still pass if `defaultDeps` silently lost a guard binding.
+ * The route's guards are optional fields with an allow-by-default
+ * fallback, so a lost binding does not throw — it serves the request and
+ * calls Haiku. That is a fail-open shape, and this block is the only
+ * thing that catches it.
+ *
+ * These tests call the real exported `POST`, with no `deps` argument, so
+ * they exercise the same `defaultDeps` object production uses. They make
+ * no model call: both guards run before the route reads the request body,
+ * so a body-less request is enough.
+ *
+ * Each test uses its own `x-forwarded-for` value. The per-IP limiter keys
+ * on that header (`getClientIp`), so no test can consume another's budget
+ * and the block is order-independent.
+ */
+describe("POST /api/verify — the default (production) wiring is really bound", () => {
+  function bareRequest(ip: string): Request {
+    return new Request("http://localhost/api/verify", { method: "POST", headers: { "x-forwarded-for": ip } });
+  }
+
+  it("enforces the REAL per-IP rate limit through POST — fails if defaultDeps loses checkRateLimit", async () => {
+    const ip = "203.0.113.10";
+    const statuses: number[] = [];
+    // One more than the real limit. Every earlier call is allowed by the
+    // limiter and then fails body parsing with a 400, which is the proof
+    // the guard let it through rather than the proof of anything else.
+    for (let i = 0; i < VERIFY_IP_LIMIT + 1; i += 1) {
+      statuses.push((await verifyPOST(bareRequest(ip))).status);
+    }
+
+    expect(statuses.filter((s) => s === 429)).toHaveLength(1);
+    expect(statuses[VERIFY_IP_LIMIT]).toBe(429);
+
+    const rejected = await verifyPOST(bareRequest(ip));
+    expect(rejected.status).toBe(429);
+    const body = (await rejected.json()) as VerifyErrorResponse;
+    expect(body.error.kind).toBe("RATE_LIMITED");
+    expect(body.error.message).not.toBe("");
+  });
+
+  it("enforces the REAL daily budget through POST — fails if defaultDeps loses checkBudget", async () => {
+    // The default `checkBudget` reads "today" from its own `new Date()`,
+    // so this test moves the clock to the same private, far-future date
+    // the spend-recording block above uses. That keeps the row this test
+    // writes out of the way of daily-budget.test.ts, which reads and
+    // writes the real today's row in a concurrent worker.
+    const ISOLATED_DAY = "2099-06-01";
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date(`${ISOLATED_DAY}T12:00:00Z`));
+    try {
+      await db.delete(dailySpend).where(eq(dailySpend.spendDate, ISOLATED_DAY));
+      // Far above any DAILY_BUDGET_USD this deployment would configure,
+      // and the largest value `numeric(12, 6)` accepts — the column must
+      // round to an absolute value below 10^6 (schema.ts).
+      await db.insert(dailySpend).values({ spendDate: ISOLATED_DAY, totalUsd: 999_999 });
+
+      const response = await verifyPOST(bareRequest("203.0.113.11"));
+
+      expect(response.status).toBe(503);
+      const body = (await response.json()) as VerifyErrorResponse;
+      expect(body.error.kind).toBe("BUDGET_EXHAUSTED");
+      expect(body.error.message).toBe(BUDGET_EXHAUSTED_MESSAGE);
+    } finally {
+      await db.delete(dailySpend).where(eq(dailySpend.spendDate, ISOLATED_DAY));
+      vi.useRealTimers();
+    }
+  });
+});
+
+/**
+ * The same wiring question for `POST /api/batch/start` (TRO-482, merge
+ * review round 1). That route builds its guard options inline in its own
+ * `POST`, so this is the only test that reads that object.
+ */
+describe("POST /api/batch/start — the default (production) wiring is really bound", () => {
+  it("enforces the REAL per-IP rate limit through POST — fails if POST loses checkRateLimit", async () => {
+    const ip = "203.0.113.20";
+    const bare = () =>
+      new Request("http://localhost/api/batch/start", { method: "POST", headers: { "x-forwarded-for": ip } });
+    const statuses: number[] = [];
+    for (let i = 0; i < BATCH_START_IP_LIMIT + 1; i += 1) {
+      statuses.push((await batchStartPOST(bare())).status);
+    }
+
+    expect(statuses.filter((s) => s === 429)).toHaveLength(1);
+    expect(statuses[BATCH_START_IP_LIMIT]).toBe(429);
+
+    const rejected = await batchStartPOST(bare());
+    expect(rejected.status).toBe(429);
+    const body = (await rejected.json()) as BatchStartErrorResponse;
+    expect(body.error.kind).toBe("RATE_LIMITED");
+    expect(body.error.message).not.toBe("");
   });
 });

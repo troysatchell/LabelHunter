@@ -29,7 +29,10 @@ const meta: RuleMeta = {
   severity: "fail",
   repairability: "assisted",
   registries: [],
-  activatedAt: null,
+  // The commit that lands run.ts and the G11 wiring (TRO-508) — the first
+  // commit at which the gate can actually reach this rule. A branch cut
+  // before this SHA runs report-only; see decidePin in activation.ts.
+  activatedAt: "a9f0c0eee8f912228382024619e58813d76eb93d",
   pinExpiresAfterMainCommits: 25,
   // Two rows were checked and dropped: TRO-474 (resolver-snapshot.ts) and
   // TRO-511 (claim.ts) both guard an empty array with a plain .length

@@ -207,6 +207,10 @@ describe("parsePositiveIntEnv", () => {
   it("accepts a valid positive integer", () => {
     expect(parsePositiveIntEnv("10", 42)).toBe(10);
   });
+
+  it("falls back on a positive fraction below one — flooring it would return 0", () => {
+    expect(parsePositiveIntEnv("0.5", 42)).toBe(42);
+  });
 });
 
 describe("runCapture", () => {
@@ -288,5 +292,21 @@ describe("runCapture", () => {
     const negative = runCapture({ base: "main", currentSha: "sha1", previous: null, runner, maxAttempts: -3 });
     expect(runner).toHaveBeenCalledTimes(1);
     expect(negative.attempts).toHaveLength(1);
+  });
+
+  it("falls back to the default attempt count on NaN — Math.max(1, NaN) is NaN, which would loop zero times", () => {
+    const runner = vi.fn().mockReturnValue(okResult);
+    const result = runCapture({ base: "main", currentSha: "sha1", previous: null, runner, maxAttempts: NaN });
+    expect(runner).toHaveBeenCalledTimes(1);
+    expect(result.attempts.length).toBeGreaterThan(0);
+  });
+
+  it("falls back to the default attempt count on Infinity — never an unbounded retry loop", () => {
+    const runner = vi.fn().mockReturnValue(rateLimitResult);
+    const result = runCapture({
+      base: "main", currentSha: "sha1", previous: null, runner, sleep: vi.fn(),
+      maxAttempts: Infinity, backoffFn: () => 0,
+    });
+    expect(result.attempts.length).toBeLessThanOrEqual(3);
   });
 });

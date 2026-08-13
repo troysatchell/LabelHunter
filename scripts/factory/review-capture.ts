@@ -236,8 +236,15 @@ export function runCapture(opts: RunCaptureOptions): CaptureRunResult {
   // Clamped here, not just at the CLI boundary that parses CR_MAX_ATTEMPTS —
   // a direct caller passing 0 or a negative number must still get one real
   // attempt, never a silent no-op loop that reports "warn" without ever
-  // invoking the runner.
-  const maxAttempts = Math.max(1, Math.floor(opts.maxAttempts ?? 3));
+  // invoking the runner. NaN and Infinity need their own branch: Math.max(1,
+  // NaN) is NaN (the loop condition `attempt <= NaN` is always false — the
+  // same zero-attempt bug this clamp exists to prevent), and Math.max(1,
+  // Infinity) is Infinity — an unbounded retry loop, which the ticket puts
+  // explicitly out of scope. Both fall back to the ordinary default instead.
+  const requestedAttempts = opts.maxAttempts ?? 3;
+  const maxAttempts = Number.isFinite(requestedAttempts)
+    ? Math.max(1, Math.floor(requestedAttempts))
+    : 3;
   const backoffFn = opts.backoffFn ?? backoffMs;
   const timeoutMs = opts.timeoutMs ?? 360_000;
   const sleep = opts.sleep ?? defaultSleep;
@@ -309,7 +316,11 @@ function gitHead(cwd: string): string {
 export function parsePositiveIntEnv(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw.trim() === "") return fallback;
   const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+  const floored = Math.floor(n);
+  // Checking `n > 0` alone let a positive fraction below 1 (e.g. "0.5")
+  // through, then floor it straight to 0 — exactly the value this function
+  // exists to refuse. Check the FLOORED value, the one actually returned.
+  return Number.isFinite(n) && floored > 0 ? floored : fallback;
 }
 
 function main(): void {

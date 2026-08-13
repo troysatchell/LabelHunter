@@ -281,6 +281,14 @@ else
       try { const d = JSON.parse(process.argv[1]); process.stdout.write(d.note || ""); } catch {}
     ' "${EXC_OUT:-}" 2>/dev/null)"
     record regression-test pass-with-exception "${EXC_NOTE:-pass-with-exception (note unavailable — see .factory/gate-exceptions.err)}"
+  elif [ "$EXC_STATE" = "error" ]; then
+    # A malformed factory/gate-exceptions.json must never read as "no
+    # exception exists" without saying why — that hides the real problem
+    # behind the generic no-test-added message.
+    EXC_ERR="$(node -e '
+      try { const d = JSON.parse(process.argv[1]); process.stdout.write(d.error || ""); } catch {}
+    ' "${EXC_OUT:-}" 2>/dev/null)"
+    record regression-test fail "no new test case added, AND factory/gate-exceptions.json could not be read: ${EXC_ERR:-see .factory/gate-exceptions.err}"
   else
     record regression-test fail "no new test case added — every ticket ships a red-first regression test"
   fi

@@ -202,6 +202,35 @@ All 12 are in `factory/review-findings.jsonl`, tagged TRO-553 or TRO-560 by subj
 `resource-timeout`) was already past the 3-ticket gate-check threshold before this PR —
 TRO-508's existing backlog, not a new crossing this PR needs to escalate.
 
+### Review round 2 — 5 findings, 3 fixed, 2 dismissed per lessons rule 31
+
+A second completed review capture, against the round 1 commit, found 5 more. Two real bugs
+in round 1's own fixes, one real gap in `gate.sh`, and two prose nitpicks on already-edited
+CHANGES.md text.
+
+**Fixed:**
+- `parsePositiveIntEnv` checked `n > 0` before flooring. A positive fraction below 1 (for
+  example `CR_TIMEOUT_MS=0.5`) passed that check, then floored to `0` — the exact value the
+  function exists to refuse. Now checks the FLOORED value's sign. Added a `"0.5"` test.
+- `runCapture`'s `Math.max(1, Math.floor(opts.maxAttempts))` clamp does not handle `NaN` or
+  `Infinity` from a direct caller: `Math.max` with `NaN` is always `NaN` (the retry loop then
+  runs zero times — the exact bug this clamp exists to prevent), and `Infinity` produces an
+  unbounded retry loop, out of scope for this ticket. Added a `Number.isFinite` guard that
+  falls back to the default attempt count on either. Added `NaN` and `Infinity` tests.
+- `gate.sh`'s G6 had no branch for `gate-exceptions.ts`'s own `"error"` state (a malformed
+  `factory/gate-exceptions.json`). It silently fell through to the generic no-test-added
+  message instead of naming the real parse error. Added an `elif` branch; verified by hand
+  against a deliberately malformed file.
+
+**Dismissed, per lessons rule 31:** two more 25-word sentence-length findings against
+CHANGES.md prose already edited in round 1. Neither changes shipped behavior or a factual
+claim — the recurring nitpick-on-prose pattern rule 31 names by name (TRO-544: 13 rounds, real
+substance ending at round 12). Stopping the review loop here rather than fix-iterating prose a
+third time; the two real code findings in this same round were fixed above, so this is not a
+blanket "ignore round 2" — only the two prose items are deferred.
+
+Tests after round 2: 47/47 (44 from round 1, plus the 3 new cases above).
+
 ### Not this ticket's job
 
 - The GitHub-App-level "pass — Review rate limited" surface (TRO-508's comment, PR #53) is a
@@ -213,12 +242,22 @@ TRO-508's existing backlog, not a new crossing this PR needs to escalate.
 ### Gate evidence
 
 Full `gate.sh` run at the end of this PR (this PR's own modified gate, per the note above):
-verdict quoted in the PR body. One full run's review step completed for real (not
-rate-limited) and produced the 12 findings triaged above — the review round 1 section is
-itself additional evidence this PR's own G10 fix works, on a live, non-simulated capture. A
-second full run hit the CLI's own 360s timeout on G10; `--fast` inner-loop runs were used
-throughout development. `build` and `review` are `skip` under `--fast` by design, not
-evidence of anything.
+verdict quoted in the PR body. Three full runs happened during development, in order:
+
+1. First full run hit the CLI's own 360s timeout on G10 (a real, non-simulated demonstration
+   of the partial-capture case round 1's test now covers).
+2. Second full run's review step completed for real and produced the 12 findings in review
+   round 1 above — itself additional evidence this PR's own G10 fix works on a live capture.
+3. Third full run's review step completed again and produced the 5 findings in review round 2
+   above.
+
+The FINAL full run before this PR opens uses `--skip-review`, per lessons rule 31: round 2's
+only remaining findings were prose nitpicks on already-edited text, and re-running review a
+third time would only continue that loop, not add evidence. `typecheck`/`lint`/`build`/
+`tests`/`regression-test`/`changes-entry`/`eval-not-regressed`/`scope`/`defect-gate` all still
+run in that final call — only the live review capture is skipped. `--fast` inner-loop runs
+were used throughout development; `build` and `review` are `skip` under `--fast` by design,
+not evidence of anything.
 
 ## TRO-516 — C5 execution: merge case-24 into case-23 (2026-08-13)
 

@@ -9,9 +9,9 @@ and its trade-offs and limitations. `README.md` covers setup and run instruction
 
 A TTB compliance agent checks an alcohol label against its application: does the brand name
 match, is the alcohol content correct, is the government warning present and worded correctly?
-Sarah Chen's team does this by hand today, one label at a time. The brief asks for a prototype
-that does the same check in seconds, singly or in batches of hundreds, with a human agent still
-making the final call on anything uncertain.
+Sarah Chen's team checks labels by hand today, one at a time. The brief asks for a prototype
+that runs the same check in seconds. It must work singly or in batches of hundreds. A human
+agent still makes the final call on anything uncertain.
 
 ### The cascade
 
@@ -39,12 +39,16 @@ resolve on Haiku alone. This is the architecture, not a cost optimization layere
 simpler design. Sonnet never runs on the per-label happy path. The router never routes on a
 bare confidence number without a named reason attached.
 
-**Why a cascade instead of one model for everything.** A committed benchmark compared the
-cascade against a Sonnet-only pipeline on the same golden set. Sonnet-only calls the expensive
-model on every field of every label, so the cascade wins on cost by a wide margin. It also
-keeps verdict correctness at or above the single-model arm. The full numbers are in
-`scripts/eval/results/benchmark-report.json`. This defends the choice with a measurement, not
-an assumption.
+**Why a cascade instead of one model for everything.** A committed benchmark
+(`scripts/eval/results/benchmark-report.json`, a single run over the 32-case golden set as it
+stood on 2026-08-12) compared the cascade against a Sonnet-only pipeline that resolves every
+field of every label with the expensive model, no router involved. The cascade won on both
+axes measured that day: label-verdict accuracy 71.9% (23 of 32) against the Sonnet-only arm's
+37.5% (12 of 32), at a lower total cost ($0.28 against $0.47 for the same 32 cases). This
+defends the choice with a measurement, not an assumption. It is a separate, earlier measurement
+from the K=3, 36-case accuracy band in "Measured results" below — that band scores the cascade
+alone, on the current larger golden set, and is not a like-for-like comparison against a
+Sonnet-only arm.
 
 ### The government warning gets a stricter check
 
@@ -62,9 +66,19 @@ compliance review. "The model thought it looked right" is not.
 Jenny also asked for tolerance of labels photographed at odd angles, in bad light, or with
 glare. LabelHunter's router treats a genuinely unreadable image as its own outcome instead of
 guessing at a field it cannot see. That outcome is `LOW_IMAGE_QUALITY`, with a named trigger:
-blur, glare, rotation, or low resolution. The golden set carries synthetic degradations
-(rotation, glare, low light) and five real bottle photographs. Every one of them returns either
-a correct extraction or an explicit review flag. None returns a confident wrong verdict.
+blur, glare, rotation, or low resolution.
+
+**The measured result is real but mixed, not perfect — stated honestly here, not softened.**
+The golden set's five real bottle photographs (case-35 through case-39) are the strongest
+result: every one returns an explicit review flag, even though field extraction on these hard,
+real-world images is only 36% correct (9 of 25 fields). Low confidence correctly triggers a
+human review exactly when it should. The six synthetic degraded cases (glare, low light,
+rotation — case-17 through case-22) tell a different story: field extraction is stronger there
+(23 of 30 fields correct), but four of those six cases return a confident `PASS` when the
+degradation should have triggered `REVIEW` — the router read the image well enough to answer
+fast, not well enough to know it should not have. This is the same pattern behind this
+prototype's weakest measured number; see "Measured results" and
+`audit/requirements/gaps.md`'s TH-R17 entry for the full case-by-case account.
 
 ### Batch mode
 
@@ -92,19 +106,19 @@ Three ambiguities came up while building this and were settled by asking, not gu
 detail in `audit/requirements/interpretations.md`.
 
 1. **Does a comparator-level test prove the government warning's FAIL path, or does it need to
-   run on a real photograph?** Ruled: a real photograph. At least one FAIL case (title-case
-   prefix, or a reworded warning) must run through the real image pipeline — OCR and region
-   detection included — not just against a hand-built string.
+   run on a real photograph?** Troy ruled it needs a real photograph. At least one FAIL case —
+   a title-case prefix, or a reworded warning — must run through the real image pipeline, OCR
+   and region detection included. A hand-built string is not enough on its own.
 2. **Does a committed, dated live-run artifact count as behavioral proof, or does every claim
-   need a fresh run?** Ruled: a committed artifact counts, but only while it still describes the
-   code that ships. An artifact measured before a change to the path it measures is stale, and a
-   stale artifact does not support a "verified" claim, no matter how small the real effect
+   need a fresh run?** Troy ruled a committed artifact counts, but only while it still describes
+   the code that ships. An artifact measured before a change to the path it measures is stale.
+   A stale artifact never supports a "verified" claim, no matter how small the real effect
    probably is.
-3. **Does a trade-offs write-up in an internal working document (this repo's `docs/deploy.md` or
-   `docs/error-states.md`) satisfy the brief's call for documented trade-offs, or does it need to
-   be in a document an evaluator will actually open?** Ruled: it has to be here, in a graded
-   deliverable. An evaluator opens this file and the README. Nobody opens the internal working
-   docs first.
+3. **Does a trade-offs write-up in an internal working document — this repo's `docs/deploy.md`
+   or `docs/error-states.md` — satisfy the brief's call for documented trade-offs? Or does it
+   need to be in a document an evaluator will actually open?** Troy ruled it has to be here, in
+   a graded deliverable. An evaluator opens this file and the README. Nobody opens the internal
+   working docs first.
 
 One further assumption, not asked because it needs no ruling: this prototype does not integrate
 with COLA. The brief is explicit that this is out of scope — "a standalone proof-of-concept,"
@@ -131,10 +145,10 @@ rather than silently dropping the check or reporting false confidence.
 **Runtime access control is merged, not yet confirmed live.** The brief's own guidance ("just
 don't do anything crazy... not storing anything sensitive") sets a light bar for a prototype.
 The data model meets that bar: no PII, no reviewer identity, no secrets in the repo. A separate
-concern is runtime cost — the deployed URL calls a real, billed Anthropic API key. A shared
-access-code gate, per-IP and global rate limits, and a persisted daily spend budget merged into
-`main` ([PR #43](https://github.com/troysatchell/LabelHunter/pull/43)). Its own review already
-found two follow-up gaps, before merge:
+concern is runtime cost — the deployed URL calls a real, billed Anthropic API key.
+[PR #43](https://github.com/troysatchell/LabelHunter/pull/43) merged into `main` to address
+this. It adds three things: a shared access-code gate, per-IP and global rate limits, and a
+persisted daily spend budget. Its own review already found two follow-up gaps, before merge:
 
 1. The batch workers check the spend budget only when a batch starts, not again while it runs.
    A long-running batch is not budget-capped mid-run.
@@ -212,5 +226,12 @@ Every requirement in this brief is either built, or intentionally out of scope w
 None is silently dropped. `audit/requirements/inventory.md` traces all 23 requirements
 extracted from the brief. `audit/requirements/REPORT.md` is the current sweep against that
 inventory. The one deliberate exception is COLA integration, covered in "Assumptions log"
-above. Every other gap open at submission time is a measurement or a documentation task, not a
-missing feature. See `audit/requirements/gaps.md` for the current list.
+above.
+
+Most other open gaps at submission time are measurement or documentation tasks: no batch has
+run at the brief's own 200–300 scale yet, and the deployed instance's latency needs a fresh
+measurement. One gap is a real, unresolved correctness problem, not a documentation task:
+cascade-verdict accuracy, covered above under "Imperfect images" and "Measured results." Six
+degraded-image cases still return a confident wrong verdict. This is not being described as
+smaller than it is. See `audit/requirements/gaps.md` for the current, complete list, with the
+concrete next step named for each row.

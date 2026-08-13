@@ -9,10 +9,11 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 **What changed.** This ticket adds `docs/approach.md`. It closes TH-R15, a graded deliverable
 that was MISSING across three sweeps. It also closes TH-R7's and TH-R19's written halves, and
 half of TH-R21 and TH-R23. Each of those traces to real content that lived only in internal
-working documents until now. Content is assembled from `docs/PRD.md`, `docs/error-states.md`,
-`docs/deploy.md`, `audit/requirements/interpretations.md`, `scripts/eval/baseline.json`, and
-`scripts/eval/results/benchmark-report.json` — per `audit/requirements/gaps.md`'s TH-R15
-suggested scope (TRO-486).
+working documents until now. This ticket assembles the content from six existing sources:
+`docs/PRD.md`, `docs/error-states.md`, `docs/deploy.md`,
+`audit/requirements/interpretations.md`, `scripts/eval/baseline.json`, and
+`scripts/eval/results/benchmark-report.json`. `audit/requirements/gaps.md`'s TH-R15 suggested
+scope (TRO-486) names these same six sources.
 
 **The accuracy figures are a band, not a point value.** Extraction 87.2%-87.8%, cascade-verdict
 80.6%-83.3% (K=3, N=36, `scripts/eval/baseline.json`, TRO-561). TRO-561 exists specifically

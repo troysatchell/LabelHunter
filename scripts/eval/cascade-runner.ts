@@ -283,7 +283,12 @@ export function mergeResolutionIntoActualVerdict(
 
   const labelVerdict = rollupLabelVerdict(false, fields.map((f) => f.verdict));
   const warningChannel = resolvedByField.has("government_warning") ? null : routerWarningChannel;
-  return { labelVerdict, headlineReason: pickHeadlineReason(reasons), fields, warningChannel };
+  // TRO-542: `lowImageQualityTrigger: null`, always — this function's own
+  // `labelLevelBlocker: false` choice above (see the OPEN DESIGN QUESTION
+  // doc comment) already means the router's LOW_IMAGE_QUALITY blocker does
+  // not survive into the cascade end state; the trigger that named WHICH
+  // rule produced that blocker cannot survive it either.
+  return { labelVerdict, headlineReason: pickHeadlineReason(reasons), fields, warningChannel, lowImageQualityTrigger: null };
 }
 
 /**
@@ -430,6 +435,21 @@ export async function runOneCase(
           "routeLabel is pure and deterministic; this means the harness captured different inputs than route.ts actually used — a harness bug, not a case result.",
       );
     }
+    // TRO-542 (CodeRabbit finding): the same consistency check, on
+    // `headlineReason` — `actualVerdict` below reports `body.headlineReason`
+    // (the trusted, real HTTP response) but `lowImageQualityTrigger` from
+    // `routerResult` (the re-derived value, the only place a trigger exists
+    // at all). `labelVerdict` agreeing does not, by itself, prove
+    // `headlineReason` agrees too — two different reasons can both roll up
+    // to REVIEW. Catch that gap here, before it can pair a body-sourced
+    // headline with a routerResult-sourced trigger that names a different
+    // run's decision.
+    if (routerResult.headlineReason !== body.headlineReason) {
+      throw new Error(
+        `cascade-runner.ts: case "${caseSpec.caseId}" — re-derived router headlineReason "${routerResult.headlineReason}" disagrees with the response body's "${body.headlineReason}". ` +
+          "routeLabel is pure and deterministic; this means the harness captured different inputs than route.ts actually used — a harness bug, not a case result.",
+      );
+    }
 
     const extractionScore = scoreExtraction(caseSpec, capturedExtraction);
     const actualVerdict: ActualVerdict = {
@@ -443,6 +463,11 @@ export async function runOneCase(
       // response) is built, `routeLabel` has already turned it into a
       // `FieldResultRow` that carries no channel of its own.
       warningChannel: extractWarningChannel(capturedWarningResult),
+      // TRO-542: `body` (the HTTP response) carries no trigger field of its
+      // own — read it straight off `routerResult`, the re-derived
+      // `LabelRouterResult` this function already verified agrees with both
+      // `body.labelVerdict` and `body.headlineReason` above.
+      lowImageQualityTrigger: routerResult.lowImageQualityTrigger,
     };
     const routerVerdictScore = scoreVerdict(caseSpec, actualVerdict, capturedExtraction);
     const haikuCost = buildMeasuredCost(HAIKU_EXTRACTOR_MODEL, haikuUsage, HAIKU_4_5_PRICING);

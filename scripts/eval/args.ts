@@ -45,23 +45,30 @@ import type { ReviewReason } from "../../src/server/router/types";
  * routes on image quality, never model confidence.
  *
  * TRO-541 / LH-036 replaced the swap claim that used to follow this
- * paragraph with a measured result. The committed `eval-report.json`
- * (`measuredAt: "2026-08-13T01:47:56.655Z"`, 32 cases, from `pnpm
- * eval:check -- --live --full`) shows this eight-case sample producing
- * exactly one distinct `reviewReason`: `MISSING_REQUIRED_FIELD`, on
- * case-12. `DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS` below records that
- * result for every sample case. It uses the router stage — the same
- * stage `EvalReportSummary.reviewReasonAccuracy` scores (`types.ts`'s own
+ * paragraph with a measured result. TRO-542's own authorized `--live
+ * --full` run (`measuredAt: "2026-08-13T13:39:02.626Z"`, 31 cases —
+ * TRO-516 C5 merged case-24 into case-23 between the two runs) refreshed
+ * `eval-report.json`, and this sample's own numbers moved with it:
+ * case-17 landed on `AMBIGUOUS_BRAND` this run, not the earlier run's
+ * `null` (PASS). This is exactly the run-to-run variance case-17 is
+ * already known for (`DEFAULT_REPEATS`'s own comment below; CP-1
+ * `temperature: 0` is not a promise of identical output). The other
+ * seven sample cases were unchanged. `DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS`
+ * below records the current committed report's result for every sample
+ * case. It uses the router stage — the same stage
+ * `EvalReportSummary.reviewReasonAccuracy` scores (`types.ts`'s own
  * comment on that field). `args.test.ts` checks the constant against the
- * same committed report on every test run.
+ * same committed report on every test run, so a drift like this one
+ * fails loudly instead of going unnoticed.
  *
- * In that same run, no case produced `LOW_MODEL_CONFIDENCE` or
- * `AMBIGUOUS_NET_CONTENTS` — two of the eight `ReviewReason` members.
- * This is a property of that one run, not a claim about what the
- * pipeline can or cannot produce elsewhere. Live-model output varies run
- * to run; `DEFAULT_REPEATS`'s own comment below already records that
- * variance for case-17's REVIEW/PASS split. TRO-541 records this gap. It
- * is not a fix for the gap.
+ * In this run, `MISSING_REQUIRED_FIELD` (case-12) and `AMBIGUOUS_BRAND`
+ * (case-17) are the only two `reviewReason` values this eight-case
+ * sample produced — two of the eight `ReviewReason` members. This is a
+ * property of this one run, not a claim about what the pipeline can or
+ * cannot produce elsewhere. Live-model output varies run to run;
+ * `DEFAULT_REPEATS`'s own comment below already records that variance
+ * for case-17's REVIEW/PASS split. TRO-541 records this gap. It is not a
+ * fix for the gap.
  *
  * Not a statistically representative sample — eight cases cannot be. It
  * is a cheap, fast smoke set covering both REVIEW-escalation and
@@ -84,19 +91,23 @@ export const DEFAULT_SAMPLE_CASE_IDS: readonly string[] = [
 /**
  * This map records which `ReviewReason` each `DEFAULT_SAMPLE_CASE_IDS`
  * case actually produced, in the committed `eval-report.json` run this
- * repo carries now (`measuredAt: "2026-08-13T01:47:56.655Z"`, 32 cases,
- * from `pnpm eval:check -- --live --full`). It uses the router stage —
- * `VerdictCaseScore.actualReviewReason` on `routerVerdict`, the same
- * stage `EvalReportSummary.reviewReasonAccuracy` scores (`types.ts`'s own
- * comment on that field). `null` means the router verdict was PASS or
- * FAIL, with no `reviewReason`.
+ * repo carries now (`measuredAt: "2026-08-13T13:39:02.626Z"`, 31 cases,
+ * from TRO-542's own authorized `pnpm eval:check -- --live --full`). It
+ * uses the router stage — `VerdictCaseScore.actualReviewReason` on
+ * `routerVerdict`, the same stage `EvalReportSummary.reviewReasonAccuracy`
+ * scores (`types.ts`'s own comment on that field). `null` means the
+ * router verdict was PASS or FAIL, with no `reviewReason`.
  *
- * This is a snapshot of one measured run (TRO-541 / LH-036). It is not a
- * claim about what the pipeline can or cannot produce on a different
- * run — `DEFAULT_REPEATS`'s own comment below already records real
- * run-to-run variance for case-17. `args.test.ts` checks this map
- * against the same committed report on every test run, so a stale value
- * here fails loudly instead of drifting silently from measured reality.
+ * This is a snapshot of one measured run (TRO-541 / LH-036, refreshed by
+ * TRO-542). It is not a claim about what the pipeline can or cannot
+ * produce on a different run — `DEFAULT_REPEATS`'s own comment below
+ * already records real run-to-run variance for case-17, and this exact
+ * map is the second time that variance changed a committed value here:
+ * `case-17-glare-front-label` moved from `null` (PASS) to
+ * `"AMBIGUOUS_BRAND"` between the two runs, with no code change to
+ * case-17's own path. `args.test.ts` checks this map against the same
+ * committed report on every test run, so a stale value here fails loudly
+ * instead of drifting silently from measured reality.
  */
 export const DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS: Readonly<Record<string, ReviewReason | null>> = {
   "case-01-clean-match-spirits": null,
@@ -105,7 +116,7 @@ export const DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS: Readonly<Record<string, Revie
   "case-08-title-case-warning-prefix-only": null,
   "case-12-missing-warning-spirits": "MISSING_REQUIRED_FIELD",
   "case-14-case-variant-brand-stones-throw": null,
-  "case-17-glare-front-label": null,
+  "case-17-glare-front-label": "AMBIGUOUS_BRAND",
   "case-25-odd-typography-script-brand": null,
 };
 

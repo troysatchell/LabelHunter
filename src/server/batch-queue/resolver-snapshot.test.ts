@@ -46,7 +46,13 @@ describe("deriveFlaggedFields", () => {
         reviewReason: null, // LOW_IMAGE_QUALITY already explains the whole label — field-level reason stays null
       },
     ];
-    const router: LabelRouterResult = { labelVerdict: "REVIEW", headlineReason: "LOW_IMAGE_QUALITY", fields: rows };
+    const router: LabelRouterResult = {
+      labelVerdict: "REVIEW",
+      headlineReason: "LOW_IMAGE_QUALITY",
+      fields: rows,
+      lowImageQualityTrigger: "FIELDS_ABSENT",
+      imageQualityIssues: ["none"],
+    };
     const flagged = deriveFlaggedFields(router);
     expect(flagged).toEqual([{ field: "brand_name", reviewReason: "LOW_IMAGE_QUALITY", trigger: rows[0].reason }]);
   });
@@ -69,7 +75,13 @@ describe("deriveFlaggedFields", () => {
         reviewReason: null,
       }),
     );
-    const router: LabelRouterResult = { labelVerdict: "REVIEW", headlineReason: "CONFLICTING_EXTRACTION", fields: rows };
+    const router: LabelRouterResult = {
+      labelVerdict: "REVIEW",
+      headlineReason: "CONFLICTING_EXTRACTION",
+      fields: rows,
+      lowImageQualityTrigger: null,
+      imageQualityIssues: ["none"],
+    };
     const flagged = deriveFlaggedFields(router);
     expect(flagged).toHaveLength(5);
     expect(flagged.every((f) => f.reviewReason === "CONFLICTING_EXTRACTION")).toBe(true);
@@ -80,7 +92,13 @@ describe("deriveFlaggedFields", () => {
     const rows: FieldResultRow[] = [
       { field: "brand_name", verdict: "MATCH", labelValue: "x", applicationValue: "x", evidence: "X", confidence: 0.95, reason: "Matches.", resolvedBy: null, reviewReason: null },
     ];
-    const router: LabelRouterResult = { labelVerdict: "PASS", headlineReason: null, fields: rows };
+    const router: LabelRouterResult = {
+      labelVerdict: "PASS",
+      headlineReason: null,
+      fields: rows,
+      lowImageQualityTrigger: null,
+      imageQualityIssues: ["none"],
+    };
     expect(deriveFlaggedFields(router)).toEqual([]);
   });
 });

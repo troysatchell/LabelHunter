@@ -33,6 +33,7 @@ function caseWithWarningOutcome(
     actualReviewReason: null,
     reviewReasonCorrect: true,
     warningChannel,
+    lowImageQualityTrigger: null,
     fields: [
       otherField,
       {

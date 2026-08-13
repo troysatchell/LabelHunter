@@ -15,7 +15,7 @@
  * `FieldComparator` below is the interface LH-013 implements against.
  */
 import type { BeverageType, ReviewReason } from "../../lib/db/enums";
-import type { ExtractedField } from "../extractor/types";
+import type { ExtractedField, ImageQualityIssue } from "../extractor/types";
 
 export type { BeverageType, ReviewReason };
 
@@ -42,6 +42,18 @@ export type RouterFieldKey =
 /** The four fields a `FieldComparator` judges. `government_warning` is not
  * one of them — it is compared by its own subsystem (LH-020, CP-2). */
 export type ComparatorFieldKey = Exclude<RouterFieldKey, "government_warning">;
+
+/**
+ * The four rules `isLowImageQuality` (`label-blockers.ts`) can fire on
+ * (CP-1 §5.3, TRO-542). Two are deterministic on their own
+ * (`PREPROCESSING`, `FIELDS_ABSENT`); two pair a self-report with another
+ * self-report (`ILLEGIBLE`, `FIELD_CONFIDENCE`) — CP-1 §4.1 calls that
+ * pairing out by name as the one still-open promise this ticket measures,
+ * not one it closes. Naming the trigger, instead of returning a bare
+ * boolean, is what lets a run state WHICH rule decided, not only that the
+ * label-level blocker fired.
+ */
+export type LowImageQualityTrigger = "ILLEGIBLE" | "FIELD_CONFIDENCE" | "PREPROCESSING" | "FIELDS_ABSENT";
 
 /**
  * The application record the router compares a label reading against.
@@ -194,4 +206,23 @@ export interface LabelRouterResult {
    * `null` for a clean PASS. */
   headlineReason: ReviewReason | null;
   fields: FieldResultRow[];
+  /**
+   * TRO-542: which CP-1 §5.3 rule made `isLowImageQuality` fire, or `null`
+   * when it did not fire. `LOW_IMAGE_QUALITY` outranks every other
+   * `ReviewReason` (`precedence.ts`'s rank 0), so this is non-null exactly
+   * when `headlineReason` is `LOW_IMAGE_QUALITY`. No artifact recorded
+   * this before this ticket — `scripts/eval/results/eval-report.json` had
+   * no `confidence`/trigger field at all.
+   */
+  lowImageQualityTrigger: LowImageQualityTrigger | null;
+  /**
+   * TRO-542: Haiku's own self-reported `image_quality.issues`
+   * (`../extractor/types.ts`'s `ExtractedImageQuality`), carried through
+   * verbatim. Evidence only — no branch in `label-blockers.ts` or
+   * `index.ts` tests `.issues`, so CP-1 §4.1 still holds: a self-report
+   * never decides anything alone. Reading it here answers this ticket's
+   * step 4 ("the router reads it, or the schema drops it") without
+   * claiming the read closes CP-1's pairing gap — it does not.
+   */
+  imageQualityIssues: readonly ImageQualityIssue[];
 }

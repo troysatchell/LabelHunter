@@ -110,6 +110,23 @@ else
   exit 2
 fi
 
+# TRO-553: factory/gate-exceptions.json is likewise materialized from
+# BASE_REF, never read from the ticket branch. This is the mechanical half
+# of "agents must not be able to self-approve" — the doc comment inside the
+# file states the rule, but only reading from BASE_REF actually ENFORCES
+# it: a ticket branch that adds its own "approved" entry to its own working
+# copy has zero effect on its own G6 check, the same guarantee the
+# quarantine baseline gives against self-whitelisting. UNLIKE quarantine,
+# there is deliberately no working-tree fallback here — an absent baseline
+# reads as zero exceptions (the safe default), never as "trust the branch's
+# own copy". A brand-new exception takes effect once the commit that adds
+# it has landed on BASE_REF, which means it went through ITS OWN prior
+# review, not this ticket's.
+GATE_EXCEPTIONS="${OUT_DIR}/gate-exceptions-base.json"
+if ! git show "${BASE_REF}:factory/gate-exceptions.json" > "$GATE_EXCEPTIONS" 2>/dev/null; then
+  echo '{"version":1,"exceptions":[]}' > "$GATE_EXCEPTIONS"
+fi
+
 RESULTS=()          # "id|status|detail"
 OVERALL=pass
 
@@ -123,6 +140,43 @@ record() {           # record <id> <status> <detail>
   printf '  [%s] %-22s %s\n' "$icon" "$1" "$3"
   [ "$2" = fail ] && OVERALL=fail
   return 0
+}
+
+# TRO-553: the human-approved exception path. Shared by every gate that
+# offers one (G6, G8, and any future one) — a SECOND copy of this template
+# per call site is exactly the "two independent templates for one string"
+# drift finding #9 already caught once in this file; one shared function
+# instead. Consults factory/gate-exceptions.json, materialized from
+# BASE_REF above (never the ticket branch's own working copy — see that
+# block's comment for why). Records "pass-with-exception" and returns 0 if
+# an approved record matches; otherwise records <result_id> as "fail" with
+# <fallback_detail> (byte-identical to what that gate has always said) and
+# returns 1.
+check_gate_exception() {   # check_gate_exception <result_id> <gate_id> <fallback_detail>
+  local result_id="$1" gate_id="$2" fallback_detail="$3"
+  local exc_out exc_state exc_note exc_err
+  exc_out="$(pnpm exec tsx scripts/factory/gate-exceptions.ts check \
+      --ticket "${TICKET}" --gate "${gate_id}" --file "${GATE_EXCEPTIONS}" \
+      2>"$OUT_DIR/gate-exceptions-${gate_id}.err")"
+  exc_state="$(node -e '
+    try { const d = JSON.parse(process.argv[1]); process.stdout.write(d.state || ""); } catch {}
+  ' "${exc_out:-}" 2>/dev/null)"
+  if [ "$exc_state" = "approved" ]; then
+    exc_note="$(node -e '
+      try { const d = JSON.parse(process.argv[1]); process.stdout.write(d.note || ""); } catch {}
+    ' "${exc_out:-}" 2>/dev/null)"
+    record "$result_id" pass-with-exception "${exc_note:-pass-with-exception (note unavailable — see .factory/gate-exceptions-${gate_id}.err)}"
+    return 0
+  elif [ "$exc_state" = "error" ]; then
+    exc_err="$(node -e '
+      try { const d = JSON.parse(process.argv[1]); process.stdout.write(d.error || ""); } catch {}
+    ' "${exc_out:-}" 2>/dev/null)"
+    record "$result_id" fail "${fallback_detail}, AND factory/gate-exceptions.json could not be read: ${exc_err:-see .factory/gate-exceptions-${gate_id}.err}"
+    return 1
+  else
+    record "$result_id" fail "${fallback_detail}"
+    return 1
+  fi
 }
 
 echo "=== factory gate: ${TICKET} (base ${BASE_REF}) ==="
@@ -257,41 +311,19 @@ fi
 #
 # TRO-553: this premise — every ticket changes production code — is false for
 # a docs-only ticket and a test-repair ticket with no red-first case to write.
-# Absent an added case, consult factory/gate-exceptions.json before failing.
-# An ordinary production ticket has no matching record, so this reads "none"
-# and falls straight to the same fail this gate has always produced — that
-# path is unchanged, byte for byte (scripts/factory/gate-exceptions.test.ts
-# proves it). A record only ever helps a ticket; it can never turn a real
-# pass into a failure.
+# Absent an added case, consult factory/gate-exceptions.json (check_gate_exception,
+# defined above) before failing. An ordinary production ticket has no matching
+# record, so this falls straight to the same fail text G6 has always produced —
+# byte for byte unchanged (scripts/factory/gate-exceptions.test.ts proves the
+# resolver side; this is the one caller both G6 and G8 share). A record only
+# ever helps a ticket; it can never turn a real pass into a failure.
 ADDED_CASES=$(git diff "${BASE_REF}"...HEAD -- '*.test.ts' '*.test.tsx' 2>/dev/null \
               | grep -cE '^\+[[:space:]]*(it|test)(\.[a-z]+)?\(') || ADDED_CASES=0
 if [ "${ADDED_CASES:-0}" -gt 0 ]; then
   record regression-test pass "${ADDED_CASES} test case(s) added"
 else
-  EXC_OUT="$(pnpm exec tsx scripts/factory/gate-exceptions.ts check \
-      --ticket "${TICKET}" --gate regression-test 2>"$OUT_DIR/gate-exceptions.err")"
-  # gate-exceptions.ts computes the formatted note itself (formatApprovedNote)
-  # and puts it on the JSON payload — this reads it, rather than rebuilding
-  # the same template a second time in an inline script that could drift.
-  EXC_STATE="$(node -e '
-    try { const d = JSON.parse(process.argv[1]); process.stdout.write(d.state || ""); } catch {}
-  ' "${EXC_OUT:-}" 2>/dev/null)"
-  if [ "$EXC_STATE" = "approved" ]; then
-    EXC_NOTE="$(node -e '
-      try { const d = JSON.parse(process.argv[1]); process.stdout.write(d.note || ""); } catch {}
-    ' "${EXC_OUT:-}" 2>/dev/null)"
-    record regression-test pass-with-exception "${EXC_NOTE:-pass-with-exception (note unavailable — see .factory/gate-exceptions.err)}"
-  elif [ "$EXC_STATE" = "error" ]; then
-    # A malformed factory/gate-exceptions.json must never read as "no
-    # exception exists" without saying why — that hides the real problem
-    # behind the generic no-test-added message.
-    EXC_ERR="$(node -e '
-      try { const d = JSON.parse(process.argv[1]); process.stdout.write(d.error || ""); } catch {}
-    ' "${EXC_OUT:-}" 2>/dev/null)"
-    record regression-test fail "no new test case added, AND factory/gate-exceptions.json could not be read: ${EXC_ERR:-see .factory/gate-exceptions.err}"
-  else
-    record regression-test fail "no new test case added — every ticket ships a red-first regression test"
-  fi
+  check_gate_exception regression-test regression-test \
+      "no new test case added — every ticket ships a red-first regression test"
 fi
 
 # --- G7: CHANGES.md entry ---------------------------------------------------
@@ -317,11 +349,19 @@ fi
 # --- G8: eval harness not regressed (TH-R17/TH-R19) -------------------------
 # Real once ticket LH-EVAL lands a `pnpm eval:check` comparing accuracy against
 # the committed baseline. Until then: skip WITH the reason, never a vacuous pass.
+#
+# TRO-553: the same exception path G6 uses (check_gate_exception, defined
+# above) — this is the second call site, proving the mechanism is generic
+# over the gate id rather than hardcoded to G6. TRO-542 is the live instance
+# (factory/gate-exceptions.json): the committed accuracy baseline sits at
+# the top of TRO-543's measured variance band, so an honest run of unchanged
+# code can fail this comparison on variance alone.
 if node -e 'const p=require("./package.json"); process.exit(p.scripts && p.scripts["eval:check"] ? 0 : 1)' 2>/dev/null; then
   if pnpm eval:check > "$OUT_DIR/eval-check.log" 2>&1; then
     record eval-not-regressed pass "accuracy >= committed baseline"
   else
-    record eval-not-regressed fail "eval harness regressed — see .factory/eval-check.log"
+    check_gate_exception eval-not-regressed eval-not-regressed \
+        "eval harness regressed — see .factory/eval-check.log"
   fi
 else
   record eval-not-regressed skip "no eval:check script yet (lands with the eval-harness ticket)"

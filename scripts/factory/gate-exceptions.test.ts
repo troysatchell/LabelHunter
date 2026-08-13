@@ -12,8 +12,10 @@ import {
 // TRO-553: G6 (regression-test) fails every docs-only and test-only ticket,
 // because its premise — every ticket changes production code — is false for
 // those classes. This is the resolver gate.sh consults instead of failing
-// outright. See factory/gate-exceptions.json for the two real approved
-// records this test's fixtures mirror.
+// outright, from both G6 and G8 (gate.sh's shared check_gate_exception).
+// See factory/gate-exceptions.json for the three real approved records this
+// test's fixtures mirror — two for G6 (TRO-547, TRO-472), one for G8
+// (TRO-542), proving the resolver is generic over the gate id.
 
 const APPROVED_TICKET = "TRO-547";
 const APPROVED_TICKET_2 = "TRO-472";
@@ -163,6 +165,25 @@ describe("the real committed factory/gate-exceptions.json", () => {
   it("does not exempt a ticket the file never names — proves the mechanism cannot self-approve", () => {
     const doc = parseExceptionsFile(readFileSync(REAL_PATH, "utf8"));
     const outcome = resolveException("TRO-553", GATE_ID, doc);
+    expect(outcome.state).toBe("none");
+  });
+
+  // TRO-542: the third real approved instance, and the only one for a gate
+  // other than regression-test — proves the resolver (and gate.sh's shared
+  // check_gate_exception caller) is generic over the gate id, not G6-only.
+  it("approves TRO-542 for eval-not-regressed (G8) — a different gate than the other two entries", () => {
+    const doc = parseExceptionsFile(readFileSync(REAL_PATH, "utf8"));
+    const outcome = resolveException("TRO-542", "eval-not-regressed", doc);
+    expect(outcome.state).toBe("approved");
+    if (outcome.state === "approved") {
+      expect(outcome.exception.approver.length).toBeGreaterThan(0);
+      expect(outcome.exception.gate).toBe("eval-not-regressed");
+    }
+  });
+
+  it("does NOT approve TRO-542 for a gate it was not approved for", () => {
+    const doc = parseExceptionsFile(readFileSync(REAL_PATH, "utf8"));
+    const outcome = resolveException("TRO-542", "regression-test", doc);
     expect(outcome.state).toBe("none");
   });
 });

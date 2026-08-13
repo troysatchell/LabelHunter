@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   backoffMs,
   decideCapture,
+  isCaptureMeta,
   isRateLimitError,
+  MAX_REASONABLE_ATTEMPTS,
   parseCoderabbitOutput,
   parsePositiveIntEnv,
   runCapture,
@@ -308,5 +310,40 @@ describe("runCapture", () => {
       maxAttempts: Infinity, backoffFn: () => 0,
     });
     expect(result.attempts.length).toBeLessThanOrEqual(3);
+  });
+
+  it("caps a large but finite maxAttempts at MAX_REASONABLE_ATTEMPTS", () => {
+    const runner = vi.fn().mockReturnValue(rateLimitResult);
+    const result = runCapture({
+      base: "main", currentSha: "sha1", previous: null, runner, sleep: vi.fn(),
+      maxAttempts: 1000, backoffFn: () => 0,
+    });
+    expect(result.attempts.length).toBe(MAX_REASONABLE_ATTEMPTS);
+    expect(runner).toHaveBeenCalledTimes(MAX_REASONABLE_ATTEMPTS);
+  });
+});
+
+describe("isCaptureMeta", () => {
+  it("accepts a well-formed CaptureMeta", () => {
+    expect(isCaptureMeta({ sha: "abc1234", capturedAt: "2026-08-13T00:00:00Z", findings: 3 })).toBe(true);
+  });
+
+  it("rejects a missing sha", () => {
+    expect(isCaptureMeta({ capturedAt: "2026-08-13T00:00:00Z", findings: 3 })).toBe(false);
+  });
+
+  it("rejects an empty-string sha", () => {
+    expect(isCaptureMeta({ sha: "", capturedAt: "2026-08-13T00:00:00Z", findings: 3 })).toBe(false);
+  });
+
+  it("rejects a non-numeric findings field", () => {
+    expect(isCaptureMeta({ sha: "abc1234", capturedAt: "2026-08-13T00:00:00Z", findings: "3" })).toBe(false);
+  });
+
+  it("rejects null, arrays, and primitives", () => {
+    expect(isCaptureMeta(null)).toBe(false);
+    expect(isCaptureMeta([])).toBe(false);
+    expect(isCaptureMeta("abc1234")).toBe(false);
+    expect(isCaptureMeta(42)).toBe(false);
   });
 });

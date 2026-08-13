@@ -232,6 +232,15 @@ export interface RunCaptureOptions {
  * number of attempts. A non-rate-limit failure never retries — this is the
  * one error type the ticket puts in scope for backoff.
  */
+/**
+ * Hard ceiling on retry attempts, regardless of what a caller requests.
+ * `Number.isFinite` alone rejects `NaN`/`Infinity` but accepts any large
+ * finite number — a misconfigured `CR_MAX_ATTEMPTS` (e.g. "1000") is
+ * "bounded" only in the technical sense, not the operational one the
+ * ticket means by it. This is the actual bound.
+ */
+export const MAX_REASONABLE_ATTEMPTS = 10;
+
 export function runCapture(opts: RunCaptureOptions): CaptureRunResult {
   // Clamped here, not just at the CLI boundary that parses CR_MAX_ATTEMPTS —
   // a direct caller passing 0 or a negative number must still get one real
@@ -243,7 +252,7 @@ export function runCapture(opts: RunCaptureOptions): CaptureRunResult {
   // explicitly out of scope. Both fall back to the ordinary default instead.
   const requestedAttempts = opts.maxAttempts ?? 3;
   const maxAttempts = Number.isFinite(requestedAttempts)
-    ? Math.max(1, Math.floor(requestedAttempts))
+    ? Math.min(MAX_REASONABLE_ATTEMPTS, Math.max(1, Math.floor(requestedAttempts)))
     : 3;
   const backoffFn = opts.backoffFn ?? backoffMs;
   const timeoutMs = opts.timeoutMs ?? 360_000;
@@ -287,11 +296,33 @@ export function runCapture(opts: RunCaptureOptions): CaptureRunResult {
 // unexpected internal error, so gate.sh can tell "review says warn" apart
 // from "this script crashed" and report each honestly.
 
+/**
+ * A bare type assertion here would trust the file's shape unconditionally
+ * (lessons rule 13: validate at the boundary where a value's shape is only
+ * assumed, not guaranteed). `coderabbit.meta.json` is written by this same
+ * module in the ordinary case, but it is also a plain file on disk — a
+ * crashed write, a manual edit, or an older format could leave it missing
+ * the one field `decideCapture` actually compares (`sha`). A malformed file
+ * reads as "no previous capture" (`null`), never as a half-populated
+ * `CaptureMeta` that produces `"undefined finding(s) at undefined"`.
+ */
+export function isCaptureMeta(value: unknown): value is CaptureMeta {
+  if (!value || typeof value !== "object") return false;
+  const rec = value as Record<string, unknown>;
+  return (
+    typeof rec.sha === "string" &&
+    rec.sha.length > 0 &&
+    typeof rec.capturedAt === "string" &&
+    typeof rec.findings === "number"
+  );
+}
+
 function loadPreviousMeta(outDir: string): CaptureMeta | null {
   const p = join(outDir, "coderabbit.meta.json");
   if (!existsSync(p)) return null;
   try {
-    return JSON.parse(readFileSync(p, "utf8")) as CaptureMeta;
+    const parsed: unknown = JSON.parse(readFileSync(p, "utf8"));
+    return isCaptureMeta(parsed) ? parsed : null;
   } catch {
     return null;
   }

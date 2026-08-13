@@ -3,6 +3,9 @@
     "Human-approved exceptions to a gate.sh check. TRO-553 built this after G6",
     "(regression-test) failed three real docs-only/test-only tickets whose",
     "premise — every ticket changes production code — does not hold for them.",
+    "The mechanism is generic over the gate id, not G6-specific: gate.sh calls",
+    "the same check_gate_exception function from both G6 and G8, and TRO-542's",
+    "entry below is a live G8 (eval-not-regressed) instance.",
     "",
     "RULES:",
     "(1) Only the orchestrator writes an entry here, and only after Troy's",
@@ -11,14 +14,21 @@
     "(2) gate.sh honors an entry ONLY when \"approver\" is a non-empty string.",
     "    An entry with an empty or missing approver reads as unapproved, and",
     "    the gate still fails — see scripts/factory/gate-exceptions.ts.",
-    "(3) One entry exempts one ticket from one named gate id. It does not",
+    "(3) gate.sh reads THIS FILE FROM BASE_REF, never from the ticket branch's",
+    "    own working copy (see gate.sh, next to the quarantine baseline it",
+    "    copies the same discipline from). Editing this file on a ticket",
+    "    branch has ZERO effect on that ticket's own gate run — rule (1) is",
+    "    then code-enforced, not only documented: an entry only takes effect",
+    "    once the commit adding it has already landed on the base branch.",
+    "(4) One entry exempts one ticket from one named gate id. It does not",
     "    exempt the ticket from any other gate, and it does not carry over to",
     "    a different ticket that happens to touch the same files.",
     "",
     "Schema per entry: ticket (TRO-nnn), gate (the gate.sh check id), reason",
-    "(why no red-first case is possible), approver (a name; empty means NOT",
-    "approved), date (YYYY-MM-DD the approval was given), pr (the PR this",
-    "exception covers, for provenance)."
+    "(why this gate cannot pass honestly right now), approver (a name; empty",
+    "means NOT approved), date (YYYY-MM-DD the approval was given), pr",
+    "(optional — the PR this exception covers, for provenance; omitted when",
+    "the approval is not tied to one specific PR)."
   ],
   "version": 1,
   "exceptions": [
@@ -37,6 +47,13 @@
       "approver": "Troy",
       "date": "2026-08-12",
       "pr": 18
+    },
+    {
+      "ticket": "TRO-542",
+      "gate": "eval-not-regressed",
+      "reason": "The committed accuracy baseline (81.3%) sits at the top of TRO-543's measured variance band (78.1-81.3%), so an honest single run of unchanged code can fail the comparison on variance alone. Compounded by 31-vs-32-case corpus drift (TRO-556). TRO-561 is the systemic fix; this exception covers the interim.",
+      "approver": "Troy",
+      "date": "2026-08-13"
     }
   ]
 }

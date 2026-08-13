@@ -10,14 +10,22 @@
 // factory/config.yaml's recurrenceLadder and TRO-553.
 //
 // The exception record lives in factory/gate-exceptions.json, committed to
-// the repo. gate.sh honors a record ONLY when it names a non-empty approver.
-// An agent can freely propose an entry in a PR, but that alone never makes
-// G6 pass — until the entry carries an approver, resolveException reports
-// "unapproved", the same as "none". The real backstop is procedural, not
-// code: only the orchestrator writes an entry here, and only after Troy's
-// approval already exists on the named Linear ticket (see the file's own
-// $comment block). This module cannot verify that provenance; it can only
-// refuse to honor a record that skipped the one field approval requires.
+// the repo. Two independent backstops keep an agent from self-approving:
+//
+// 1. Code (this module): gate.sh honors a record ONLY when it names a
+//    non-empty approver — an entry missing that field resolves to
+//    "unapproved", the same as "none". This module has no way to verify
+//    WHO wrote the approver string, only whether the field is present.
+// 2. Code (gate.sh): the file is read from BASE_REF, never the ticket
+//    branch's own working copy — the same discipline gate.sh already uses
+//    for the quarantine baseline. A ticket branch that edits its own copy
+//    of this file gets zero effect on its own gate run; an entry only
+//    takes effect once the commit adding it has already landed on the base
+//    branch, which means it went through its own prior review.
+//
+// Procedure is the last mile on top of both: only the orchestrator writes
+// an entry here, and only after Troy's approval already exists on the
+// named Linear ticket (see the file's own $comment block).
 
 import { existsSync, readFileSync } from "node:fs";
 

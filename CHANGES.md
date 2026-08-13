@@ -53,14 +53,18 @@ Three occurrences crossed the factory's own recurrence threshold
   the console output reads honestly instead of showing a plain `ok` for a gate that did not
   pass on its own merits.
 
-**Fixture data.** `factory/gate-exceptions.json` encodes the two real approved instances:
-- TRO-547 (test-only, PR #50): approved by Troy, 2026-08-13. This date and approver are the
-  same fact TRO-553's own ticket description states as pending sign-off — OBSERVED from the
-  ticket text, not inferred.
-- TRO-472 (docs-only, PR #18, LH-CP3 checkpoint): approver Troy, date 2026-08-12. The date is
-  DERIVED from the ticket's `completedAt` timestamp (2026-08-12T03:12:37Z) — Linear's comment
-  list on TRO-472 is empty, so no explicit dated approval comment exists to cite directly.
-  Flagging this rather than presenting it as equally certain as TRO-547's record.
+**Fixture data.** `factory/gate-exceptions.json` encodes three real approved instances (a
+third, TRO-542, arrived mid-PR — see review round 3 below for the G8 wiring it needed):
+- TRO-547 (G6/regression-test, test-only, PR #50): approved by Troy, 2026-08-13. This date
+  and approver are the same fact TRO-553's own ticket description states as pending sign-off
+  — OBSERVED from the ticket text, not inferred.
+- TRO-472 (G6/regression-test, docs-only, PR #18, LH-CP3 checkpoint): approver Troy, date
+  2026-08-12. The date is DERIVED from the ticket's `completedAt` timestamp
+  (2026-08-12T03:12:37Z) — Linear's comment list on TRO-472 is empty, so no explicit dated
+  approval comment exists to cite directly. Flagging this rather than presenting it as equally
+  certain as TRO-547's record.
+- TRO-542 (G8/eval-not-regressed): approver Troy, date 2026-08-13. OBSERVED — supplied directly
+  by the orchestrator mid-PR, with the reason quoted verbatim in review round 3 below.
 
 **Byte-identical behavior for ordinary tickets.** A ticket with no record in
 `gate-exceptions.json` gets `state: "none"` from `resolveException`, and G6 falls through to
@@ -230,6 +234,55 @@ third time; the two real code findings in this same round were fixed above, so t
 blanket "ignore round 2" — only the two prose items are deferred.
 
 Tests after round 2: 47/47 (44 from round 1, plus the 3 new cases above).
+
+### Review round 3 — 7 findings, 3 fixed, 4 dismissed per lessons rule 31
+
+A third live review capture, against the round 2 commit, found 7 more. Four were the same
+25-word sentence-length pattern on already-edited prose (dismissed, per rule 31 again). Three
+were real: one MAJOR finding on the mechanism's own core trust property.
+
+**Fixed:**
+- **`gate-exceptions.json` was read from the ticket branch's own working tree, not from
+  `BASE_REF`.** This meant an agent COULD self-approve: edit its own branch's copy, add an
+  entry naming itself `"approver": "Troy"`, and G6 would honor it — directly contradicting
+  this PR's own "agents must not be able to self-approve" requirement. Not hypothetical:
+  manually demonstrated an uncommitted, fabricated `TRO-9999` entry resolving `approved` when
+  read from the working tree, and `none` when read the fixed way. Fixed by materializing
+  `GATE_EXCEPTIONS` from `BASE_REF` before G1 runs — the exact discipline `gate.sh` already
+  uses for the quarantine baseline, with no working-tree fallback (unlike quarantine's, since
+  the trust property here matters more than quarantine's bootstrap convenience). An entry now
+  takes effect only once the commit adding it has already landed on the base branch.
+- `runCapture`'s `Number.isFinite` guard (round 2) blocked `NaN`/`Infinity` but had no upper
+  bound on a large finite value. `CR_MAX_ATTEMPTS=1000` would have been accepted as "bounded,"
+  technically true but not operationally — against the ticket's own "unbounded retries are
+  not in scope" line. Added `MAX_REASONABLE_ATTEMPTS = 10`, a hard ceiling regardless of what
+  a caller requests.
+- `loadPreviousMeta` did a bare `as CaptureMeta` type assertion with no runtime shape check
+  (lessons rule 13). A corrupted or hand-edited `coderabbit.meta.json` could produce a
+  half-populated object and an `"undefined finding(s) at undefined"` detail string. Added
+  `isCaptureMeta`, a runtime guard that returns `null` on any schema mismatch.
+
+**Dismissed, per lessons rule 31:** four more 25-word sentence-length findings on CHANGES.md
+prose already restructured in rounds 1 and 2. None changes shipped behavior or a factual
+claim.
+
+**A third exception instance, added mid-round by the orchestrator (TRO-542, G8).** While this
+round was in progress, the orchestrator supplied a third real, human-approved exception:
+TRO-542, gate `eval-not-regressed` (G8), approved by Troy 2026-08-13. Reason: the committed
+accuracy baseline (81.3%) sits at the top of TRO-543's measured variance band
+(78.1%-81.3%), so an honest run of unchanged code can fail the single-run comparison on
+variance alone, compounded by 31-vs-32-case corpus drift (TRO-556) — TRO-561 is the systemic
+fix. `resolveException` already took `gate` as a parameter, so adding the record cost nothing
+structurally. What DID need building: G8's `gate.sh` block never called the exception
+mechanism at all — G6 was its only caller. Rather than duplicate G6's ~15-line inline check a
+second time (the exact "two independent templates" shape review round 1's finding #9 already
+flagged once), extracted a shared `check_gate_exception <result_id> <gate_id>
+<fallback_detail>` function, called from both G6 and G8. Manually verified both directions:
+TRO-542 against `eval-not-regressed` resolves `pass-with-exception`; TRO-542 checked against
+`regression-test` (the wrong gate) resolves `none` and fails — the exception is gate-scoped,
+not ticket-scoped. Two new tests load the real committed file and assert both.
+
+Tests after round 3: 55/55 (17 in `gate-exceptions.test.ts`, 38 in `review-capture.test.ts`).
 
 ### Not this ticket's job
 

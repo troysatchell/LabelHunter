@@ -6,12 +6,12 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
 ## TRO-554 — defect-gate engine hardening: 15 review-round-3 findings, batched (2026-08-13)
 
-**The source.** PR #48 (TRO-508)'s local gate review, round 3, found 15 real hardening gaps
-in the defect-gate engine — the tool that checks every other branch, not label-verification
-code. Round 2 already fixed every substantive defect that round found. Round 3's findings
-changed no shipped behavior: recall stayed 1.0, G11 still classified a real diff correctly,
-and the 74-test suite was green. Per lessons rule 31, they land here as one batch instead of
-fix-iterating forever.
+**The source.** PR #48 (TRO-508)'s local gate review, round 3, found 15 real hardening gaps.
+All 15 sit in the defect-gate engine itself — the tool that checks every other branch, not
+label-verification code. Round 2 already fixed every substantive defect that round found.
+Round 3's findings changed no shipped behavior: recall stayed 1.0, G11 still classified a real
+diff correctly, and the 74-test suite was green. Per lessons rule 31, they land here as one
+batch instead of fix-iterating forever.
 
 **The fixes, by file.**
 
@@ -26,35 +26,45 @@ fix-iterating forever.
   against the real AST node, not a substring of the guard's source text. The old check read
   `wxs.length` as a guard on `xs`. `reachesSinkThroughVariable` now walks its own function
   scope only. A nested function's own shadowed variable, same name, can no longer read as the
-  outer variable reaching a decision. The finding message now names `.reduce()`'s real failure
-  — it throws on an empty collection, it does not return a vacuously-true value — instead of
-  reusing `.every()`'s wording for both.
+  outer variable reaching a decision. The finding message now names `.reduce()`'s real failure.
+  It throws on an empty collection. It does not return a vacuously-true value, the way
+  `.every()` does — the message no longer reuses one quantifier's wording for the other.
 - `run.ts`: the console report now prints a rule's own error detail when its status is
   `"error"`, even with no introduced findings to point to. A pin-resolution failure used to
   exit 1 with a blank report. `buildDocument` now throws a named error when a result's rule id
   has no matching `pins` entry, instead of a bare "Cannot read properties of undefined."
 - `replay.ts`: the `--grep` ticket pattern is now word-boundary anchored. An unanchored
-  "TRO-464" is a leading substring of "TRO-4640" — a commit naming the wrong, longer ticket
+  "TRO-464" is a leading substring of "TRO-4640". A commit naming the wrong, longer ticket
   could read as a match for the shorter one. `loadLedger` now names the file and the 1-based
-  line number when a row fails to parse.
+  line number when a row fails to parse. That line number stays correct even when a blank line
+  sits before the bad row — the count runs over the file's real lines, never over a filtered
+  list that silently drops blanks and shifts every later number short.
 - `replay-cli.ts`: the entrypoint guard now recognizes both `.ts` (the dev path) and `.js` (a
-  compiled build). A `.ts`-only check let a built CLI exit 0 and do nothing. The loaded rule
-  module's shape is validated before anything reads `.meta` off it, naming the rule id and the
-  exact missing piece. Its `sh` helper now runs `spawnSync` with an argument array, matching
-  `run.ts` — never a shell string.
+  compiled build), matched against the file's exact basename — not a suffix check, which also
+  matched an unrelated file like "notreplay-cli.ts". A `.ts`-only check let a built CLI exit 0
+  and do nothing. The loaded rule module's shape is validated before anything reads `.meta` off
+  it, naming the rule id and the exact missing piece. Its `sh` helper now runs `spawnSync` with
+  an argument array, matching `run.ts` — never a shell string.
 
 **Not included.** Five doc/prose-only findings from the same review round. Lessons rule 31
 already dismissed them. This ticket does not reopen them.
 
-**Confirmed.** All 15 items landed with a test; none needed rejection. 102 tests pass across
+**Confirmed.** All 15 items landed with a test; none needed rejection. 104 tests pass across
 the 9 `scripts/factory/defect-gates/*.test.ts` files, up from 74 before this ticket (`pnpm
 vitest run scripts/factory/defect-gates/`, observed 2026-08-13). `pnpm typecheck` and `pnpm
-lint` are clean. The word-boundary fix caught a real regression before it shipped: an early
-draft paired the anchor with `--extended-regexp`, which compiles `\b` as a literal backspace
-in this git version (2.50.1) and silently matched nothing. Caught against this repo's own real
-TRO-464/TRO-511 commit history, not only a synthetic fixture. Replay recall stays 1.0
-(`factory/replay/vacuous-empty-quantifier.v1.json`, unchanged). G11 passes on this branch's
-own diff.
+lint` are clean.
+
+The word-boundary fix caught a real regression before it shipped. An early draft paired the
+anchor with `--extended-regexp`. That flag compiles `\b` as a literal backspace in this git
+version (2.50.1), not a word boundary, so it silently matched nothing at all. The break showed
+up against this repo's own real TRO-464/TRO-511 commit history, not only a synthetic fixture —
+dropping `--extended-regexp` fixed it. Replay recall stays 1.0
+(`factory/replay/vacuous-empty-quantifier.v1.json`, unchanged). G11 passes on this branch's own
+diff.
+
+A local review round on the first version of this batch found 3 more real findings — the
+entrypoint-basename check, the ledger blank-line count, and this entry's own sentence length —
+all fixed above and recorded in the review ledger.
 
 ## TRO-572 — worktree.sh: a per-ticket lock serializes truly concurrent invocations (2026-08-13)
 

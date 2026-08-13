@@ -18,6 +18,15 @@ describe("isDirectEntrypoint", () => {
     expect(isDirectEntrypoint("/repo/scripts/factory/defect-gates/run.ts")).toBe(false);
   });
 
+  it("does not treat a filename that merely ends with the same letters as a match", () => {
+    // A suffix check (`.endsWith("replay-cli.ts")`) matches
+    // "notreplay-cli.ts" too — the file's own basename must equal the
+    // entrypoint name exactly, not just share a trailing substring.
+    expect(isDirectEntrypoint("/repo/scripts/factory/defect-gates/notreplay-cli.ts")).toBe(
+      false,
+    );
+  });
+
   it("does not treat an unset argv[1] as an entrypoint", () => {
     expect(isDirectEntrypoint(undefined)).toBe(false);
   });

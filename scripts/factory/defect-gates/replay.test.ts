@@ -169,6 +169,32 @@ describe("loadLedger", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("keeps the true source line number even when a blank line precedes the bad row", () => {
+    // A blank row is skipped, not counted as a ledger entry — but skipping
+    // it must not shift the line numbers reported for anything after it.
+    // Line 1 is the good row, line 2 is blank, line 3 is the bad JSON: the
+    // error must name line 3, not line 2 (the position it would land at
+    // if blank lines were filtered out before numbering).
+    const dir = mkdtempSync(join(tmpdir(), "dg-ledger-"));
+    const ledgerPath = join(dir, "bad-ledger-blank.jsonl");
+    try {
+      writeFileSync(
+        ledgerPath,
+        '{"ticket":"TRO-1"}\n\nnot json at all\n{"ticket":"TRO-2"}\n',
+      );
+      let thrown: unknown;
+      try {
+        loadLedger(ledgerPath);
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).toBeInstanceOf(Error);
+      expect((thrown as Error).message).toContain(":3:");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("selectCorpusRows", () => {

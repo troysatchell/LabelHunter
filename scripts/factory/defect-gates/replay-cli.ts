@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { loadLedger, replayRule, selectCorpusRows } from "./replay";
 import type { Rule } from "./types";
 
@@ -84,9 +84,15 @@ export function validateRuleModule(mod: unknown, ruleId: string): Rule {
  * compiled or bundled build). A `.ts`-only check left a built CLI silently
  * doing nothing at all — no error, no output, a clean exit 0 — because
  * `process.argv[1]` there ends in `.js`.
+ *
+ * Compares the exact basename, not a suffix. `.endsWith("replay-cli.ts")`
+ * also matches "notreplay-cli.ts" — any file whose name happens to end
+ * with the same letters, not only this one.
  */
 export function isDirectEntrypoint(argv1: string | undefined): boolean {
-  return !!argv1 && (argv1.endsWith("replay-cli.ts") || argv1.endsWith("replay-cli.js"));
+  if (!argv1) return false;
+  const name = basename(argv1);
+  return name === "replay-cli.ts" || name === "replay-cli.js";
 }
 
 async function main(): Promise<void> {

@@ -170,10 +170,18 @@ export function replayRule(
 }
 
 export function loadLedger(path: string): LedgerRow[] {
-  const lines = readFileSync(path, "utf8").trim().split("\n").filter(Boolean);
-  return lines.map((line, i) => {
+  const rows: LedgerRow[] = [];
+  // Split first, filter never — a blank line must keep its own position so
+  // the line number reported below is the file's real line, not a count
+  // over the SURVIVING lines. Filtering out blanks before numbering was
+  // exactly this bug: a blank line before a bad row shifted every
+  // following report short by however many blanks came before it.
+  const lines = readFileSync(path, "utf8").split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === "") continue;
     try {
-      return JSON.parse(line) as LedgerRow;
+      rows.push(JSON.parse(line) as LedgerRow);
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
       // 1-based line number: the file's own first line, not the array's
@@ -181,5 +189,6 @@ export function loadLedger(path: string): LedgerRow[] {
       // nor which of its (often hundreds of) lines is malformed.
       throw new Error(`loadLedger: invalid JSON at ${path}:${i + 1}: ${reason}`);
     }
-  });
+  }
+  return rows;
 }

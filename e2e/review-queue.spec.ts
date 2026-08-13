@@ -80,6 +80,11 @@ test.describe("Review queue — happy path", () => {
     await expect(reason).toBeVisible();
     await expect(reason).toContainText(/brand/i);
 
+    // The label artwork renders on the real RSC page (TRO-575) — same
+    // assertion verify.spec.ts makes on the verification-detail page, so
+    // an RSC wiring break here fails end-to-end, not just in unit tests.
+    await expect(page.getByRole("img", { name: /label submitted/i })).toBeVisible();
+
     await page.getByRole("button", { name: "Approve" }).click();
 
     // ReviewActions navigates back to the list once the disposition is

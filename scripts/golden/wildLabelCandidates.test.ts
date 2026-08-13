@@ -140,11 +140,82 @@ describe("loadWildLabelCandidates — error handling", () => {
     }
   });
 
+  it("rejects an absolute imagePath, before ever touching the filesystem", () => {
+    const file = writeTempFile({
+      cases: [{ caseId: "x", provenance: "ai-generated", verified: false, imagePath: "/etc/passwd" }],
+    });
+    try {
+      expect(() => loadWildLabelCandidates(file)).toThrow(/must be a relative path/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("rejects an imagePath that resolves outside golden-set/wild-labels/, even when the target file is real", () => {
+    // golden-set/images/case-01-clean-match-spirits.jpg is a real, committed
+    // file -- this proves the containment check fires even when the escape
+    // target genuinely exists, not only on a missing-file path.
+    const file = writeTempFile({
+      cases: [
+        {
+          caseId: "x",
+          provenance: "ai-generated",
+          verified: false,
+          imagePath: "golden-set/wild-labels/../images/case-01-clean-match-spirits.jpg",
+        },
+      ],
+    });
+    try {
+      expect(() => loadWildLabelCandidates(file)).toThrow(/resolves outside golden-set\/wild-labels/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("rejects an imagePath that names a real directory, not a file", () => {
+    // golden-set/wild-labels/results/ is a real, committed directory.
+    const file = writeTempFile({
+      cases: [{ caseId: "x", provenance: "ai-generated", verified: false, imagePath: "golden-set/wild-labels/results" }],
+    });
+    try {
+      expect(() => loadWildLabelCandidates(file)).toThrow(/non-empty regular file/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("rejects an imagePath that names a real, empty (zero-byte) file", () => {
+    const emptyFileName = ".tro-530-test-empty-tmp.png";
+    const emptyFilePath = path.resolve(REPO_ROOT, "golden-set/wild-labels", emptyFileName);
+    writeFileSync(emptyFilePath, Buffer.alloc(0));
+    const file = writeTempFile({
+      cases: [
+        {
+          caseId: "x",
+          provenance: "ai-generated",
+          verified: false,
+          imagePath: `golden-set/wild-labels/${emptyFileName}`,
+        },
+      ],
+    });
+    try {
+      expect(() => loadWildLabelCandidates(file)).toThrow(/non-empty regular file/);
+    } finally {
+      rmSync(emptyFilePath, { force: true });
+      cleanup();
+    }
+  });
+
   it("throws on a duplicate caseId", () => {
     const shared = {
       provenance: "ai-generated",
       verified: false,
-      imagePath: "golden-set/images/case-01-clean-match-spirits.jpg",
+      // Must resolve inside golden-set/wild-labels/ -- a real, committed
+      // file there -- so the first "dup" entry passes every per-case check
+      // (including the containment check) and the loop actually reaches
+      // the second entry, where the duplicate-ID check is the thing under
+      // test here.
+      imagePath: "golden-set/wild-labels/case-43-odd-typography-wild-highcontrast-gin.png",
     };
     const file = writeTempFile({ cases: [{ caseId: "dup", ...shared }, { caseId: "dup", ...shared }] });
     try {

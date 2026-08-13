@@ -17,9 +17,9 @@ warning placement. The renderer's own labels do not. This ticket adds that varie
    placement. A shared guardrail clause on every prompt forbids a real brand or trademark.
 2. `scripts/golden/imagen.ts` adds a text-only Gemini generation path (`generateWildLabelOne`,
    `generateAllWildLabels`, `mainWild`), reusing job 1's API client shape and sidecar-writer
-   pattern. Run it with `pnpm golden:imagen:wild`. It computes real, exact cost per call from
-   each response's own token usage, not an estimate — `computeWildLabelCostUsd`, pricing
-   confirmed live against `ai.google.dev/gemini-api/docs/pricing` on 2026-08-13.
+   pattern. Run it with `pnpm golden:imagen:wild`. `computeWildLabelCostUsd` computes exact
+   cost per call from that call's own real token usage, never an estimate. The pricing it uses
+   is confirmed live against `ai.google.dev/gemini-api/docs/pricing`, on 2026-08-13.
 3. `pnpm golden:imagen:wild` generated 5 real images, committed at
    `golden-set/wild-labels/*.png`. A human transcribed what actually rendered into
    `golden-set/wild-labels/candidates.json` — the real text, not the requested text. Two labels
@@ -60,13 +60,26 @@ Design doc §5 estimates the full set under $5. The measured total is about 12% 
 **Rollback.** Revert the PR. `golden-set/wild-labels/` and its two new scripts disappear;
 `golden-set/manifest.json` never changed, so nothing else is affected.
 
+**Review.** 7 CodeRabbit findings, all triaged and recorded (`factory/review-findings.jsonl`).
+4 minor prose-style (CHANGES.md and two READMEs, ASD-STE100 sentence-length) — fixed. 2 major
+boundary-validation — fixed: `extractWildLabelUsage` now throws on missing or inconsistent
+usage data instead of defaulting to 0 (a degraded response must not silently read as \$0
+spend); `loadWildLabelCandidates` now resolves symlinks and confirms every `imagePath` stays
+inside `golden-set/wild-labels/`, matching `imagen.ts`/`build.ts`'s existing containment
+discipline for every other golden-set image path. 1 major dismissed: the finding asked to
+change `cascade-runner.ts`'s resolver-merge logic (shared, tested, already-documented, out of
+scope) so a router-level warning mismatch survives unchanged into the cascade end state —
+`types.ts`/`check.ts` already establish golden-set `expected` as router-level by design, and
+`cascade-runner.ts`'s own "SECOND HONEST LIMIT" comment already documents why it cannot. Added
+an explicit scope note to `golden-set/wild-labels/README.md` instead.
+
 **Confirmed.** `scripts/golden/wildLabelPrompt.test.ts`, `wildLabelImagen.test.ts`, and
-`wildLabelCandidates.test.ts` are new — 37 test cases, red first (`generateWildLabelOne` and
-`generateAllWildLabels` did not exist yet), green after the implementation landed. The
-candidates' schema shape is checked against the real, current `GoldenSetCase` validator
-(`verified`/`imagePath` patched to their post-fold-in values for that one check only, never
-written to disk). `pnpm typecheck` is clean. The full unit suite and the existing
-`imagen.test.ts`/`imagenPrompt.test.ts` job-1 suites still pass unchanged.
+`wildLabelCandidates.test.ts` are new — 46 test cases (37 initial + 9 from review triage), red
+first in both rounds, green after each implementation. The candidates' schema shape is checked
+against the real, current `GoldenSetCase` validator (`verified`/`imagePath` patched to their
+post-fold-in values for that one check only, never written to disk). `pnpm typecheck` is
+clean. The full 2401-test unit suite and the existing `imagen.test.ts`/`imagenPrompt.test.ts`
+job-1 suites still pass unchanged.
 
 ## TRO-577 — list surfaces stop hitching while scrolling (2026-08-13)
 

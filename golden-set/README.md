@@ -39,13 +39,13 @@ images now exist at `golden-set/wild-labels/*.png`, each with a hand-transcribed
 caught and a real dual-channel-disagreement finding a live eval run surfaced.
 
 No case in THIS manifest has `provenance: "ai-generated"` yet, still — and that is deliberate,
-not an oversight. The loader rejects a `verified: false` `ai-generated` case at load time (it
+not an oversight. The loader rejects a `verified: false` `ai-generated` case at load time. It
 checks the schema shape only, not whether the file exists — `scripts/golden/images.test.ts`
-checks that separately), and `verified: true` is Troy's decision alone, made after he confirms
-each transcription against the real image. Landing an unverified case directly here would break
-`loadGoldenSetManifest()` for every one of this repo's ~30 other callers, not just this one
-case — so the 5 candidates stage in `golden-set/wild-labels/` until Troy folds each one in
-(that directory's README documents the exact, small fold-in steps).
+checks that separately. `verified: true` is Troy's decision alone. He sets it only after he
+confirms each transcription against the real image. Landing an unverified case directly here
+would break `loadGoldenSetManifest()` for every one of this repo's ~30 other callers, not just
+this one case. So the 5 candidates stage in `golden-set/wild-labels/` until Troy folds each one
+in — that directory's README documents the exact, small fold-in steps.
 
 **Still not done — the realistic-corpus track.** A newer design doc supersedes the rest of the
 original §5 scope: `docs/superpowers/specs/2026-08-11-realistic-corpus-gemini-design.md`.

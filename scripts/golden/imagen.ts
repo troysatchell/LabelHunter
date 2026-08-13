@@ -317,25 +317,52 @@ interface RawWildLabelUsageMetadata {
 
 /**
  * Derives `WildLabelUsage` from a real API response's `usageMetadata`.
- * Every field defaults to 0 when the SDK omits it, rather than throwing --
- * `generateWildLabelWithGemini` below is the place that decides a
- * completely-missing `usageMetadata` on an otherwise-successful call is a
- * harness bug worth failing loudly on; this function itself stays a pure,
- * total function so it is trivially unit-testable against a hand-built
- * fixture.
+ * Throws — never silently defaults to 0 — when `promptTokenCount`,
+ * `candidatesTokenCount`, or a real IMAGE-modality token count is missing,
+ * non-numeric, or internally inconsistent (CodeRabbit finding, round 1: a
+ * degraded real response must not silently read as "spent $0"; CLAUDE.md's
+ * "never fabricate a number" applies to a fabricated zero exactly as much
+ * as to a fabricated positive one). `generateWildLabelWithGemini`'s
+ * generator does not catch this — a thrown error here aborts the whole
+ * call before `generateWildLabelOne` ever writes an image or a sidecar
+ * with an under-reported cost.
  */
 export function extractWildLabelUsage(usageMetadata: RawWildLabelUsageMetadata | undefined): WildLabelUsage {
-  const promptTokenCount = usageMetadata?.promptTokenCount ?? 0;
-  const candidatesTokenCount = usageMetadata?.candidatesTokenCount ?? 0;
-  const imageOutputTokenCount = (usageMetadata?.candidatesTokensDetails ?? [])
-    .filter((detail) => detail.modality === "IMAGE")
-    .reduce((sum, detail) => sum + (detail.tokenCount ?? 0), 0);
-  // Math.max(0, ...): candidatesTokenCount and candidatesTokensDetails come
-  // from the same real response but are two independently-reported fields
-  // -- never let a rounding or reporting mismatch between them produce a
-  // fabricated negative cost component.
-  const otherOutputTokenCount = Math.max(0, candidatesTokenCount - imageOutputTokenCount);
-  return { promptTokenCount, imageOutputTokenCount, otherOutputTokenCount };
+  if (!usageMetadata) {
+    throw new Error("imagen: wild-label response carried no usageMetadata -- cannot compute its real cost");
+  }
+  if (typeof usageMetadata.promptTokenCount !== "number" || !Number.isFinite(usageMetadata.promptTokenCount)) {
+    throw new Error(
+      `imagen: wild-label response usageMetadata is missing a finite promptTokenCount (got ${JSON.stringify(usageMetadata.promptTokenCount)}) -- cannot compute its real cost`,
+    );
+  }
+  if (typeof usageMetadata.candidatesTokenCount !== "number" || !Number.isFinite(usageMetadata.candidatesTokenCount)) {
+    throw new Error(
+      `imagen: wild-label response usageMetadata is missing a finite candidatesTokenCount (got ${JSON.stringify(usageMetadata.candidatesTokenCount)}) -- cannot compute its real cost`,
+    );
+  }
+  const imageDetails = (usageMetadata.candidatesTokensDetails ?? []).filter((detail) => detail.modality === "IMAGE");
+  if (imageDetails.length === 0) {
+    throw new Error(
+      "imagen: wild-label response usageMetadata carries no IMAGE-modality entry in candidatesTokensDetails -- cannot compute its real image-output cost",
+    );
+  }
+  let imageOutputTokenCount = 0;
+  for (const detail of imageDetails) {
+    if (typeof detail.tokenCount !== "number" || !Number.isFinite(detail.tokenCount)) {
+      throw new Error(
+        `imagen: wild-label response usageMetadata's IMAGE detail has no finite tokenCount (got ${JSON.stringify(detail.tokenCount)}) -- cannot compute its real image-output cost`,
+      );
+    }
+    imageOutputTokenCount += detail.tokenCount;
+  }
+  const otherOutputTokenCount = usageMetadata.candidatesTokenCount - imageOutputTokenCount;
+  if (otherOutputTokenCount < 0) {
+    throw new Error(
+      `imagen: wild-label response usageMetadata is internally inconsistent -- candidatesTokenCount (${usageMetadata.candidatesTokenCount}) is less than its own IMAGE token count (${imageOutputTokenCount})`,
+    );
+  }
+  return { promptTokenCount: usageMetadata.promptTokenCount, imageOutputTokenCount, otherOutputTokenCount };
 }
 
 /**
@@ -388,13 +415,10 @@ export async function generateWildLabelWithGemini(apiKey: string): Promise<WildL
     if (!imagePart?.inlineData?.data) {
       throw new Error(`imagen: no wild-label image returned for prompt: ${prompt.slice(0, 80)}...`);
     }
-    if (!response.usageMetadata) {
-      // A successful call with no usageMetadata at all would silently cost
-      // real money while computeWildLabelCostUsd reports $0 -- CLAUDE.md's
-      // "never fabricate a number" applies to a silent zero exactly as much
-      // as to a made-up positive one. Fail loudly instead.
-      throw new Error("imagen: wild-label response carried no usageMetadata -- cannot compute its real cost");
-    }
+    // extractWildLabelUsage itself throws on a missing/incomplete/
+    // inconsistent usageMetadata (its own doc comment) -- no separate
+    // pre-check needed here; letting it validate is the single source of
+    // truth for what counts as usable usage data.
     const responseBytes = Buffer.from(imagePart.inlineData.data, "base64");
     const image = await ensurePngBytes(responseBytes);
     const usage = extractWildLabelUsage(response.usageMetadata);

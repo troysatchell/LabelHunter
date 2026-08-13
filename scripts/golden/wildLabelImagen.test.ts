@@ -68,21 +68,68 @@ describe("extractWildLabelUsage", () => {
     expect(usage.otherOutputTokenCount).toBe(0);
   });
 
-  it("defaults every field to 0 when usageMetadata fields are missing", () => {
-    expect(extractWildLabelUsage(undefined)).toEqual({
-      promptTokenCount: 0,
-      imageOutputTokenCount: 0,
-      otherOutputTokenCount: 0,
-    });
+  // A missing or internally-inconsistent usageMetadata must never silently
+  // read as "spent $0" -- CLAUDE.md's "never fabricate a number" applies to
+  // a fabricated ZERO exactly as much as to a fabricated positive one. Every
+  // case below throws instead of defaulting, so a genuinely degraded real
+  // response aborts the run rather than writing a file with an
+  // under-reported cost (CodeRabbit finding, round 1).
+  it("throws when usageMetadata is entirely absent", () => {
+    expect(() => extractWildLabelUsage(undefined)).toThrow(/usageMetadata/);
   });
 
-  it("never returns a negative otherOutputTokenCount even if candidatesTokenCount undercounts the IMAGE detail", () => {
-    const usage = extractWildLabelUsage({
-      promptTokenCount: 0,
-      candidatesTokenCount: 100,
-      candidatesTokensDetails: [{ modality: "IMAGE", tokenCount: 9000 }],
-    });
-    expect(usage.otherOutputTokenCount).toBe(0);
+  it("throws when promptTokenCount is missing", () => {
+    expect(() =>
+      extractWildLabelUsage({
+        candidatesTokenCount: 1120,
+        candidatesTokensDetails: [{ modality: "IMAGE", tokenCount: 1120 }],
+      }),
+    ).toThrow(/promptTokenCount/);
+  });
+
+  it("throws when candidatesTokenCount is missing", () => {
+    expect(() =>
+      extractWildLabelUsage({
+        promptTokenCount: 256,
+        candidatesTokensDetails: [{ modality: "IMAGE", tokenCount: 1120 }],
+      }),
+    ).toThrow(/candidatesTokenCount/);
+  });
+
+  it("throws when candidatesTokensDetails carries no IMAGE modality entry", () => {
+    expect(() =>
+      extractWildLabelUsage({
+        promptTokenCount: 256,
+        candidatesTokenCount: 256,
+        candidatesTokensDetails: [{ modality: "TEXT", tokenCount: 256 }],
+      }),
+    ).toThrow(/IMAGE/);
+  });
+
+  it("throws when candidatesTokensDetails is entirely absent", () => {
+    expect(() =>
+      extractWildLabelUsage({ promptTokenCount: 256, candidatesTokenCount: 1376 }),
+    ).toThrow(/IMAGE/);
+  });
+
+  it("throws when an IMAGE detail's tokenCount is itself missing", () => {
+    expect(() =>
+      extractWildLabelUsage({
+        promptTokenCount: 256,
+        candidatesTokenCount: 1376,
+        candidatesTokensDetails: [{ modality: "IMAGE" }],
+      }),
+    ).toThrow(/IMAGE/);
+  });
+
+  it("throws when candidatesTokenCount is internally inconsistent (less than the IMAGE token count alone)", () => {
+    expect(() =>
+      extractWildLabelUsage({
+        promptTokenCount: 0,
+        candidatesTokenCount: 100,
+        candidatesTokensDetails: [{ modality: "IMAGE", tokenCount: 9000 }],
+      }),
+    ).toThrow(/inconsistent/);
   });
 });
 

@@ -22,7 +22,7 @@
  * resolver call for any case that escalates to REVIEW) -- run manually:
  * `pnpm golden:wild-eval`. Never wired into CI or gate.sh.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -40,6 +40,17 @@ const RESULTS_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../golden-set/wild-labels/results/wild-eval-report.json",
 );
+/** Every candidate's `imagePath` must resolve inside this directory — the
+ * same containment discipline `scripts/golden/imagen.ts`'s `resolveWithinDir`
+ * and `scripts/golden/build.ts`'s `resolveImagePath` already apply to every
+ * other golden-set image path, even though `candidates.json` is a
+ * committed, reviewed file, not runtime input (CodeRabbit finding, round
+ * 1 — "cheap enough to add anyway" is `build.ts`'s own reasoning for the
+ * identical check). */
+const WILD_LABELS_DIRECTORY = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../golden-set/wild-labels",
+);
 
 interface CandidatesFile {
   readonly note: string;
@@ -55,8 +66,11 @@ interface CandidatesFile {
  * array, every case is `provenance: "ai-generated"` and `verified: false`
  * (so a future accidental `verified: true` entry here — which would mean
  * it belongs in the real manifest, not this staging file — is caught
- * loudly), and every case's `imagePath` resolves to a real, non-empty
- * file. Pure and synchronous: no network, so it's unit-testable directly.
+ * loudly), and every case's `imagePath` resolves (after symlinks, via
+ * `realpathSync`) to a real, non-empty, regular file INSIDE
+ * `golden-set/wild-labels/` — never an absolute path, a `../` escape, or a
+ * symlink pointing outside it. Pure and synchronous: no network, so it's
+ * unit-testable directly.
  */
 export function loadWildLabelCandidates(candidatesPath: string = CANDIDATES_PATH): GoldenSetCase[] {
   const raw: unknown = JSON.parse(readFileSync(candidatesPath, "utf8"));
@@ -82,9 +96,29 @@ export function loadWildLabelCandidates(candidatesPath: string = CANDIDATES_PATH
           "in golden-set/manifest.json, not this staging file (see README.md's fold-in steps).",
       );
     }
-    const imagePath = path.resolve(REPO_ROOT, c.imagePath);
-    if (!existsSync(imagePath)) {
+    if (path.isAbsolute(c.imagePath)) {
+      throw new Error(`wildLabelEval: ${c.caseId}: imagePath must be a relative path, got "${c.imagePath}"`);
+    }
+    let resolvedImagePath: string;
+    let imageStat: ReturnType<typeof statSync>;
+    try {
+      // realpathSync resolves symlinks to their real target before the
+      // containment check below runs — a symlink staged inside
+      // golden-set/wild-labels/ that points outside it must not pass this
+      // check just because the symlink's own (unresolved) path looks fine.
+      resolvedImagePath = realpathSync(path.resolve(REPO_ROOT, c.imagePath));
+      imageStat = statSync(resolvedImagePath);
+    } catch {
       throw new Error(`wildLabelEval: ${c.caseId}: no file at ${c.imagePath}`);
+    }
+    const relativeToStaging = path.relative(WILD_LABELS_DIRECTORY, resolvedImagePath);
+    if (relativeToStaging === "" || relativeToStaging.startsWith(`..${path.sep}`) || path.isAbsolute(relativeToStaging)) {
+      throw new Error(
+        `wildLabelEval: ${c.caseId}: imagePath "${c.imagePath}" resolves outside golden-set/wild-labels/ -- refusing to read`,
+      );
+    }
+    if (!imageStat.isFile() || imageStat.size === 0) {
+      throw new Error(`wildLabelEval: ${c.caseId}: imagePath "${c.imagePath}" must name a non-empty regular file`);
     }
   }
   return [...cases];

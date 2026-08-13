@@ -76,19 +76,31 @@ A wild label whose warning renders garbled is not a failed generation. It is a v
 `expected.labelVerdict` reflects that (REVIEW or, where the deviation is severe enough, FAIL —
 see each case's own `expected` block).
 
-**A second, real finding, from actually running `pnpm golden:wild-eval` once with a first-pass
-human-only ground truth and once after correcting it:** three of the five cases (case-40,
-case-42, case-44) trip CP-2 §4.5's dual-channel disagreement rule — the OCR corroboration
-channel disagrees with Haiku's own (independently confirmed correct) vision reading, which
-routes the case to `REVIEW`/`WARNING_MISMATCH` even when the vision reading is exactly right.
-This happens on decorative, real-world-style typefaces and paper-texture backgrounds the
-renderer's plain sans-serif corpus never exercises. A first-pass ground truth for case-42/44
-called them a clean PASS, reasoning only "a human can read this correctly" — CP-2 §4.5's own
-documented table says otherwise: a dual-channel disagreement always routes to REVIEW,
-regardless of which channel is right. `candidates.json`'s current `expected` blocks reflect
-that correction, backed by `results/wild-eval-report.json`'s real run. This is exactly the kind
-of real-artwork-variety evidence the ticket exists to surface (see `../README.md`'s "still not
+**A second, real finding.** `pnpm golden:wild-eval` ran twice: once against a first-pass,
+human-only ground truth, and once after correcting it. Three cases — case-40, case-42, and
+case-44 — trip CP-2 §4.5's dual-channel disagreement rule. The OCR corroboration channel
+disagrees with Haiku's own vision reading on these three, even though Haiku's reading is
+independently confirmed correct. CP-2 §4.5's own table routes any such disagreement to
+`REVIEW`/`WARNING_MISMATCH`, regardless of which channel is actually right. This happens on
+decorative, real-world-style typefaces and paper-texture backgrounds. The renderer's plain
+sans-serif corpus never exercises this path. A first-pass ground truth called case-42 and
+case-44 a clean PASS, reasoning only "a human can read this correctly." That reasoning misses
+CP-2 §4.5's own rule. `candidates.json`'s current `expected` blocks reflect the correction,
+backed by `results/wild-eval-report.json`'s real run. This is exactly the kind of
+real-artwork-variety evidence the ticket exists to surface (see `../README.md`'s "still not
 done" note, and the ticket body's "why" section).
+
+**Scope note: `expected` predicts the ROUTER's decision, not the cascade's post-resolver end
+state.** This matches the main manifest's own documented convention
+(`src/lib/golden-set/types.ts`'s `GoldenExpectedResult` comment; `scripts/eval/check.ts`'s
+module comment on why verdict accuracy is scored at the router level). The committed
+`wild-eval-report.json` also reports each case's `cascadeVerdict` — the real, post-resolver
+answer a live user of this app would actually see. For case-42 and case-44, the cascade's real
+end state is `PASS`: Sonnet correctly resolves the router's dual-channel escalation back to the
+right answer. That is the cascade working as designed (TH-R19), not a ground-truth error —
+`cascade-runner.ts`'s own documented "honest limit" on warning-field resolution explains why a
+router-level `MISMATCH` never survives a resolver merge unchanged, and this repo's eval harness
+already treats router/cascade divergence as informational, never a scoring defect.
 
 ## Folding a case in (Troy's step — not this ticket's)
 
@@ -99,14 +111,15 @@ Once Troy confirms a case's transcription against its committed image:
    `"golden-set/wild-labels/<caseId>.png"` to `"golden-set/images/<caseId>.png"`.
 3. Set `verified: true`.
 4. Move the whole case object from `candidates.json`'s `cases` array into
-   `golden-set/manifest.json`'s `cases` array. Drop the `notes` field's `PENDING FOLD-IN` /
-   `EXPECTED VERDICT CORRECTED` process language — the case is now a normal manifest entry, not
-   a staged candidate; keep any content-relevant part of the note (e.g. the transcription-
-   confidence caveat on case-41) if it still helps a future reader.
-5. Remove the folded case from `candidates.json`. Once every case is folded, this whole
+   `golden-set/manifest.json`'s `cases` array.
+5. Drop the `notes` field's `PENDING FOLD-IN` / `EXPECTED VERDICT CORRECTED` process language —
+   the case is now a normal manifest entry, not a staged candidate. Keep any content-relevant
+   part of the note (e.g. the transcription-confidence caveat on case-41) if it still helps a
+   future reader.
+6. Remove the folded case from `candidates.json`. Once every case is folded, this whole
    directory can be deleted (or kept for the next `pnpm golden:imagen:wild` run).
-6. Run `pnpm golden:verify` — confirms the image resolves and no vector-coverage check broke.
-7. Run the re-baseline protocol (`.claude/skills/labelhunter-factory/references/lessons.md`
+7. Run `pnpm golden:verify` — confirms the image resolves and no vector-coverage check broke.
+8. Run the re-baseline protocol (`.claude/skills/labelhunter-factory/references/lessons.md`
    rule 32) — folding a case into the manifest is exactly the kind of golden-set content change
    that rule covers, even though generating and staging the image (this ticket) was not.
 

@@ -4,6 +4,55 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-508 — First defect-gate rule: vacuous-empty-quantifier (2026-08-12)
+
+**What it detects.** A call to `.every()`, `.some()`, or `.reduce()` over a collection that
+is not provably non-empty, whose result reaches a decision sink: a return, an `if`
+condition, a ternary condition, or a property assignment. An empty collection makes
+`.every()` true and `.some()` false without checking anything. That is a defect only when
+the boolean result decides something — a display-only use is not flagged.
+
+**Files added.**
+- `scripts/factory/defect-gates/ast.ts` — shared AST helpers: `parse`, `walk`,
+  `enclosingFunctionName`, `lineOf`. Not specific to this rule; every future rule can use it.
+- `scripts/factory/defect-gates/rules/vacuous-empty-quantifier.ts` — the rule.
+- `scripts/factory/defect-gates/rules/vacuous-empty-quantifier.test.ts` — 6 tests.
+
+**A fix to the plan's own reference code.** The task brief's example `reachesDecisionSink`
+treated a ternary's condition as an immediate sink. It never checked where the ternary's
+own result went next. Under that code, `items.every(done) ? "all done" : "in progress"`
+counted as a decision, even when the chosen string only built a display label. The test
+for exactly that case failed against the brief's own reference code — 1 finding, expected
+0 (`does not flag a quantifier used only for display`). The fix: a ternary's condition is
+not itself a sink. The walk now passes through the `ConditionalExpression` node and keeps
+climbing. A ternary counts as a decision only when its own result later reaches a real
+sink — a return, an outer `if`, or a property assignment. The walk already treats every
+other non-sink node this way: a `BinaryExpression` in an `||` chain, for example, gets
+climbed through, not stopped at. All 6 tests pass with this one-line change.
+
+**Measured backlog, not a target.** The plan's own spec predicted about 4 sites on `main`.
+The real count, run over `src/**/*.ts` and `scripts/**/*.ts` excluding test files, is 7:
+
+- `scripts/eval/report-validation.ts:95` — `.every(isReliabilityBucket)`
+- `scripts/eval/report-validation.ts:100` — `.every((v) => typeof v === "string")`
+- `src/app/_lib/review-queue-client.ts:108` — `.every(isReviewQueueListItemWire)`
+- `src/server/resolver/response.ts:186` — `.every(...)` in `deriveOutcome`
+- `src/server/router/field-resolution.ts:94` — `.some(...)` in `abvAlternatesConflict`
+- `src/server/router/field-resolution.ts:112` — `.some(...)` in `netContentsAlternatesConflict`
+- `src/server/router/label-blockers.ts:71` — `.some(Boolean)` in `isConflictingExtraction`
+
+Each site was read by hand. Every one is a real return-value decision over a collection
+whose non-emptiness the code never proves inline. None looked like a false positive.
+
+**How to run it.**
+```bash
+source .factory-env && pnpm test -- scripts/factory/defect-gates/rules/vacuous-empty-quantifier.test.ts
+```
+
+**Rollback.** Delete `scripts/factory/defect-gates/ast.ts` and
+`scripts/factory/defect-gates/rules/`. No other file depends on them yet. The engine does
+not run this rule automatically — nothing else breaks if you remove it.
+
 ## TRO-518 — Batch image storage now survives the web/worker split (2026-08-12)
 
 **The bug.** `src/server/storage/local-file-storage.ts` saved every uploaded label image

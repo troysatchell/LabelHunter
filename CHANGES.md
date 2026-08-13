@@ -35,6 +35,107 @@ This is executable code, not a comment. `loader.test.ts` proves it several ways:
 new. Red-first check: before the fix, the 6 new tests failed. `validateManifest` accepted the
 invalid flag combination instead of throwing.
 
+## TRO-532 — LH-025 · Stroke-width bold advisory check (2026-08-13)
+
+Advances TH-R9. CP-2 §7.2 named a technique for bold detection and did not try it: binarize
+the crop, measure stroke width by morphological erosion, and compare the `GOVERNMENT
+WARNING:` prefix's stroke width to the body's at matched cap height. A prior investigation
+(2026-08-12) tried it against five real label photographs and the golden-set corpus. This
+ticket builds the technique as a pure, isolated function. Nothing calls the function yet.
+TRO-533 wires it in, on purpose, after this ticket lands.
+
+**What changed.** `src/server/warning/bold-detect.ts` adds `measureBoldSignal(image: Buffer):
+Promise<BoldSignalResult>`. It takes an already-cropped warning-region image and returns a
+three-valued signal: `bold`, `not-bold`, or `uncertain`. The result never becomes a verdict by
+itself. CP-2 §7.2 states why: a prototype that turns this signal into a FAIL would accuse a
+compliant label of a violation it cannot prove.
+
+The measurement, in order:
+
+1. Greyscale the crop. Stretch contrast with `sharp`'s `.normalise()`. Binarize with Otsu's
+   method. Ink is the pixel class with fewer pixels. It is not "the dark class." This reads
+   gold text on a maroon background (crown-royal) the same way it reads black text on white
+   paper.
+2. Find the crop's first text line. The `GOVERNMENT WARNING:` prefix always starts line 1.
+3. Search for the prefix/body boundary inside that line. Constrain the search to 15%-65% of
+   the line's own ink width. An unconstrained search always finds a spurious split. Case-08
+   and case-09 (title-case golden-set cases) proved this during the prior investigation.
+4. At the winning split, measure stroke width as the median horizontal ink-run length on
+   each side. Normalize each side by its OWN local cap height, not one shared value for the
+   whole line. A title-case body's local cap height varies enough to distort a shared
+   divisor.
+5. Classify. Below a 3px stroke-width floor: `uncertain`. No stable split found: `uncertain`.
+   The two sides' stroke-width ranges overlap: `uncertain` — no clean separation. At or above
+   a 1.3 ratio: `bold`. Below it: `not-bold`.
+
+Every threshold above is marked **proposed** in the code, following this repo's own
+convention (CP-2 §12). LH-030's sweep replaces each one with a measured value.
+
+**A real bug this ticket found and fixed, not assumed away.** The prior investigation's own
+crop pipeline (automatic region detection) produces a bad crop for three of the five real
+reference photographs: the curved and wraparound bottle photos never show a true blank row
+between two printed lines (curvature and blur fill the gap), so the row scan reads the WHOLE
+multi-line paragraph as one line. Feeding that merged "line" into the changepoint search
+produced nonsense — one case measured a stroke-width ratio of 20.9, an implausible result this
+ticket traced back to a segmentation failure, not a font-weight difference. The fix: if the
+detected line fills more than 40% of the crop's own height, a real single line never does
+that in a multi-line paragraph crop, so the function returns `uncertain` instead of measuring
+garbage. This directly reproduces the ticket's own table entry for the wraparound photo:
+"unusable; window straddles arced lines."
+
+**A stale number the prior investigation's own calibration table carried.** That table records
+"26 corpus cases: 1.00 every time" — no separation, ever, in the rendered golden set. That
+number predates TRO-527 (2026-08-13), which taught the golden-set renderer to actually draw
+the `GOVERNMENT WARNING:` prefix at font-weight 700 and the body at 400 (previously the whole
+statement rendered at one weight, which is why the prior number was 1.00). Measured against
+the CURRENT corpus, live, in this ticket's own test suite: every clean rendered case with
+`governmentWarningPrefixBold: true` in the golden set measures `bold`. This CHANGES.md entry
+states the discrepancy rather than papering over it — standing rule 2.
+
+**How to run it.** `pnpm vitest run src/server/warning/bold-detect.test.ts`. No live API call,
+no database. `measureBoldSignal` is pure pixel math (`sharp`) with no external dependency.
+
+**Confirmed.** 54 tests, `pnpm vitest run src/server/warning/bold-detect.test.ts`, all pass.
+Coverage:
+
+- `otsuThreshold` and `classifyBoldSignal`: pure unit tests on synthetic numbers.
+- `findBoldChangepoint`: a hand-built synthetic reproduction of the case-08/case-09
+  degenerate-split artifact, proving the search finds the true boundary when constrained to
+  15%-65% and finds the spurious one when it is not.
+- The five real reference photographs, cropped through the SAME `detectWarningRegion` +
+  `cropForOcr` pipeline (LH-020, unmodified) a real caller will eventually use: `bold` on the
+  flat photo (case-35), `uncertain` on the three curved/wraparound photos. Automatic region
+  detection finds no crop at all on the sixth (crown-royal, gold text on a maroon background)
+  — a pre-existing `region-detect.ts` limitation, confirmed directly by this ticket's own test
+  and NOT fixed here (out of scope; region detection is LH-020's file). A hand-cropped region
+  of the same photo, tested separately, also measures `uncertain`.
+- Every clean (non-degraded), warning-bearing, `governmentWarningPrefixBold: true` case in the
+  golden-set manifest: `bold`, via a data-driven test over the real manifest (not a hardcoded
+  case list).
+- case-23 (9px print — case-24's own vector, since TRO-516 C5 merged case-24 into case-23
+  before this ticket started): `uncertain`, floor reason. The ticket's own required acceptance
+  case.
+- Every degraded corpus case (glare, low-light, rotation, odd typography) individually, with
+  its own observed result and a stated reason — some still measure `bold` (the degradation
+  does not reach the warning crop), some measure `uncertain` (it does). A rotation case where
+  `detectWarningRegion` finds no region at all is stated as exactly that, not silently skipped.
+- A manual check, not an automated test, confirming the tests above fail for the right
+  reason: temporarily removing the 40%-line-height guard flips case-37 and case-39 back to
+  the wrong `bold` answer. Case-36 still measures `uncertain` without the guard — it fails
+  the separate ranges-overlap check instead, so the guard is not the only thing protecting
+  it. Only two of the three curved photos depend on this specific guard.
+
+**Not yet verified.** No golden-set case exists with `governmentWarningPrefixBold: false` for
+a present warning — TRO-527's own CHANGES.md entry names this gap (LH-023's case-33/case-34,
+not yet landed). The `not-bold` signal is proven directly against `classifyBoldSignal`, the
+pure decision function, and against a controlled synthetic image; it has no real-photo or
+real-corpus example to prove itself against yet. This ticket states the gap; it does not
+fabricate a case to close it.
+
+**How to roll it back.** Delete `src/server/warning/bold-detect.ts` and
+`src/server/warning/bold-detect.test.ts`. Nothing else in the tree imports either file — this
+ticket wires the signal into no schema, router, comparator, UI, or eval-harness code.
+
 ## TRO-572 — worktree.sh: a per-ticket lock serializes truly concurrent invocations (2026-08-13)
 
 **The gap.** TRO-557 refuses a worktree reuse from a DIFFERENT session. It checks a

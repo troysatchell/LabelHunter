@@ -57,6 +57,380 @@ out-of-scope tooling gap, not a deploy-confirmation question anymore.
 **Rollback.** Delete `docs/approach.md`. Remove this changelog entry. No schema or application
 code changed.
 
+## TRO-571 — The deployed batch worker OOM-crash-looped under real load (2026-08-13)
+
+**What happened.** TRO-483's 36-case batch against the deployed instance stalled
+at 2 of 36. It stayed there for over 35 minutes: 15 items held in `CLAIMED`, 19
+never claimed, `failedCount: 0`.
+
+`render logs` for `labelhunter-worker` showed the process restarting every few
+minutes with no deploy and no new commit behind it. Each cycle logged one line:
+
+```text
+[batch-worker] starting — 5 extract worker(s), 2 resolve worker(s), 1 single-label resolve worker(s)
+```
+
+Then silence, until the next restart.
+
+**The silence was the evidence.** A JavaScript exception logs something. The only
+errors anywhere in the worker's logs were from the previous day. A process that
+vanishes with no stack trace, no exit code and no last line was killed from
+outside. `SIGKILL` leaves no last words.
+
+**Cause: concurrency against plan size, not a leak.** `src/server/warning/ocr.ts`
+was checked first. It terminates its tesseract worker on every path, including
+the timeout branch TRO-519 added. Nothing leaks.
+
+It creates a **fresh tesseract worker per item**, though. Each one loads the
+English trained-data model, and `sharp` decodes a full-size JPEG beside it.
+`render.yaml` asked for five of those at once on `plan: starter`. Single-label
+verification never hit the ceiling because it handles one image at a time. A
+batch is the first thing that ever ran five concurrently on the deployed box.
+
+**The fix.** `BATCH_WORKER_CONCURRENCY` 5 → 2, `BATCH_RESOLVE_WORKER_CONCURRENCY`
+2 → 1, in `render.yaml`. The service is Blueprint-managed, so a dashboard edit
+would be overwritten on the next sync. The change belongs in the file.
+
+The trade is throughput for completion. A 36-item batch takes roughly 90 seconds
+instead of 30. It finishes, which it previously never did.
+
+**Two theories this replaced, recorded so nobody re-runs them.**
+
+1. *Deploy churn from merge velocity.* Plausible — 14+ restarts did line up with
+   merges. A 35-minute merge freeze disproved it. The batch never recovered.
+2. *The worker is dead or absent.* The logs disproved it. It boots every time.
+
+The freeze is what falsified the first theory. Stop the suspected cause and see
+whether the symptom stops.
+
+**Not done here, deliberately.** This ticket did not upgrade the plan. An upgrade
+costs money. It also hides the shape of the trade-off TH-R23 asks us to document.
+This ticket also left the tesseract workers unpooled. Reuse instead of
+create-per-item is the real throughput fix. That change is larger than this
+ticket should carry.
+
+**Confirmed.** `scripts/deploy/render-yaml.test.ts` covers 27 cases. Two new cases
+pin a concurrency **ceiling** rather than an exact value. Tuning down therefore
+stays free. Tuning up has to come here and justify itself. A third assertion
+checks that the plan these limits were chosen for is still the plan in use.
+Proven red-first: restoring concurrency 5 fails with `expected 5 to be less than
+or equal to 2`.
+
+**How to run it.**
+
+```bash
+pnpm test -- scripts/deploy/render-yaml.test.ts
+```
+
+**Rollback — unsafe as-is, read before reverting.** A plain `git revert` of this
+commit restores `BATCH_WORKER_CONCURRENCY=5` and
+`BATCH_RESOLVE_WORKER_CONCURRENCY=2`, which is the configuration that
+OOM-crash-looped. Do not revert to undo something unrelated in this commit.
+
+To roll back the test or the prose while keeping the deployed worker alive,
+revert the commit and then re-apply the two values (2 and 1) in `render.yaml`.
+Raising them again is only safe behind a bigger plan or a pooled tesseract
+worker.
+
+## TRO-568 — The latency harness could not reach the gated deployment (2026-08-13)
+
+**The bug.** `scripts/latency/measure.ts`'s `--url` path built its POST as
+`fetch(verifyUrl, { method: "POST", body: formData, signal })`. There was no
+`headers` object at all.
+
+TRO-482 put a shared access-code gate in front of every non-exempt route,
+including `/api/verify`. So every request this harness made to a deployed
+instance returned 401 before any pipeline stage ran. The harness would have
+reported the gate rejecting it as a latency measurement.
+
+The script predates the gate. Nothing failed loudly, because a 401 is a
+perfectly valid HTTP response — it just is not the thing being measured.
+
+**Why it mattered now.** TRO-486's sweep downgraded TH-R2 to PARTIAL. The
+committed p50 3834 ms and p95 4458 ms figures predate TRO-546. That ticket
+changed `region-detect.ts`, which sits on the measured path. The
+remeasurement fixes the downgrade. It could not run.
+
+**The fix.** `scripts/latency/access-code.ts` builds the credential headers
+from `ACCESS_CODE`. It sends the value as `x-access-code`. PRD §8 provides
+that header so non-browser callers can skip the browser sign-in flow.
+
+Two decisions worth naming:
+
+1. **Built once, before the first request.** A per-request build would turn
+   a missing credential into `runs` identical 401s. That reads as a broken
+   deployment, not a missing variable. It also spends the target's per-IP
+   rate-limit budget. A later honest attempt can then be locked out.
+2. **Whitespace-only is treated as absent, and a real value is trimmed.** A
+   code pasted out of a dashboard often carries a trailing newline. Sent
+   verbatim it fails the server's constant-time comparison and is
+   indistinguishable from a wrong code.
+
+The gate is not weakened or bypassed. The harness authenticates as a real
+caller does, which is the only way the number describes the shipped path.
+
+**Confirmed.** `scripts/latency/access-code.test.ts` covers 6 cases. The
+header goes out under its exact server-side name. A missing variable throws
+a named error instead of sending nothing. Empty and whitespace-only values
+are refused. A padded value is trimmed. `render-target.ts` and
+`target-info.ts` were checked for the same gap. Neither makes an outbound
+request.
+
+**Not done here.** The remeasurement itself. That needs a real run against
+the deployed instance and belongs with the session that owns TH-R2.
+
+**How to run it.**
+
+```bash
+pnpm test -- scripts/latency/access-code.test.ts
+ACCESS_CODE=<the deployed value> pnpm latency:measure -- --url=<origin>
+```
+
+**Rollback.** Revert this commit. The harness returns to sending no
+credential, and `--url` mode returns to measuring 401s.
+
+## TRO-558 / TRO-559 — measurement scripts stop clobbering evidence; the stale OCR floor numbers are re-measured (2026-08-13)
+
+**TRO-559.** `pnpm eval:ocr-floor-sweep` used to overwrite its own committed evidence file in
+place, with no warning. An agent diagnosing TRO-546 re-ran it and silently replaced TRO-535's
+committed artifact with numbers from a different image set. `scripts/eval/artifact-guard.ts`
+closes that gap: a guarded writer now refuses to overwrite an existing artifact unless the
+caller passes `--force`. Pass `--out=<path>` instead to write a separate comparison copy without
+touching the committed file. The regression test (`artifact-guard.test.ts`) ran red first. It
+ran against a version of the guard with no `existsSync` check — today's real, silent-overwrite
+behavior. It ran green once the check was added. A review round then found the check alone left
+a race window between the check and the write. `writeGuardedJsonArtifact` now opens the file
+with Node's `wx` flag instead. The guarantee is atomic, not check-then-write.
+
+Two scripts convert to the guarded path: `scripts/eval/ocr-floor-sweep.ts` and
+`scripts/eval/tro-546-case22-ocr-region-check.ts`. Both are one ticket's frozen evidence
+snapshot, not a rolling report. Git history shows exactly one commit ever touched each output
+file, before this ticket's own re-measurement. Every other `scripts/eval/` writer is left alone,
+each for a stated reason — no writer is skipped silently:
+
+| Writer | File | Why it is safe as-is |
+|---|---|---|
+| `check.ts` (`--live`) | `scripts/eval/results/eval-report.json` | A rolling "last real run" report by design, not one ticket's frozen evidence. Self-describing (`measuredAt`, `manifestContentHash`, `caseIds`). Gated behind a real, paid API call — never an accidental cheap re-run. 10 intentional refreshes already in git history: a working, established pattern, not the silent-clobber bug this ticket targets. |
+| `benchmark.ts` | `scripts/eval/results/benchmark-report.json` | Always-live by design — it has no cheap mode, so there is no accidental-cheap-run path to a clobber. Same rolling, self-describing shape as `eval-report.json`. 2 intentional refreshes in git history. |
+| `variance.ts` (`--live`) | `scripts/eval/results/variance-report.json` | Same rolling, paid, self-describing shape. Already has its own bespoke guard, `warnIfNarrowingCommittedReport` (lines 150-168) — a deliberate warn-not-refuse design its own authors already reasoned through. Converting it to hard-refuse would fight that existing, working design, not fix a gap. 4 intentional refreshes in git history. |
+| `variance.ts` (`--establish-baseline`) | `scripts/eval/baseline.json` | The ticket's own named exception. TRO-561's re-baseline protocol: an explicit flag, archives the old baseline first (`archiveExistingBaseline`, never deletes), git history is the provenance trail. |
+| `variance.ts` (`--establish-baseline`) | `scripts/eval/results/eval-report.json` (refresh) | A byproduct of the same protocol-gated, explicit-flag path as `baseline.json` above — not a second, separate risk. |
+
+Review also found `--out=` with no path attached (`--out=` alone) fell through unrecognized and
+silently used the default path instead. `parseArtifactGuardArgs` now rejects it explicitly,
+matching the module's own no-silent-failure rule. It also found neither converted script checked
+`rest` for unrecognized arguments — a typo like `--forc` was silently ignored instead of
+rejected. Both scripts now exit 2 on any leftover argument.
+
+**TRO-558.** `scripts/eval/results/ocr-floor-sweep.json` and CP-2 §4.5's amendment table both
+quoted confidences measured on 2026-08-12 against a 32-case golden set. That golden set no
+longer exists. TRO-527 rebuilt every image, adding the bold ground-truth prefix. TRO-516 C5
+merged case-24 into case-23. TRO-529 added five real-photograph cases, case-35 through case-39.
+The current golden set has 36 cases, not 32.
+
+The re-measurement used the new guarded path. `pnpm eval:ocr-floor-sweep` refused on the first attempt,
+because the stale file already existed. That is a live demonstration: TRO-559's fix works
+against the exact file its own bug report names. `pnpm eval:ocr-floor-sweep -- --force` then
+wrote the fresh measurement, deliberately:
+
+- 36 cases total. 31 are warning-bearing with a usable OCR candidate.
+- Sorted confidences: 33, 41, 47, 65, 91, 93, then 95 (22 cases) and 96 (3 cases).
+- `goldenSetCommitSha`: `0e6e3e1432f63609ad49febf5445fb866cadaf91`. `manifestContentHash`:
+  `fa3dbcfb60a6ecbd6c2de4ec837c54c72b87e909865ee9429946ac79cc5e0784`. Both fields are new on this
+  artifact (TRO-558) and both match `scripts/eval/baseline.json`'s own values for the same
+  commit. That match is an independent cross-check: this run measured the golden set it claims to.
+
+**Measured, not assumed: the floor decision is unchanged.** `OCR_CONFIDENCE_FLOOR` stays 50.
+Case-23 — the original reason the floor had to move below 56 — measured 65 this run, further
+from the floor than before, not closer. The three new real-photograph rotation cases (case-36,
+case-37, case-39) measure 33, 41, and 47, all below 50. Their edit distances run 186 to 215
+against the 283-character canonical string. That confirms the OCR read is genuine garbage, not
+a borderline reading — the floor correctly discards all three. The full table is in
+`docs/checkpoints/cp2-warning-subsystem.md` §4.5's new 2026-08-13 amendment, appended after the
+2026-08-12 amendment. The same amendment states the one honest limit the new data surfaces.
+Case-36's 47 sits only 3 points under the floor — the closest any measured case has come. The
+original row and the first amendment are unchanged, per CP-2's own stated discipline of dating
+a later finding rather than rewriting an earlier one.
+
+**How to run it.**
+
+```bash
+pnpm eval:ocr-floor-sweep                                # refuses: the committed file already exists
+pnpm eval:ocr-floor-sweep -- --force                     # deliberately refreshes the committed evidence file
+pnpm eval:ocr-floor-sweep -- --out=scratch/compare.json  # writes a comparison copy, leaves the committed file untouched
+```
+
+The same three forms work for `pnpm eval:tro-546-case22-check`.
+
+**Rollback.** `git revert` this commit range. `ocr-floor-sweep.json` and the CP-2 doc return to
+their pre-TRO-558 state. `artifact-guard.ts` and its test are additive — safe to leave in place
+even on a partial revert.
+
+## TRO-482 — LH-061 · Key protection (2026-08-12)
+
+**SECURITY-SEMANTICS HOLD.** PRD §8 and escalation.md rule 7 require Troy's own read before
+this merges. This entry records what was built. It does not mark the ticket done.
+
+**What this builds.** Three guards protect Troy's Anthropic key on the public URL (PRD §8,
+TH-R6): a shared access code, per-IP and global rate limits, and a daily spend budget.
+
+### 1. Shared access code
+
+`src/proxy.ts` checks every request. A valid credential is either a long-lived httpOnly
+cookie or an `x-access-code` header. The cookie comes from `POST /api/access-code`
+(`src/app/api/access-code/route.ts`), which checks a submitted code against the `ACCESS_CODE`
+env var and sets the cookie on a match. The page at `/access-code`
+(`src/app/access-code/page.tsx`) collects the code from a person. The header serves
+non-browser callers, such as an evaluator's own script — PRD §8's own design mandate.
+
+The check fails closed. An unset or empty `ACCESS_CODE` rejects every candidate. A
+misconfigured deployment blocks everyone. It never becomes an open endpoint.
+
+The comparison is constant-time. Both the real code and the candidate get hashed first
+(SHA-256, via the Web Crypto API), then compared byte by byte with no early exit — so
+response timing cannot leak how many leading characters matched. Neither value is ever
+logged.
+
+Named `src/proxy.ts`, not `middleware.ts`. Next.js 16.3.0 renamed the file convention. The
+old name still works, but `pnpm build` names the exact migration:
+`npx @next/codemod middleware-to-proxy`. Confirmed by running it, not assumed from memory of
+an older version.
+
+**A real Edge Runtime finding.** `src/proxy.ts` runs in Next's Edge Runtime, which does not
+support `node:crypto`. Confirmed with a real `pnpm build`, which threw: "A Node.js module is
+loaded ('node:crypto')... which is not supported in the Edge Runtime." The access-code module
+now uses the Web Crypto API (`crypto.subtle`) instead — a global in both the Edge Runtime and
+Node.js. The cost: the hash and compare functions are async now.
+
+**A real request-size regression, found and fixed.** `src/proxy.ts` is this app's first
+Next.js proxy file. Adding it triggered Next's own default request-body cap for any request
+that passes through a proxy (`experimental.proxyClientMaxBodySize`, 10 MB by default) —
+independent of this app's own size checks. `pnpm test:e2e`'s oversized-upload spec caught
+this directly: a real ~20 MB test upload started failing before it ever reached
+`preprocessImage`'s own, more specific error. Fixed in `next.config.ts`:
+`proxyClientMaxBodySize` now matches `MAX_TOTAL_REQUEST_BYTES` (1 GB — the batch route's own
+ceiling, and the largest legitimate body this app accepts). Re-ran the full e2e suite after
+the fix: all 12 specs pass, including the two that failed before it.
+
+### 2. Rate limits — per-IP and global
+
+An in-memory, fixed-window counter (`src/server/rate-limit/fixed-window.ts`). This is a
+documented, scope-appropriate choice (TH-R19), not an oversight: this app runs as one Render
+`starter`-plan instance, with no horizontal scaling (PRD §8). A single process's own `Map` is
+a complete rate limiter for that topology. It stops being correct the moment a second
+instance joins — flagged in the module's own header comment as the trigger to move this to a
+shared store (Redis, or Postgres, like the budget guard below), not built ahead of that need.
+
+Applied to the two routes PRD §8 names as expensive: `/api/verify` and `/api/batch/start`
+("batch submission"). The numbers, and the reasoning behind each
+(`src/server/rate-limit/instances.ts`):
+
+| Limiter | Limit | Window | Why |
+|---|---|---|---|
+| verify, per-IP | 20 | 60s | Generous for a live demo (about one label every 3s); still bounds a scripted loop to a small, predictable cost. |
+| verify, global | 100 | 60s | Covers several evaluators exploring at once; caps the deployment's worst-case Haiku call rate regardless of how many IPs are involved. |
+| batch-start, per-IP | 5 | 60s | A batch submission can carry hundreds of images (PRD §3.5); no real user starts more than a handful of batches per minute. |
+| batch-start, global | 20 | 60s | Same reasoning as verify's global limit, sized down to match batch-start's own lower legitimate rate. |
+
+A rejected request gets a friendly message naming a wait time in seconds. It never gets a
+bare 429 with no explanation.
+
+**`/api/access-code` is rate limited too, added by the merge review.** That endpoint is the
+one path `src/proxy.ts` exempts from the gate, so anyone can reach it with no credential.
+That is exactly what makes it the place to guess the shared code. The constant-time compare
+above is worth nothing against an attacker who may guess without limit. The endpoint now
+takes 10 attempts per IP per 15 minutes, and 100 across all IPs in the same window. A person
+who knows the code needs one attempt, and a person fumbling it needs two or three, so ten
+leaves real headroom. Ten per 15 minutes caps one address at 960 guesses a day. The window is
+15 minutes, not 60 seconds, because a 60-second window resets 1,440 times a day and would
+allow 14,400. Every attempt counts, including a correct one, so landing a guess does not buy
+an attacker a fresh budget. Each IP has its own bucket, so one attacker cannot lock out a
+real reviewer.
+
+### 3. Daily spend budget
+
+Persisted in Postgres, not in-memory — the opposite tradeoff from the rate limiter above, on
+purpose. A process restart (a deploy, a crash, Render recycling the instance) must not
+silently reset spend to zero. That would defeat the guard exactly when a traffic spike is
+causing restarts. New table `daily_spend` (migration `0008_tricky_banshee.sql`): one row per
+UTC calendar day, holding the real running total in dollars.
+
+Default: **$5.00/day**, overridable through `DAILY_BUDGET_USD` with no redeploy. Reasoning
+(`src/server/budget/daily-budget.ts`'s own header comment has the full derivation): PRD §4's
+cost table gives roughly $0.0075/label blended — Haiku extraction plus an estimated 10-15%
+Sonnet escalation rate. The golden set is 20-30 labels. A full day of evaluator exploration,
+generously, might reach a few hundred label verifications: call it 400, about $3.00. $5.00
+gives real headroom above that, while bounding the worst case of a discovered script
+hammering the endpoint to a small, acceptable daily figure. This is a distinct pool from
+`factory/config.yaml`'s $25 build+eval spend cap. That number tracks factory development
+spend, and Troy explicitly removed its pause (escalation.md item 3). This number is the
+ongoing runtime budget for the deployed public instance — a different pool, a different job.
+
+Checked before the model call, never after. Both `/api/verify` and `/api/batch/start` check
+the budget first. A request after the budget is exhausted returns a friendly message and
+never reaches the model.
+
+Real cost recording reuses the eval harness's own pricing math
+(`scripts/eval/usage.ts`'s `buildMeasuredCost`/`HAIKU_4_5_PRICING`), not a re-derived
+estimate — the same real, published per-token prices, applied to the real, measured token
+usage of each call. `src/server/budget/anthropic-usage.ts` wraps whatever Anthropic client a
+call already uses (transparently: same request, same response, same errors) to read that
+usage back, since neither `extractLabel` nor `resolveEscalatedLabel` returns it to its own
+caller today.
+
+**The spend recording was inert until the merge review found it. It is now proven by test.**
+The review that ran on the merge with `main` traced a real defect through this code. The
+route's production dependency object never set `anthropicClient`. So the usage wrapper
+received `undefined`, `takeLastUsage()` always answered `null`, the recording step never
+ran, and `daily_spend` was never written. The budget then read $0.00 on every request and
+could never trip. The daily budget was, in effect, a check that always passed.
+
+The fix binds the same shared Anthropic client the extractor already falls back to, so the
+wrapper has something real to read usage from. A new test runs the verify path through the
+real production dependency object — spread, not rebuilt — and asserts a `daily_spend` row
+exists afterward with a non-zero `total_usd`. Reverting the binding turns that test red with
+no row at all. This is written down because a guard that silently does nothing is worse than
+no guard: it ends the vigilance that was doing the real protecting.
+
+**A known, flagged limitation.** Real spend recording is wired into `/api/verify`'s one
+inline Haiku call only. Batch's own Haiku/Sonnet calls run later, in the background worker
+(`src/server/batch-queue/`, `src/server/single-label-resolve/`) — outside this ticket's
+HTTP-route scope. The daily budget still blocks *new* batch submissions once exhausted
+(`/api/batch/start`'s own gate), but an already-enqueued batch's worker-driven spend is
+neither recorded into the ledger nor re-checked mid-run. This under-counts real total spend.
+It is a real gap for a follow-up ticket, named here, not hidden.
+
+**How to run it.**
+1. Set `ACCESS_CODE` in `.env.local` to a real value (`.env.local.example` documents the
+   placeholder shape only — never a real value there or in this file).
+2. `pnpm db:migrate` applies migration `0008_tricky_banshee.sql`.
+3. `pnpm dev`, then visit any page. It redirects to `/access-code` until a correct code is
+   entered.
+4. `pnpm test` runs the full suite, including every new test this ticket adds.
+
+**Rollback.** Three independent pieces, each revertible alone:
+- Access code: revert the commits touching `src/proxy.ts`, `src/server/auth/`,
+  `src/app/access-code/`, `src/app/api/access-code/`. Remove `ACCESS_CODE` from the
+  environment — with `src/proxy.ts` itself reverted, it has no effect either way.
+- Rate limits: revert `src/server/rate-limit/` and the `checkRateLimit` wiring in
+  `src/app/api/verify/route.ts` and `src/app/api/batch/start/route.ts` — each an additive,
+  optional dependency field, so removing the wiring is a clean subtraction.
+- Daily budget: revert `src/server/budget/`, the `checkBudget`/`recordSpend` wiring in the
+  same two routes, and drop the `daily_spend` table with a new migration — never a hand-edit
+  to `0008_tricky_banshee.sql` itself once it has shipped.
+
+**Migration renumbered on the merge with `main` (2026-08-13).** This branch first wrote the
+table as `0004_daily_spend.sql`. `main` then landed its own `0004`–`0007`, so the number
+collided. The merge deletes this branch's `0004`, takes `main`'s drizzle metadata whole, and
+regenerates the table from the merged schema as `0008_tricky_banshee.sql`. The generated SQL
+creates `daily_spend` and nothing else — it drops and alters no table `main` added. The table
+shape is unchanged.
+- The `next.config.ts` `proxyClientMaxBodySize` fix should stay even if `src/proxy.ts` is
+  ever reverted for an unrelated reason — it corrects a real Next.js default this app's own
+  size checks did not otherwise account for.
+
+Full evidence and every number's reasoning: the PR body for `feat/lh-061-key-protection`.
+
 ## TRO-486 — LH-065: requirements-audit compare sweep at commit 876a295 (2026-08-13)
 
 **One row moved, and it moved down.** TH-R2 (single-label latency) held VERIFIED at the last

@@ -192,6 +192,12 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     before the push. A docs-only branch that trips gate check G6 uses the
     `gate-exceptions.json` path, not a direct push. (Peer session, 2026-08-13.)
 
+34. **When CodeRabbit rate-limits — the account-wide capacity constraint, not a spending
+    cap — CI green is enough to proceed.** Retry the local review capture once or twice per
+    the standing protocol, but do not block a merge on a persistent rate limit once CI's own
+    checks (`verify`, `e2e`) are green. Troy's explicit ruling, given mid-rate-limit across
+    three concurrent sessions on one day. (2026-08-13.)
+
 ## Mechanized (no longer prompt-dependent)
 
 - `gate.sh` refuses (`exit 2`) on an uncommitted worktree before running anything (unless

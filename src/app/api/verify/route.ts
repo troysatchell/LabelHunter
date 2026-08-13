@@ -101,6 +101,7 @@ import { db as defaultDb } from "../../../lib/db";
 import { applications, fieldResults, labelImages, reviewQueue, verifications } from "../../../lib/db/schema";
 import {
   extractLabel as defaultExtractLabel,
+  getDefaultExtractorClient,
   HaikuExtractionError,
   type ExtractLabelOptions,
   type HaikuExtractionResult,
@@ -128,6 +129,9 @@ import {
   type CompareGovernmentWarningFromImageInput,
 } from "../../../server/warning";
 import { saveLabelImage as defaultSaveLabelImage, type SavedLabelImage } from "../../../server/storage/db-image-storage";
+import { checkVerifyRateLimit, type RateLimitCheckResult } from "../../../server/rate-limit/instances";
+import { checkDailyBudget, recordSpendUsd, BUDGET_EXHAUSTED_MESSAGE, type BudgetStatus } from "../../../server/budget/daily-budget";
+import { haikuCallCostUsd, wrapAnthropicClientForUsageCapture } from "../../../server/budget/anthropic-usage";
 import { parseVerifyFormData } from "./parse-request";
 import { buildServerTimingHeader, SERVER_TIMING_STAGES, type ServerTimingStage, type StageTimingsMs } from "./server-timing";
 import { FIELD_LABELS, type VerifyErrorKind, type VerifyErrorResponse, type VerifyFieldResult, type VerifySuccessResponse } from "./types";
@@ -166,16 +170,88 @@ export interface VerifyRouteDeps {
    * production, which makes `extractLabel` fall back to its own shared
    * default client. */
   anthropicClient?: ExtractLabelOptions["client"];
+  /**
+   * TRO-482 / LH-061, PRD §8. Checked FIRST, before any expensive work —
+   * per-IP + global fixed-window limits (`../../../server/rate-limit/`).
+   * Optional, with an always-allow fallback in `handleVerifyRequest`
+   * itself: this field predates none of the existing test suite, so every
+   * test built before this ticket keeps passing with no changes — it
+   * simply never sets this field, and gets the safe default. Production
+   * (`POST` below) always supplies the real, shared limiter singletons.
+   */
+  checkRateLimit?: (request: Request) => RateLimitCheckResult;
+  /**
+   * TRO-482 / LH-061, PRD §8. Checked second, still BEFORE the Haiku call
+   * — the persisted daily spend budget (`../../../server/budget/
+   * daily-budget.ts`). Same optional/always-allow-by-default shape as
+   * `checkRateLimit`, for the same reason.
+   */
+  checkBudget?: () => Promise<BudgetStatus>;
+  /**
+   * TRO-482 / LH-061. Records this request's real, measured Haiku cost
+   * into the daily ledger after a successful extraction. Optional,
+   * no-op by default — the pre-existing test suite neither sets this nor
+   * needs to: with no recorder wired, nothing is written, so those tests
+   * touch `daily_spend` not at all. Production wires the real, DB-backed
+   * `recordSpendUsd`.
+   */
+  recordSpend?: (usd: number) => Promise<void>;
 }
 
-const defaultDeps: VerifyRouteDeps = {
+/**
+ * The production wiring. Exported so `route.test.ts` can run the real
+ * object — not a hand-rebuilt copy of it — and prove each guard is really
+ * bound. A test that rebuilds this object cannot detect a binding this
+ * object loses, which is the exact failure that shipped a budget nothing
+ * ever wrote to (TRO-482, merge review round 1).
+ */
+export const defaultDeps: VerifyRouteDeps = {
   db: defaultDb,
   preprocessImage: defaultPreprocessImage,
   extractLabel: defaultExtractLabel,
   compareGovernmentWarning: defaultCompareGovernmentWarning,
   saveLabelImage: defaultSaveLabelImage,
   comparators: productionComparators,
+  checkRateLimit: checkVerifyRateLimit,
+  checkBudget: () => checkDailyBudget(defaultDb),
+  recordSpend: (usd) => recordSpendUsd(usd, defaultDb),
+  /**
+   * TRO-482, merge review round 1. This binding is what makes the daily
+   * budget real, and it was missing until that review found it.
+   *
+   * Without it, `deps.anthropicClient` was `undefined` in production.
+   * `wrapAnthropicClientForUsageCapture(undefined)` then returned a
+   * capture whose `takeLastUsage()` always answers `null`, so
+   * `recordSpend` below was never reached, `daily_spend` was never
+   * written, and `checkDailyBudget` read 0 forever. The guard could not
+   * trip. Binding the same shared client `extractLabel` would have
+   * fallen back to gives the wrapper something real to read usage from.
+   *
+   * A getter, not a plain value: `getDefaultExtractorClient()` builds the
+   * client on first use, so importing this route never constructs one.
+   * The call memoizes, so every request after the first reuses it.
+   *
+   * Sharing that one client across concurrent requests is safe. The
+   * wrapper does not mutate it — see `anthropic-usage.ts`'s own header.
+   */
+  get anthropicClient(): ExtractLabelOptions["client"] {
+    return getDefaultExtractorClient();
+  },
 };
+
+/** Used only when a caller's `deps` does not set `checkRateLimit` — see
+ * that field's own doc comment. */
+const ALLOW_ALL_RATE_LIMIT: RateLimitCheckResult = { allowed: true, message: "" };
+
+/** Used only when a caller's `deps` does not set `checkBudget` — see that
+ * field's own doc comment. The exact `spentUsd`/`budgetUsd` values are
+ * never read when `exhausted` is `false`, so they carry no real meaning
+ * here; `0` is honest for "not tracked in this context." */
+const ALLOW_ALL_BUDGET: BudgetStatus = { exhausted: false, spentUsd: 0, budgetUsd: 0 };
+
+/** Used only when a caller's `deps` does not set `recordSpend` — see that
+ * field's own doc comment. */
+async function noopRecordSpend(): Promise<void> {}
 
 function errorResponse(status: number, kind: VerifyErrorKind, message: string): NextResponse<VerifyErrorResponse> {
   return NextResponse.json({ error: { kind, message } }, { status });
@@ -235,6 +311,22 @@ function requireCompleteStageTimings(timings: MutableStageTimingsMs): StageTimin
 }
 
 export async function handleVerifyRequest(request: Request, deps: VerifyRouteDeps = defaultDeps): Promise<Response> {
+  // TRO-482 / LH-061, PRD §8 — key protection. Both checks below run
+  // BEFORE any expensive work: no form parsing, no preprocessing, no
+  // Haiku call. Rate limit first (cheap, in-memory, no I/O), budget
+  // second (a real database read) — cheapest, most common rejection
+  // reason checked first. They also run before the stage clock below: a
+  // rejected request runs no stage at all, so it reports no timings.
+  const rateLimitResult = (deps.checkRateLimit ?? (() => ALLOW_ALL_RATE_LIMIT))(request);
+  if (!rateLimitResult.allowed) {
+    return errorResponse(429, "RATE_LIMITED", rateLimitResult.message);
+  }
+
+  const budgetStatus = await (deps.checkBudget ?? (async () => ALLOW_ALL_BUDGET))();
+  if (budgetStatus.exhausted) {
+    return errorResponse(503, "BUDGET_EXHAUSTED", BUDGET_EXHAUSTED_MESSAGE);
+  }
+
   // TRO-539: this request's own stage clock — see this file's header
   // comment ("Per-stage timing") and `./server-timing.ts`. Local to this
   // call; never shared across concurrent requests.
@@ -270,8 +362,18 @@ export async function handleVerifyRequest(request: Request, deps: VerifyRouteDep
     data: preprocessed.haikuVariant.toString("base64"),
     mediaType: preprocessed.mediaType,
   };
+  // TRO-482 — wraps whatever client this call would already use (a real
+  // Anthropic client in production, a test fake in `route.test.ts`)
+  // transparently: same request, same response, same error behavior. If
+  // `deps.anthropicClient` is `undefined`, `usageCapture.client` is too,
+  // and `extractLabel` falls back to its own shared default client exactly
+  // as before this ticket — this is a NEW way to read usage off whatever
+  // client ends up handling the call, not a new client. See
+  // `../../../server/budget/anthropic-usage.ts`'s own header comment for
+  // why this file does not wrap the shared default client directly.
+  const usageCapture = wrapAnthropicClientForUsageCapture(deps.anthropicClient);
   const haikuStart = performance.now();
-  const extractionPromise = deps.extractLabel(extractorImage, { client: deps.anthropicClient }).finally(() => {
+  const extractionPromise = deps.extractLabel(extractorImage, { client: usageCapture.client }).finally(() => {
     stageTimingsMs.haiku = performance.now() - haikuStart;
   });
 
@@ -304,6 +406,21 @@ export async function handleVerifyRequest(request: Request, deps: VerifyRouteDep
       return errorResponse(502, "EXTRACTION", "LabelHunter could not read this label. Take a clearer photo and try again.");
     }
     return errorResponse(503, "SERVICE", "LabelHunter could not reach the verification service. Try again.");
+  }
+
+  // TRO-482 — the Haiku call above succeeded and really happened; its real
+  // cost is owed regardless of what happens next in this request. Recorded
+  // best-effort: a failure to WRITE the ledger entry must not fail an
+  // otherwise-successful verification the requester is waiting on — the
+  // same "degrade, don't fail the request" posture `resolveWarningOrDegrade`
+  // already uses above for a different dependency.
+  const haikuUsage = usageCapture.takeLastUsage();
+  if (haikuUsage) {
+    try {
+      await (deps.recordSpend ?? noopRecordSpend)(haikuCallCostUsd(haikuUsage));
+    } catch (cause) {
+      console.error("Could not record spend for a Haiku extraction call", cause);
+    }
   }
 
   const application: ApplicationRecord = {

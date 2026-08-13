@@ -7,16 +7,30 @@
 # and produce failures that look like code defects — the single most common
 # cause of confusing parallel-agent failures.
 #
-# Usage:  scripts/factory/worktree.sh TRO-301 feat/lh-scaffold [base-ref]
+# Usage:  scripts/factory/worktree.sh TRO-301 feat/lh-scaffold [base-ref] [--steal]
 #
 # Re-running for the same ticket RESETS the database, so a retry starts clean
-# rather than inheriting a half-migrated state.
+# rather than inheriting a half-migrated state. That reset is safe only when
+# the caller re-running it is the same session that provisioned the worktree
+# last (TRO-557): every provision stamps a `.factory-owner` ownership file,
+# and reuse from a DIFFERENT session refuses with exit 2 instead of silently
+# resetting a database that session may still be using. Pass --steal to
+# reassign ownership and proceed anyway.
 #
 set -euo pipefail
 
-TICKET="${1:?usage: worktree.sh <TICKET-ID> <branch-name> [base-ref]}"
-BRANCH="${2:?usage: worktree.sh <TICKET-ID> <branch-name> [base-ref]}"
-BASE_REF="${3:-main}"
+STEAL=0
+POSITIONAL=()
+for arg in "$@"; do
+  case "$arg" in
+    --steal) STEAL=1 ;;
+    *) POSITIONAL+=("$arg") ;;
+  esac
+done
+
+TICKET="${POSITIONAL[0]:?usage: worktree.sh <TICKET-ID> <branch-name> [base-ref] [--steal]}"
+BRANCH="${POSITIONAL[1]:?usage: worktree.sh <TICKET-ID> <branch-name> [base-ref] [--steal]}"
+BASE_REF="${POSITIONAL[2]:-main}"
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
@@ -45,6 +59,29 @@ DB_NAME="labelhunter_wt_${TICKET_SLUG}"
 # so an unnormalized path never matches the reuse check and every retry fails.
 WT_PATH="$(cd "${REPO_ROOT}/.." && pwd -P)/labelhunter-wt-${TICKET_SLUG}"
 
+# --- caller identity (TRO-557) -----------------------------------------------
+# Two orchestrator sessions provisioning the same ticket within seconds of
+# each other is a real, observed failure (2026-08-13): the second run reused
+# the first session's worktree and dropped its database mid-use. There is no
+# single canonical "session id" every caller is guaranteed to have, so this
+# picks the strongest one actually available: $CLAUDE_CODE_SESSION_ID is set
+# by the Claude Code CLI for the life of one session and inherited by every
+# subshell it spawns — unlike $$, which is a fresh PID on every single Bash
+# tool call, it stays stable across repeated invocations from the same
+# session. FACTORY_SESSION_ID overrides it explicitly (a non-Claude-Code
+# caller that wants to assert its own stable identity, or a test).
+# LIMITATION: a caller with neither set (a bare shell, cron, CI) gets a value
+# that is different on every invocation, so it can never match itself on a
+# retry — every reuse then needs --steal. That is a usability cost, not a
+# safety hole: an unidentifiable caller defaults to refusal, never to silent
+# trust of a stranger's database.
+RAW_SESSION_ID="${FACTORY_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
+if [[ "$RAW_SESSION_ID" =~ ^[A-Za-z0-9._:-]+$ ]]; then
+  CALLER_SESSION_ID="$RAW_SESSION_ID"
+else
+  CALLER_SESSION_ID="unidentified-$(hostname)-$$-$(date +%s 2>/dev/null || echo 0)"
+fi
+
 echo "=== factory worktree: ${TICKET} ==="
 echo "  branch:    ${BRANCH}  (from ${BASE_REF})"
 echo "  worktree:  ${WT_PATH}"
@@ -63,7 +100,30 @@ fi
 
 # --- 2. worktree ------------------------------------------------------------
 if git worktree list --porcelain | grep -qx "worktree ${WT_PATH}"; then
-  echo "worktree already exists, reusing it"
+  OWNER_STAMP="${WT_PATH}/.factory-owner"
+  # The stamp is data written by a PRIOR run, not trusted code — read it with
+  # grep, never `source` (lessons.md #13: validate at the boundary).
+  STAMPED_SESSION=""
+  if [ -f "$OWNER_STAMP" ]; then
+    STAMPED_SESSION="$(grep -m1 '^FACTORY_OWNER_SESSION=' "$OWNER_STAMP" | cut -d= -f2-)"
+  fi
+  if [ "$STEAL" -eq 1 ]; then
+    echo "worktree already exists, reusing it (--steal: ownership reassigned to this session)"
+  elif [ -n "$STAMPED_SESSION" ] && [ "$STAMPED_SESSION" = "$CALLER_SESSION_ID" ]; then
+    echo "worktree already exists, reusing it (same session)"
+  else
+    echo "ERROR: worktree ${WT_PATH} is claimed by another session." >&2
+    echo "       Re-provisioning resets a database another session may be using." >&2
+    if [ -n "$STAMPED_SESSION" ]; then
+      echo "       Current stamp (${OWNER_STAMP}):" >&2
+      sed 's/^/         /' "$OWNER_STAMP" >&2
+    else
+      echo "       worktree.sh found no readable ownership stamp here." >&2
+      echo "       Treat the owner as unknown." >&2
+    fi
+    echo "       Pass --steal to reassign ownership and proceed anyway." >&2
+    exit 2
+  fi
 else
   if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
     git worktree add "$WT_PATH" "$BRANCH"
@@ -119,6 +179,20 @@ echo "  port:      app ${APP_PORT}"
 
 cd "$WT_PATH"
 
+# --- ownership stamp (TRO-557) -----------------------------------------------
+# Written on every successful provision: a fresh worktree, a same-session
+# reuse, or a --steal. This is what the next caller's reuse check compares
+# against. PID/host/timestamp are forensic only (a fresh PID every
+# invocation, unlike CALLER_SESSION_ID) — never compared, only printed on
+# refusal so a human doesn't have to reconstruct ownership from stat/reflog.
+cat > .factory-owner <<EOF
+FACTORY_OWNER_SESSION=${CALLER_SESSION_ID}
+FACTORY_OWNER_PID=$$
+FACTORY_OWNER_HOST=$(hostname)
+FACTORY_OWNER_STAMPED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+FACTORY_OWNER_BRANCH=${BRANCH}
+EOF
+
 # Next.js reads .env.local; the scaffold ticket may extend this, but
 # DATABASE_URL and PORT are the load-bearing lines and .factory-env stays the
 # authority for the gate.
@@ -155,7 +229,7 @@ for KEY_NAME in ANTHROPIC_API_KEY GOOGLE_API_KEY; do
   fi
 done
 
-# .factory-env and .factory/ are ignored via the tracked .gitignore.
+# .factory-env, .factory-owner, and .factory/ are ignored via the tracked .gitignore.
 # Do NOT write to .git/info/exclude here: in a linked worktree `.git` is a FILE
 # holding a gitdir pointer, so that path fails with "Not a directory" and,
 # under `set -e`, aborts provisioning before the database is ever migrated.

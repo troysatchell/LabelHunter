@@ -6,6 +6,7 @@
 # Factory worktree-local state (never committed)
 .factory/
 .factory-env
+.factory-owner
 .env.local
 
 # Uploaded label images (TRO-465, src/server/storage/local-file-storage.ts) —

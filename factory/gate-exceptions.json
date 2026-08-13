@@ -110,6 +110,13 @@
       "approver": "Troy",
       "date": "2026-08-13",
       "pr": "https://github.com/troysatchell/LabelHunter/pull/74"
+    },
+    {
+      "ticket": "TRO-574",
+      "gate": "regression-test",
+      "reason": "TH-R7's dependency-degradation content moved from docs/error-states.md (internal working doc) into docs/approach.md and README.md (graded deliverables) -- docs-only, no production code to write a red-first case against. Every other gate green (typecheck, lint, build, tests, eval-not-regressed, defect-gate, changes-entry, scope=5 files). Four review rounds triaged, all recorded in the ledger. Troy approved directly in-session, same ruling as TRO-483/484/485/570.",
+      "approver": "Troy",
+      "date": "2026-08-13"
     }
   ]
 }

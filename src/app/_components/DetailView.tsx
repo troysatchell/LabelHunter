@@ -10,7 +10,7 @@
  * ways.
  */
 import type { FieldVerdict } from "../../server/router";
-import type { VerificationDetail, VerificationFieldDetail } from "../../server/verification-detail";
+import type { VerificationBoldSignalDetail, VerificationDetail, VerificationFieldDetail } from "../../server/verification-detail";
 import { LABEL_BANNER_CLASS, labelVerdictText } from "./ResultsChecklist";
 
 const VERDICT_ICON: Record<FieldVerdict, string> = {
@@ -49,7 +49,32 @@ function expectedColumnLabel(field: VerificationFieldDetail["field"]): string {
   return field === "government_warning" ? "What TTB requires" : "On the application";
 }
 
-function FieldRow({ row }: { row: VerificationFieldDetail }) {
+/**
+ * Plain-language headline for LH-025's pixel-measured bold signal
+ * (TRO-532/TRO-533), keyed by the three-valued `signal` — never a bare
+ * confidence number (standing rule 12). Paired with `boldSignal.reason`
+ * (ASD-STE100 prose already, `bold-detect.ts`'s own header comment) for
+ * the supporting detail, and a fixed closing sentence that states the
+ * advisory boundary explicitly (TH-R20, this ticket's own acceptance
+ * evidence: "Say plainly that it never changes the verdict").
+ */
+const BOLD_SIGNAL_HEADLINE: Record<VerificationBoldSignalDetail["signal"], string> = {
+  bold: "LabelHunter's pixel measurement finds the prefix bold.",
+  "not-bold": "LabelHunter's pixel measurement does not find the prefix bold.",
+  uncertain: "LabelHunter could not measure whether the prefix is bold.",
+};
+
+function capitalizeSentence(text: string): string {
+  return text.length === 0 ? text : `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
+}
+
+function boldSignalAdvisoryText(boldSignal: VerificationBoldSignalDetail): string {
+  const headline = BOLD_SIGNAL_HEADLINE[boldSignal.signal];
+  const reasonSentence = capitalizeSentence(boldSignal.reason);
+  return `${headline} ${reasonSentence} This is an advisory signal. It never changes the verdict.`;
+}
+
+function FieldRow({ row, boldSignal }: { row: VerificationFieldDetail; boldSignal: VerificationBoldSignalDetail | null }) {
   // The warning's own transcription is nulled by the router when its §4.4
   // override rejects it (bad confidence, evidence mismatch) even when real
   // text was detected — `evidence` stays populated in that case, so it is
@@ -76,6 +101,17 @@ function FieldRow({ row }: { row: VerificationFieldDetail }) {
         </div>
       </div>
       <p className="detail-field__reason">{row.reason}</p>
+      {/* LH-025/LH-026 (TRO-532/TRO-533), CP-2 §7.2/§7.3, TH-R9. Only on
+          the government_warning row — this signal has nothing to say
+          about any other field. `boldSignal` is `null` whenever no crop
+          was ever measured (see `types.ts`'s own comment), so this line
+          simply does not render then, rather than show a misleading
+          "not measured" state as if it were a real finding. */}
+      {row.field === "government_warning" && boldSignal && (
+        <p className="detail-field__bold-signal" data-testid="bold-signal-advisory">
+          {boldSignalAdvisoryText(boldSignal)}
+        </p>
+      )}
     </li>
   );
 }
@@ -124,7 +160,7 @@ export function DetailView({ detail }: DetailViewProps) {
 
         <ul className="detail-field-list">
           {detail.fields.map((row) => (
-            <FieldRow key={row.field} row={row} />
+            <FieldRow key={row.field} row={row} boldSignal={detail.boldSignal} />
           ))}
         </ul>
       </div>

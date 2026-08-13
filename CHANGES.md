@@ -18,15 +18,16 @@ matters: a requirement satisfied by content an evaluator never opens is not sati
 Google API. It states the unreachable-endpoint failure behavior directly, instead of linking to
 it. The fix repoints README.md's one reference at the new section. A CodeRabbit review round
 found a real inconsistency in the first draft: the Postgres row described one uniform "if
-blocked" behavior. The database is actually read twice per request — a budget check before
-extraction, and a write after. Only the post-extraction write has the designed 503 response.
+blocked" behavior. The database is actually accessed twice per request — a budget-check read
+before extraction, and a write after. Only the post-extraction write has the designed 503
+response.
 The budget-check read's own failure mode is a separate, already-tracked gap, TRO-566. The table
 now states this distinction. The fix also corrects a stale "not yet written" note in
 `docs/error-states.md`, since `docs/approach.md` now exists.
 
 **Docs-only.** This ticket makes no code change and adds no test. It does not change runtime
-behavior. The regression-test check gets a gate exception, following the same G6 docs-only path
-TRO-483, TRO-484, TRO-485, and TRO-570 used. Troy confirmed the exception for this ticket.
+behavior. Troy grants the regression-test check a gate exception, following the same G6
+docs-only path TRO-483, TRO-484, TRO-485, and TRO-570 used.
 
 **Confirmed.** `pnpm typecheck`/`pnpm lint`/`pnpm build`/`pnpm test`/`pnpm eval:check` all clean
 at this commit — no code touched, so no behavior to regress.

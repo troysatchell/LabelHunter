@@ -229,9 +229,44 @@ describe("render.yaml — worker service", () => {
     // scripts/batch-worker/run.ts's own envPositiveInt() calls — these three
     // names, and only these three, are the tunable knobs that file reads.
     const byKey = Object.fromEntries((worker.envVars ?? []).map((v) => [v.key, v]));
-    expect(byKey.BATCH_WORKER_CONCURRENCY?.value).toBe("5");
-    expect(byKey.BATCH_RESOLVE_WORKER_CONCURRENCY?.value).toBe("2");
+    // The two concurrency knobs are asserted by the TRO-571 ceiling test
+    // below, not pinned to an exact value here. Pinning both would
+    // contradict that test's whole point: tuning DOWN is meant to stay
+    // free, and an exact assertion would fail on a safe reduction
+    // (CodeRabbit finding, TRO-571 review round 1).
+    expect(byKey.BATCH_WORKER_CONCURRENCY?.value).toBeDefined();
+    expect(byKey.BATCH_RESOLVE_WORKER_CONCURRENCY?.value).toBeDefined();
     expect(byKey.BATCH_WORKER_SHUTDOWN_TIMEOUT_MS?.value).toBe("30000");
+  });
+
+  it("keeps deployed extract concurrency at or below what the starter plan survived (TRO-571)", () => {
+    // The regression this pins. The deployed worker OOM-crash-looped at 5:
+    // src/server/warning/ocr.ts creates a fresh tesseract worker per item,
+    // each loading the English trained-data model, while sharp decodes a
+    // full-size JPEG beside it. Five at once does not fit on plan: starter.
+    //
+    // Asserting a CEILING rather than the exact value on purpose — tuning
+    // down stays free, tuning up has to come here first and justify itself.
+    // A future raise needs a bigger plan or a pooled tesseract worker, not
+    // just a bigger number, and this test is where that argument surfaces.
+    const byKey = Object.fromEntries((worker.envVars ?? []).map((v) => [v.key, v]));
+    const extract = Number(byKey.BATCH_WORKER_CONCURRENCY?.value);
+    const resolve = Number(byKey.BATCH_RESOLVE_WORKER_CONCURRENCY?.value);
+    expect(Number.isInteger(extract)).toBe(true);
+    expect(Number.isInteger(resolve)).toBe(true);
+    expect(extract).toBeLessThanOrEqual(2);
+    expect(resolve).toBeLessThanOrEqual(1);
+    // And still a working pool — zero would silently process nothing.
+    expect(extract).toBeGreaterThan(0);
+    expect(resolve).toBeGreaterThan(0);
+  });
+
+  it("still runs on the plan these limits were chosen for (TRO-571)", () => {
+    // The ceiling above is meaningless if the plan changes underneath it.
+    // If this ever fails because the plan was upgraded, revisit the
+    // concurrency ceiling deliberately rather than leaving it pinned low
+    // against hardware that could now carry more.
+    expect(worker.plan).toBe("starter");
   });
 });
 

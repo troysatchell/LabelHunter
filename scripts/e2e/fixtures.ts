@@ -147,20 +147,52 @@ function manifestRowToCells(row: ManifestCsvRow): Record<ManifestColumn, string>
   };
 }
 
+const MANIFEST_COLUMN_SET: ReadonlySet<string> = new Set(MANIFEST_COLUMNS);
+
+function isManifestColumn(name: string): name is ManifestColumn {
+  return MANIFEST_COLUMN_SET.has(name);
+}
+
 /**
  * Builds a manifest CSV text body: the exact header row
  * `src/server/batch/types.ts`'s `MANIFEST_COLUMNS` requires, in that
  * order, then one data row per entry in `rows`. `overrideHeader` lets a
- * malformed-CSV test drop or rename a column deliberately, while every
+ * malformed-CSV test drop or reorder columns deliberately, while every
  * other row-building rule stays the same as the well-formed case — a
  * malformed-CSV test should differ from a well-formed one in exactly the
- * one way it is testing, not accidentally in several.
+ * one way it is testing, not accidentally in several. Each data row maps
+ * its cells over the SAME column sequence as the header — `overrideHeader`
+ * when supplied, `MANIFEST_COLUMNS` otherwise — so a header that drops or
+ * reorders a column produces rows that still line up with it, cell for
+ * cell (CodeRabbit finding, TRO-526).
+ *
+ * The invariant this function trusts: every name in `overrideHeader` is a
+ * real `ManifestColumn`, just possibly a subset or a different order. A
+ * `ManifestCsvRow` carries one value per `ManifestColumn` and nothing
+ * else, so there is no principled cell value for a genuinely renamed,
+ * unrecognized column name — writing `""` or the string `"undefined"`
+ * would look like a real value and hide the mistake. This throws instead,
+ * naming the bad column, so a test asking for a truly unrecognized header
+ * fails at the point it is built, not with a silently wrong CSV. A test
+ * that needs a header cell no `ManifestColumn` can supply should build
+ * that CSV text directly instead of through this function.
  */
 export function buildManifestCsv(rows: ManifestCsvRow[], overrideHeader?: readonly string[]): string {
-  const header = (overrideHeader ?? MANIFEST_COLUMNS).join(",");
+  const columns = overrideHeader ?? MANIFEST_COLUMNS;
+  for (const col of columns) {
+    if (!isManifestColumn(col)) {
+      throw new Error(
+        `buildManifestCsv: overrideHeader column "${col}" is not a recognized ManifestColumn ` +
+          `(${MANIFEST_COLUMNS.join(", ")}). This builder sources every cell from a ManifestCsvRow ` +
+          `field, so it cannot supply a value for a renamed or made-up column name. Build that CSV ` +
+          `text directly instead.`,
+      );
+    }
+  }
+  const header = columns.join(",");
   const lines = rows.map((row) => {
     const cells = manifestRowToCells(row);
-    return MANIFEST_COLUMNS.map((col) => csvField(cells[col])).join(",");
+    return columns.map((col) => csvField(cells[col as ManifestColumn])).join(",");
   });
   return [header, ...lines].join("\n") + "\n";
 }

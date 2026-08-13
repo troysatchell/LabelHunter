@@ -47,8 +47,18 @@ describe("enclosingFunctionName", () => {
     ).toBe("A.validate");
   });
 
-  it("falls back to <anonymous> for a method on an unnamed class expression", () => {
-    expect(nameOfFirstCall(`const x = class { validate() { call(); } };`)).toBe(
+  it("derives an anonymous class expression's name from its own variable declaration", () => {
+    expect(nameOfFirstCall(`const x = class { validate() { call(); } };`)).toBe("x.validate");
+  });
+
+  it("qualifies an anonymous class expression assigned as a property value", () => {
+    expect(
+      nameOfFirstCall(`const registry = { X: class { validate() { call(); } } };`),
+    ).toBe("X.validate");
+  });
+
+  it("falls back to <anonymous> when an unnamed class expression has no declaration owner", () => {
+    expect(nameOfFirstCall(`const arr = [class { validate() { call(); } }];`)).toBe(
       "<anonymous>.validate",
     );
   });

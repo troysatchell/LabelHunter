@@ -414,7 +414,7 @@ Create `scripts/factory/defect-gates/baseline.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
-import { introducedFindings, preExistingFindings } from "./baseline";
+import { fileAtRef, introducedFindings, preExistingFindings } from "./baseline";
 import type { Finding } from "./types";
 
 function finding(identity: string): Finding {
@@ -1405,7 +1405,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PinDecision } from "./activation";
 import { decidePin, resolvePinFacts } from "./activation";
-import { introducedFindings, preExistingFindings } from "./baseline";
+import { fileAtRef, introducedFindings, preExistingFindings } from "./baseline";
 import { runRules } from "./engine";
 import quantifierRule from "./rules/vacuous-empty-quantifier";
 import type { Finding, Rule, RuleResult } from "./types";
@@ -1489,9 +1489,14 @@ function main(): void {
     const withSource = rule as unknown as {
       checkSource: (f: string, t: string, c: unknown) => Finding[];
     };
+    // Use fileAtRef, never a raw `git show`. A file this branch ADDED does not
+    // exist at BASE_REF, and that is the common case, not the edge case.
+    // fileAtRef returns null there; a raw git show would throw and take the
+    // whole gate down.
     baselines[rule.meta.id] = changed.flatMap((f) => {
-      const r = execSync(`git show ${baseRef}:${f}`, { cwd: repoRoot, encoding: "utf8" }).toString();
-      return withSource.checkSource(f, r, ctx);
+      const before = fileAtRef(repoRoot, baseRef, f);
+      if (before === null) return [];
+      return withSource.checkSource(f, before, ctx);
     });
     const facts = rule.meta.activatedAt
       ? resolvePinFacts(repoRoot, baseRef, rule.meta.activatedAt)

@@ -106,6 +106,23 @@ in that same entry. Both corrected in place, not left stale two sections away:
 - The "How to run it" section claimed `pnpm test:e2e` ran as "a separate check." That was an
   aspiration, not yet true, at the time it was written. It now says plainly that TRO-522
   built that separate check, and points here.
+
+**How to run it.**
+
+```bash
+source .factory-env
+pnpm db:migrate                       # once, if this worktree is not already current
+pnpm test:e2e                          # fakes the Anthropic API — 12/12 pass, ~13s warm
+E2E_LIVE=1 pnpm exec playwright test --list   # confirms the fake-only file drops out — no spend
+pnpm test -- scripts/deploy/ci-workflow.test.ts   # the new CI regression test, standalone
+pnpm typecheck
+```
+
+**Rollback.** `git revert` this ticket's commits. Reverting the CI job
+(`.github/workflows/ci.yml`) returns CI to never running `pnpm test:e2e` — the original gap.
+Reverting the `e2e/verify-fake-only.spec.ts` split restores the in-place `test.skip(` in
+`e2e/verify.spec.ts`. Troy already approved that shape (lessons.md rule 30), so reverting is
+safe if a real reason to prefer it ever turns up.
 ## TRO-526, TRO-525 — E2E fixture builders: row/header column drift, and a real baseline for the corrupt-image test (2026-08-13)
 
 **Source.** Both tickets came from CodeRabbit's post-merge review of PR #36 (TRO-479, the
@@ -146,20 +163,6 @@ deterministic, so CodeRabbit's suggestion is implemented as written, with no fal
 **How to run it.**
 
 ```bash
-source .factory-env
-pnpm db:migrate                       # once, if this worktree is not already current
-pnpm test:e2e                          # fakes the Anthropic API — 12/12 pass, ~13s warm
-E2E_LIVE=1 pnpm exec playwright test --list   # confirms the fake-only file drops out — no spend
-pnpm test -- scripts/deploy/ci-workflow.test.ts   # the new CI regression test, standalone
-pnpm typecheck
-```
-
-**Rollback.** `git revert` this ticket's commits. Reverting the CI job
-(`.github/workflows/ci.yml`) returns CI to never running `pnpm test:e2e` — the original gap.
-Reverting the
-`e2e/verify-fake-only.spec.ts` split restores the in-place `test.skip(` in
-`e2e/verify.spec.ts`. Troy already approved that shape (lessons.md rule 30), so reverting is
-safe if a real reason to prefer it ever turns up.
 pnpm vitest run scripts/e2e/fixtures.test.ts
 ```
 

@@ -304,6 +304,26 @@ else
   record scope pass "${CHANGED_FILES} file(s) changed"
 fi
 
+# --- G11: defect gate (BLOCKING) --------------------------------------------
+# Runs BEFORE G10 so a defect this factory can catch never consumes external
+# review budget. Fails only on violations this branch introduced, measured
+# against BASE_REF by content identity — the same discipline the quarantine
+# baseline uses.
+if [ "$FAST" = 1 ]; then
+  record defect-gate skip "skipped in --fast"
+elif [ ! -d scripts/factory/defect-gates ]; then
+  record defect-gate skip "not installed"
+else
+  DG_LOG="$OUT_DIR/defect-gate.log"
+  if FACTORY_BASE_REF="${BASE_REF}" pnpm exec tsx scripts/factory/defect-gates/run.ts > "$DG_LOG" 2>&1; then
+    DG_N="$(grep -c '  FAIL  ' "$DG_LOG" || true)"; DG_N="${DG_N:-0}"
+    record defect-gate pass "no introduced violations"
+  else
+    DG_N="$(grep -c '  FAIL  ' "$DG_LOG" || true)"; DG_N="${DG_N:-0}"
+    record defect-gate fail "${DG_N} introduced violation(s) — see .factory/defect-gate.json"
+  fi
+fi
+
 # --- G10: review capture (advisory — pass/warn/skip only, NEVER fail) --------
 if [ "$SKIP_REVIEW" = 1 ]; then
   record review skip "disabled for this run"

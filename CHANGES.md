@@ -4,6 +4,87 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-508 — Wire the defect gate in as G11, before review capture (2026-08-12)
+
+**What changed.** `scripts/factory/defect-gates/run.ts` runs every registered rule, compares
+findings against a baseline read from `BASE_REF` with `fileAtRef` (never a raw `git show` —
+a file this branch added does not exist at `BASE_REF`, `fileAtRef` returns `null` there, and
+that baseline correctly stays empty), and writes `.factory/defect-gate.json`. `scripts/factory/gate.sh`
+now runs it as `G11`, placed after `G9` (scope) and before `G10` (review capture), so a
+defect this factory can catch never spends external review budget. `G11` is BLOCKING: a rule
+in `blocking` mode with an introduced finding fails the gate; a rule in `report-only` mode
+(a newly-activated rule, on a branch cut before activation) never does.
+
+**Negative-tested — the factory does not trust a gate it has not seen fail.** A probe file
+(`src/lib/__dg-probe.ts`, a real `.every()` vacuous-quantifier violation) was committed, the
+full gate was run, and `defect-gate` FAILED with the gate exiting non-zero. The probe was
+then removed, the gate was run again, and `defect-gate` PASSED with the gate exiting zero.
+Both runs used `scripts/factory/gate.sh --skip-review` (CodeRabbit's own step is unrelated to
+this check and was skipped only to keep the run inside the working timeout; every other gate
+ran for real in both cases). Observed output, both directions:
+
+Run 1 — probe present, gate exit 1:
+```
+=== factory gate: TRO-508 (base main) ===
+
+  [ok ] typecheck              clean
+  [ok ] lint                   clean
+  [ok ] build                  built
+  [ok ] tests                  no new failures vs baseline
+  [ok ] tests:not-weakened     no tests skipped or assertions removed
+  [ok ] regression-test        54 test case(s) added
+  [ok ] changes-entry          entry for TRO-508 present; structure valid
+  [ok ] eval-not-regressed     accuracy >= committed baseline
+  [ok ] scope                  24 file(s) changed
+  [FAIL] defect-gate            1 introduced violation(s) — see .factory/defect-gate.json
+  [skip] review                 disabled for this run
+
+=== TRO-508: fail ===
+evidence: .factory/gate-result.json
+gate exit: 1
+```
+`.factory/defect-gate.json` recorded the one introduced finding: `src/lib/__dg-probe.ts:2`,
+rule `vacuous-empty-quantifier`, `"An empty collection makes .every() vacuously true."`
+
+Run 2 — probe removed, gate exit 0:
+```
+=== factory gate: TRO-508 (base main) ===
+
+  [ok ] typecheck              clean
+  [ok ] lint                   clean
+  [ok ] build                  built
+  [ok ] tests                  no new failures vs baseline
+  [ok ] tests:not-weakened     no tests skipped or assertions removed
+  [ok ] regression-test        54 test case(s) added
+  [ok ] changes-entry          entry for TRO-508 present; structure valid
+  [ok ] eval-not-regressed     accuracy >= committed baseline
+  [ok ] scope                  23 file(s) changed
+  [ok ] defect-gate            no introduced violations
+  [skip] review                 disabled for this run
+
+=== TRO-508: pass ===
+evidence: .factory/gate-result.json
+gate exit: 0
+```
+
+**A fix to the plan's own reference code.** The task brief's `run.ts` imports `readFileSync`
+from `node:fs` and never calls it — the rule module does its own file reads internally. That
+import failed `G2` (lint, `no-unused-vars`) on the very first negative-test run, alongside the
+real `defect-gate` failure. Fix: drop the unused import. Confirmed with a standalone
+`pnpm lint` run: 0 errors after the fix (1 pre-existing, unrelated warning in
+`DetailView.tsx` remains).
+
+**Activation pin.** `vacuous-empty-quantifier` shipped with `activatedAt: null` and
+`severity: "fail"`. `decidePin` returns `blocking` for a null `activatedAt` unconditionally —
+that combination would block every branch on merge, including ones cut before the rule
+existed. That is retroactive blocking, exactly what the pin exists to prevent. Fixed in a
+second commit: `activatedAt` is now stamped to the SHA of the commit that lands `run.ts` and
+the `G11` wiring — the first commit at which the rule is actually reachable by the gate.
+Verified after the stamp: `grep -rn 'severity: "fail"' -A0 scripts/factory/defect-gates/rules/*.ts`
+plus a manual read of every rule module's `meta` shows no rule with `severity: "fail"` and
+`activatedAt: null` remaining (one rule module exists in this repo today,
+`vacuous-empty-quantifier`, and it now carries a real SHA).
+
 ## TRO-508 — First defect-gate rule: vacuous-empty-quantifier (2026-08-12)
 
 **What it detects.** A call to `.every()`, `.some()`, or `.reduce()` over a collection that

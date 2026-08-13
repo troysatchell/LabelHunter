@@ -307,10 +307,28 @@ verdict quoted in the PR body. Three full runs happened during development, in o
 The FINAL full run before this PR opens uses `--skip-review`, per lessons rule 31: round 2's
 only remaining findings were prose nitpicks on already-edited text, and re-running review a
 third time would only continue that loop, not add evidence. `typecheck`/`lint`/`build`/
-`tests`/`regression-test`/`changes-entry`/`eval-not-regressed`/`scope`/`defect-gate` all still
-run in that final call — only the live review capture is skipped. `--fast` inner-loop runs
-were used throughout development; `build` and `review` are `skip` under `--fast` by design,
-not evidence of anything.
+`tests`/`regression-test`/`changes-entry`/`scope`/`defect-gate` all still run in that final
+call — only the live review capture is skipped. `--fast` inner-loop runs were used throughout
+development; `build` and `review` are `skip` under `--fast` by design, not evidence of
+anything.
+
+**Known non-blocking failure: G8 (`eval-not-regressed`) fails on this branch, for a reason
+this PR did not introduce and is not this PR's job to fix.** After merging `origin/main`
+twice mid-PR (to pick up two sibling tickets' merges), G8 started failing:
+`golden-set/manifest.json`'s content moved since the committed baseline was established
+(TRO-516's already-merged corpus edit), and 3 accuracy metrics read as regressed against that
+stale baseline. VERIFIED this is pre-existing on `main` itself, not caused by this PR: ran
+`pnpm eval:check` in a clean `git worktree add` checkout of `origin/main` HEAD (`350f21f`,
+detached, no branch changes at all) and got the byte-identical 5-problem failure. This
+branch's own commits never touch `golden-set/`, `scripts/eval/`, or any router/resolver file
+— every file G8's failure cites arrived via the `origin/main` merges, not this PR's own work.
+This is exactly the corpus/baseline-drift class TRO-556 and TRO-561 already track (TRO-561's
+own worktree exists, freshly provisioned against the same `main` commit, as this entry is
+written) — and exactly the scenario TRO-542's exception record above documents, but that
+record is scoped to ticket TRO-542 alone; this ticket has no matching record, and this PR's
+own non-negotiable ("agents must not be able to self-approve") means it cannot add itself
+one. Reported here rather than hidden or worked around. The true, complete, final verdict —
+including this failure — is quoted verbatim in the PR body and this session's final report.
 
 ## TRO-542 — LH-037 · Record which LOW_IMAGE_QUALITY trigger fires (2026-08-13)
 

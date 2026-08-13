@@ -405,7 +405,7 @@ if [ "$SKIP_REVIEW" = 1 ]; then
 elif ! command -v coderabbit >/dev/null 2>&1; then
   record review skip "CLI not installed — PR-level review is the authoritative channel"
 else
-  CR_JSON="$(FACTORY_BASE_REF="${BASE_REF}" pnpm exec tsx scripts/factory/review-capture.ts \
+  CR_JSON="$(pnpm exec tsx scripts/factory/review-capture.ts \
       --base "${BASE_REF}" --out-dir "${OUT_DIR}" 2>"$OUT_DIR/review-capture.stderr.log")"
   CR_TS_RC=$?
   if [ "$CR_TS_RC" -ne 0 ]; then

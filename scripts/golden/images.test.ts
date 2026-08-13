@@ -156,10 +156,11 @@ describe("golden-set photographed images (TRO-529 / LH-024)", () => {
     }
   });
 
-  it("records governmentWarningPrefixBold/BodyBold as boolean or \"unknown\", never a bare guess left undefined", () => {
+  it("records governmentWarningPrefixBold/BodyBold as exactly true, false, or \"unknown\" — never a bare guess or any other string", () => {
+    const allowed = [true, false, "unknown"];
     for (const c of photographedCases()) {
-      expect(["boolean", "string"]).toContain(typeof c.label.governmentWarningPrefixBold);
-      expect(["boolean", "string"]).toContain(typeof c.label.governmentWarningBodyBold);
+      expect(allowed, c.caseId).toContain(c.label.governmentWarningPrefixBold);
+      expect(allowed, c.caseId).toContain(c.label.governmentWarningBodyBold);
     }
   });
 });

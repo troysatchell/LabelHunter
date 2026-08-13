@@ -34,7 +34,7 @@
  * labeled step.
  */
 import { existsSync, readdirSync, statSync } from "node:fs";
-import { basename, join, relative, resolve } from "node:path";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   BottleReferenceValidationError,
@@ -249,12 +249,26 @@ export function verifyGoldenSet(options: VerifyOptions = {}): VerifyReport {
   // RESOLVED path, not the string prefix the loader already checked, the
   // same "resolve, then confirm it stays inside the directory" reasoning
   // build.ts's resolveImagePath already applies to golden-set/images/.
+  //
+  // Checks the WHOLE first path segment, not just whether the relative
+  // path's first two characters are "..": a raw `rel.startsWith("..")`
+  // would false-positive on a same-directory filename that itself starts
+  // with two literal dots (e.g. "..photo.jpg" is a valid filename directly
+  // inside the directory; its relative path is the string "..photo.jpg",
+  // which starts with ".." as text without ever meaning "go up a
+  // directory"). `rel === ".."` catches the directory itself; `.startsWith(
+  // ".." + sep)` catches a real "../" escape; `isAbsolute(rel)` catches the
+  // Windows cross-drive case, where `path.relative` returns an absolute
+  // path instead of a "../" chain (review round 1 finding — no real
+  // reference-photo filename in this repo starts with two dots today, but
+  // the check should be correct regardless).
   const referencesDirResolved = resolve(referencesDir);
   for (const c of manifest.cases) {
     if (c.provenance !== "photographed") continue;
     const resolvedImagePath = resolve(repoRoot, c.imagePath);
     const rel = relative(referencesDirResolved, resolvedImagePath);
-    if (rel.startsWith("..") || rel === "") {
+    const escapesReferencesDir = rel === "" || rel === ".." || rel.startsWith(".." + sep) || isAbsolute(rel);
+    if (escapesReferencesDir) {
       problems.push({
         check: "photographed-image-location",
         caseId: c.caseId,

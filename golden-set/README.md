@@ -50,8 +50,9 @@ transcription risk that an `ai-generated` case carries.
 The tooling exists now. Synthetic fixtures test the tooling:
 `scripts/golden/{imagenPrompt,blankRegionDetector,compositeBackdrop,imagen}.ts`.
 
-`assets/golden/references/` is still empty. No case in this manifest has provenance
-`"rendered+ai-backdrop"` yet.
+`assets/golden/references/` now holds real bottle photos (TRO-529 / LH-024's five
+`photographed` cases use five of them directly). No case in this manifest has provenance
+`"rendered+ai-backdrop"` yet, so no case here composites onto a backdrop from this directory.
 
 A future ticket adds the first one, once real bottle photos exist. Follow these steps:
 
@@ -108,56 +109,56 @@ removal here.
 
 ## Real-photograph cases (LH-024, TRO-529)
 
-Five cases (`case-35` through `case-39`) use `provenance: "photographed"` — a real camera
-photograph of a real, physical government-warning panel, not code and not a model. This is a
-fourth production method, alongside `rendered`, `rendered+degraded`, `ai-generated`, and
+Five cases (`case-35` through `case-39`) use `provenance: "photographed"`. Each is a real
+camera photograph of a real, physical government-warning panel — not code, not a model. This
+is a fifth production method, alongside `rendered`, `rendered+degraded`, `ai-generated`, and
 `rendered+ai-backdrop`. See `GoldenSetProvenance`'s own comment (`src/lib/golden-set/types.ts`)
 for the full reasoning.
 
 These five committed photos are the only real-world evidence in the corpus. Jenny Park asked
 for "labels photographed at weird angles, or the lighting is bad, or there's glare on the
-bottle" (source-TH.md L34) — these cases cover that spread with real photographs instead of
+bottle" (source-TH.md L34). These cases cover that spread with real photographs, not
 `degrade.ts` transforms on synthetic artwork: a flat scan, a gentle curve, a strong curve with
 shallow depth of field, glare on a curved gold-on-maroon surface, and extreme wrap-around
 curvature.
 
 **A different image-path convention.** A `photographed` case's `imagePath` points at its own
-original filename under `assets/golden/references/` (`docs/reference-photo-provenance.md`),
-never copied or renamed into `golden-set/images/<caseId>`. The file predates its case and IS
-the forensic evidence; renaming it to fit the render-pipeline's naming convention would throw
-that away. `src/lib/golden-set/loader.ts`'s `checkCase` enforces this different convention —
-the `imagePath` must start with `assets/golden/references/`, and the "basename must equal
-caseId" rule does not apply to this provenance. `scripts/golden/verify.ts` separately confirms
-the resolved path stays inside that directory (the same path-traversal hardening
-`scripts/golden/build.ts`'s `resolveImagePath` already applies to `golden-set/images/`).
+original filename under `assets/golden/references/` (`docs/reference-photo-provenance.md`). It
+is never copied or renamed into `golden-set/images/<caseId>`. The file predates its case. It IS
+the forensic evidence. Renaming it to fit the render pipeline's convention would throw that
+away. `src/lib/golden-set/loader.ts`'s `checkCase` enforces this different convention: the
+`imagePath` must start with `assets/golden/references/`, and the "basename must equal caseId"
+rule does not apply to this provenance. `scripts/golden/verify.ts` separately confirms the
+resolved path stays inside that directory. This is the same path-traversal hardening
+`scripts/golden/build.ts`'s `resolveImagePath` already applies to `golden-set/images/`.
 
 **Never rendered.** `scripts/golden/build.ts`, `scripts/golden/renderSmoke.ts`, and
-`scripts/golden/render.test.ts` all exclude `photographed` cases from whatever they render —
-running one through the HTML/CSS→PNG pipeline would silently overwrite a real photograph with
+`scripts/golden/render.test.ts` all exclude `photographed` cases from whatever they render.
+Running one through the HTML/CSS→PNG pipeline would silently overwrite a real photograph with
 synthetic drawn text at the same path. `scripts/golden/images.test.ts`'s JPEG-decode and
-~500 KB checks are scoped away from this provenance for the same reason (a real photograph's
-format and size are not a render-pipeline tuning choice) — replaced by their own, honestly
-different checks: the file exists, decodes as a real JPEG or PNG, and stays under a generous
-5 MB backstop.
+~500 KB checks are scoped away from this provenance for the same reason: a real photograph's
+format and size are not a render-pipeline tuning choice. Its own describe block runs its own,
+honestly different checks instead: the file exists, decodes as a real JPEG or PNG, and stays
+under a generous 5 MB backstop.
 
-**Ground truth is what a careful human can determine from the photograph, not what the render
-pipeline knows in advance.** Several of the five images are close crops of just the warning
-panel — no brand name, class/type, or net-contents statement appears in frame at all. Rather
-than inventing plausible-looking values that were never printed on the photograph, those
-fields record `"(not shown in this crop)"` and their `expected` verdict is `NEEDS_REVIEW`, not
+**Ground truth is what a careful human can determine from the photograph.** It is not what the
+render pipeline knows in advance. Several of the five images are close crops of just the
+warning panel. No brand name, class/type, or net-contents statement appears in frame at all.
+Rather than inventing a plausible-looking value that was never printed on the photograph, those
+fields record `"(not shown in this crop)"`. Their `expected` verdict is `NEEDS_REVIEW`, never
 `MATCH` or `MISMATCH`. `governmentWarningPrefixBold` / `governmentWarningBodyBold` use the
 `"unknown"` state (TRO-527 / LH-022) wherever the photograph cannot support a bold/not-bold
-call — a `false` there on a real, shipped, COLA-approved product would be a fabricated
+call. A `false` there on a real, shipped, COLA-approved product would be a fabricated
 compliance accusation, not a measurement. Two of the five images show a live trademark (Crown
 Royal; Francis Ford Coppola Winery) — Troy's own explicit 2026-08-12 call to use them (see
-`docs/reference-photo-provenance.md`). Every one of these five cases is a test fixture; none
+`docs/reference-photo-provenance.md`). Every one of these five cases is a test fixture. None
 records a compliance claim about the real product it happens to photograph.
 
 **`verified` stays `false`.** Only a human confirms a hand transcription is exactly right —
 Troy, not this ticket. The loader does not gate the eval harness on `verified` for this
-provenance (unlike `ai-generated`/`rendered+ai-backdrop`, whose own risk — a generated image
-silently failing to render its spec's exact text — does not apply here; nothing here was
-generated).
+provenance. `ai-generated`/`rendered+ai-backdrop` are different: their own risk is a generated
+image silently failing to render its spec's exact text. Nothing here was generated, so that
+risk does not apply.
 
 ## Manifest format
 
@@ -223,15 +224,15 @@ the brief's named examples directly:
 
 Case counts lean toward the categories most likely to need several variants: clean match (6),
 abv-mismatch (3), case-variant-brand (3), conflicting-application-vs-label (3), title-case
-warning (3), reworded warning (3), glare (3), and rotation (5, the biggest group — TRO-529 /
-LH-024's four curved/warped real photographs join the two existing rendered rotation cases).
-Missing warning and low light each have 2, and odd typography has 2. Tiny warning text has 1:
-TRO-516 C5 merged `case-24-tiny-warning-text-miniature-bottle` into
-`case-23-tiny-warning-text-standard-bottle` on 2026-08-13 (both printed the warning at the
-same 9px size on the same canvas). The freed slot goes to a genuinely different sample later.
-Clean match is the largest single-provenance-mixed group because it also carries every
-format-variant vector (V1, V6, V7) that needs a fully-matching label to isolate cleanly, plus
-one of TRO-529's real photographs (`case-35`).
+warning (3), reworded warning (3), and glare (3). Rotation is the biggest group at 5: TRO-529 /
+LH-024's three curved/warped real photographs (`case-36`, `case-37`, `case-39`) join the two
+existing rendered rotation cases. Missing warning and low light each have 2, and odd typography
+has 2. Tiny warning text has 1. TRO-516 C5 merged `case-24-tiny-warning-text-miniature-bottle`
+into `case-23-tiny-warning-text-standard-bottle` on 2026-08-13 — both printed the warning at
+the same 9px size, on the same canvas. The freed slot goes to a genuinely different sample
+later. Clean match carries every format-variant vector (V1, V6, V7) that needs a
+fully-matching label to isolate cleanly, plus one of TRO-529's real photographs (`case-35`).
+That is why it is the largest group.
 
 **TRO-469 / LH-021 added two cases**, closing two gaps `docs/checkpoints/cp2-warning-subsystem.md`
 §9.2 named at CP-2 (both ship with reasoning and no covering case until this ticket, and both
@@ -248,29 +249,29 @@ on `main` first:
   proposed near-miss band (edit distance 1–2), which no case exercised before — the golden
   set's other reworded-warning cases sit at distance 24 and 38, far outside it.
 
-**TRO-529 / LH-024 added five real-photograph cases**, `case-35` through `case-39` —
-`case-33`/`case-34` stay reserved for LH-023 / TRO-528, a sibling ticket blocked by the same
-LH-022 prerequisite, not yet landed. See "Real-photograph cases" above for the provenance
-mechanics; this is the case-by-case list:
+**TRO-529 / LH-024 added five real-photograph cases**, `case-35` through `case-39`.
+`case-33`/`case-34` stay reserved for LH-023 / TRO-528, a sibling ticket not yet landed. Both
+are blocked by the same LH-022 prerequisite. See "Real-photograph cases" above for the
+provenance mechanics. This is the case-by-case list:
 
 - `case-35-clean-match-real-photo-flat-scan` — a flat, straight-on scan. The only asset in the
   corpus that measurably shows the statute's required bold prefix (stroke-width ratio 2.2).
 - `case-36-rotation-real-photo-gentle-curve` — a real bottle, warning curved gently around the
-  glass. Full warning legible; bold cannot be measured (no stroke-width separation).
+  glass. Full warning legible. Bold cannot be measured; there is no stroke-width separation.
 - `case-37-rotation-real-photo-severe-curve-partial-crop` — strong curve and shallow depth of
-  field. Only warning fragments are legible; every other required field is out of frame. The
-  one case in this batch whose `expected.fields.governmentWarning` is `NEEDS_REVIEW`, not
-  `MATCH` — TH-R10's "explicit unreadable outcome" half, by design.
+  field. Only warning fragments are legible. Every other required field is out of frame. This
+  is the one case in this batch whose `expected.fields.governmentWarning` is `NEEDS_REVIEW`,
+  not `MATCH` — TH-R10's "explicit unreadable outcome" half, by design.
 - `case-38-glare-real-photo-crown-royal` — a real Crown Royal warning panel, curved gold on
   maroon, with glare. A live trademark appears in frame (Troy's 2026-08-12 call).
 - `case-39-rotation-real-photo-coppola-wraparound` — a real Francis Ford Coppola Winery warning
   panel under extreme wrap-around curvature. A live trademark appears in frame.
 
-Every one of the five is a real, physical government-warning panel, hand-transcribed character
-for character — never corrected, never completed from memory of the canonical text. Each
-case's `notes` field records its measured edit distance against `CANONICAL_WARNING_TEXT` and
-the reasoning behind every `"unknown"` bold value. `docs/reference-photo-provenance.md` records
-what all six files in `assets/golden/references/` show, where they came from, and whether a
-live trademark appears — including the sixth file, a full bottle shot
-(`spirits-bottle-01.jpg`), which this ticket documents but does not adopt as a case; it belongs
-to the parked realistic-corpus backdrop track (LH-028).
+Every one of the five is a real, physical government-warning panel. Each is hand-transcribed
+character for character — never corrected, never completed from memory of the canonical text.
+Each case's `notes` field records its measured edit distance against `CANONICAL_WARNING_TEXT`
+and the reasoning behind every `"unknown"` bold value. `docs/reference-photo-provenance.md`
+records what all six files in `assets/golden/references/` show. It names where each came from
+and whether a live trademark appears. That includes the sixth file: a full bottle shot,
+`spirits-bottle-01.jpg`. This ticket documents that file but does not adopt it as a case — it
+belongs to the parked realistic-corpus backdrop track (LH-028).

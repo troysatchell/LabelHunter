@@ -707,6 +707,7 @@ describe("validateManifest", () => {
         ]),
       );
       expect(result.cases[0].label.governmentWarningPrefixBold).toBe("unknown");
+      expect(result.cases[0].label.governmentWarningBodyBold).toBe("unknown");
     });
 
     it("rejects a photographed case whose imagePath still points at golden-set/images/ (the wrong convention for this provenance)", () => {

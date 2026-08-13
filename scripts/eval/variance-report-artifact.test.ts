@@ -87,6 +87,9 @@ describe("variance-report.json — the TRO-543 Part 2 authorized sweep artifact"
       repeatIndexesByCase.set(run.caseId, existing);
     }
     expect(repeatIndexesByCase.size).toBe(32);
+    // Same caseIdSet the summary.perCase check above uses -- runs.json's
+    // own case IDs must be the SAME 32, not just 32 of some other set.
+    expect(new Set(repeatIndexesByCase.keys())).toEqual(caseIdSet);
     for (const [caseId, indexes] of repeatIndexesByCase) {
       expect(indexes.slice().sort((a, b) => a - b), `case ${caseId}`).toEqual([1, 2, 3]);
     }

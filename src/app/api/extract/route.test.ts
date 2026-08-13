@@ -130,6 +130,38 @@ describe("handleExtractRequest — request and pipeline outcomes", () => {
   });
 });
 
+describe("handleExtractRequest — spend is recorded even when extraction fails validation", () => {
+  it("records the captured usage when the model responded but its output failed to parse", async () => {
+    // The paid API call happened; a HaikuExtractionError only means the
+    // RESPONSE was malformed. The ledger must still fill (CodeRabbit
+    // finding, TRO-576 review round 1). The fake extractLabel makes one
+    // real call through the usage-capture wrapper — registering usage the
+    // way a real call would — then throws the validation error.
+    const recordSpend = vi.fn(async (_usd: number) => {});
+    const fakeUnderlyingClient = {
+      messages: {
+        create: async () => ({
+          content: [{ type: "text", text: "not the schema at all" }],
+          usage: { input_tokens: 100, output_tokens: 50 },
+        }),
+      },
+    };
+    const deps = makeDeps({
+      recordSpend,
+      anthropicClient: fakeUnderlyingClient as never,
+      extractLabel: vi.fn(async (_image, options) => {
+        await options?.client?.messages.create({} as never);
+        throw new HaikuExtractionError(["model returned malformed JSON"]);
+      }),
+    });
+
+    const response = await handleExtractRequest(makeRequest(), deps);
+    expect(response.status).toBe(502);
+    expect(recordSpend).toHaveBeenCalledTimes(1);
+    expect(recordSpend.mock.calls[0][0]).toBeGreaterThan(0);
+  });
+});
+
 describe("defaultDeps — production wiring is really bound (the TRO-482 lesson)", () => {
   it("binds every guard and the ledger writer", () => {
     expect(defaultDeps.checkRateLimit).toBeTypeOf("function");

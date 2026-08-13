@@ -45,18 +45,34 @@ function isExtractErrorResponse(payload: unknown): payload is ExtractErrorRespon
   return typeof kind === "string" && (EXTRACT_ERROR_KINDS as readonly string[]).includes(kind) && typeof message === "string";
 }
 
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function isNullableNumber(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isFinite(value));
+}
+
 /** True only when `payload` has the prefill shape `VerifyForm.tsx`
- * actually applies. Field-level nullability is checked loosely on purpose
- * — the form re-checks each value against its own input before setting
- * it — but the structure itself must be present, or a malformed 200 would
- * crash the assist instead of quietly standing down. */
+ * actually applies — every field checked to its declared type, the same
+ * strictness `verify-client.ts` applies to its own responses. A malformed
+ * 200 (a proxy, a CDN error page, a future server bug) must never hand
+ * the form an array or a number where it writes a string into an input
+ * (CodeRabbit finding, TRO-576 review round 1). */
 function isExtractSuccessResponse(payload: unknown): payload is ExtractSuccessResponse {
   if (typeof payload !== "object" || payload === null) return false;
   const body = payload as Partial<ExtractSuccessResponse>;
+  if (body.outcome !== "prefill" && body.outcome !== "unreadable") return false;
+  if (!isNullableString(body.message)) return false;
+  if (typeof body.fields !== "object" || body.fields === null || Array.isArray(body.fields)) return false;
+  const fields = body.fields as unknown as Record<string, unknown>;
   return (
-    (body.outcome === "prefill" || body.outcome === "unreadable") &&
-    typeof body.fields === "object" &&
-    body.fields !== null
+    isNullableString(fields.beverageType) &&
+    isNullableString(fields.brandName) &&
+    isNullableString(fields.classType) &&
+    isNullableNumber(fields.alcoholContentPercent) &&
+    isNullableNumber(fields.netContentsValue) &&
+    isNullableString(fields.netContentsUnit)
   );
 }
 

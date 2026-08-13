@@ -345,3 +345,91 @@ describe("VerifyForm — auto-fill assist (TRO-576)", () => {
     expect(screen.getByLabelText("Brand name")).toHaveValue("Old Tom Distillery");
   });
 });
+
+describe("VerifyForm — a new photo never inherits the old photo's values (TRO-576 round 1)", () => {
+  it("clears the first photo's fills before a partial second reading, so nothing stale survives", async () => {
+    const user = userEvent.setup();
+    const partial: ExtractSuccessResponse = {
+      outcome: "prefill",
+      message: null,
+      fields: {
+        beverageType: null,
+        brandName: "New Brand Only",
+        classType: null,
+        alcoholContentPercent: null,
+        netContentsValue: null,
+        netContentsUnit: null,
+      },
+    };
+    const extract = vi
+      .fn<(imageFile: File) => Promise<ExtractSuccessResponse>>()
+      .mockResolvedValueOnce(fullPrefill())
+      .mockResolvedValueOnce(partial);
+    render(<VerifyForm submit={vi.fn()} extract={extract} />);
+
+    const fileInput = screen.getByLabelText("Label photo");
+    await user.upload(fileInput, makeFile("one.jpg"));
+    await waitFor(() => expect(screen.getByTestId("verify-assist")).toHaveTextContent(/filled 5 fields/));
+
+    await user.upload(fileInput, makeFile("two.jpg"));
+    await waitFor(() => expect(screen.getByTestId("verify-assist")).toHaveTextContent(/filled 1 field\b/));
+
+    // The second photo's one reading landed; the first photo's other four
+    // values are GONE, not lingering as if the agent had entered them.
+    expect(screen.getByLabelText("Brand name")).toHaveValue("New Brand Only");
+    expect(screen.getByLabelText("Class/type")).toHaveValue("");
+    expect(screen.getByLabelText(/Alcohol content/)).toHaveValue(null);
+    expect(screen.getByLabelText("Net contents")).toHaveValue(null);
+    expect(screen.getByLabelText("Beer")).toBeChecked();
+    expect(screen.getAllByText("Read from your photo")).toHaveLength(1);
+  });
+
+  it("clears the first photo's fills when the second photo is unreadable", async () => {
+    const user = userEvent.setup();
+    const unreadable: ExtractSuccessResponse = {
+      outcome: "unreadable",
+      message: "LabelHunter could not read this photo clearly. Fill in the fields yourself.",
+      fields: {
+        beverageType: null,
+        brandName: null,
+        classType: null,
+        alcoholContentPercent: null,
+        netContentsValue: null,
+        netContentsUnit: null,
+      },
+    };
+    const extract = vi
+      .fn<(imageFile: File) => Promise<ExtractSuccessResponse>>()
+      .mockResolvedValueOnce(fullPrefill())
+      .mockResolvedValueOnce(unreadable);
+    render(<VerifyForm submit={vi.fn()} extract={extract} />);
+
+    const fileInput = screen.getByLabelText("Label photo");
+    await user.upload(fileInput, makeFile("one.jpg"));
+    await waitFor(() => expect(screen.getByTestId("verify-assist")).toHaveTextContent(/filled 5 fields/));
+
+    await user.upload(fileInput, makeFile("two.jpg"));
+    await waitFor(() => expect(screen.getByTestId("verify-assist")).toHaveTextContent(/could not read this photo clearly/));
+
+    expect(screen.getByLabelText("Brand name")).toHaveValue("");
+    expect(screen.queryByText("Read from your photo")).not.toBeInTheDocument();
+  });
+
+  it("keeps the agent's own typed value across a photo change — only photo values clear", async () => {
+    const user = userEvent.setup();
+    const extract = vi
+      .fn<(imageFile: File) => Promise<ExtractSuccessResponse>>()
+      .mockResolvedValue(fullPrefill());
+    render(<VerifyForm submit={vi.fn()} extract={extract} />);
+
+    await user.type(screen.getByLabelText("Brand name"), "My Own Entry");
+    const fileInput = screen.getByLabelText("Label photo");
+    await user.upload(fileInput, makeFile("one.jpg"));
+    await waitFor(() => expect(screen.getByTestId("verify-assist")).toHaveTextContent(/filled 4 fields/));
+
+    await user.upload(fileInput, makeFile("two.jpg"));
+    await waitFor(() => expect(extract).toHaveBeenCalledTimes(2));
+
+    expect(screen.getByLabelText("Brand name")).toHaveValue("My Own Entry");
+  });
+});

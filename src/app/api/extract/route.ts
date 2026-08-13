@@ -124,19 +124,20 @@ export async function handleExtractRequest(request: Request, deps: ExtractRouteD
   };
 
   const usageCapture = wrapAnthropicClientForUsageCapture(deps.anthropicClient);
-  let extraction: HaikuExtractionResult;
+  let extraction: HaikuExtractionResult | null = null;
+  let extractionFailure: unknown = null;
   try {
     extraction = await deps.extractLabel(extractorImage, { client: usageCapture.client });
   } catch (cause) {
-    if (cause instanceof HaikuExtractionError) {
-      return errorResponse(502, "EXTRACTION", "LabelHunter could not read this label. You can fill in the fields yourself.");
-    }
-    return errorResponse(503, "SERVICE", "LabelHunter could not reach the extraction service. You can fill in the fields yourself.");
+    extractionFailure = cause;
   }
 
-  // The Haiku call happened; its real cost is owed regardless of what the
-  // mapping below returns. Best-effort, same posture as the verify route:
-  // a ledger-write failure never fails the request the agent is waiting on.
+  // Spend records BEFORE the failure branch, not only on success: a model
+  // response that fails validation (`HaikuExtractionError`) still came
+  // from a real, paid API call — the usage was captured the moment the
+  // wrapped client answered, and that cost is owed either way (CodeRabbit
+  // finding, TRO-576 review round 1). Best-effort, same posture as the
+  // verify route: a ledger-write failure never fails the request.
   const haikuUsage = usageCapture.takeLastUsage();
   if (haikuUsage) {
     try {
@@ -144,6 +145,13 @@ export async function handleExtractRequest(request: Request, deps: ExtractRouteD
     } catch (cause) {
       console.error("Could not record spend for a Haiku extract-assist call", cause);
     }
+  }
+
+  if (extraction === null) {
+    if (extractionFailure instanceof HaikuExtractionError) {
+      return errorResponse(502, "EXTRACTION", "LabelHunter could not read this label. You can fill in the fields yourself.");
+    }
+    return errorResponse(503, "SERVICE", "LabelHunter could not reach the extraction service. You can fill in the fields yourself.");
   }
 
   return NextResponse.json(mapExtractionToPrefill(extraction), { status: 200 });

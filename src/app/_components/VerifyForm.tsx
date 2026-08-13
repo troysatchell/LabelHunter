@@ -161,12 +161,47 @@ export function VerifyForm({ submit = submitVerification, extract = requestExtra
     setPhotoFilled(filled);
   }
 
+  /** Returns a still-photo-owned field to its pristine state. Values from
+   * a photo that is no longer selected must not linger — a partial or
+   * unreadable second reading would otherwise leave the first photo's
+   * values sitting in the form looking like the agent's own entries
+   * (CodeRabbit finding, TRO-576 review round 1). */
+  function clearPhotoValue(key: PrefillKey) {
+    switch (key) {
+      case "beverageType":
+        setControlValue("beverageType", BEVERAGE_TYPE_OPTIONS[0].value);
+        return;
+      case "brandName":
+        setControlValue("brandName", "");
+        return;
+      case "classType":
+        setControlValue("classType", "");
+        return;
+      case "alcoholContentPercent":
+        setControlValue("alcoholContentPercent", "");
+        return;
+      case "netContents":
+        setControlValue("netContentsValue", "");
+        setControlValue("netContentsUnit", NET_CONTENTS_UNIT_OPTIONS[0]);
+        return;
+    }
+  }
+
   function handleFileSelected() {
     const imageFile = fileInputRef.current?.files?.[0];
     if (!imageFile || imageFile.size === 0) return;
     // Never touch the form while a verify is in flight — the assist
     // assists; it does not race the submission.
     if (phase.status === "loading") return;
+
+    // The previous photo's values describe the previous photo. Clear
+    // every field it filled (the agent's own entries stay) before the new
+    // reading starts, so nothing stale can survive a partial or
+    // unreadable second extraction.
+    for (const key of photoFilled) {
+      clearPhotoValue(key);
+    }
+    setPhotoFilled(new Set());
 
     const seq = ++extractSeqRef.current;
     setAssist({ status: "reading" });

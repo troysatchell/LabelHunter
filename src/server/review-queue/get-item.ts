@@ -125,10 +125,10 @@ export async function getReviewQueueItem(db: typeof defaultDb, id: number): Prom
     ? await db.select().from(labelImages).where(eq(labelImages.id, verificationRow.labelImageId))
     : [];
 
-  // Defensive, not expected: every FK above is NOT NULL with ON DELETE
-  // CASCADE (schema.ts) — a review-queue row pointing at a missing
-  // verification, application, or label image means the schema's own
-  // cascade rules were bypassed, not a normal user state.
+  // Defensive, not expected. Every FK above is NOT NULL with ON DELETE
+  // CASCADE (schema.ts). A queue row pointing at a missing verification,
+  // application, or label image means those rules were bypassed. That is
+  // a corrupt row, not a normal user state. Report "not found".
   if (!verificationRow || !applicationRow || !labelImageRow) return { found: false };
 
   const fieldRows = await db.select().from(fieldResults).where(eq(fieldResults.verificationId, verificationRow.id));

@@ -28,6 +28,16 @@ const VERDICT_ICON: Record<FieldVerdict, string> = {
   NEEDS_REVIEW: "⚠",
 };
 
+/** Spoken verdict for screen readers — the icon above is aria-hidden and
+ * the row's state is otherwise only a border color. Same words as
+ * `DetailView.tsx`'s own `VERDICT_STATUS_TEXT` (one meaning, one
+ * phrasing, both screens). */
+const VERDICT_STATUS_TEXT: Record<FieldVerdict, string> = {
+  MATCH: "Match.",
+  MISMATCH: "Does not match.",
+  NEEDS_REVIEW: "Needs review.",
+};
+
 const VERDICT_ROW_CLASS: Record<FieldVerdict, string> = {
   MATCH: "checklist-row--match",
   MISMATCH: "checklist-row--mismatch",
@@ -77,10 +87,11 @@ export function ReviewItemDetail({ item }: ReviewItemDetailProps) {
 
       <div className="review-item__layout">
         {/* The artwork is the object the reviewer is ruling on (TH-R1:
-            "looks at the label artwork, and checks") — side by side with
-            the field comparison, the arrangement DetailView.tsx already
-            uses (see its comment at the img for the plain-`<img>` and
-            persisted width/height decisions, which carry over verbatim). */}
+            "looks at the label artwork, and checks"). It sits beside the
+            field comparison, the arrangement DetailView.tsx already uses.
+            The plain-`<img>` decision carries over from DetailView — see
+            its comment at the img. The persisted width/height let the
+            browser reserve space before the bytes arrive. */}
         <img
           className="review-item__image"
           src={item.labelImage.url}
@@ -96,6 +107,7 @@ export function ReviewItemDetail({ item }: ReviewItemDetailProps) {
                 <span className="review-field__icon" aria-hidden="true">
                   {VERDICT_ICON[row.verdict]}
                 </span>
+                <span className="visually-hidden">{VERDICT_STATUS_TEXT[row.verdict]}</span>
                 <span className="review-field__name">{row.fieldLabel}</span>
               </div>
               <div className="review-field__compare">

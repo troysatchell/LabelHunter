@@ -537,9 +537,10 @@ fieldset.field legend {
    ReviewItemDetail.tsx's file comment; consolidating the two families
    is TRO-578's job). ------------------------------------------------- */
 
-/* Label artwork beside the field comparison (TRO-575) — the same values
-   as .detail-view__layout/.detail-view__image, kept literal here so both
-   screens render identically until TRO-578 tokenizes them. */
+/* These rules place the label artwork beside the field comparison
+   (TRO-575). The values copy .detail-view__layout/.detail-view__image.
+   They stay literal so both screens render identically until TRO-578
+   tokenizes them. */
 .review-item__layout {
   display: flex;
   flex-wrap: wrap;

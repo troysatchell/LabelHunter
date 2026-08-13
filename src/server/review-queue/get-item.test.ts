@@ -180,9 +180,9 @@ describe("getReviewQueueItem — real database", () => {
     try {
       const result = await getReviewQueueItem(db, queueId);
       if (!result.found) throw new Error("expected found: true");
-      // The url targets the byte-serving route; width/height are the
-      // persisted pixel dimensions the fixture inserted, so the browser
-      // can reserve layout space before the image loads.
+      // The url targets the byte-serving route. The width and height are
+      // the persisted pixel dimensions the fixture inserted. The browser
+      // uses them to reserve layout space before the image loads.
       expect(result.item.labelImage).toEqual({
         url: `/api/label-images/${labelImageId}`,
         width: 1000,

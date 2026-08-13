@@ -154,13 +154,13 @@ export type ResolverSuggestedField =
     };
 
 /** The label image a review item's verification ran against (TRO-575).
- * Mirrors `VerificationImageDetail` (`src/server/verification-detail/
- * types.ts`) rather than importing it: the two modules stay independent
- * on purpose (see `list.ts`'s file comment), and the shape is four
- * fields. `url` points at the byte-serving route
- * (`/api/label-images/:id`); `width`/`height` are the persisted,
- * EXIF-corrected pixel dimensions, so the browser can reserve layout
- * space before the bytes arrive. */
+ * This type mirrors `VerificationImageDetail`
+ * (`src/server/verification-detail/types.ts`) rather than importing it.
+ * The two modules stay independent on purpose — see `list.ts`'s file
+ * comment. The shape is four fields. `url` points at the byte-serving
+ * route (`/api/label-images/:id`). `width` and `height` are the
+ * persisted, EXIF-corrected pixel dimensions. The browser uses them to
+ * reserve layout space before the bytes arrive. */
 export interface ReviewItemLabelImage {
   url: string;
   width: number;

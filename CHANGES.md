@@ -4,6 +4,125 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-522, TRO-521, TRO-520, TRO-523 — E2E suite follow-ups from CodeRabbit (2026-08-13)
+
+**Why one entry covers four tickets.** All four came from the same source. CodeRabbit's
+GitHub-hosted review of PR #36 (TRO-479, the E2E suite) landed after merge. It was
+rate-limited during the PR's open window. Each ticket names one finding from that review.
+
+### TRO-522 — `pnpm test:e2e` now runs in CI as its own job
+
+CI never ran the Playwright suite before this ticket, not even the pre-existing
+`e2e/health.spec.ts`. TRO-479's own agent and CodeRabbit both named this gap, independently.
+
+`.github/workflows/ci.yml` gains a new `e2e` job, separate from the existing `verify` job
+(G4's unit-test check). It gives the suite the same lifecycle it already has locally: its
+own Postgres service, a migration step, then `pnpm test:e2e`. `playwright.config.ts`'s own
+`webServer` array does the rest. It builds and starts the Next.js app. It starts the batch
+worker. It starts `scripts/e2e/fake-anthropic-server.ts` in place of the real Anthropic API.
+
+**No real API spend, by design.** The `e2e` job never sets `E2E_LIVE`. An unset `E2E_LIVE`
+is `playwright.config.ts`'s own signal to use the fake server — the job needs no
+`ANTHROPIC_API_KEY` at all. `E2E_LIVE=1` stays a deliberate, human- or agent-invoked local
+run, never something CI sets on its own.
+
+**Observed, not derived.** `pnpm test:e2e` run locally in this worktree: 12 of 12 tests pass
+in 12.7 seconds, warm build cache. A cold CI runner's first `next build` inside the job will
+run slower than that — not measured, since no CI run has happened yet. `pnpm typecheck`
+reports clean against the workflow and test changes.
+
+**Regression test.** `scripts/deploy/ci-workflow.test.ts` parses `ci.yml` with `js-yaml` —
+the same pattern `scripts/deploy/render-yaml.test.ts` already uses for `render.yaml`. It
+checks five things:
+
+- The file parses.
+- Some job runs `pnpm test:e2e`.
+- That job is not `verify`.
+- No job or step anywhere sets `E2E_LIVE`.
+- The job that runs the suite has its own Postgres service, with a `DATABASE_URL` that
+  matches it, migrated before the suite runs.
+
+Confirmed failing first, for the right reason. Before the workflow change, 4 of the 6 cases
+failed with "no step anywhere in ci.yml runs `pnpm test:e2e`". After the change, no case
+failed.
+
+### TRO-521 — the `E2E_LIVE` skip is now structural isolation, not an in-place skip
+
+Troy already approved `test.skip(E2E_LIVE, "...")` in `e2e/verify.spec.ts` as a narrow,
+documented exception (lessons.md rule 30). The fake server's failure-injection trigger has
+no live-API equivalent, by design. The skip hides no real bug.
+
+CodeRabbit's alternative — isolate the scenario in its own file instead — is a real
+improvement, not a reason to re-litigate the original approval. A `test.skip(` call in a
+gated spec file re-trips CodeRabbit's and G5's own weakened-test pattern on every future
+review pass. That happens even though this one skip is sound. Moving the scenario out
+removes that recurring noise at its source.
+
+**What changed.** The one test using this skip moved to a new file,
+`e2e/verify-fake-only.spec.ts`, with the `test.skip(` call removed. `playwright.config.ts`
+gained a `testIgnore` entry that excludes that one file when `E2E_LIVE=1`. The exclusion now
+lives next to the `E2E_LIVE` decision it depends on, in config, not as a runtime skip inside
+the test body.
+
+**Confirmed both directions, observed, no live API call made.**
+- Default mode: `pnpm exec playwright test --list` reports 12 tests in 5 files, and a full
+  `pnpm test:e2e` run passes all 12.
+- `E2E_LIVE=1 pnpm exec playwright test --list` reports 11 tests in 4 files.
+  `verify-fake-only.spec.ts` is gone from the list entirely. This check spends no real API
+  money. `--list` collects the tests. It never runs them.
+
+No `test.skip(` or `.todo(` call remains anywhere under `e2e/` for this scenario. The
+retry affordance is the behavior the skip existed to protect. That behavior stays fully
+covered by the default (fake) path, unchanged.
+
+### TRO-520 — the no-spend claim now names the default run, not every run
+
+`CHANGES.md`'s TRO-479 entry said "An E2E run never spends real API money." Read plainly,
+that covers `E2E_LIVE=1` too, which is false — that flag exists specifically to spend real
+money on a real cascade run. Fixed in place: "A default `pnpm test:e2e` run never spends real
+API money." The next sentence, describing `E2E_LIVE=1`'s real spend, is unchanged.
+
+### TRO-523 — ASD-STE100 sentence-length pass on the TRO-479 entry
+
+Two passages in the TRO-479 entry ran well past ASD-STE100's 25-word guidance. One is the
+paragraph starting "Confirmed each spec exercises." The other is the sentences around the
+unpairable-rows assertion, in that same paragraph. The worst offender was a single 48-word
+sentence. It listed six break/restore trial mechanisms after a colon. CLAUDE.md's own style
+table names that shape — "a sequence buried inside one prose sentence" — as the thing to
+avoid.
+
+Fixed two ways. The six-item list became an actual bulleted list — CLAUDE.md's own
+prescribed fix for this shape. Every remaining long sentence split into short, active-voice
+sentences. Every trial result stays named. The explanation that each reported problem is now
+asserted against its own list item, not the panel as a whole, stays intact.
+
+### Stale claims corrected in place (rule 17)
+
+TRO-522 and TRO-520 both change what is true about the TRO-479 entry's own claims elsewhere
+in that same entry. Both corrected in place, not left stale two sections away:
+
+- The "flagged gate exception" section (the `test.skip(` discussion) now has a short
+  "Superseded by TRO-521" note pointing at the structural-isolation fix above.
+- The "How to run it" section claimed `pnpm test:e2e` ran as "a separate check." That was an
+  aspiration, not yet true, at the time it was written. It now says plainly that TRO-522
+  built that separate check, and points here.
+
+**How to run it.**
+
+```bash
+source .factory-env
+pnpm db:migrate                       # once, if this worktree is not already current
+pnpm test:e2e                          # fakes the Anthropic API — 12/12 pass, ~13s warm
+E2E_LIVE=1 pnpm exec playwright test --list   # confirms the fake-only file drops out — no spend
+pnpm test -- scripts/deploy/ci-workflow.test.ts   # the new CI regression test, standalone
+pnpm typecheck
+```
+
+**Rollback.** `git revert` this ticket's commits. Reverting the CI job
+(`.github/workflows/ci.yml`) returns CI to never running `pnpm test:e2e` — the original gap.
+Reverting the `e2e/verify-fake-only.spec.ts` split restores the in-place `test.skip(` in
+`e2e/verify.spec.ts`. Troy already approved that shape (lessons.md rule 30), so reverting is
+safe if a real reason to prefer it ever turns up.
 ## TRO-526, TRO-525 — E2E fixture builders: row/header column drift, and a real baseline for the corrupt-image test (2026-08-13)
 
 **Source.** Both tickets came from CodeRabbit's post-merge review of PR #36 (TRO-479, the
@@ -2881,8 +3000,9 @@ by dependency injection. A live browser test has no such seam into a separate se
 (`src/server/extractor/index.ts`, `src/server/resolver/index.ts`) both fall back to
 `process.env.ANTHROPIC_BASE_URL` when no client is injected. Production code already has that
 same seam, for the same reason. `playwright.config.ts` points the app's and the worker's
-`webServer` processes at this fake server by default. An E2E run never spends real API money.
-`E2E_LIVE=1 pnpm test:e2e` runs the real cascade against the real API instead. This mirrors
+`webServer` processes at this fake server by default. A default `pnpm test:e2e` run never
+spends real API money. `E2E_LIVE=1 pnpm test:e2e` runs the real cascade against the real API
+instead. This mirrors
 `scripts/eval/check.ts --live`'s own shape: cheap by default, an explicit flag pays for the real
 thing. Every other part of the cascade stays 100% real in every mode: preprocessing, the
 deterministic router and comparators, the warning subsystem (real tesseract.js OCR against the
@@ -2912,17 +3032,24 @@ resolution a static trace cannot follow. This is exactly the class of bug real E
 real production server exists to catch. It would have hit the real deployed Render instance
 too, not only this suite.
 
-**Confirmed each spec exercises the real flow, not a vacuous green run.** Six separate
-break/restore trials, each against a different mechanism the suite depends on: the checklist's
-own MATCH text, the batch progress testid the live-polling assertion waits on, the review
-queue's `AMBIGUOUS_BRAND` reason text, `ErrorPanel`'s `role="alert"`, the fake server's own
-failure-trigger threshold, and the pairing module's unmatched-row reason text. Every trial
-followed the same steps: break it, watch the affected spec fail for the right reason, restore
-it, watch the suite go green again. One trial caught a real gap in the test itself, not in the
-app. The unpairable-rows assertion originally checked the whole problems panel against one
-regex, and either reported problem could satisfy it. It stayed green even with the row-specific
-message broken, because the (unbroken) image-specific message alone still matched the pattern.
-Fixed by asserting each reported problem against its own list item, not the panel as a whole.
+**Confirmed each spec exercises the real flow, not a vacuous green run.** Six break/restore
+trials proved this, one per mechanism the suite depends on:
+
+- The checklist's own MATCH text.
+- The batch progress testid the live-polling assertion waits on.
+- The review queue's `AMBIGUOUS_BRAND` reason text.
+- `ErrorPanel`'s `role="alert"`.
+- The fake server's own failure-trigger threshold.
+- The pairing module's unmatched-row reason text.
+
+Every trial followed the same steps. Break the mechanism. Watch the affected spec fail for the
+right reason. Restore the mechanism. Watch the suite go green again.
+
+One trial caught a real gap in the test itself, not in the app. The unpairable-rows assertion
+originally checked the whole problems panel against one regex. Either reported problem could
+satisfy that regex. The test stayed green even with the row-specific message broken. The
+unbroken image-specific message alone still matched the pattern. The fix asserts each reported
+problem against its own list item, not against the panel as a whole.
 
 **Local CodeRabbit review triage, round 1 (4 findings, 3 fixed, 1 kept as-is with reasoning).**
 - `scripts/e2e/fake-anthropic-server.ts` (major): an unrecognized `model` silently fell through
@@ -3034,6 +3161,12 @@ pass it is not. The call on whether this specific exception is acceptable is lef
 orchestrator's, and ultimately Troy's, own judgment — per gate.sh's own "justify in the PR or
 revert" instruction.
 
+**Superseded by TRO-521.** Troy approved this exact skip (see that ticket's own reference to
+lessons.md rule 30). TRO-521 later replaced it with structural isolation: the scenario moved to
+its own file, `e2e/verify-fake-only.spec.ts`, and `playwright.config.ts` now excludes that file
+under `E2E_LIVE=1` instead of skipping the test in place. No `test.skip(` call for this scenario
+remains anywhere in the tree. See TRO-521's own entry for the mechanism and the reasoning.
+
 **How to run it.**
 
 ```bash
@@ -3044,8 +3177,9 @@ E2E_LIVE=1 pnpm test:e2e    # the real cascade, real API spend — needs a real 
 ```
 
 `scripts/factory/gate.sh` does not run `pnpm test:e2e` itself. G4 only runs `pnpm test`, the
-vitest unit suite. That is unchanged by this ticket. Run `pnpm test:e2e` as a separate check,
-exactly as this ticket's own brief asked for.
+vitest unit suite. That is unchanged by this ticket. At the time of this entry, CI did not run
+`pnpm test:e2e` either — TRO-522 fixed that later with its own separate `e2e` job. See that
+ticket's entry for the CI wiring; this entry's own gap is what TRO-522 closed.
 
 **Rollback.** `git revert` this ticket's commits. `next.config.ts`'s `serverExternalPackages`
 line is safe, and worth keeping, independently of the rest of this PR. Reverting it

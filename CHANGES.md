@@ -47,6 +47,20 @@ different reason now: `scripts/latency/measure.ts`'s `--url` mode sends no acces
 credential, so it cannot pass the gate at all until that script is updated — a small,
 out-of-scope tooling gap, not a deploy-confirmation question anymore.
 
+**Updated a fourth time: the real latency number, and a bold-detection correction.**
+TRO-568 (merged) fixed the tooling gap named above. 20 real HTTP verify round-trips against the
+live deployed instance, past the access-code gate, measured p50 3618 ms / p95 4197 ms / mean
+3738 ms, 20 of 20 PASS — inside the brief's ~5-second bar. Also corrects a real gap this
+document's own earlier drafts described too gently: the government warning's bold-prefix
+requirement is captured by the extractor (`formatting.bold`) but never read anywhere in the
+router or the warning comparator — verified by grepping `src/server/router/` and
+`src/server/warning/` for any use of the field before writing this down, not assumed. A
+correctly worded, correctly capitalized, non-bold prefix passes today. Filed
+[TRO-569](https://linear.app/troysatchell/issue/TRO-569), Urgent. Named in three places now:
+"The government warning gets a stricter check," "Trade-offs and limitations," and "What was
+not built, and why" — the same discipline this document already applies to cascade-verdict
+accuracy.
+
 **Observed, not derived.** This ticket ran these commands against a fresh worktree:
 `pnpm install`; `pnpm db:migrate` (8 migrations, exit 0); `pnpm typecheck` (exit 0); `pnpm lint`
 (exit 0); `pnpm test` (exit 0); `pnpm build` (exit 0). No application code changed, so

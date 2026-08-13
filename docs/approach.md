@@ -61,6 +61,14 @@ when only one channel can read the block at all, it returns an explicit review f
 guessing. "The system compared against the statutory string" is a defensible answer in a
 compliance review. "The model thought it looked right" is not.
 
+Word-for-word text and the all-caps prefix are both verified, including against real
+photographs. The statute's third requirement — the "GOVERNMENT WARNING:" prefix printed in
+bold — is captured but not yet enforced. The extractor reads a bold signal
+(`true`/`false`/`uncertain`) for every label, and the value is validated into the response, but
+no code in the router or the warning comparator reads it. A correctly capitalized, correctly
+worded, but non-bold prefix passes today. Tracked as
+[TRO-569](https://linear.app/troysatchell/issue/TRO-569), filed Urgent.
+
 ### Imperfect images
 
 Jenny also asked for tolerance of labels photographed at odd angles, in bad light, or with
@@ -135,12 +143,17 @@ and all are covered by tests. Bold detection on the warning prefix, described ne
 clearest example: a feature deliberately left as a lower-confidence signal, not pushed to full
 reliability at the cost of the core path.
 
-**Bold detection is a low-confidence signal, not a hard check.** The statute requires the
-"GOVERNMENT WARNING:" prefix to print in bold as well as all caps. All-caps is checked exactly.
-Bold is harder. Reliable bold detection from a photograph needs either a specialized vision
-model or careful stroke-width measurement. This prototype has neither at production
-reliability. LabelHunter reports a bold signal instead — `true`, `false`, or `uncertain` —
-rather than silently dropping the check or reporting false confidence.
+**Bold detection is captured but not yet enforced — a real gap, not a soft one.** The statute
+requires the "GOVERNMENT WARNING:" prefix to print in bold as well as all caps. All-caps is
+checked exactly. Bold is not checked at all today: the extractor reads a signal (`true`,
+`false`, or `uncertain`) for every label, but no router or comparator code acts on it, so a
+correctly worded, correctly capitalized, non-bold prefix passes. This is more than a
+low-confidence-signal design choice — see "The government warning gets a stricter check" above
+and [TRO-569](https://linear.app/troysatchell/issue/TRO-569) for the specifics. Reliable bold
+detection from a photograph would still need either a specialized vision model or careful
+stroke-width measurement, which this prototype does not yet have at production reliability —
+that part of the original design choice stands. Wiring the captured signal into the router
+does not.
 
 **Runtime access control is live, confirmed against the deployed instance.** The brief's own
 guidance ("just don't do anything crazy... not storing anything sensitive") sets a light bar
@@ -165,17 +178,18 @@ gaps in the same subsystem are ticketed, not fixed, and named here rather than l
 discovered later:
 
 - Batch workers do not check or record the budget once a batch is admitted, so a running batch
-  is not capped mid-run ([TRO-566](https://linear.app/troysatchell/issue/TRO-566)).
+  is not capped mid-run.
 - The budget check reads, then the spend write lands after the model call — a narrow
-  check-then-act race under concurrent requests, bounded but not eliminated
-  ([TRO-566](https://linear.app/troysatchell/issue/TRO-566)).
+  check-then-act race under concurrent requests, bounded but not eliminated.
 - A database failure during the budget check surfaces as a generic server error, not the
-  designed response ([TRO-566](https://linear.app/troysatchell/issue/TRO-566)). Two more
-  findings from the same review sit outside the budget subsystem: an open-redirect and a
-  spoofable client-IP header in the access-control layer
-  ([TRO-565](https://linear.app/troysatchell/issue/TRO-565)), and a test-quality gap plus a
-  documentation hazard — `.env.local.example`'s placeholder access code is a working value if
-  copied verbatim ([TRO-567](https://linear.app/troysatchell/issue/TRO-567)).
+  designed response.
+
+All three are [TRO-566](https://linear.app/troysatchell/issue/TRO-566). Two more findings from
+the same review sit outside the budget subsystem: an open-redirect and a spoofable client-IP
+header in the access-control layer ([TRO-565](https://linear.app/troysatchell/issue/TRO-565)),
+and a test-quality gap plus a documentation hazard — `.env.local.example`'s placeholder access
+code was a working value if copied verbatim, fixed in the same PR
+([TRO-567](https://linear.app/troysatchell/issue/TRO-567)).
 
 **No batch has run at the brief's own named scale yet.** Sarah Chen's interview names 200–300
 labels as the real peak-season number. The code caps batch size at 1000. Durable Postgres image
@@ -185,20 +199,17 @@ proven it at that scale yet.
 
 **Cascade-verdict accuracy is the weakest measured number.** See "Measured results" below.
 
-**The deployed instance's latency is not being quoted right now.** A prior measurement — p50
-3834 ms, p95 4458 ms, against the live deployed instance — exists but is stale. It predates
-several commits that changed the exact pipeline it measured, among them the deterministic
-router's field-evidence check, the warning comparator's region-detection threshold, and now
-PR #43's rate-limit check and budget read at the front of every request. A latency figure has
-to describe the code that ships, not a close ancestor of it. Publishing the old number would
-repeat the mistake `audit/requirements/gaps.md`'s TH-R2 entry exists to name.
-
-A fresh measurement needs one more thing first: `scripts/latency/measure.ts`'s `--url` mode
-sends no credential on its request, so every attempt would now fail at the access-code gate
-before any stage ran. The script predates PR #43 and has not been updated for it. This is a
-small, separate change in measurement tooling, not in the application, and is not part of this
-ticket's scope. See `scripts/latency/results/` for whichever run is most recent by the time you
-read this.
+**Latency was re-measured after the access-code gate, not before it.** An earlier measurement
+(p50 3834 ms, p95 4458 ms) went stale the moment PR #43 added a rate-limit check and a budget
+read to the front of every request — the same mistake `audit/requirements/gaps.md`'s TH-R2
+entry exists to name, and this document avoids repeating it. `scripts/latency/measure.ts`'s
+`--url` mode could not even authenticate against the gate at first; TRO-568 added the
+`x-access-code` header it needed. With that fix merged, 20 real HTTP verify round-trips against
+the live deployed instance, past the access-code gate, measured **p50 3618 ms, p95 4197 ms**
+(mean 3738 ms, 20 of 20 PASS). That is inside the brief's ~5-second bar, and it is the
+authorized path — a rejected, unauthenticated request returns before any pipeline stage runs
+and would report no timings at all, so this number describes what a real evaluator's request
+actually experiences, not raw cascade latency with the gate subtracted out.
 
 ## Measured results
 
@@ -224,8 +235,10 @@ rules, and a larger, harder golden set. No single lucky change explains it.
 resolution the router escalates a minority of labels to costs roughly $0.02 more, on those
 labels only. A three-repeat, 36-case live evaluation run cost about $1.20 total.
 
-**Latency.** Pending a fresh measurement — see "Trade-offs and limitations" above for why the
-last one is not quoted here.
+**Latency.** p50 3618 ms, p95 4197 ms, mean 3738 ms — 20 real HTTP verify round-trips against
+the live deployed instance, past the access-code gate, 20 of 20 PASS. Inside the brief's
+~5-second bar. See "Trade-offs and limitations" above for why this figure, not the prior one,
+is the one quoted here.
 
 ## What makes this more than the literal ask
 
@@ -250,10 +263,12 @@ extracted from the brief. `audit/requirements/REPORT.md` is the current sweep ag
 inventory. The one deliberate exception is COLA integration, covered in "Assumptions log"
 above.
 
-Most other open gaps at submission time are measurement or documentation tasks: no batch has
-run at the brief's own 200–300 scale yet, and the deployed instance's latency needs a fresh
-measurement. One gap is a real, unresolved correctness problem, not a documentation task:
-cascade-verdict accuracy, covered above under "Imperfect images" and "Measured results." Six
-degraded-image cases still return a confident wrong verdict. This is not being described as
-smaller than it is. See `audit/requirements/gaps.md` for the current, complete list, with the
-concrete next step named for each row.
+One remaining gap is a measurement task, not a correctness problem: no batch has run at the
+brief's own 200–300 scale yet, though the code already supports it. Two gaps are real,
+unresolved correctness problems, named plainly rather than described as smaller than they are.
+Cascade-verdict accuracy, covered above under "Imperfect images" and "Measured results": six
+degraded-image cases still return a confident wrong verdict. Bold detection on the government
+warning, covered above under "The government warning gets a stricter check": captured by the
+extractor, never enforced by the router ([TRO-569](https://linear.app/troysatchell/issue/TRO-569)).
+See `audit/requirements/gaps.md` for the current, complete list, with the concrete next step
+named for each row.

@@ -14,17 +14,20 @@ design reasoning, tools, assumptions, and trade-offs in full.
 
 ## Try it
 
-**Deployed URL:** not published here yet.
+**Deployed URL:** [https://labelhunter-web.onrender.com](https://labelhunter-web.onrender.com)
+**Access code:** `3d30e2b13fbaae325d1390c4e697918b`
 
-A deployed instance exists, but this README does not name its address yet.
-[PR #43](https://github.com/troysatchell/LabelHunter/pull/43) — the access-code gate, rate
-limits, and daily spend budget — has merged into `main`. Render redeploys automatically from a
-green `main`, but a merge is not the same claim as a live, protected deployment. This section
-waits for that redeploy to be independently confirmed against the live URL, not assumed from
-the merge alone. Publishing an address before that confirmation would invite unprotected use.
-Once confirmed, this section carries the URL and the access code.
+Enter the code once at the link above. LabelHunter remembers it in your browser for 30 days.
+For a non-browser caller (a script, an API test), send it as the `x-access-code` header
+instead.
 
-Until then, run LabelHunter locally with the steps below.
+This section describes what was checked against the live URL, not what
+[PR #43](https://github.com/troysatchell/LabelHunter/pull/43) merging implies. Three checks
+confirmed it directly:
+
+1. `GET /` redirects to the code page.
+2. An unauthenticated `GET /api/review-queue` returns 401.
+3. The same request, with the correct code, returns 200.
 
 ## Prerequisites
 
@@ -156,11 +159,13 @@ verdict accuracy, cost per label, and a cascade-vs-single-model comparison.
   choice, not an oversight.
 - **The Anthropic API key never enters the repo.** It lives in `.env.local`, which is
   git-ignored. Once deployed, it also lives in Render's environment configuration.
-- **Access control is merged, not yet confirmed live.** A shared access-code gate, per-IP and
-  global rate limits, and a daily spend budget merged into `main`
-  ([PR #43](https://github.com/troysatchell/LabelHunter/pull/43)). A merge is not the same
-  claim as a live deployment — treat any deployed instance of this app as unprotected until
-  that is independently confirmed against the live URL.
+- **Access control is live, confirmed against the deployed instance.** A shared access-code
+  gate, per-IP and global rate limits, and a daily spend budget merged into `main`
+  ([PR #43](https://github.com/troysatchell/LabelHunter/pull/43)) and are now protecting the
+  deployed URL above — checked directly, not assumed from the merge. Known follow-up gaps
+  (batch workers do not re-check the budget mid-run; a database failure during the budget check
+  surfaces as a generic server error, not the designed response) are tracked as
+  [TRO-566](https://linear.app/troysatchell/issue/TRO-566).
 
 ## What LabelHunter does not call
 

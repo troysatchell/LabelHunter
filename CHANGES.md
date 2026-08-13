@@ -16,20 +16,19 @@ outbound-dependency list. `src/lib/db/schema.ts` and
 `audit/requirements/gaps.md`'s TH-R14 and TH-R6 suggested scope (TRO-486) is the source for
 every piece above.
 
-**The deployed URL is deliberately not published yet.** PR #43 (TRO-482, key protection: access
-code, rate limits, daily spend budget) merged into `main` after this ticket's first commit — a
-follow-up commit below corrects the wording. The live instance's protection is not yet
-independently confirmed, so this document still omits the instance's address. A caveat next to
-a live, searchable address would not stop someone from using it. Once the redeploy is
-confirmed, add the URL and access code to the "Try it" section — `docs/PRD.md:248` already
-designs the access code to live in the README for evaluators, so publishing it there then is
-the shipped design, not a leak.
+**The deployed URL and access code are now published.** PR #43 (TRO-482, key protection: access
+code, rate limits, daily spend budget) merged into `main`. This ticket held the URL back
+through two earlier commits until the deployed instance's protection was independently
+confirmed, not assumed from the merge. `docs/PRD.md:248` already designs the access code to
+live in the README for evaluators, so publishing it here is the shipped design, not a leak.
 
-**Updated after PR #43 merged, mid-ticket.** The commits above said PR #43 was "open and
-unmerged." It merged shortly after. This entry, and the README's own text, now say "merged, not
-yet confirmed live" instead — checked directly against the deployed URL (`GET /` still returns
-200 with no redirect; `GET /api/review-queue` still returns 200 with real data), both
-consistent with a stale build still running, not a live gate.
+**The confirmation history, in order.** First commit: PR #43 open, URL withheld. Second
+commit: PR #43 merged, but `GET /` still returned 200 with no redirect and
+`GET /api/review-queue` still returned 200 with real data — a stale build, not a live gate, so
+the URL stayed withheld. Third commit (this one): `GET /` now redirects to `/access-code`,
+`GET /api/review-queue` now returns 401 without a credential, and
+`POST /api/access-code` with the real code returns 200 plus a `Set-Cookie`. All three checked
+directly against the live URL. The URL and code are now in the README.
 
 **Observed, not derived.** This ticket ran these commands against a fresh worktree:
 `pnpm install`; `pnpm db:migrate` (8 migrations, exit 0); `pnpm typecheck` (exit 0); `pnpm lint`

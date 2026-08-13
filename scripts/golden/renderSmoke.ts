@@ -27,14 +27,20 @@ export interface RenderSmokeResult {
 }
 
 /**
- * Renders the first renderable (non-`ai-generated`) case in manifest order
- * and confirms it decodes to `CANVAS_WIDTH` x `CANVAS_HEIGHT`. Picks the
- * first case rather than a hardcoded case ID so renaming or reordering
- * cases never breaks this check for an unrelated reason.
+ * Renders the first renderable (non-`ai-generated`, non-`photographed`)
+ * case in manifest order and confirms it decodes to `CANVAS_WIDTH` x
+ * `CANVAS_HEIGHT`. Picks the first case rather than a hardcoded case ID so
+ * renaming or reordering cases never breaks this check for an unrelated
+ * reason. Excludes `photographed` (TRO-529 / LH-024) for the same reason
+ * `build.ts` does: a real camera photograph is not this renderer's output,
+ * and drawing its placeholder application/label fields as HTML would smoke
+ * the wrong pipeline for the wrong reason.
  */
 export async function runRenderSmoke(manifestPath?: string): Promise<RenderSmokeResult> {
   const manifest = loadGoldenSetManifest(manifestPath);
-  const renderable = manifest.cases.find((c) => c.provenance !== "ai-generated");
+  const renderable = manifest.cases.find(
+    (c) => c.provenance !== "ai-generated" && c.provenance !== "photographed",
+  );
   if (!renderable) {
     throw new Error(
       "golden-set render smoke: no renderable (rendered / rendered+degraded / rendered+ai-backdrop) case found in the manifest",

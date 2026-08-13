@@ -27,7 +27,15 @@ import {
 } from "./render";
 
 const manifest = loadGoldenSetManifest();
-const renderableCases = manifest.cases.filter((c) => c.provenance !== "ai-generated");
+// Excludes "photographed" (TRO-529 / LH-024) the same way build.ts and
+// renderSmoke.ts do: a real camera photograph never reaches this renderer,
+// and a "photographed" case's governmentWarningPrefixBold/BodyBold can
+// legitimately be "unknown" — warningSpanFontWeight (render.ts) throws on
+// that value on purpose, since this renderer draws real pixels and "we
+// don't know" has no pixel to draw.
+const renderableCases = manifest.cases.filter(
+  (c) => c.provenance !== "ai-generated" && c.provenance !== "photographed",
+);
 
 const BASE_LABEL: GoldenLabelFields = {
   brandName: "Test Brand",

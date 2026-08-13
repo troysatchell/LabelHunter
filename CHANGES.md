@@ -11,7 +11,7 @@ The component is unchanged.
 
 **The diagnosis, and a correction to the ticket's premise.** TRO-547 was filed as "flaky under
 load", by analogy with TRO-513. That framing is wrong. The test fails with no suite load at all:
-measured 2 failures in 10 isolated runs of that file alone.
+10 isolated runs of that file produced 2 failures.
 
 It is also not a component race. `progress()` defaults to `status: "RUNNING"`, which is not
 terminal, so after the held poll resolves the component correctly keeps polling every

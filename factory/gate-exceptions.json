@@ -54,6 +54,22 @@
       "reason": "The committed accuracy baseline (81.3%) sits at the top of TRO-543's measured variance band (78.1-81.3%), so an honest single run of unchanged code can fail the comparison on variance alone. Compounded by 31-vs-32-case corpus drift (TRO-556). TRO-561 is the systemic fix; this exception covers the interim.",
       "approver": "Troy",
       "date": "2026-08-13"
+    },
+    {
+      "ticket": "TRO-529",
+      "gate": "eval-not-regressed",
+      "reason": "Inherited stale-baseline condition (TRO-561/TRO-556), not caused by this branch. The golden-set corpus had to finalize at 36 cases before the variance-band sweep could run.",
+      "approver": "Troy",
+      "date": "2026-08-13",
+      "pr": 64
+    },
+    {
+      "ticket": "TRO-553",
+      "gate": "eval-not-regressed",
+      "reason": "Same inherited stale-baseline condition (TRO-561/TRO-556), not caused by this branch — verified byte-identical on a clean checkout of main. This is the exception-mechanism PR itself.",
+      "approver": "Troy",
+      "date": "2026-08-13",
+      "pr": 62
     }
   ]
 }

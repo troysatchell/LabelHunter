@@ -39,6 +39,8 @@ interface WorkflowStep {
   name?: string;
   run?: string;
   env?: Record<string, string>;
+  uses?: string;
+  with?: Record<string, unknown>;
 }
 
 interface WorkflowJob {
@@ -167,5 +169,79 @@ describe("ci.yml — pnpm test:e2e runs as its own explicit CI check (TRO-522)",
     const migrateIndex = steps.findIndex((s) => s.run?.includes("pnpm db:migrate"));
     expect(migrateIndex, "no `pnpm db:migrate` step found in the E2E job").toBeGreaterThanOrEqual(0);
     expect(migrateIndex).toBeLessThan(e2eIndex);
+  });
+});
+
+/** Every step, across every job, that has a `uses:` — flattened once so each
+ * assertion below reports which job/step failed instead of stopping at the
+ * first offender. */
+function allUsesSteps(): Array<{ jobId: string; step: WorkflowStep }> {
+  const jobs = workflow.jobs ?? {};
+  const found: Array<{ jobId: string; step: WorkflowStep }> = [];
+  for (const [jobId, job] of Object.entries(jobs)) {
+    for (const step of job.steps ?? []) {
+      if (step.uses) found.push({ jobId, step });
+    }
+  }
+  return found;
+}
+
+const FORTY_HEX = /^[0-9a-f]{40}$/;
+const SHA256_DIGEST = /^sha256:[0-9a-f]{64}$/;
+
+describe("ci.yml — supply-chain action and image pinning (TRO-562)", () => {
+  it("pins every `uses:` action to a 40-character commit SHA, not a mutable tag", () => {
+    const usesSteps = allUsesSteps();
+    expect(usesSteps.length, "expected at least one `uses:` step in the workflow").toBeGreaterThan(0);
+
+    const unpinned = usesSteps
+      .map(({ jobId, step }) => ({ jobId, uses: step.uses!, ref: step.uses!.split("@")[1] }))
+      .filter(({ ref }) => !ref || !FORTY_HEX.test(ref));
+
+    expect(
+      unpinned,
+      `these steps use a mutable ref instead of a commit SHA: ${JSON.stringify(unpinned)}`,
+    ).toHaveLength(0);
+  });
+
+  it("carries a human-readable version comment next to every pinned SHA", () => {
+    // `uses: owner/repo@<sha> # vX.Y.Z` — the raw YAML line, not the parsed
+    // value, since js-yaml drops trailing comments from `step.uses`.
+    const lines = ciYamlText.split("\n");
+    const usesLines = lines.filter((l) => /^\s*-?\s*uses:\s*\S+@[0-9a-f]{40}/.test(l));
+    expect(usesLines.length).toBeGreaterThan(0);
+    const missingComment = usesLines.filter((l) => !/#\s*v\d/.test(l));
+    expect(
+      missingComment,
+      `these pinned actions have no trailing "# vX.Y.Z" comment: ${JSON.stringify(missingComment)}`,
+    ).toHaveLength(0);
+  });
+
+  it("pins every service container image by its sha256 digest, not a mutable tag", () => {
+    const jobs = workflow.jobs ?? {};
+    const unpinned: string[] = [];
+    for (const [jobId, job] of Object.entries(jobs)) {
+      for (const [serviceId, service] of Object.entries(job.services ?? {})) {
+        const image = service.image ?? "";
+        const digestPart = image.split("@")[1];
+        if (!digestPart || !SHA256_DIGEST.test(digestPart)) {
+          unpinned.push(`job "${jobId}" service "${serviceId}": ${image || "(no image)"}`);
+        }
+      }
+    }
+    expect(unpinned, `these service images are not digest-pinned: ${unpinned.join("; ")}`).toHaveLength(0);
+  });
+
+  it("sets persist-credentials: false on every checkout step", () => {
+    const checkoutSteps = allUsesSteps().filter(({ step }) => step.uses?.startsWith("actions/checkout@"));
+    expect(checkoutSteps.length, "expected at least one actions/checkout step").toBeGreaterThan(0);
+
+    const notDisabled = checkoutSteps
+      .filter(({ step }) => step.with?.["persist-credentials"] !== false)
+      .map(({ jobId }) => jobId);
+    expect(
+      notDisabled,
+      `these jobs' checkout steps do not set persist-credentials: false: ${notDisabled.join(", ")}`,
+    ).toHaveLength(0);
   });
 });

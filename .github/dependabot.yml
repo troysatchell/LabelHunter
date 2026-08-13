@@ -1,0 +1,18 @@
+# TRO-562: the update path for the SHA pins in .github/workflows/ci.yml.
+#
+# Dependabot's `github-actions` ecosystem reads a pinned `uses: owner/repo@<sha>
+# # vX.Y.Z` line, checks the trailing comment against the latest release, and
+# opens a PR that bumps both the SHA and the comment. This covers all four
+# pinned actions (checkout, setup-node, pnpm/action-setup, upload-artifact).
+#
+# It does NOT cover the `postgres:16-alpine@sha256:...` digest pins in the
+# same file's `services:` blocks — Dependabot's Docker ecosystem tracks
+# Dockerfiles and docker-compose files, not container images embedded in
+# workflow YAML. Those two digests need a manual re-check; there is no
+# automatic bump for them yet.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

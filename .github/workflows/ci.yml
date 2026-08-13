@@ -28,8 +28,12 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     services:
+      # TRO-562: pinned by digest, not the mutable `16-alpine` tag. Dependabot
+      # does not track digests inside a workflow's `services:` block (its
+      # `github-actions` ecosystem below only follows `uses:` steps) — see
+      # the dependabot.yml comment for the manual re-check this needs.
       postgres:
-        image: postgres:16-alpine
+        image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
         env:
           POSTGRES_USER: labelhunter
           POSTGRES_PASSWORD: labelhunter_ci_password
@@ -44,9 +48,10 @@ jobs:
       DATABASE_URL: postgresql://labelhunter:labelhunter_ci_password@localhost:5432/labelhunter_ci
       FACTORY_TICKET: ci
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Detect scaffold
         id: scaffold
@@ -60,11 +65,11 @@ jobs:
 
       - name: Setup pnpm
         if: steps.scaffold.outputs.present == 'true'
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       - name: Setup node
         if: steps.scaffold.outputs.present == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
@@ -181,7 +186,7 @@ jobs:
 
       - name: Upload artifacts
         if: always() && steps.scaffold.outputs.present == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: verify-artifacts
           path: |
@@ -206,8 +211,10 @@ jobs:
     name: e2e
     runs-on: ubuntu-latest
     services:
+      # TRO-562: pinned by digest — see the "verify" job's postgres service
+      # comment above for why Dependabot does not track this one.
       postgres:
-        image: postgres:16-alpine
+        image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
         env:
           POSTGRES_USER: labelhunter
           POSTGRES_PASSWORD: labelhunter_ci_password
@@ -222,9 +229,10 @@ jobs:
       DATABASE_URL: postgresql://labelhunter:labelhunter_ci_password@localhost:5432/labelhunter_ci
       FACTORY_TICKET: ci
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Detect scaffold
         id: scaffold
@@ -238,11 +246,11 @@ jobs:
 
       - name: Setup pnpm
         if: steps.scaffold.outputs.present == 'true'
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       - name: Setup node
         if: steps.scaffold.outputs.present == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
@@ -279,7 +287,7 @@ jobs:
 
       - name: Upload Playwright artifacts
         if: always() && steps.scaffold.outputs.present == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: e2e-artifacts
           path: |

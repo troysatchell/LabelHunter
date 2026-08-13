@@ -33,6 +33,19 @@ CP-3 §12 open question 2 left two decisions to this ticket. This entry answers 
    was written. The verify route now pre-files a bare row. `DO NOTHING` would therefore find a
    row for every single-label escalation, and no caller would ever resolve one. The `WHERE`
    clause keeps CP-3's guarantee exactly: it matches nothing while a live reservation exists.
+3. **A release must prove it still owns the lease.** `reserveReviewQueueEntry` returns the exact
+   lease it won. `releaseReviewQueueReservation` requires that lease back and matches on it.
+   Without this, the double-pay returns through the release path. A caller whose model call
+   outlives its own lease loses the row to a later caller by design. Its eventual failure would
+   then clear the *new* holder's live reservation, because the row is still unresolved and
+   unskipped at that moment. A third caller could reserve and buy a second Sonnet call while the
+   second was still running. Found by CodeRabbit on PR #60.
+4. **The lease is written through `date_trunc('milliseconds', ...)`.** Postgres `timestamptz`
+   keeps microseconds, and this driver returns the column as a string. A JavaScript `Date` holds
+   milliseconds. Observed: an untruncated lease of `14:40:15.312121+00` came back as
+   `14:40:15.312`, so rule 3's predicate could never match its own row. Truncating at the source
+   makes the value exactly representable on both sides. This is the same precision problem
+   migration 0006 fixes for `created_at`, solved at the single writer rather than in the column.
 
 TRO-512's second half is the coordinated display change. A reserved row exists before Sonnet
 answers. "No suggestion on this row" now means one of four things. Each row carries a

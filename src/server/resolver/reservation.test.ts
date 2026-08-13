@@ -270,13 +270,58 @@ describe("reserveReviewQueueEntry — real database", () => {
       expect(reserved.kind).toBe("reserved");
       if (reserved.kind !== "reserved") return;
 
-      expect(await releaseReviewQueueReservation(reserved.id, db)).toBe(true);
+      expect(await releaseReviewQueueReservation(reserved.id, reserved.reservedUntil, db)).toBe(true);
       expect((await readReviewQueueReservation(verificationId, db)).kind).toBe("free");
 
       await resolveEscalatedLabel(makeResolverInput({ verificationId }), { client, db });
       // A resolved row is finished: a late release from a stale caller must
       // not touch it.
-      expect(await releaseReviewQueueReservation(reserved.id, db)).toBe(false);
+      expect(await releaseReviewQueueReservation(reserved.id, reserved.reservedUntil, db)).toBe(false);
+    } finally {
+      await cleanup(applicationId);
+    }
+  });
+
+  it("will not let a timed-out caller release the reservation a later caller took over", async () => {
+    // The double-pay this module exists to prevent, arriving through the
+    // RELEASE path rather than the reserve path (CodeRabbit finding,
+    // TRO-506). Caller A's Sonnet call outlives A's own lease; caller B
+    // legitimately takes the row over; A then fails and tries to clean up.
+    // A must not clear B's live reservation, or a third caller would reserve
+    // and buy a second Sonnet call while B is still running.
+    const { applicationId, verificationId } = await makeVerificationFixture();
+    try {
+      // A takes a lease that expires almost immediately.
+      const a = await reserveReviewQueueEntry({ verificationId, reason: "WARNING_MISMATCH", leaseSeconds: 1 }, db);
+      expect(a.kind).toBe("reserved");
+      if (a.kind !== "reserved") return;
+
+      // Wait for A's lease to lapse by observing the row's own state — no
+      // fixed sleep as a stand-in for the condition (standing rule 8).
+      await vi.waitFor(
+        async () => {
+          const state = await readReviewQueueReservation(verificationId, db);
+          if (state.kind !== "free") throw new Error(`lease has not lapsed yet (state: ${state.kind})`);
+        },
+        { timeout: 5_000, interval: 100 },
+      );
+
+      // B legitimately takes the row over with a long lease.
+      const b = await reserveReviewQueueEntry({ verificationId, reason: "WARNING_MISMATCH", leaseSeconds: 120 }, db);
+      expect(b.kind).toBe("reserved");
+      if (b.kind !== "reserved") return;
+      expect(b.id).toBe(a.id);
+      expect(b.reservedUntil.getTime()).not.toBe(a.reservedUntil.getTime());
+
+      // A now fails and tries to release. It must be refused.
+      expect(await releaseReviewQueueReservation(a.id, a.reservedUntil, db)).toBe(false);
+
+      // B still holds the row, so no third caller can reserve it.
+      const after = await readReviewQueueReservation(verificationId, db);
+      expect(after.kind).toBe("held");
+
+      // And B can still release its own reservation.
+      expect(await releaseReviewQueueReservation(b.id, b.reservedUntil, db)).toBe(true);
     } finally {
       await cleanup(applicationId);
     }

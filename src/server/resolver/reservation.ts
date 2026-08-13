@@ -64,8 +64,12 @@ const MAX_RESERVE_ATTEMPTS = 3;
  * caller cannot read `resolverOutput` without first proving the row carries
  * one. */
 export type ReviewQueueReservation =
-  /** This caller now owns the reservation and must perform the Sonnet call. */
-  | { kind: "reserved"; id: number }
+  /** This caller now owns the reservation and must perform the Sonnet call.
+   * `reservedUntil` is the exact lease this caller won. It is the caller's
+   * proof of ownership: `releaseReviewQueueReservation` requires it back, so
+   * a caller whose lease has since expired and been taken over by someone
+   * else cannot clear the new holder's reservation. */
+  | { kind: "reserved"; id: number; reservedUntil: Date }
   /** Another caller already produced a full resolution. Reuse it; call
    * nothing. */
   | { kind: "resolved"; id: number; resolverOutput: ResolverResolution }
@@ -146,6 +150,25 @@ export async function readReviewQueueReservation(verificationId: number, db: Res
 }
 
 /**
+ * Turns the driver's `resolver_reserved_until` into a `Date`.
+ *
+ * `pg` hands `timestamptz` back as a string in Postgres's own format —
+ * `2026-08-13 14:40:15.312+00` (observed) — which differs from ISO 8601 in
+ * two ways that both matter: a space instead of `T`, and a two-digit UTC
+ * offset instead of `+00:00`. Node rejects the offset outright, so this is a
+ * real conversion, not defensive decoration (standing rule 13: name the
+ * invariant and check it rather than trusting a permissive parser).
+ */
+function toLeaseDate(value: Date | string, rowId: number): Date {
+  const iso = typeof value === "string" ? value.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00") : value;
+  const parsed = iso instanceof Date ? iso : new Date(iso);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`reserveReviewQueueEntry: Postgres returned an unparseable resolver_reserved_until (${String(value)}) for row ${rowId}.`);
+  }
+  return parsed;
+}
+
+/**
  * Takes the reservation for one verification, or reports who holds it.
  *
  * One `INSERT ... ON CONFLICT ... RETURNING` statement decides the winner —
@@ -161,18 +184,34 @@ export async function reserveReviewQueueEntry(
   assertPositiveFinite("reserveReviewQueueEntry: leaseSeconds", leaseSeconds);
 
   for (let attempt = 1; attempt <= MAX_RESERVE_ATTEMPTS; attempt += 1) {
-    const result = await db.execute<{ id: number }>(sql`
+    const result = await db.execute<{ id: number; resolver_reserved_until: Date | string }>(sql`
       INSERT INTO review_queue (verification_id, reason, resolver_reserved_until)
-      VALUES (${params.verificationId}, ${params.reason}, now() + (${leaseSeconds} * interval '1 second'))
+      VALUES (${params.verificationId}, ${params.reason}, date_trunc('milliseconds', now() + (${leaseSeconds} * interval '1 second')))
       ON CONFLICT (verification_id) DO UPDATE
-        SET resolver_reserved_until = now() + (${leaseSeconds} * interval '1 second')
+        SET resolver_reserved_until = date_trunc('milliseconds', now() + (${leaseSeconds} * interval '1 second'))
         WHERE review_queue.resolver_output IS NULL
           AND review_queue.resolver_skip_reason IS NULL
           AND (review_queue.resolver_reserved_until IS NULL OR review_queue.resolver_reserved_until <= now())
-      RETURNING id
+      RETURNING id, resolver_reserved_until
     `);
     const row = result.rows[0];
-    if (row) return { kind: "reserved", id: row.id };
+    if (row) {
+      // Hand the lease back with the id. The caller returns it on release,
+      // which is what stops a timed-out caller from clearing the reservation
+      // a later caller legitimately took over (CodeRabbit finding, TRO-506).
+      //
+      // The lease is written through `date_trunc('milliseconds', ...)` on
+      // purpose. Postgres `timestamptz` keeps microseconds and this driver
+      // returns the column as a STRING; a JavaScript `Date` holds only
+      // milliseconds, so an untruncated lease would lose its last three
+      // digits on the way out and the release predicate below could never
+      // match its own row again. Truncating at the source makes the value
+      // exactly representable on both sides, so the equality is real rather
+      // than approximate. Measured: an untruncated `now()` round-tripped
+      // from .312121 to .312000.
+      const reservedUntil = toLeaseDate(row.resolver_reserved_until, row.id);
+      return { kind: "reserved", id: row.id, reservedUntil };
+    }
 
     const state = await readReviewQueueReservation(params.verificationId, db);
     if (state.kind !== "free") return state;
@@ -192,16 +231,41 @@ export async function reserveReviewQueueEntry(
  * able to take the reservation immediately instead of waiting out the full
  * lease.
  *
- * Guarded on the row still being unresolved and unskipped: a release must
- * never touch a row a competing caller already finished.
+ * Guarded on three things, all required:
+ *
+ * 1. the row is still unresolved, and
+ * 2. still unskipped — a release must never touch a row a competing caller
+ *    already finished, and
+ * 3. **still carries the exact lease this caller won.**
+ *
+ * Guard 3 is not redundant. A caller whose Sonnet call outlives its own lease
+ * loses the reservation to a later caller by design — `reserveReviewQueueEntry`
+ * lets anyone take a lease that has passed `now()`. Without the lease in the
+ * predicate, the slow caller's eventual failure path would clear the *new*
+ * holder's live reservation: the row is still unresolved and unskipped at that
+ * moment, so the other two guards both pass. A third caller could then reserve
+ * and buy a Sonnet call while the second is still in flight — reintroducing
+ * exactly the double-pay this module exists to prevent, through the release
+ * path instead of the reserve path (CodeRabbit finding, TRO-506).
+ *
+ * Returning `false` therefore means "somebody else owns this row now", which
+ * is a normal outcome, not an error.
  */
-export async function releaseReviewQueueReservation(id: number, db: ResolverDb = defaultDb): Promise<boolean> {
+export async function releaseReviewQueueReservation(
+  id: number,
+  reservedUntil: Date,
+  db: ResolverDb = defaultDb,
+): Promise<boolean> {
+  if (Number.isNaN(reservedUntil.getTime())) {
+    throw new RangeError("releaseReviewQueueReservation: reservedUntil must be a valid Date — it is the caller's proof of ownership.");
+  }
   const result = await db.execute<{ id: number }>(sql`
     UPDATE review_queue
     SET resolver_reserved_until = NULL
     WHERE id = ${id}
       AND resolver_output IS NULL
       AND resolver_skip_reason IS NULL
+      AND resolver_reserved_until = ${reservedUntil}
     RETURNING id
   `);
   return result.rows.length > 0;

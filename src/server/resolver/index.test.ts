@@ -36,7 +36,14 @@ function fakeDb(
 ) {
   const reservationIsWinnable = !existingRow || (existingRow.resolverOutput === null && (existingRow.resolverSkipReason ?? null) === null);
   const reservedId = existingRow?.id ?? nextId;
-  const execute = vi.fn().mockResolvedValue({ rows: reservationIsWinnable ? [{ id: reservedId }] : [] });
+  // The real statement is `RETURNING id, resolver_reserved_until`, and the
+  // caller needs that lease back to release its own reservation later. The
+  // fake returns both columns for the same reason — a fake that answers a
+  // narrower contract than the real one hides the caller's dependency on it.
+  const reservedUntil = new Date("2026-08-13T14:40:15.312Z");
+  const execute = vi.fn().mockResolvedValue({
+    rows: reservationIsWinnable ? [{ id: reservedId, resolver_reserved_until: reservedUntil }] : [],
+  });
   const values = vi.fn().mockReturnValue({
     returning: vi.fn().mockResolvedValue([{ id: nextId }]),
   });

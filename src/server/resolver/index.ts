@@ -185,6 +185,7 @@ export async function resolveEscalatedLabel(
   // caller wins; the rest reuse or wait. Nobody buys a second Sonnet call.
   const deadline = Date.now() + waitMs;
   let reservedId: number;
+  let reservedUntil: Date;
   for (;;) {
     const reservation = await reserveReviewQueueEntry(
       { verificationId: input.verificationId, reason: headlineReason, leaseSeconds: options.reservationLeaseSeconds },
@@ -197,6 +198,9 @@ export async function resolveEscalatedLabel(
     }
     if (reservation.kind === "reserved") {
       reservedId = reservation.id;
+      // Keep the lease we won. Releasing requires it back, so a call that
+      // outlives its lease cannot clear whoever took the row over.
+      reservedUntil = reservation.reservedUntil;
       break;
     }
 
@@ -231,7 +235,13 @@ export async function resolveEscalatedLabel(
     // replace the real error, and must not disappear either (standing rule
     // 24) — it is logged, and the model error still propagates.
     try {
-      await releaseReviewQueueReservation(reservedId, options.db);
+      const released = await releaseReviewQueueReservation(reservedId, reservedUntil, options.db);
+      if (!released) {
+        // Normal, not an error: our lease expired and another caller took
+        // the row over while this call was still running. Leaving its
+        // reservation intact is the correct outcome.
+        console.warn(`Did not release review_queue row ${reservedId}: the reservation is no longer this caller's to release.`);
+      }
     } catch (releaseError) {
       console.error(`Could not release the review_queue reservation for row ${reservedId} after a failed resolver call`, releaseError);
     }

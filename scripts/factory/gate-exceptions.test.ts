@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  formatApprovedNote,
   loadExceptionsFile,
   parseExceptionsFile,
   resolveException,
@@ -74,6 +75,39 @@ describe("resolveException", () => {
     };
     const outcome = resolveException(APPROVED_TICKET, GATE_ID, file);
     expect(outcome.state).not.toBe("approved");
+  });
+});
+
+describe("formatApprovedNote", () => {
+  // Pinned exact output: gate.sh's G6 block reads this string verbatim (both
+  // the console line and gate-result.json's detail field), so a silent
+  // format drift here is a silent drift in what the gate reports.
+  it("names the approver, date, ticket, gate, PR, and reason", () => {
+    const note = formatApprovedNote({
+      ticket: APPROVED_TICKET,
+      gate: GATE_ID,
+      reason: "no red-first case possible",
+      approver: "Troy",
+      date: "2026-08-13",
+      pr: 50,
+    });
+    expect(note).toBe(
+      "pass-with-exception — approved by Troy on 2026-08-13 " +
+        "(ticket TRO-547, gate regression-test, PR #50): no red-first case possible",
+    );
+  });
+
+  it("omits the PR clause when pr is not set", () => {
+    const note = formatApprovedNote({
+      ticket: "TRO-1",
+      gate: GATE_ID,
+      reason: "r",
+      approver: "Troy",
+      date: "2026-08-01",
+    });
+    expect(note).toBe(
+      "pass-with-exception — approved by Troy on 2026-08-01 (ticket TRO-1, gate regression-test): r",
+    );
   });
 });
 

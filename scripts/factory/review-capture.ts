@@ -233,7 +233,11 @@ export interface RunCaptureOptions {
  * one error type the ticket puts in scope for backoff.
  */
 export function runCapture(opts: RunCaptureOptions): CaptureRunResult {
-  const maxAttempts = opts.maxAttempts ?? 3;
+  // Clamped here, not just at the CLI boundary that parses CR_MAX_ATTEMPTS —
+  // a direct caller passing 0 or a negative number must still get one real
+  // attempt, never a silent no-op loop that reports "warn" without ever
+  // invoking the runner.
+  const maxAttempts = Math.max(1, Math.floor(opts.maxAttempts ?? 3));
   const backoffFn = opts.backoffFn ?? backoffMs;
   const timeoutMs = opts.timeoutMs ?? 360_000;
   const sleep = opts.sleep ?? defaultSleep;
@@ -291,6 +295,23 @@ function gitHead(cwd: string): string {
   return (r.stdout ?? "").trim() || "unknown";
 }
 
+/**
+ * Parses a positive-integer environment override, falling back to `fallback`
+ * on anything that is not a finite positive number.
+ *
+ * `Number(process.env.X ?? default)` looked safe but was not: an unset var
+ * falls back correctly, but a var set to `""` (a real misconfiguration, not
+ * a hypothetical) parses to `0`, not `NaN` — and a `maxAttempts` of 0 would
+ * have skipped the retry loop's body entirely, reporting "review did not
+ * complete" without ever invoking the runner once. This never returns
+ * anything a caller could turn into a zero-attempt run.
+ */
+export function parsePositiveIntEnv(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
 function main(): void {
   try {
     const args = process.argv.slice(2);
@@ -306,10 +327,10 @@ function main(): void {
     const repoRoot = process.cwd();
     const currentSha = gitHead(repoRoot);
     const previous = loadPreviousMeta(outDir);
-    const timeoutMs = Number(process.env.CR_TIMEOUT_MS ?? 360_000);
-    const maxAttempts = Number(process.env.CR_MAX_ATTEMPTS ?? 3);
-    const backoffBaseMs = Number(process.env.CR_BACKOFF_BASE_MS ?? 2000);
-    const backoffCapMs = Number(process.env.CR_BACKOFF_CAP_MS ?? 20000);
+    const timeoutMs = parsePositiveIntEnv(process.env.CR_TIMEOUT_MS, 360_000);
+    const maxAttempts = parsePositiveIntEnv(process.env.CR_MAX_ATTEMPTS, 3);
+    const backoffBaseMs = parsePositiveIntEnv(process.env.CR_BACKOFF_BASE_MS, 2000);
+    const backoffCapMs = parsePositiveIntEnv(process.env.CR_BACKOFF_CAP_MS, 20000);
 
     const result = runCapture({
       base,
@@ -352,12 +373,15 @@ function main(): void {
       writeFileSync(join(outDir, "coderabbit.meta.json"), JSON.stringify(meta, null, 2) + "\n");
     }
 
+    // No explicit process.exit() here: gate.sh always reads this CLI's stdout
+    // through a pipe (command substitution), and process.exit() can cut a
+    // pending pipe write off before it flushes. Returning lets Node drain
+    // stdout and exit on its own with the default code 0.
     process.stdout.write(JSON.stringify({ status: result.decision.status, detail: result.decision.detail }));
-    process.exit(0);
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
     process.stderr.write(`review-capture: internal error — ${message}\n`);
-    process.exit(1);
+    process.exitCode = 1;
   }
 }
 

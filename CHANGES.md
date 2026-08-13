@@ -82,23 +82,26 @@ this failure. The real diagnostic sat unread, one file over.
   `gate.sh` so its decision logic is unit-tested, matching the pattern
   `scripts/factory/defect-gates/run.ts` already established for G11.
   - `parseCoderabbitOutput` reads the CLI's JSONL stdout directly and keeps the last
-    `type: "error"` line — the fix for the empty-`.err` defect.
-  - `decideCapture` names the exact three states this PR promises: fresh `pass` (rc=0),
-    `warn` with the failure reason and no fallback, and `warn` with a stale fallback. The
-    stale case names the SHA the old findings were captured at, names current `HEAD`, and
-    says "this diff has NOT been reviewed" — verbatim, so grep or a human eye catches it
-    immediately. A re-run at the SAME sha (nothing changed since the last real capture) says
-    "still current" instead — genuinely reviewed content must not be mislabeled stale.
-  - `runCapture` retries only a `rate_limit`-typed error, bounded by `CR_MAX_ATTEMPTS`
-    (default 3 total attempts — 2 retries), with exponential backoff (`backoffMs`, default
-    2s/4s, capped at 20s). Any other failure type does not retry. Unbounded retries were
-    explicitly out of scope for this ticket.
-  - The CLI writes `.factory/coderabbit-capture.json` on EVERY run, success or failure: every
-    attempt's rc, timeout flag, finding count, and parsed error, plus the final attempt's raw
-    stderr. Nothing is thrown away, on any outcome.
+    `type: "error"` line. This is the fix for the empty-`.err` defect.
+  - `decideCapture` returns one of three states:
+    1. Fresh `pass` (rc=0).
+    2. `warn` — no fallback exists. Names the real failure reason.
+    3. `warn` — a stale fallback exists. Names the SHA the old findings were captured at,
+       names current `HEAD`, and says "this diff has NOT been reviewed", verbatim, so grep
+       or a human eye catches it immediately.
+
+    A re-run at the SAME sha (nothing changed since the last real capture) says "still
+    current" instead. Genuinely reviewed content must never read as stale.
+  - `runCapture` retries only a `rate_limit`-typed error. Retries are bounded by
+    `CR_MAX_ATTEMPTS` (default 3 total attempts, 2 retries), with exponential backoff
+    (`backoffMs`, default 2s/4s, capped at 20s). Any other failure type does not retry.
+    Unbounded retries were explicitly out of scope for this ticket.
+  - The CLI writes `.factory/coderabbit-capture.json` on every run, success or failure. It
+    records each attempt's rc, timeout flag, finding count, and parsed error, plus the final
+    attempt's raw stderr. Nothing is thrown away.
   - `.factory/coderabbit.meta.json` (new) records the SHA and finding count of the last
-    SUCCESSFUL capture — the record `decideCapture` compares `HEAD` against to decide
-    fresh vs. stale.
+    SUCCESSFUL capture. `decideCapture` compares this against `HEAD` to decide fresh vs.
+    stale.
 - `scripts/factory/gate.sh` G10: replaced with a single call to
   `review-capture.ts`, parsing its one-line JSON result the same way G11 already parses
   `defect-gate.json`. G10 stays advisory — `record review "${CR_STATUS}" ...` only ever
@@ -106,36 +109,98 @@ this failure. The real diagnostic sat unread, one file over.
 
 **Forced-failure run (real, not simulated in this prose).** Ran `review-capture.ts` against a
 fake `coderabbit` binary reproducing TRO-508's exact artifact (rate_limit error on stdout,
-empty stderr, rc=1), outside this repo, output not committed:
+empty stderr, rc=1). Run outside this repo; output not committed.
+
+```console
+$ PATH=<fake-bin>:$PATH CR_MAX_ATTEMPTS=2 CR_BACKOFF_BASE_MS=50 CR_TIMEOUT_MS=5000 \
+    tsx scripts/factory/review-capture.ts --base main --out-dir <tmp>
 ```
-$ PATH=<fake-bin>:$PATH CR_MAX_ATTEMPTS=2 ... tsx scripts/factory/review-capture.ts --base main --out-dir <tmp>
+
+```json
 {"status":"warn","detail":"review did not complete (capture failed: rc=1, rate_limit: Rate limit exceeded — see .factory/coderabbit-capture.json)"}
 ```
-`coderabbit-capture.json` retained both attempts' full `rate_limit` diagnostic;
-`coderabbit.err` was empty, exactly as in the real TRO-508 report, and is no longer the only
-place a reader is told to look. A second run, seeded with a `coderabbit.meta.json` at a
-different SHA, produced:
-```
+
+`coderabbit-capture.json` retained both attempts' full `rate_limit` diagnostic. `coderabbit.err`
+was empty, exactly as in the real TRO-508 report. It is no longer the only place a reader is
+told to look.
+
+A second run seeded `coderabbit.meta.json` with findings captured at a different SHA:
+
+```json
 {"status":"warn","detail":"5 finding(s) from an earlier run at a1b2c3d — HEAD is now 96d59f4; this diff has NOT been reviewed (capture failed: rc=1, rate_limit: Rate limit exceeded — see .factory/coderabbit-capture.json)"}
 ```
-`coderabbit.json` and `coderabbit.meta.json` were left untouched — the stale fallback is never
-overwritten by a failed attempt's empty output.
+
+`coderabbit.json` and `coderabbit.meta.json` were left untouched. A failed attempt's empty
+output never overwrites the stale fallback.
 
 ### Tests
 
-- `scripts/factory/gate-exceptions.test.ts` (new, 13 cases): `resolveException` state
-  transitions (`none`/`unapproved`/`approved`), an empty or whitespace-only approver never
-  reads as approved, an omitted approver field never reads as approved, `parseExceptionsFile`
-  rejects a document with no `exceptions` array, and five tests load the REAL committed
-  `factory/gate-exceptions.json` and assert both TRO-547 and TRO-472 resolve to `approved`
-  while an unlisted ticket (TRO-553 itself) resolves to `none`.
-- `scripts/factory/review-capture.test.ts` (new, 20 cases): `parseCoderabbitOutput` against
-  the literal JSONL text TRO-508's comment quoted; `decideCapture`'s three states, including
-  the same-SHA "still current" case; `backoffMs` growth and cap; `runCapture`'s retry bound
-  (never exceeds `maxAttempts`) and its refusal to retry a non-rate-limit failure.
+- `scripts/factory/gate-exceptions.test.ts` (15 cases): `resolveException` state transitions
+  (`none`/`unapproved`/`approved`); an empty, whitespace-only, or omitted approver field never
+  reads as approved; `parseExceptionsFile` rejects a document with no `exceptions` array;
+  `formatApprovedNote`'s exact output is pinned (with and without a PR number); five tests
+  load the REAL committed `factory/gate-exceptions.json` and assert both TRO-547 and TRO-472
+  resolve to `approved`, while an unlisted ticket (TRO-553 itself) resolves to `none`.
+- `scripts/factory/review-capture.test.ts` (29 cases): `parseCoderabbitOutput` against the
+  literal JSONL text TRO-508's comment quoted; `decideCapture`'s three states, including the
+  same-SHA "still current" case and a partial/truncated capture that must never persist;
+  `backoffMs` growth and cap; `parsePositiveIntEnv`'s fallback on an unset, empty, zero,
+  negative, or non-numeric value; `runCapture`'s retry bound, its refusal to retry a
+  non-rate-limit failure, and its clamp to at least one attempt.
 - Red confirmed for the right reason before implementation: both suites failed with
   `Cannot find module` (the modules did not exist yet), not an assertion or import typo.
-  Green after implementation: 33/33 passing, confirmed again inside the full gate run below.
+  Green after implementation and after the review round below: 44/44 passing, confirmed
+  again inside the full gate run below.
+
+### Review round 1 — 12 findings, 8 fixed, 4 dismissed
+
+A completed (not rate-limited) `gate.sh` run against this branch surfaced 12 real findings.
+All 12 are in `factory/review-findings.jsonl`, tagged TRO-553 or TRO-560 by subject file.
+
+**Fixed:**
+- `gate-exceptions.ts`'s CLI arg parser read a following flag as a value when the value was
+  missing (`--ticket --gate x` would have set `ticket` to `"--gate"`). Now a value starting
+  with `--` reads as missing.
+- `formatApprovedNote` had no pinned test even though `gate.sh` now consumes its exact output.
+  Added two tests.
+- `gate.sh` reconstructed the pass-with-exception note a second time in an inline script,
+  instead of using `gate-exceptions.ts`'s own `formatApprovedNote` — two independent templates
+  for one string. The CLI now emits the formatted `note` field; `gate.sh` reads it directly.
+- `Number(process.env.CR_MAX_ATTEMPTS ?? 3)` resolves an empty-string env var to `0`, not
+  `NaN` — a `maxAttempts` of `0` would have skipped the retry loop's body entirely and
+  reported `warn` without ever invoking `coderabbit`. Added `parsePositiveIntEnv` and clamped
+  `maxAttempts >= 1` inside `runCapture` itself, so a direct caller cannot bypass it either.
+- `process.exit(0)` immediately after `process.stdout.write()` can truncate a pending pipe
+  write before `gate.sh`'s command substitution reads it. `main()` now returns naturally on
+  success; the catch path sets `process.exitCode = 1` instead of calling `process.exit(1)`.
+- No test asserted that a partial capture (rc != 0 with `findings > 0`) is never persisted.
+  This is not hypothetical: the full `gate.sh` run below hit exactly this case for real —
+  the CLI's own timeout killed a capture that had already streamed 3 finding-type lines.
+  Added the test.
+- Two CHANGES.md prose fixes: code fences gained language tags and blank-line spacing, and an
+  ellipsis in a command example was replaced with the real env vars (ASD-STE100's no-ellipsis
+  rule). Separately, the `decideCapture`/`runCapture` bullets exceeded the 25-word sentence
+  limit; split into shorter sentences and a numbered list.
+
+**Dismissed:**
+- A claim that `gate-exceptions.test.ts` has 12 cases and 32/32 pass overall. Wrong: the
+  authoritative count, from `vitest --reporter=verbose`, was 13 cases and 33/33 passing at
+  the time of the finding (now 15/44 after this round's additions). `false-positive-review`.
+- Writing `coderabbit.err` only when `persistFresh` is true or stderr is non-empty, to match
+  `coderabbit.json`'s freshness handling. The ORIGINAL gate.sh also overwrote `.err` on every
+  run, pass or fail — the suggestion would be a new behavior, not a restoration, and `.err` is
+  deliberately just "latest attempt's raw stderr," never read by decision logic.
+- Replacing `__dirname` with `fileURLToPath(import.meta.url)` in the test file. `__dirname`
+  already works under this repo's vitest+ESM setup, with two existing precedents
+  (`scripts/latency/deployed-artifact.test.ts`, `src/server/warning/ocr-startup.test.ts`).
+- Replacing the `spawnSync("sleep", ...)` backoff with `Atomics.wait`. A deliberate simplicity
+  and portability choice — retries are rare (at most 2), so the subprocess overhead is
+  negligible, and there is no functional defect.
+
+`node scripts/factory/review-ledger.mjs report`: every category these 12 findings landed in
+(`correctness`, `boundary-validation`, `test-coverage`, `prose-style`, `false-positive-review`,
+`resource-timeout`) was already past the 3-ticket gate-check threshold before this PR —
+TRO-508's existing backlog, not a new crossing this PR needs to escalate.
 
 ### Not this ticket's job
 
@@ -148,8 +213,12 @@ overwritten by a failed attempt's empty output.
 ### Gate evidence
 
 Full `gate.sh` run at the end of this PR (this PR's own modified gate, per the note above):
-verdict quoted in the PR body. `--fast` inner-loop runs were used throughout development;
-`build` and `review` are `skip` under `--fast` by design, not evidence of anything.
+verdict quoted in the PR body. One full run's review step completed for real (not
+rate-limited) and produced the 12 findings triaged above — the review round 1 section is
+itself additional evidence this PR's own G10 fix works, on a live, non-simulated capture. A
+second full run hit the CLI's own 360s timeout on G10; `--fast` inner-loop runs were used
+throughout development. `build` and `review` are `skip` under `--fast` by design, not
+evidence of anything.
 
 ## TRO-516 — C5 execution: merge case-24 into case-23 (2026-08-13)
 

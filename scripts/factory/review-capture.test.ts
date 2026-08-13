@@ -4,6 +4,7 @@ import {
   decideCapture,
   isRateLimitError,
   parseCoderabbitOutput,
+  parsePositiveIntEnv,
   runCapture,
   type CaptureMeta,
   type RunnerResult,
@@ -160,6 +161,52 @@ describe("decideCapture", () => {
     });
     expect(d.detail).toContain("timed out");
   });
+
+  // Observed for real on 2026-08-13: a full-gate run against this branch hit
+  // the CLI's own 360s timeout mid-capture. The killed process had already
+  // written 3 finding-type lines to stdout before rc=124 landed. A partial,
+  // never-completed capture must not be persisted as if it were real
+  // findings — rc!=0 always wins, regardless of what parsed.findings holds.
+  it("does NOT persist a partial capture — rc!=0 wins even when some findings were parsed", () => {
+    const d = decideCapture({
+      rc: 124, timedOut: true,
+      parsed: { findings: 3, lastError: null },
+      previous: null, currentSha: sha,
+    });
+    expect(d.status).toBe("warn");
+    expect(d.persistFresh).toBe(false);
+  });
+});
+
+describe("parsePositiveIntEnv", () => {
+  it("falls back on an undefined value", () => {
+    expect(parsePositiveIntEnv(undefined, 42)).toBe(42);
+  });
+
+  it("falls back on an empty or whitespace-only value", () => {
+    expect(parsePositiveIntEnv("", 42)).toBe(42);
+    expect(parsePositiveIntEnv("   ", 42)).toBe(42);
+  });
+
+  it("falls back on a non-numeric value", () => {
+    expect(parsePositiveIntEnv("abc", 42)).toBe(42);
+  });
+
+  it("falls back on zero — a real misconfiguration, not just a hypothetical", () => {
+    expect(parsePositiveIntEnv("0", 42)).toBe(42);
+  });
+
+  it("falls back on a negative value", () => {
+    expect(parsePositiveIntEnv("-5", 42)).toBe(42);
+  });
+
+  it("floors a valid positive fractional value", () => {
+    expect(parsePositiveIntEnv("3.7", 42)).toBe(3);
+  });
+
+  it("accepts a valid positive integer", () => {
+    expect(parsePositiveIntEnv("10", 42)).toBe(10);
+  });
 });
 
 describe("runCapture", () => {
@@ -229,5 +276,17 @@ describe("runCapture", () => {
     expect(result.attempts[0].rc).toBe(1);
     expect(result.attempts[0].lastError?.errorType).toBe("rate_limit");
     expect(result.attempts[1].rc).toBe(0);
+  });
+
+  it("clamps a zero or negative maxAttempts to at least one real attempt", () => {
+    const runner = vi.fn().mockReturnValue(okResult);
+    const zero = runCapture({ base: "main", currentSha: "sha1", previous: null, runner, maxAttempts: 0 });
+    expect(runner).toHaveBeenCalledTimes(1);
+    expect(zero.attempts).toHaveLength(1);
+
+    runner.mockClear();
+    const negative = runCapture({ base: "main", currentSha: "sha1", previous: null, runner, maxAttempts: -3 });
+    expect(runner).toHaveBeenCalledTimes(1);
+    expect(negative.attempts).toHaveLength(1);
   });
 });

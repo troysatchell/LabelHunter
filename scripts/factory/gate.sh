@@ -270,19 +270,17 @@ if [ "${ADDED_CASES:-0}" -gt 0 ]; then
 else
   EXC_OUT="$(pnpm exec tsx scripts/factory/gate-exceptions.ts check \
       --ticket "${TICKET}" --gate regression-test 2>"$OUT_DIR/gate-exceptions.err")"
+  # gate-exceptions.ts computes the formatted note itself (formatApprovedNote)
+  # and puts it on the JSON payload — this reads it, rather than rebuilding
+  # the same template a second time in an inline script that could drift.
   EXC_STATE="$(node -e '
     try { const d = JSON.parse(process.argv[1]); process.stdout.write(d.state || ""); } catch {}
   ' "${EXC_OUT:-}" 2>/dev/null)"
   if [ "$EXC_STATE" = "approved" ]; then
     EXC_NOTE="$(node -e '
-      const d = JSON.parse(process.argv[1]); const e = d.exception;
-      const pr = e.pr !== undefined ? `, PR #${e.pr}` : "";
-      process.stdout.write(
-        `pass-with-exception — approved by ${e.approver} on ${e.date} ` +
-        `(ticket ${e.ticket}, gate ${e.gate}${pr}): ${e.reason}`,
-      );
-    ' "$EXC_OUT")"
-    record regression-test pass-with-exception "${EXC_NOTE}"
+      try { const d = JSON.parse(process.argv[1]); process.stdout.write(d.note || ""); } catch {}
+    ' "${EXC_OUT:-}" 2>/dev/null)"
+    record regression-test pass-with-exception "${EXC_NOTE:-pass-with-exception (note unavailable — see .factory/gate-exceptions.err)}"
   else
     record regression-test fail "no new test case added — every ticket ships a red-first regression test"
   fi

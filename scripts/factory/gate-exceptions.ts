@@ -108,9 +108,14 @@ function main(): void {
     console.error("usage: gate-exceptions.ts check --ticket T --gate G [--file path]");
     process.exit(2);
   }
+  // A value that starts with "--" is the NEXT flag, not this flag's value —
+  // `--ticket --gate regression-test` must fail loudly through the usage
+  // path below, never silently read "--gate" as the ticket id.
   const get = (name: string): string | undefined => {
     const i = args.indexOf(`--${name}`);
-    return i === -1 ? undefined : args[i + 1];
+    if (i === -1) return undefined;
+    const value = args[i + 1];
+    return value === undefined || value.startsWith("--") ? undefined : value;
   };
   const ticket = get("ticket");
   const gate = get("gate");
@@ -122,7 +127,14 @@ function main(): void {
   try {
     const file = loadExceptionsFile(path);
     const outcome = resolveException(ticket, gate, file);
-    process.stdout.write(JSON.stringify(outcome));
+    // The formatted note is computed here, once, from formatApprovedNote —
+    // not reconstructed a second time by gate.sh's caller. Two independent
+    // templates for the same string is exactly how they drift apart.
+    const payload =
+      outcome.state === "approved"
+        ? { ...outcome, note: formatApprovedNote(outcome.exception) }
+        : outcome;
+    process.stdout.write(JSON.stringify(payload));
   } catch (cause) {
     // A malformed exceptions file must never crash the gate into an
     // unrelated failure, and must never read as "approved". Report it as an

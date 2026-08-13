@@ -4,6 +4,210 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-529 — LH-024 · Real-label reference cases + reference provenance record (2026-08-13)
+
+Advances TH-R10, TH-R12. Every one of the golden set's 31 cases was synthetic — an HTML/CSS
+render, or a `degrade.ts` transform over one. `assets/golden/references/` held six real
+photographs that no code touched. This ticket adopts five of them.
+
+**Trademark decision — SETTLED, Troy, 2026-08-12 (Linear TRO-529):** "using the trademarked
+images is fine." That decision covers all five warning close-ups. Two show a live trademark
+(Crown Royal; Francis Ford Coppola Winery). Every case built from them records a test fixture,
+never a compliance claim about the real product it happens to photograph.
+
+**New provenance value: `"photographed"`** (`src/lib/golden-set/types.ts`). `"rendered"` and
+`"rendered+degraded"` are HTML/CSS a script drew; `"ai-generated"` and `"rendered+ai-backdrop"`
+are pixels a generative model predicted; `"photographed"` is neither — a person pointed a
+camera at a real, physical label. It follows a DIFFERENT `imagePath` convention:
+`assets/golden/references/<original-filename>`, not `golden-set/images/<caseId>`. The file
+predates its case and IS the forensic evidence; renaming it to fit the render pipeline's
+convention would throw that away. `src/lib/golden-set/loader.ts`'s `checkCase` enforces the
+new prefix and skips the "basename must equal caseId" rule for this one provenance.
+
+**Five new cases, `case-35` through `case-39`** (`golden-set/manifest.json`, 31 → 36 cases).
+`case-33`/`case-34` stay reserved for LH-023 / TRO-528, a sibling ticket blocked by the same
+LH-022 prerequisite, not yet landed — this ticket deliberately numbers around it.
+
+The five transcriptions, character for character, correcting nothing. Edit distance is the
+case-folded Levenshtein distance against `CANONICAL_WARNING_TEXT`, computed with the real
+`evaluateCandidate()` (`src/server/warning/wording-compare.ts`), not hand-counted:
+
+| Case | Condition | Edit distance | Differing characters |
+|---|---|---|---|
+| `case-35-clean-match-real-photo-flat-scan` | flat scan, straight on | 0 | none — exact match |
+| `case-36-rotation-real-photo-gentle-curve` | gentle curve | 0 | none — exact match |
+| `case-37-rotation-real-photo-severe-curve-partial-crop` | strong curve, shallow DOF | 116 | most of the body — the bottle's curvature crops the right portion of every printed line out of frame; bracketed `[cut]` markers record exactly where, never filled in from memory of the canonical text |
+| `case-38-glare-real-photo-crown-royal` | curved, gold on maroon, glare | 0 | none — exact match |
+| `case-39-rotation-real-photo-coppola-wraparound` | extreme wrap-around curvature | 0 | none — exact match |
+
+case-37's distance is real and reported as the ticket requires, but it reflects the length of
+the missing, out-of-frame text, not a wording deviation on the physical label — its own
+`notes` field says so, so a future reader does not mistake it for a near-miss or reworded-
+warning finding.
+
+**Every other TH-R11 field, read from what each image actually prints** (`golden-set/README.md`
+has the full case-by-case list). Three of the five print an ABV statement in frame (10.5%,
+15.1%, 14.5%); two do not. Two print a net-contents statement (750ML, 750 mL / 750 ML); three
+do not. None prints a brand name or class/type — all five are close crops of the warning panel
+alone, not full labels. Fields the photograph does not show record
+`"(not shown in this crop)"` (text fields) or `"not visible"` (the net-contents unit sentinel)
+rather than a fictional plausible-looking value, and their `expected` field verdict is
+`NEEDS_REVIEW`, never `MATCH` or `MISMATCH` — a real extractor working from the same crop
+could not verify them either. `application` fields stay a fictional filed record, the same
+convention every other golden-set case uses — Crown Royal's `application` uses the real
+product's own public classification (Blended Canadian Whisky, 40% ABV) as descriptive filed
+data, not a claim about what its crop shows.
+
+**`governmentWarningPrefixBold` / `governmentWarningBodyBold`** (TRO-527 / LH-022's `"unknown"`
+state, built for exactly this ticket): `true`/`false` on `case-35` only — its measured
+prefix/body stroke-width ratio (2.2, `docs/reference-photo-provenance.md`) is the one clean,
+unambiguous, non-named-product reading in the batch. `"unknown"`/`"unknown"` on the other four:
+no measurable stroke-width separation (`case-36`, `case-37`), an ambiguous 1–3px range on a
+named product (`case-38`), or an unusable measurement on a named product (`case-39`). A
+`false` on a named, shipped, COLA-approved product would be a fabricated compliance
+accusation, not a measurement — recording `"unknown"` instead is the ticket's own instruction,
+applied plainly.
+
+**Every case: `verified: false`.** Only Troy confirms a hand transcription is exactly right.
+The loader does not gate the eval harness on `verified` for this provenance — unlike
+`ai-generated`/`rendered+ai-backdrop`, whose own risk (a generated image silently failing to
+render its spec's exact text) does not apply to a photograph nothing here generated.
+
+**Necessary related fix, not asked for but required to avoid corrupting these photographs:**
+`scripts/golden/build.ts`'s `main()` filtered `renderable` as `provenance !== "ai-generated"`
+— that filter INCLUDED `photographed` cases. The next `pnpm golden:build` run would have
+rendered each one's placeholder application/label fields as HTML and silently overwritten the
+real photograph at the same file path with synthetic drawn text, destroying the one thing each
+case exists to test. Fixed by excluding `photographed` too, with a comment explaining why. The
+same latent gap existed in `scripts/golden/renderSmoke.ts` (picks the first non-`ai-generated`
+case to smoke-render — harmless today since `case-01` still comes first in manifest order, but
+would render a `photographed` case's placeholder text if the manifest were ever reordered) and
+`scripts/golden/render.test.ts` (iterates every non-`ai-generated` case through
+`buildLabelHtml`, which crashed outright on `governmentWarningPrefixBold: "unknown"` — see
+Tests below). All three now exclude `photographed` explicitly.
+
+**`scripts/golden/images.test.ts` — provenance-scoped exemption, not a blanket skip.** The
+JPEG-decode and ~500 KB checks assume a `build.ts`-produced file (always mozjpeg, always tuned
+to the render pipeline's own size target). `case-38`'s file is a 1.7 MB PNG — a real photograph,
+neither JPEG nor render-pipeline-sized, by nature. Both checks now exclude `photographed`
+explicitly, with a comment stating why, and a new `"golden-set photographed images"` describe
+block gives that provenance its own, honestly different checks: file exists and is non-empty,
+`imagePath` starts with `assets/golden/references/`, decodes as a real JPEG or PNG, stays
+under a generous 5 MB backstop (not a repo-size target — a real photograph's size is not this
+repo's to tune), `verified: false`, and a valid bold-flag type.
+
+**`scripts/golden/verify.ts` — one new check, `photographed-image-location`.** The loader's
+`imagePath` prefix rule is a plain string check — it does not catch a crafted value like
+`assets/golden/references/../../../etc/passwd`, which also starts with that prefix as text.
+`verify.ts` now resolves every `photographed` case's `imagePath` and confirms it stays inside
+`assets/golden/references/`, the same path-traversal hardening `build.ts`'s `resolveImagePath`
+already applies to `golden-set/images/`. `pnpm golden:verify`: "Checked 36 golden-set case(s).
+PASS: golden set is consistent."
+
+**Provenance doc.** `docs/reference-photo-provenance.md` — written 2026-08-12, before this
+ticket — already named what each of the six files in `assets/golden/references/` shows, where
+it came from, and whether a live trademark appears. This ticket updates its "Read by code"
+column for the five adopted files, cross-references each to its new `caseId`, adds an explicit
+"these are test fixtures, not compliance assessments" statement (the ticket's own requirement),
+and corrects two of its own earlier notes against a direct re-read of the photographs
+(`case-37`'s file: the warning text is legible where the doc had called full transcription "a
+guess"; `case-39`'s file: same correction, for the same reason — both corrections are marked
+plainly as corrections, not silent rewrites). The sixth file, `spirits-bottle-01.jpg` (a full
+bottle shot, not a warning close-up), stays documented but NOT adopted — it belongs to the
+parked realistic-corpus backdrop track (LH-028); the doc says so. The source/licence gap for
+four of the five adopted files (no photographer, no URL, no licence on record) is unchanged by
+this ticket — Troy's trademark call authorizes ADOPTION, not the missing provenance itself;
+the doc's own "what to fix" list still names the gap.
+
+**Spend: one live eval run, five cases, `--case=<id>` each (never `--full`, never touches the
+committed `eval-report.json`/`baseline.json` — `check.ts`'s own `--case` contract).** Measured
+cost: **$0.1236** (haiku + resolver combined, five cases). Every case's real router verdict
+landed on `REVIEW`, matching this ticket's own hand-authored `expected.labelVerdict` for all
+five (`labelVerdictCorrect: true`, 5/5) — a REVIEW on a hard case is a pass, per the ticket's
+own acceptance line, not a failure to explain away:
+
+| Case | Actual verdict | Expected verdict | Actual reviewReason | Expected reviewReason | Cost (haiku + resolver) |
+|---|---|---|---|---|---|
+| `case-35` | REVIEW | REVIEW | `LOW_IMAGE_QUALITY` | `LOW_IMAGE_QUALITY` | $0.0217 |
+| `case-36` | REVIEW | REVIEW | `LOW_IMAGE_QUALITY` | `MISSING_REQUIRED_FIELD` | $0.0240 |
+| `case-37` | REVIEW | REVIEW | `LOW_IMAGE_QUALITY` | `LOW_IMAGE_QUALITY` | $0.0282 |
+| `case-38` | REVIEW | REVIEW | `LOW_IMAGE_QUALITY` | `LOW_IMAGE_QUALITY` | $0.0242 |
+| `case-39` | REVIEW | REVIEW | `LOW_IMAGE_QUALITY` | `MISSING_REQUIRED_FIELD` | $0.0255 |
+
+Two cases' `reviewReason` diverged from this ticket's hand-authored guess (`case-36`,
+`case-39`: the real image-quality assessment leaned toward `LOW_IMAGE_QUALITY` more readily
+than the by-hand "at least half the required fields absent" arithmetic in this ticket's own
+design notes predicted). This is reported, not fixed — the label-level verdict is what the
+ticket's acceptance line grades, and it matched on every case. Extraction accuracy on
+brand/class/net-contents fields the photograph does not show was, as expected, low (Haiku
+correctly returned nothing for a field that is not in frame; the extraction scorer cannot call
+that "correct" against any ground-truth string, by construction — see `extraction-scoring.ts`).
+The extractor's own `imageQuality` self-report flagged `"cropped"` on every case and, on the
+harder ones, `"rotation"`/`"glare"`/`"low_light"` too — direct evidence the pipeline is seeing
+these as the imperfect photographs they are, not confidently misreading them.
+
+**Tests.** Red-first in `src/lib/golden-set/loader.test.ts`, describe block "validateManifest —
+photographed provenance (TRO-529 / LH-024)": four new tests, run against the pre-change loader
+first. Confirmed red for the right reason — an unrecognized `"photographed"` enum value AND a
+rejected `assets/golden/references/` imagePath prefix, not an import error or typo:
+
+```
+- cases[0] (case-35-...): imagePath "assets/golden/references/..." must start with "golden-set/images/"
+- cases[0] (case-35-...): imagePath basename "..." must match caseId "case-35-..."
+- cases[0] (case-35-...): field "provenance" must be one of rendered, rendered+degraded, ai-generated, rendered+ai-backdrop, got "photographed"
+```
+
+Green after `types.ts`/`loader.ts`'s changes — all 52 tests in the file pass, including the
+pre-existing suite. Also bumped `loadGoldenSetManifest`'s own cardinality assertion (31 → 36,
+matching the "growth, not drift" convention every prior corpus-size change in this file
+follows) and added coverage in `scripts/golden/images.test.ts` (a new describe block, seven
+tests) and `scripts/golden/verify.test.ts` (two tests for the new path-traversal check, one
+exercising the plain-wrong-prefix path that manifest-schema validation already catches
+earlier, one exercising the traversal case `verify.ts`'s own new check exists for).
+
+`scripts/golden/render.test.ts` needed its own fix, discovered by running the full suite, not
+predicted in advance: it iterated every non-`ai-generated` manifest case through
+`buildLabelHtml`, which now includes the five `photographed` cases. `warningSpanFontWeight`
+(`render.ts`, built by TRO-527 specifically for this future) throws on
+`governmentWarningPrefixBold: "unknown"` by design — "no pixel means we don't know." Excluding
+`photographed` from this file's `renderableCases` filter fixed all five resulting failures at
+once; the throw itself needed no change, since it fired exactly as TRO-527 designed it to.
+
+**Full suite:** `pnpm test` — 160 files, 1939 tests, all green. `pnpm typecheck` and `pnpm
+lint` both clean (one pre-existing, unrelated `next/image` warning in `DetailView.tsx`).
+
+**Not verified / left for Troy.** Every one of the five transcriptions is this agent's own
+careful read of the photograph, cross-checked against the real `evaluateCandidate()` for the
+wording/caps half. It is not a second human's independent confirmation. `verified` stays
+`false` on all five, exactly as the ticket requires — only Troy sets that flag. Source/licence
+for four of the five adopted files (everything but the Crown Royal photo, which is Troy's own)
+remains unrecorded, as `docs/reference-photo-provenance.md` already said before this ticket.
+
+**New problems noticed, not fixed here (each a candidate for its own ticket):**
+- `scripts/golden/batchFixture.ts` pairs a case to its ZIP entry by `basename(imagePath)`
+  (PRD §3.5's own pairing rule). For a `photographed` case, that basename is the photograph's
+  original filename (e.g. `crown-royal-warning-label-closeup.png`), not a `caseId`-shaped name
+  — cosmetically inconsistent with every other entry in a demo batch export, though still
+  correctly self-paired. Not a correctness bug; not fixed here, since this ticket's scope is
+  adoption plus provenance, not the demo-batch exporter.
+- The real router's `reviewReason` choice for `case-36`/`case-39` (`LOW_IMAGE_QUALITY` over
+  this ticket's predicted `MISSING_REQUIRED_FIELD`) suggests the live `imageQuality.legible`
+  VLM self-report triggers the label-level image-quality blocker more readily on a real,
+  imperfect photograph than the "at least half the required fields absent" rule alone would —
+  worth a closer look once more real-photograph evidence exists, not resolved here.
+- LH-023 / TRO-528 (`case-33`/`case-34`, bold-isolating rendered cases) is still `Todo` in
+  Linear as of this ticket. This ticket numbers around it on purpose; whoever lands LH-023
+  next should not need to renumber anything here.
+
+**Rollback.** `git revert` this ticket's commits, in order. They touch
+`src/lib/golden-set/types.ts`, `src/lib/golden-set/loader.ts`, `golden-set/manifest.json`,
+`golden-set/README.md`, `docs/reference-photo-provenance.md`, `scripts/golden/build.ts`,
+`scripts/golden/renderSmoke.ts`, `scripts/golden/verify.ts`, `scripts/eval/args.ts`, and five
+test files. No image bytes were written or deleted by this ticket — the five adopted
+photographs were already committed at their existing paths under `assets/golden/references/`
+before this ticket started; reverting removes only the manifest cases and code that now
+reference them.
+
 ## TRO-516 — C5 execution: merge case-24 into case-23 (2026-08-13)
 
 **Troy's ruling (TRO-516 comment, 2026-08-13):** merge case-24 into case-23. Both cases print

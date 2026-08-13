@@ -14,22 +14,45 @@ or from running a command and reading the output. Provenance claims come from
 `docs/handoffs/2026-08-12-realistic-corpus-imagen-session.md`, which is the only record the
 repo keeps of where these files came from.
 
+**Update, TRO-529 / LH-024, 2026-08-13 — five of the six images are now golden-set cases.**
+Troy's trademark decision (Linear TRO-529, 2026-08-12, quoted below) cleared all five warning
+close-ups for use. `golden-set/manifest.json` now carries them as `provenance: "photographed"`
+cases (`golden-set/README.md`'s "Real-photograph cases" section has the full mechanics). The
+sixth file, `spirits-bottle-01.jpg` (a full bottle shot, not a warning close-up), is
+NOT adopted — it stays parked for the realistic-corpus backdrop track (LH-028), and
+`spirits-bottle-01.json` continues pointing at the Crown Royal photo as that track's own
+reference input, unrelated to this ticket.
+
+**These five cases are test fixtures, not compliance assessments.** Every image these cases
+use is a shipped, real product with an approved COLA. This document, and the golden-set case
+each file backs, record what a careful human can see in a photograph — never a claim that the
+named product does or does not comply with 27 CFR. Where the photograph cannot support a call
+(most visibly, whether `GOVERNMENT WARNING:` prints bold), the golden-set case records
+`"unknown"`, not a guess. A `false` there would be a fabricated accusation against a real
+company, not a measurement — TRO-529's own instruction, applied here.
+
+> Troy, 2026-08-12 (Linear TRO-529): "using the trademarked images is fine... Jenny Park asked
+> for 'labels photographed at weird angles, or the lighting is bad, or there's glare on the
+> bottle' (L34). These five cover that spread with REAL photographs instead of `degrade.ts`
+> transforms... Expect the extractor to FAIL on the harder ones. That is the point."
+
 ---
 
 ## Summary table
 
-| File | Shows a live trademark? | Read by code? |
-|---|---|---|
-| `alcohol-warning-label-1200x596-235563604.jpg` | No | No |
-| `39cdef_a2d8485e45e84dc69fd21743b9e5de98~mv2-2171205156.jpg` | No | No |
-| `crown-royal-warning-label-closeup.png` | **Yes — Crown Royal** | Yes, via `spirits-bottle-01.json` |
-| `spirits-bottle-01.jpg` | **Yes — The Glencairn Glass** | No |
-| `Warning-Label-2.jpg` | **Yes — Francis Ford Coppola Winery** | No |
-| `updated-alcohol-warnin-2564515199.jpg` | Uncertain — see below | No |
-| `spirits-bottle-01.json` | Names Crown Royal in text | Yes |
+| File | Shows a live trademark? | Read by code? | Golden-set case |
+|---|---|---|---|
+| `alcohol-warning-label-1200x596-235563604.jpg` | No | **Yes** (TRO-529) | `case-35-clean-match-real-photo-flat-scan` |
+| `39cdef_a2d8485e45e84dc69fd21743b9e5de98~mv2-2171205156.jpg` | No | **Yes** (TRO-529) | `case-36-rotation-real-photo-gentle-curve` |
+| `crown-royal-warning-label-closeup.png` | **Yes — Crown Royal** | Yes, via `spirits-bottle-01.json` AND (TRO-529) | `case-38-glare-real-photo-crown-royal` |
+| `spirits-bottle-01.jpg` | **Yes — The Glencairn Glass** | No | Not adopted — parked for LH-028 |
+| `Warning-Label-2.jpg` | **Yes — Francis Ford Coppola Winery** | **Yes** (TRO-529) | `case-39-rotation-real-photo-coppola-wraparound` |
+| `updated-alcohol-warnin-2564515199.jpg` | Uncertain — see below | **Yes** (TRO-529) | `case-37-rotation-real-photo-severe-curve-partial-crop` |
+| `spirits-bottle-01.json` | Names Crown Royal in text | Yes | N/A — a bottle-reference record, not an image |
 
-"Read by code" means a `.ts` file resolves the path at run time. A mention in a handoff
-document does not count.
+"Read by code" means a `.ts` file resolves the path at run time, or a golden-set case's
+`imagePath` names it (`golden-set/manifest.json`, checked by `src/lib/golden-set/loader.ts`).
+A mention in a handoff document does not count.
 
 ---
 
@@ -46,9 +69,11 @@ document does not count.
 - **Where it came from:** the handoff document records it as "Troy-supplied, not yet wired into
   any bottle-reference JSON." The repo records no photographer, no source URL, and no licence.
   The filename ends in a nine-digit number, which is the shape a stock-photo download uses.
-- **Read by code:** no. Only the handoff document names it.
+- **Read by code:** **yes** (TRO-529, 2026-08-13). `golden-set/manifest.json`'s
+  `case-35-clean-match-real-photo-flat-scan` names this path as its `imagePath`.
 - **Risk:** the source and licence are unknown. The frame carries no brand, so the trademark
   risk is nil. The copyright question stays open until someone records where the file came from.
+  This is unresolved by TRO-529's adoption — the "what to fix" list below still names it.
 - **Value:** this is the only asset in the repo that measurably shows the compliant bold
   pattern. `GOVERNMENT WARNING:` prints bold and the remainder does not. The prefix/body
   stroke-width ratio measures 2.0 to 2.25, stable across three thresholds. All 32 golden-set
@@ -68,10 +93,12 @@ document does not count.
 - **Where it came from:** the handoff document records it as "Troy-supplied, not yet wired into
   any bottle-reference JSON." The filename is a Wix media identifier (`~mv2`), so the file most
   likely came off a Wix-hosted site. The repo records no source URL and no licence.
-- **Read by code:** no. Only the handoff document names it.
+- **Read by code:** **yes** (TRO-529, 2026-08-13). `golden-set/manifest.json`'s
+  `case-36-rotation-real-photo-gentle-curve` names this path as its `imagePath`.
 - **Risk:** the source and licence are unknown, and the Wix filename points at a third-party
   website rather than a personal camera roll. The frame carries no brand, so the trademark risk
-  is nil. Confirm who took the photograph before publishing it.
+  is nil. Confirm who took the photograph before publishing it. This is unresolved by TRO-529's
+  adoption — the "what to fix" list below still names it.
 
 ## 3. `crown-royal-warning-label-closeup.png`
 
@@ -88,15 +115,21 @@ document does not count.
   filename as `Screenshot 2026-08-12 at 11.43.00 AM.png`, which used U+202F and broke
   `fs.readFileSync`. Someone renamed the file. Rename it, never retype it, if it ever needs
   restoring.
-- **Read by code:** yes, indirectly. `spirits-bottle-01.json` names it as `referencePhoto`.
-  `scripts/golden/imagen.ts` reads that JSON and sends the photograph to Gemini as a reference
-  input.
+- **Read by code:** yes, twice over. Indirectly: `spirits-bottle-01.json` names it as
+  `referencePhoto`, and `scripts/golden/imagen.ts` reads that JSON and sends the photograph to
+  Gemini as a reference input. Directly (TRO-529, 2026-08-13): `golden-set/manifest.json`'s
+  `case-38-glare-real-photo-crown-royal` names this exact path as its own `imagePath` — the
+  government-warning panel visible in this same frame, adopted on its own terms.
 - **Risk — flag this one.** A live trademark, a real corporate address, a real phone number, and
-  a real barcode sit in a file that this repo sends to a third-party image model. The generation
-  prompt blanks the label region and forbids logos and text, so the branding should never reach
-  the output. The **input** is branded either way. The handoff document records that Troy made
-  this call explicitly. Two questions stay open: does a TTB take-home want a competitor's live
-  trade dress in its git history, and does the reviewer see this file?
+  a real barcode sit in a file that this repo sends to a third-party image model, and that this
+  repo now also uses directly as a golden-set case image. The generation prompt blanks the label
+  region and forbids logos and text, so the branding should never reach imagen.ts's own output.
+  The golden-set case is different: it uses this photograph's real pixels AS the test image, on
+  purpose — Troy's explicit 2026-08-12 trademark decision (Linear TRO-529) authorizes exactly
+  this. The golden-set case's own `notes` field states plainly that it is a test fixture, not a
+  compliance claim about Crown Royal's real, approved label. One question stays open regardless:
+  does a TTB take-home want a competitor's live trade dress in its git history, and does the
+  reviewer see this file? Troy's call stands either way.
 
 ## 4. `spirits-bottle-01.jpg`
 
@@ -134,11 +167,17 @@ document does not count.
   "EXCLUSIVE TRADE DRESS".
 - **Where it came from:** the handoff document records it as "Troy-supplied, not yet wired into
   any bottle-reference JSON." No source URL, no licence.
-- **Read by code:** no. Only the handoff document names it.
+- **Read by code:** **yes** (TRO-529, 2026-08-13). `golden-set/manifest.json`'s
+  `case-39-rotation-real-photo-coppola-wraparound` names this path as its `imagePath`.
 - **Risk — flag this one.** The label declares its own trade dress claim in printed text. That
-  makes it the worst candidate of the six for any use that reproduces the frame. Its warning is
-  also unusable as ground truth: the perspective is steep enough that several lines are
-  compressed to the point where a character-for-character transcription is a guess.
+  makes it the worst candidate of the six for any use that reproduces the frame. Its own case's
+  `notes` field states plainly that it is a test fixture, not a claim about this real product's
+  compliance — the same posture as the Crown Royal case above. **Correction, TRO-529
+  (2026-08-13):** a direct read of this photograph, warning block only, found the full
+  statutory text legible and byte-for-byte exact once case-folded — this earlier note calling
+  the transcription "a guess" was written from the steep perspective of the producer-name lines
+  above the warning, not the warning block itself. `verified` still stays `false` on the
+  golden-set case regardless; only Troy's own check changes that.
 
 ## 6. `updated-alcohol-warnin-2564515199.jpg`
 
@@ -154,10 +193,17 @@ document does not count.
 - **Where it came from:** **unknown.** This file appears in no repo record at all, not even the
   handoff document that lists the other five. The truncated filename plus a ten-digit suffix is
   the shape a news-site or stock image download uses.
-- **Read by code:** no. Nothing in the repo names it.
+- **Read by code:** **yes** (TRO-529, 2026-08-13). `golden-set/manifest.json`'s
+  `case-37-rotation-real-photo-severe-curve-partial-crop` names this path as its `imagePath`.
 - **Risk:** provenance is entirely unrecorded, which is worse than the others rather than
-  better. The warning is clipped, so the file cannot serve as ground truth either. It has no
-  use and no paper trail.
+  better. This is unresolved by TRO-529's adoption — the "what to fix" list below still names
+  it. **Correction, TRO-529 (2026-08-13):** the warning is clipped, so this file cannot serve
+  as EXACT ground truth for the full statutory text — but "the file cannot serve as ground
+  truth either" overstated the gap. TRO-529's case records exactly what is legible, marks
+  every cropped gap explicitly (`[cut]`), and drives the case to `NEEDS_REVIEW` rather than
+  pretending completeness — this is the deliberately hard, "explicit unreadable outcome" case
+  TH-R10 asks for (`golden-set/README.md`'s own case-by-case list has the detail). A clipped
+  photograph is real ground truth for what a clipped photograph shows.
 
 ## 7. `spirits-bottle-01.json`
 
@@ -178,27 +224,41 @@ document does not count.
 ## The risks, named plainly
 
 Four of the six images show a live trademark: Crown Royal, The Glencairn Glass, Francis Ford
-Coppola Winery, and the uncertain sixth file. One of those four, the Crown Royal photograph,
-is wired into the pipeline and gets sent to a third-party image model on every run.
+Coppola Winery, and the uncertain sixth file. **Troy decided, 2026-08-12 (Linear TRO-529):
+using the trademarked images is fine.** That decision covers the five warning close-ups; it
+does not cover `spirits-bottle-01.jpg` (below), which stays a separate, still-open question.
+The Crown Royal photograph is now read twice over: `imagen.ts` still sends it to a third-party
+image model as a backdrop reference (unrelated to this decision), and, since TRO-529, its own
+government-warning panel is also a golden-set case's `imagePath` directly.
 
 Five of the six images have no recorded source and no recorded licence. One of the five is
-recorded as a Wikimedia file, which carries attribution terms this repo never captured.
+recorded as a Wikimedia file, which carries attribution terms this repo never captured. TRO-529
+adopted five of these six images as golden-set cases without resolving this — Troy's trademark
+call authorizes the ADOPTION; it does not supply a photographer, a source URL, or a licence for
+any file that lacked one before. That gap is unchanged by this update; see the list below.
 
 The two brand-free images carry no trademark risk at all. They are the only two of the six a
 reviewer can see without a conversation about someone else's brand.
 
-None of that is a decision. Troy decides.
+None of the source/licence gap is a decision this document makes. Troy decides.
 
 ## What to fix, in order
 
 1. Record where `alcohol-warning-label-1200x596-235563604.jpg` and
-   `39cdef_a2d8485e45e84dc69fd21743b9e5de98~mv2-2171205156.jpg` came from. These are the two
-   the golden set wants. Provenance is cheap now and expensive later.
-2. Decide whether `spirits-bottle-01.jpg` stays. No code reads it. Its Wikimedia attribution is
-   missing.
-3. Decide whether `updated-alcohol-warnin-2564515199.jpg` stays. No code reads it. No record
-   names it. Its warning is clipped.
-4. Decide whether `Warning-Label-2.jpg` stays. No code reads it. Its own printed text asserts a
-   trade dress claim.
+   `39cdef_a2d8485e45e84dc69fd21743b9e5de98~mv2-2171205156.jpg` came from. Both are now golden-set
+   cases (`case-35`, `case-36`) with no source or licence on file. Provenance is cheap now and
+   expensive later.
+2. Decide whether `spirits-bottle-01.jpg` stays. No code reads it — this is the one file TRO-529
+   did NOT adopt (it is a full bottle shot, not a warning close-up; it belongs to the parked
+   LH-028 realistic-corpus track instead). Its Wikimedia attribution is still missing.
+3. Record where `updated-alcohol-warnin-2564515199.jpg` came from. No record names it. It is now
+   a golden-set case (`case-37`) despite the still-open provenance gap — Troy's trademark
+   decision and this file's own lack of any visible brand together made adoption defensible
+   without first closing this gap, but the gap itself is real.
+4. Record where `Warning-Label-2.jpg` came from. It is now a golden-set case
+   (`case-39-rotation-real-photo-coppola-wraparound`) under Troy's explicit trademark decision.
+   Its own printed text still asserts a trade dress claim; the golden-set case's `notes` field
+   states plainly that it is a test fixture, not a compliance claim.
 5. Keep the Crown Royal decision under review. It is already made and already recorded. It is
-   also the only branded file the pipeline actually touches.
+   the only file in this batch both wired into `imagen.ts`'s pipeline AND adopted directly as a
+   golden-set case (`case-38-glare-real-photo-crown-royal`).

@@ -15,10 +15,13 @@
  * warning-bearing case keeps its measured confidence/wording/distance
  * unchanged; case-22 is the only one whose status changes.
  *
- * Run: pnpm eval:tro-546-case22-check
- * Writes: scripts/eval/results/tro-546-case22-ocr-region-check.json
+ * Run: pnpm eval:tro-546-case22-check -- [--out=<path>] [--force]
+ * Writes: scripts/eval/results/tro-546-case22-ocr-region-check.json by
+ *   default. Refuses to overwrite an existing file at that path unless
+ *   --force is also passed (TRO-559) — pass --out=<path> instead to write a
+ *   comparison copy without touching the committed one.
  */
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { loadGoldenSetManifest } from "../../src/lib/golden-set/loader";
 import type { GoldenSetCase, GoldenSetCategory } from "../../src/lib/golden-set/types";
@@ -31,6 +34,7 @@ import {
   runWarningOcr,
   type WordingClassification,
 } from "../../src/server/warning";
+import { parseArtifactGuardArgs, writeGuardedJsonArtifact } from "./artifact-guard";
 import { REPO_ROOT } from "./cascade-runner";
 
 export interface CaseResult {
@@ -106,6 +110,7 @@ async function checkOneCase(caseSpec: GoldenSetCase): Promise<CaseResult> {
 }
 
 async function main(): Promise<void> {
+  const { guard } = parseArtifactGuardArgs(process.argv.slice(2));
   const manifest = loadGoldenSetManifest();
   console.log(
     `tro-546-case22-ocr-region-check.ts: sweeping ${manifest.cases.length} golden-set case(s), OCR channel only, no API call.`,
@@ -157,9 +162,8 @@ async function main(): Promise<void> {
     results,
   };
 
-  const outPath = path.resolve(REPO_ROOT, "scripts/eval/results/tro-546-case22-ocr-region-check.json");
-  mkdirSync(path.dirname(outPath), { recursive: true });
-  writeFileSync(outPath, JSON.stringify(artifact, null, 2) + "\n");
+  const defaultPath = path.resolve(REPO_ROOT, "scripts/eval/results/tro-546-case22-ocr-region-check.json");
+  const outPath = writeGuardedJsonArtifact({ repoRoot: REPO_ROOT, defaultPath, guard, content: artifact });
   console.log("");
   console.log(
     `tro-546-case22-ocr-region-check.ts: case-22 OCR channel state = ${case22?.ocrChannelState ?? "NOT FOUND IN MANIFEST"}`,

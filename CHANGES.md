@@ -80,8 +80,8 @@ does not change what the cascade decides.
 
 **Not measured: deployed throughput.** This run predates TRO-518's storage fix and ran
 against a local instance only. At measurement time, `local-file-storage.ts` wrote each
-uploaded image to the saving process's own disk, so a deployed batch run would have failed
-on every image. TRO-518 has since landed and moved that storage to Postgres; this branch
+uploaded image to the saving process's own disk. A deployed batch run would therefore have
+failed on every image. TRO-518 has since landed and moved that storage to Postgres; this branch
 carries it. Deployed throughput is still not measured. No claim about it appears anywhere
 in this entry, the code, or the artifact.
 
@@ -217,6 +217,12 @@ now parses with `new URL` and clears username, password, search, and hash, inste
 regex. Dismissed: a third re-bullet request (stop rule), and a false positive that read a
 UTC timestamp as future-dated. Review triage for this entry ends here unless a later round
 changes shipped behavior or a factual claim.
+
+Round 10 met that bar once: `postForm` returned an unchecked cast, so a malformed 200 body
+could drive the whole run. It now takes a required validator, and both call sites check
+named invariants (`batchJobId` positive, counts non-negative safe integers). Also fixed:
+one overlong sentence in the deployment-history note. Dismissed: a fourth re-bullet
+request, same stop rule.
 
 **Do NOT.** No column was added to `batch_jobs` — every input already existed. No claim was
 extrapolated past this run's real 32 items to TH-R4's 200-300 label reference.

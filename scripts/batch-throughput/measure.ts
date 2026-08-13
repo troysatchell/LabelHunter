@@ -196,14 +196,42 @@ interface ErrorResponseBody {
   error?: { kind?: string; message?: string };
 }
 
-async function postForm<T>(url: string, formData: FormData, label: string): Promise<T> {
+async function postForm<T>(url: string, formData: FormData, label: string, validate: (payload: unknown) => T): Promise<T> {
   const response = await fetch(url, { method: "POST", body: formData, signal: AbortSignal.timeout(300_000) });
-  const payload = (await response.json()) as T | ErrorResponseBody;
+  const payload: unknown = await response.json();
   if (!response.ok) {
     const message = (payload as ErrorResponseBody)?.error?.message ?? `HTTP ${response.status}`;
     throw new Error(`measure.ts: ${label} failed — ${message}`);
   }
-  return payload as T;
+  // A 200 body's shape is only assumed until checked (standing rule 13).
+  // An unchecked cast would let a malformed response drive the rest of
+  // the run (review finding, local review round 10).
+  return validate(payload);
+}
+
+function isNonNegativeSafeInteger(v: unknown): v is number {
+  return typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
+}
+
+/** Named invariant (standing rule 13): both counts are non-negative safe
+ * integers. A malformed preview body fails here, not downstream. */
+function validatePreviewResponse(payload: unknown): BatchPreviewSuccessResponse {
+  const p = payload as Partial<BatchPreviewSuccessResponse>;
+  if (!isNonNegativeSafeInteger(p.readyCount) || !isNonNegativeSafeInteger(p.totalRows)) {
+    throw new Error(`measure.ts: preview response is malformed — readyCount=${String(p.readyCount)}, totalRows=${String(p.totalRows)}`);
+  }
+  return payload as BatchPreviewSuccessResponse;
+}
+
+/** Named invariant (standing rule 13): `batchJobId` is a POSITIVE safe
+ * integer — it drives the poll URL and every SQL read for the rest of
+ * the run. `queuedCount` is a non-negative safe integer. */
+function validateStartResponse(payload: unknown): BatchStartSuccessResponse {
+  const p = payload as Partial<BatchStartSuccessResponse>;
+  if (!isNonNegativeSafeInteger(p.batchJobId) || p.batchJobId < 1 || !isNonNegativeSafeInteger(p.queuedCount)) {
+    throw new Error(`measure.ts: start response is malformed — batchJobId=${String(p.batchJobId)}, queuedCount=${String(p.queuedCount)}`);
+  }
+  return payload as BatchStartSuccessResponse;
 }
 
 /** Polls `GET /api/batch/:id` for a REAL status change — never a fixed
@@ -342,14 +370,14 @@ async function main(): Promise<void> {
   console.log(`measure.ts: fixture ${manifestPath} (${manifestBytes.length} bytes), ${zipPath} (${zipBytes.length} bytes)`);
 
   console.log("measure.ts: POST /api/batch/preview ...");
-  const preview = await postForm<BatchPreviewSuccessResponse>(`${args.baseUrl}/api/batch/preview`, buildFormData(manifestBytes, zipBytes), "preview");
+  const preview = await postForm(`${args.baseUrl}/api/batch/preview`, buildFormData(manifestBytes, zipBytes), "preview", validatePreviewResponse);
   console.log(`measure.ts: preview — ${preview.readyCount} of ${preview.totalRows} row(s) ready.`);
   if (preview.readyCount === 0) {
     throw new Error("measure.ts: nothing is ready to start (readyCount = 0) — check the fixture and preview output above.");
   }
 
   console.log("measure.ts: POST /api/batch/start ...");
-  const started = await postForm<BatchStartSuccessResponse>(`${args.baseUrl}/api/batch/start`, buildFormData(manifestBytes, zipBytes), "start");
+  const started = await postForm(`${args.baseUrl}/api/batch/start`, buildFormData(manifestBytes, zipBytes), "start", validateStartResponse);
   console.log(`measure.ts: started batch ${started.batchJobId} — ${started.queuedCount} label(s) queued.`);
 
   const runStartedAt = new Date().toISOString();

@@ -19,6 +19,12 @@ const BASE_ITEM: ReviewQueueItemDetail = {
   disposedAt: null,
   resolverNote: null,
   resolverFields: null,
+  labelImage: {
+    url: "/api/label-images/7",
+    width: 1000,
+    height: 1200,
+    originalFilename: "old-tom.jpg",
+  },
   fields: [
     {
       field: "BRAND_NAME",
@@ -53,6 +59,16 @@ describe("ReviewItemDetail", () => {
     expect(brandRow).toHaveTextContent("Brand name");
     expect(brandRow).toHaveTextContent("OLD TOM DISTILLRY");
     expect(brandRow).toHaveTextContent("Old Tom Distillery");
+  });
+
+  it("renders the label image the reviewer is ruling on, sized from persisted dimensions (TRO-575)", () => {
+    render(<ReviewItemDetail item={BASE_ITEM} />);
+    const image = screen.getByRole("img", { name: "The label submitted with this application" });
+    expect(image).toHaveAttribute("src", "/api/label-images/7");
+    // Persisted pixel dimensions let the browser reserve layout space
+    // before the bytes arrive — no layout shift when the image loads.
+    expect(image).toHaveAttribute("width", "1000");
+    expect(image).toHaveAttribute("height", "1200");
   });
 
   it("does not render a resolver section when resolverOutput is null — the normal case today", () => {

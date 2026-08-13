@@ -864,4 +864,28 @@ describe("POST /api/batch/start — the default (production) wiring is really bo
     expect(body.error.kind).toBe("RATE_LIMITED");
     expect(body.error.message).not.toBe("");
   });
+
+  it("enforces the REAL daily budget through POST — fails if POST loses checkBudget", async () => {
+    // Same clock-move and private-date reasoning as the verify budget
+    // test above. A date of its own, so the two tests cannot collide.
+    const ISOLATED_DAY = "2099-06-02";
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date(`${ISOLATED_DAY}T12:00:00Z`));
+    try {
+      await db.delete(dailySpend).where(eq(dailySpend.spendDate, ISOLATED_DAY));
+      await db.insert(dailySpend).values({ spendDate: ISOLATED_DAY, totalUsd: 999_999 });
+
+      const response = await batchStartPOST(
+        new Request("http://localhost/api/batch/start", { method: "POST", headers: { "x-forwarded-for": "203.0.113.21" } }),
+      );
+
+      expect(response.status).toBe(503);
+      const body = (await response.json()) as BatchStartErrorResponse;
+      expect(body.error.kind).toBe("BUDGET_EXHAUSTED");
+      expect(body.error.message).toBe(BUDGET_EXHAUSTED_MESSAGE);
+    } finally {
+      await db.delete(dailySpend).where(eq(dailySpend.spendDate, ISOLATED_DAY));
+      vi.useRealTimers();
+    }
+  });
 });

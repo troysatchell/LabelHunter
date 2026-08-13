@@ -56,6 +56,32 @@ describe("AccessCodeFormView", () => {
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("/verify"));
   });
 
+  it("refuses an absolute-URL ?next= and falls back to / (TRO-565 finding 1 — open redirect)", async () => {
+    window.history.pushState({}, "", "/access-code?next=https%3A%2F%2Fevil.com");
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    const submit = vi.fn().mockResolvedValue({ ok: true, message: null });
+    render(<AccessCodeFormView submit={submit} onSuccess={onSuccess} />);
+
+    await user.type(screen.getByLabelText("Access code"), "correct-code");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("/"));
+  });
+
+  it("refuses a protocol-relative ?next= and falls back to / (TRO-565 finding 1 — open redirect)", async () => {
+    window.history.pushState({}, "", "/access-code?next=%2F%2Fevil.com");
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    const submit = vi.fn().mockResolvedValue({ ok: true, message: null });
+    render(<AccessCodeFormView submit={submit} onSuccess={onSuccess} />);
+
+    await user.type(screen.getByLabelText("Access code"), "correct-code");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("/"));
+  });
+
   it("shows a friendly, specific error panel when the server rejects the code — never a raw status code", async () => {
     const user = userEvent.setup();
     const submit = vi.fn().mockResolvedValue({ ok: false, message: "That code did not work. Check it and try again." });

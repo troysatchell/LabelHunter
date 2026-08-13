@@ -66,19 +66,65 @@ export const ACCESS_CODE_GLOBAL_WINDOW_MS = 15 * 60_000;
 const GLOBAL_KEY = "__global__";
 
 /**
- * The client's own IP address, from `x-forwarded-for` — the header Render
- * (and every common reverse proxy) sets to `client, proxy1, proxy2, ...`.
- * Takes the FIRST entry (the original client), trims incidental
- * whitespace. Falls back to a fixed placeholder, never throws, when the
- * header is absent (local dev with no proxy in front of it) — every caller
- * with no header shares one bucket, a safe degraded behavior rather than
- * silently exempting them from the limit altogether.
+ * The client's own IP address, from `x-forwarded-for` (TRO-565 finding 2).
+ *
+ * **Untrusted input (standing rule 18).** `x-forwarded-for` is a plain HTTP
+ * request header — any caller can set it to anything, including a fresh,
+ * random value on every single request. Before this fix, `getClientIp`
+ * took the FIRST entry, on the documented assumption that Render writes
+ * the real client there. Taking the caller's own, self-reported value as a
+ * rate-limit KEY defeats the limiter it feeds: an attacker who rotates
+ * that header gets a brand-new per-IP bucket on every request, including
+ * against `/api/access-code`'s 10-per-15-minutes brute-force guard
+ * (`ACCESS_CODE_IP_LIMIT` below) — exactly the protection this file's own
+ * header comment says that limiter exists to provide.
+ *
+ * **The fix: trust only the RIGHTMOST entry.** A well-formed reverse proxy
+ * APPENDS the peer address it directly observed to whatever
+ * `x-forwarded-for` value it received — it never rewrites what came
+ * before. This server receives the request from exactly one upstream hop
+ * (Render's own edge/load balancer); that upstream is the only party
+ * capable of adding the LAST entry, because that entry is appended after
+ * the request has already left the caller's control. Every entry before
+ * it — including position 0 — passed through the caller's own hands
+ * first, so none of them can be trusted as an identity, no matter how many
+ * of them there are.
+ *
+ * **What this ticket did, and did not, independently confirm about
+ * Render's own behavior.** Render's public docs ("How Render handles DDoS
+ * attacks") confirm traffic passes through Cloudflare AND Render's own
+ * load balancer before reaching this app, and direct a developer to read
+ * `x-forwarded-for` for the real client IP — but do not spell out, in any
+ * page this ticket could read directly, whether Render's edge REWRITES
+ * position 0 or only ever APPENDS. A single, five-years-old Render-staff
+ * forum reply claims the former; Render's own current DDoS-protection
+ * article, read directly for this ticket, does not repeat or confirm that
+ * claim. Given that conflict, and given no access to the live deployment
+ * to measure it directly (this ticket has no deploy credentials), trusting
+ * the rightmost entry is the documented, conservative default: it holds
+ * regardless of which of those two behaviors turns out to be true, and its
+ * only failure mode is OVER-restrictive (several real callers sharing one
+ * upstream hop share one bucket), never under-protective (a caller minting
+ * unlimited fresh buckets). Confirming Render's exact hop count and
+ * rewrite behavior against the live deployment — send a request carrying a
+ * forged leading `x-forwarded-for` entry and inspect what this function
+ * actually receives — is real follow-up work this ticket flags but does
+ * not do.
+ *
+ * Falls back to a fixed placeholder, never throws, when the header is
+ * absent (local dev with no proxy in front of it) — every caller with no
+ * header shares one bucket, a safe degraded behavior rather than silently
+ * exempting them from the limit altogether.
  */
 export function getClientIp(request: Request): string {
   const forwardedFor = request.headers.get("x-forwarded-for");
   if (forwardedFor) {
-    const first = forwardedFor.split(",")[0]?.trim();
-    if (first) return first;
+    const hops = forwardedFor
+      .split(",")
+      .map((hop) => hop.trim())
+      .filter((hop) => hop.length > 0);
+    const rightmost = hops.at(-1);
+    if (rightmost) return rightmost;
   }
   return "unknown";
 }

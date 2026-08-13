@@ -58,6 +58,18 @@ describe("proxy — exempt paths always pass through, even with no credential", 
   });
 });
 
+describe("proxy — exempt paths tolerate a trailing slash (TRO-565 finding 4)", () => {
+  it("lets /api/health/ through unauthenticated, the same as /api/health", async () => {
+    const response = await proxy(requestTo("/api/health/"));
+    expect(letsRequestThrough(response)).toBe(true);
+  });
+
+  it("lets /access-code/ through unauthenticated, the same as /access-code", async () => {
+    const response = await proxy(requestTo("/access-code/"));
+    expect(letsRequestThrough(response)).toBe(true);
+  });
+});
+
 describe("proxy — protected API routes", () => {
   it("rejects an unauthenticated request with a 401 and a friendly JSON body, never a bare status", async () => {
     const response = await proxy(requestTo("/api/verify"));
@@ -97,6 +109,24 @@ describe("proxy — protected pages", () => {
     const url = new URL(redirect as string);
     expect(url.pathname).toBe("/access-code");
     expect(url.searchParams.get("next")).toBe("/verify");
+  });
+
+  it("never emits a next= carrying a scheme or a protocol-relative prefix (TRO-565 finding 1 — open redirect)", async () => {
+    // A pathname CAN literally start with "//" — a client can send
+    // `GET //evil.com/steal` to the real host, which a browser (and
+    // `new URL()`, given the FULL absolute string, not resolved against a
+    // base) parses as one path, "//evil.com/steal", not a host change.
+    // Built directly, not through `requestTo()`: that helper resolves its
+    // path arg AGAINST a base URL, and a base-relative "//..." reference
+    // resolves to a DIFFERENT host instead of preserving the literal
+    // leading "//" in the path — the wrong shape for this test.
+    const response = await proxy(new NextRequest(new URL("http://localhost//evil.com/steal")));
+    const redirect = getRedirectUrl(response);
+    expect(redirect).not.toBeNull();
+    const url = new URL(redirect as string);
+    expect(url.pathname).toBe("/access-code");
+    const next = url.searchParams.get("next");
+    expect(next === null || next === "/").toBe(true);
   });
 
   it("redirects the home page without a redundant next=/ param", async () => {

@@ -4,19 +4,20 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
-## TRO-562 — CI workflow pins actions and images to a fixed commit, not a mutable tag (2026-08-13)
+## TRO-562 — CI workflow pins actions to commits and images to digests, not mutable tags (2026-08-13)
 
 **The gap.** `.github/workflows/ci.yml` used `@v4` tags for four GitHub Actions
 (`actions/checkout`, `actions/setup-node`, `pnpm/action-setup`, `actions/upload-artifact`) and
 the `postgres:16-alpine` tag for both Postgres services. A tag can move. A compromised or
 retagged release would then run inside the workflow with the workflow's own permissions.
 `actions/checkout` also left the job's token in `.git/config` by default, where any later step,
-including a dependency, could read it. Found by CodeRabbit on the TRO-522 branch, 2026-08-13,
-triaged `new-ticket` and filed as TRO-562.
+including a dependency, could read it. CodeRabbit found this on the TRO-522 branch, 2026-08-13.
+Triage marked it `new-ticket`; it became TRO-562.
 
 **The fix.**
-1. Pin all four actions to the 40-character commit SHA each `@v4` tag resolves to today
-   (`git ls-remote`, 2026-08-13), with a trailing `# vX.Y.Z` comment naming the release.
+1. Pin all four actions to the 40-character commit SHA each `@v4` tag resolves to today.
+   Found via `git ls-remote`, 2026-08-13. Each pin carries a trailing `# vX.Y.Z` comment
+   naming the release.
 2. Pin `postgres:16-alpine` on both jobs to its current manifest-list digest,
    `sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777` (Docker Hub's tag
    API, queried 2026-08-13).
@@ -31,13 +32,17 @@ ecosystem does not reach a digest embedded in a workflow's `services:` block, so
 Postgres pins get no automatic bump. `ci.yml`'s own comment on each `postgres:` line says so and
 points at `dependabot.yml` for the reason.
 
-**Confirmed.** `scripts/deploy/ci-workflow.test.ts` gained four assertions: every `uses:` step
-resolves to a 40-character SHA, each pinned SHA carries a version comment, each service image is
-digest-pinned, and every checkout step disables credential persistence. All 10 tests in the file
-pass (`pnpm vitest run scripts/deploy/ci-workflow.test.ts`, observed 2026-08-13). `pnpm
-typecheck` is clean. **Not yet verified:** a real CI run against these pins — the pins are only
-proven correct by GitHub actually resolving and running them, which happens once this PR's own
-checks execute.
+**Confirmed.** `scripts/deploy/ci-workflow.test.ts` gained four assertions:
+1. Every `uses:` step resolves to a 40-character SHA.
+2. Each pinned SHA carries a version comment.
+3. Each service image is digest-pinned.
+4. Every checkout step disables credential persistence.
+
+All 10 tests in the file pass. Command: `pnpm vitest run scripts/deploy/ci-workflow.test.ts`,
+observed 2026-08-13. `pnpm typecheck` is clean.
+
+**Not yet verified:** a real CI run against these pins. GitHub proves the pins correct only by
+resolving and running them. That happens once this PR's own checks execute.
 
 ## TRO-557 — worktree.sh stamps the provisioning session; refuses cross-session reuse (2026-08-13)
 

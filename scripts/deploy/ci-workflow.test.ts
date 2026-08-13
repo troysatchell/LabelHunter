@@ -186,17 +186,21 @@ function allUsesSteps(): Array<{ jobId: string; step: WorkflowStep }> {
   return found;
 }
 
-const FORTY_HEX = /^[0-9a-f]{40}$/;
 const SHA256_DIGEST = /^sha256:[0-9a-f]{64}$/;
 
 describe("ci.yml — supply-chain action and image pinning (TRO-562)", () => {
+  // `owner/repo@<40-hex-sha>` with nothing else after the SHA — a naive
+  // `split("@")[1]` check would miss a stray extra `@fragment` tacked on
+  // after a valid-looking SHA (CodeRabbit finding, TRO-562 review round 1).
+  const USES_PINNED = /^[^@\s]+@[0-9a-f]{40}$/;
+
   it("pins every `uses:` action to a 40-character commit SHA, not a mutable tag", () => {
     const usesSteps = allUsesSteps();
     expect(usesSteps.length, "expected at least one `uses:` step in the workflow").toBeGreaterThan(0);
 
     const unpinned = usesSteps
-      .map(({ jobId, step }) => ({ jobId, uses: step.uses!, ref: step.uses!.split("@")[1] }))
-      .filter(({ ref }) => !ref || !FORTY_HEX.test(ref));
+      .map(({ jobId, step }) => ({ jobId, uses: step.uses! }))
+      .filter(({ uses }) => !USES_PINNED.test(uses));
 
     expect(
       unpinned,
@@ -206,11 +210,13 @@ describe("ci.yml — supply-chain action and image pinning (TRO-562)", () => {
 
   it("carries a human-readable version comment next to every pinned SHA", () => {
     // `uses: owner/repo@<sha> # vX.Y.Z` — the raw YAML line, not the parsed
-    // value, since js-yaml drops trailing comments from `step.uses`.
+    // value, since js-yaml drops trailing comments from `step.uses`. The
+    // comment must be a complete `vX.Y.Z`, not an abbreviated `v4` or text
+    // trailing the version (CodeRabbit finding, TRO-562 review round 1).
     const lines = ciYamlText.split("\n");
     const usesLines = lines.filter((l) => /^\s*-?\s*uses:\s*\S+@[0-9a-f]{40}/.test(l));
     expect(usesLines.length).toBeGreaterThan(0);
-    const missingComment = usesLines.filter((l) => !/#\s*v\d/.test(l));
+    const missingComment = usesLines.filter((l) => !/#\s*v\d+\.\d+\.\d+\s*$/.test(l));
     expect(
       missingComment,
       `these pinned actions have no trailing "# vX.Y.Z" comment: ${JSON.stringify(missingComment)}`,

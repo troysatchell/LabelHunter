@@ -82,6 +82,42 @@ derived. Full `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `scripts/factory/g
 are reported in this PR's own thread once run; the eval baseline/stale-baseline check is
 EXPECTED to fail at this stage — the golden set changed, and the live re-baseline is
 Phase 2's job (standing rule 32), not run here.
+## TRO-581 — a deterministic single-channel warning violation fails outright (2026-08-13)
+
+**Troy's ruling (CP-2 amendment, recorded verbatim in
+`docs/checkpoints/cp2-warning-subsystem.md`):** "it should fail out right if its that
+deterministic if we know with absolute certainty that government warning is not capitalizied
+it fails."
+
+**What changed.** CP-2 §4.5's single-channel table said a lone reading may PASS a label at
+confidence ≥ 0.90 but may never FAIL one. That asymmetry trusted the wrong reading. A VLM's
+known transcription failure mode is normalization. It silently corrects label text toward
+the statute it knows. So a single-channel exact match is the LESS trustworthy reading. A
+single-channel coherent deviation is the MORE trustworthy one. The observed cost was case-10
+live. A seeded paraphrased warning downgraded to "could not be confirmed" when the deployed
+worker's OCR channel failed.
+
+`reconcileSingleChannel` now mirrors the dual-channel table's precedence, gated by the SAME
+0.90 threshold the pass rule already trusts: caps failure → FAIL with the caps reason;
+coherent wording mismatch → FAIL with the wording reason. Three guards survive on purpose:
+a near-miss never hard-fails on one channel at any confidence; anything below 0.90 renders
+no verdict; and §7.1's prefix-casing cross-check still downgrades a FAIL the model's own
+casing report contradicts. Certainty renders the verdict. Doubt escalates.
+
+**Rollback.** Revert the PR. The single-channel table returns to never-FAIL.
+
+**The ripple.** The eval harness's Sonnet-only arm (`scripts/eval/resolver-rollup.ts`)
+calls the real `reconcileWarningChannels`, so it inherited the amendment automatically. Its
+doc comment and two tests encoded the old "never MISMATCH on one channel" property — both
+updated to the amended behavior, with a below-threshold case preserving the REVIEW path.
+The gate's test diff caught this ripple; nothing shipped untested.
+
+**Confirmed.** Red first: four new tests failed against the old table for the right reasons
+(REVIEW where the ruling demands MISMATCH; the cross-check interaction). The superseded
+"never accuse on one channel" assertions were rewritten under the amendment's authority —
+a spec change with named provenance, not a weakening; the genuinely-uncertain REVIEW cases
+keep their assertions. All 195 warning tests pass. `pnpm eval:check` is green — the
+committed eval runs every case dual-channel, so no baseline verdict moves.
 
 ## TRO-563 — case-22 corpus decision: strengthen the pixels, keep REVIEW/LOW_IMAGE_QUALITY (2026-08-13)
 

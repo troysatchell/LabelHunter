@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
+import { detectWarningRegionClassical } from "../warning/region-detect";
 import {
   FileTooLargeError,
   ImageDimensionsTooLargeError,
@@ -175,6 +177,58 @@ describe("preprocessImage", () => {
     await expect(
       preprocessImage(upload, { maxInputPixels: 100 }),
     ).rejects.toBeInstanceOf(ImageDimensionsTooLargeError);
+  });
+
+  it("reports deskewAngleDeg 0 for an upright image with no baked-in tilt (TRO-540)", async () => {
+    // The same solid-fill fixture the tests above use — no text, so no
+    // angle to find. This is the field's common, correct value, not an
+    // edge case: most real uploads are close enough to level that 0 is
+    // the honest answer.
+    const upload = await makeJpeg(3200, 2400);
+    const result = await preprocessImage(upload);
+    expect(result.deskewAngleDeg).toBe(0);
+  });
+});
+
+describe("preprocessImage — case-19 golden-set regression (TRO-540 / LH-035)", () => {
+  // case-19 (golden-set/manifest.json) carries a 15-degree rotation baked
+  // into its pixels at render time, with no EXIF orientation tag — the
+  // exact gap this ticket closes. Both measurements below are real,
+  // observed values (not fabricated): measured directly against this
+  // committed file while building this ticket.
+  //
+  //   BEFORE (raw file, no deskew): detectWarningRegionClassical -> null
+  //   AFTER  (preprocessImage'd):   detectWarningRegionClassical -> a
+  //     non-null region, estimateSkewAngleDeg -> -15
+  //
+  // Deskewing restores the OCR channel's region detection. It does NOT
+  // fix case-19's live eval outcome — a separate, already-wrong Haiku
+  // transcription still returns REVIEW / WARNING_MISMATCH even against a
+  // perfect OCR read (measured with the production reconciler while
+  // scoping this ticket; see CHANGES.md and the ticket for the full
+  // reconciliation table). This test proves the extraction-side mitigation
+  // only, honestly scoped to what it actually changes.
+  const CASE_19_PATH = "golden-set/images/case-19-rotation-mild-correctable.jpg";
+
+  it("detectWarningRegionClassical returns null on the raw (un-deskewed) case-19 file — the defect this ticket mitigates", async () => {
+    const raw = readFileSync(CASE_19_PATH);
+    const region = await detectWarningRegionClassical(raw);
+    expect(region).toBeNull();
+  });
+
+  it("preprocessImage measures case-19's baked-in tilt and restores classical region detection", async () => {
+    const raw = readFileSync(CASE_19_PATH);
+    const result = await preprocessImage(raw);
+
+    // Measured: -15 (the corrective angle for a +15-degree baked-in
+    // tilt). A tolerance, not an exact-match assertion — the sweep is a
+    // 1-degree-step measurement, not a symbolic computation, and
+    // asserting the exact float would make this test brittle to
+    // unrelated tuning of the sweep step.
+    expect(Math.abs(result.deskewAngleDeg - -15)).toBeLessThanOrEqual(2);
+
+    const region = await detectWarningRegionClassical(result.original);
+    expect(region).not.toBeNull();
   });
 });
 

@@ -34,8 +34,9 @@
  * answered `null` and no spend was ever recorded.
  */
 import type Anthropic from "@anthropic-ai/sdk";
-import { buildMeasuredCost, HAIKU_4_5_PRICING } from "../../../scripts/eval/usage";
+import { buildMeasuredCost, HAIKU_4_5_PRICING, selectSonnetPricing } from "../../../scripts/eval/usage";
 import { HAIKU_EXTRACTOR_MODEL } from "../extractor";
+import { SONNET_RESOLVER_MODEL } from "../resolver/request";
 
 export interface AnthropicUsageCapture {
   /** The same shape as the client passed in, safe to hand to `extractLabel`'s
@@ -97,4 +98,22 @@ export function wrapAnthropicClientForUsageCapture(client: Anthropic | undefined
  * the extractor actually calls. */
 export function haikuCallCostUsd(usage: Anthropic.Usage): number {
   return buildMeasuredCost(HAIKU_EXTRACTOR_MODEL, usage, HAIKU_4_5_PRICING).usd;
+}
+
+/**
+ * Real USD cost of one Sonnet resolver call, from its real, measured
+ * `Anthropic.Usage` (TRO-566 finding 1 — `resolve-worker.ts`'s own
+ * budget-settlement counterpart to `haikuCallCostUsd` above). Time-aware:
+ * `selectSonnetPricing` (`scripts/eval/usage.ts`) picks the intro or
+ * standard published rate by WHEN the call actually happened, never a
+ * hard-coded rate that goes stale past its own cutoff. `measuredAt`
+ * defaults to now — a resolve worker settling a call that just finished
+ * always means "right now," the same default `Date.now()`-based shape
+ * `../budget/daily-budget.ts`'s own functions use throughout.
+ * `SONNET_RESOLVER_MODEL` (`../resolver/request`) is this repo's one
+ * source of truth for the model id string, so this never drifts from what
+ * the resolver actually calls.
+ */
+export function sonnetCallCostUsd(usage: Anthropic.Usage, measuredAt: Date = new Date()): number {
+  return buildMeasuredCost(SONNET_RESOLVER_MODEL, usage, selectSonnetPricing(measuredAt)).usd;
 }

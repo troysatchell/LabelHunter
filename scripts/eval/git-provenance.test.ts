@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
-import { currentCommitSha, lastCommitTouchingPath } from "./git-provenance";
+import { assertPathTreeClean, currentCommitSha, lastCommitTouchingPath } from "./git-provenance";
 
 vi.mock("node:child_process", () => ({ execFileSync: vi.fn() }));
 
@@ -44,5 +44,39 @@ describe("lastCommitTouchingPath", () => {
   it("throws when the command succeeds with empty output — no history has ever touched the path", () => {
     mockExecFileSync.mockReturnValueOnce("\n" as unknown as ReturnType<typeof execFileSync>);
     expect(() => lastCommitTouchingPath("/repo", "golden-set")).toThrow(/no commit in this branch's history touches/);
+  });
+});
+
+describe("assertPathTreeClean", () => {
+  it("does not throw when `git status --porcelain -- <path>` reports no changes", () => {
+    mockExecFileSync.mockReturnValueOnce("" as unknown as ReturnType<typeof execFileSync>);
+    expect(() => assertPathTreeClean("/repo", "golden-set")).not.toThrow();
+    expect(mockExecFileSync).toHaveBeenCalledWith("git", ["status", "--porcelain", "--", "golden-set"], {
+      cwd: "/repo",
+      encoding: "utf8",
+    });
+  });
+
+  it(
+    "throws — TRO-564 regression: a recorded provenance SHA must not outrun an uncommitted " +
+      "change — when the path has a modified tracked file",
+    () => {
+      mockExecFileSync.mockReturnValueOnce(" M golden-set/images/case-01.jpg\n" as unknown as ReturnType<typeof execFileSync>);
+      expect(() => assertPathTreeClean("/repo", "golden-set")).toThrow(
+        /golden-set.*uncommitted change[\s\S]*M golden-set\/images\/case-01\.jpg/,
+      );
+    },
+  );
+
+  it("throws when the path has an untracked file", () => {
+    mockExecFileSync.mockReturnValueOnce("?? golden-set/images/case-99-new.jpg\n" as unknown as ReturnType<typeof execFileSync>);
+    expect(() => assertPathTreeClean("/repo", "golden-set")).toThrow(/uncommitted change/);
+  });
+
+  it("throws when the git command itself fails", () => {
+    mockExecFileSync.mockImplementationOnce(() => {
+      throw new Error("not a git repository");
+    });
+    expect(() => assertPathTreeClean("/repo", "golden-set")).toThrow(/could not check whether "golden-set" is clean/);
   });
 });

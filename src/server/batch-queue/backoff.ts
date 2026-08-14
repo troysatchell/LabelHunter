@@ -5,8 +5,14 @@
  * so an SDK-level retry never stacks underneath this module's own backoff
  * (`../extractor/index.ts`'s `DEFAULT_CLIENT_MAX_RETRIES` comment names
  * this ticket directly).
+ *
+ * TRO-566: also classifies `BudgetExhaustedError` (`../budget/daily-budget`)
+ * — a worker that finds the daily budget exhausted right before its model
+ * call reuses this SAME retry/backoff state machine, rather than a second,
+ * parallel one. See that class's own doc comment for the full reasoning.
  */
 import { APIConnectionError, APIError, InternalServerError, RateLimitError } from "@anthropic-ai/sdk";
+import { BudgetExhaustedError } from "../budget/daily-budget";
 
 /** CP-3 §5.2, proposed — not measured. `maxAttempts` counts CLAIM episodes,
  * not retries-after-the-first: the claim query itself increments `attempts`
@@ -24,8 +30,20 @@ export const DEFAULT_BACKOFF_CONFIG: BackoffConfig = {
 };
 
 export type ModelCallErrorClassification =
-  | { retryable: true; retryAfterMs: number | null; isRateLimit: boolean }
+  | { retryable: true; retryAfterMs: number | null; isRateLimit: boolean; isBudgetExhausted?: boolean }
   | { retryable: false; reason: string };
+
+/**
+ * Floor on the retry delay for a budget-exhausted item (TRO-566) — NOT
+ * governed by `computeBackoffDelayMs`'s exponential formula, which is
+ * sized for a transient API error, not a pool-wide spending gate. Proposed,
+ * not measured, matching this file's own "proposed default" conventions
+ * elsewhere (`pool.ts`'s `POLL_INTERVAL_MS`/`DEFAULT_POOL_COOLDOWN_MS`):
+ * long enough that a whole pool checking the SAME exhausted budget does not
+ * hot-loop the database, short enough that spend freed up by an operator
+ * raising `DAILY_BUDGET_USD` is noticed within a few minutes.
+ */
+export const BUDGET_EXHAUSTED_RETRY_DELAY_MS = 60_000;
 
 /** Parses the API's own `retry-after` header (whole seconds, CP-3 §4.2's
  * verified page) into milliseconds. `null` when absent or not a valid
@@ -47,6 +65,9 @@ function extractRetryAfterMs(headers: Headers | undefined): number | null {
  * is worse than failing fast and surfacing it in `last_error` (CP-3 §5.1).
  */
 export function classifyModelCallError(error: unknown): ModelCallErrorClassification {
+  if (error instanceof BudgetExhaustedError) {
+    return { retryable: true, retryAfterMs: BUDGET_EXHAUSTED_RETRY_DELAY_MS, isRateLimit: false, isBudgetExhausted: true };
+  }
   if (error instanceof RateLimitError) {
     return { retryable: true, retryAfterMs: extractRetryAfterMs(error.headers), isRateLimit: true };
   }

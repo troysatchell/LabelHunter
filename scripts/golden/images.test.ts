@@ -205,9 +205,13 @@ describe("golden-set degradations recorded on the manifest (design doc §3)", ()
     ]);
   });
 
-  it("records case-22's low light on the warning region", () => {
+  it("records case-22's strengthened low light (TRO-563 correction) plus a small blur", () => {
     expect(degradationsOf("case-22-low-light-warning-block")).toEqual([
-      { type: "low-light", params: { region: "warning", brightnessFactor: 0.3 } },
+      {
+        type: "low-light",
+        params: { region: "warning", brightnessFactor: 0.5, contrastFactor: 0.38, noiseAmplitude: 30 },
+      },
+      { type: "blur", params: { sigma: 2.0 } },
     ]);
   });
 

@@ -42,24 +42,38 @@ export function enclosingFunctionName(node: ts.Node): string {
 }
 
 /**
+ * Reads the name of the variable or property a value is directly assigned
+ * to, if there is one — `const A = <value>` or `{ A: <value> }`. Null when
+ * the value sits somewhere else (an array element, a call argument), which
+ * is not itself a name.
+ */
+function declarationOwnerName(value: ts.Expression): string | null {
+  const owner = value.parent;
+  if (ts.isVariableDeclaration(owner) && ts.isIdentifier(owner.name)) return owner.name.text;
+  if (ts.isPropertyAssignment(owner) && ts.isIdentifier(owner.name)) return owner.name.text;
+  return null;
+}
+
+/**
  * Names the class or object literal a method belongs to.
  *
- * Checked shapes: a named class (`class A { validate() {} }`), and an
- * object literal assigned to a name — directly (`const A = { validate()
- * {} }`) or as a property value (`{ A: { validate() {} } }`). Falls back
- * to `<anonymous>` when the enclosing scope has no name to read, so the
- * identity still separates same-named methods without crashing on an
- * unnamed class expression.
+ * Checked shapes: a named class (`class A { validate() {} }`); an unnamed
+ * class expression, named instead from its own declaration owner (`const A
+ * = class { validate() {} }`); and an object literal assigned to a name —
+ * directly (`const A = { validate() {} }`) or as a property value (`{ A: {
+ * validate() {} } }`). Falls back to `<anonymous>` when nothing above names
+ * the scope, so the identity still separates same-named methods without
+ * crashing on a truly unnamed, unassigned class expression.
  */
 function enclosingScopeName(method: ts.MethodDeclaration): string {
   const parent = method.parent;
-  if ((ts.isClassDeclaration(parent) || ts.isClassExpression(parent)) && parent.name) {
-    return parent.name.text;
+  if (ts.isClassDeclaration(parent) && parent.name) return parent.name.text;
+  if (ts.isClassExpression(parent)) {
+    if (parent.name) return parent.name.text;
+    return declarationOwnerName(parent) ?? "<anonymous>";
   }
   if (ts.isObjectLiteralExpression(parent)) {
-    const owner = parent.parent;
-    if (ts.isVariableDeclaration(owner) && ts.isIdentifier(owner.name)) return owner.name.text;
-    if (ts.isPropertyAssignment(owner) && ts.isIdentifier(owner.name)) return owner.name.text;
+    return declarationOwnerName(parent) ?? "<anonymous>";
   }
   return "<anonymous>";
 }

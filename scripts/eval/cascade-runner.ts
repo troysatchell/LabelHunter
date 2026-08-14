@@ -51,7 +51,10 @@ import type {
 } from "../../src/server/router/types";
 import { resolveEscalatedLabel, SONNET_RESOLVER_MODEL } from "../../src/server/resolver";
 import type { ResolverResolution } from "../../src/server/resolver";
-import { compareGovernmentWarningFromImage as defaultCompareGovernmentWarning } from "../../src/server/warning";
+import {
+  compareGovernmentWarningFromImage as defaultCompareGovernmentWarning,
+  type BoldSignalResult,
+} from "../../src/server/warning";
 import { saveLabelImage as defaultSaveLabelImage } from "../../src/server/storage/db-image-storage";
 import { buildFlaggedFieldsForEscalatedLabel } from "./flagged-fields";
 import { scoreExtraction } from "./extraction-scoring";
@@ -337,6 +340,14 @@ export async function runOneCase(
   let capturedExtraction: HaikuExtractionResult | undefined;
   let capturedPreprocessed: PreprocessedImage | undefined;
   let capturedWarningResult: WarningComparatorResult | null = null;
+  // TRO-569 — captured alongside `capturedWarningResult` so the re-derived
+  // `routeLabel` call below (the harness's own consistency check against
+  // `route.ts`'s real response) sees the SAME bold signal the real request
+  // did. Before this, the re-derivation always passed `null` here, which
+  // silently agreed with route.ts for every case except the one whose
+  // ground truth is `"not-bold"` (case-33) — there the two diverged and
+  // this file's own defensive check correctly caught it as a harness bug.
+  let capturedBoldSignal: BoldSignalResult | null = null;
   let haikuUsage: Anthropic.Usage | null = null;
 
   // One dedicated client per logical call (usage.ts's own requirement) —
@@ -359,17 +370,24 @@ export async function runOneCase(
     compareGovernmentWarning: async (input) => {
       try {
         const result = await defaultCompareGovernmentWarning(input);
-        // TRO-533: `result` now carries `{ comparator, boldSignal }` — this
-        // script's own re-derived `routeLabel` call (below) takes only the
-        // router-facing `comparator` half, the same boundary
-        // `handleVerifyRequest` itself enforces. Bold-signal accuracy is
-        // scored separately, read-only, by `pnpm eval:bold-signal-sweep`
-        // (`bold-signal-sweep.ts`) — this cascade runner is not that
-        // measurement's home.
+        // TRO-533: `result` carries `{ comparator, boldSignal }`.
+        // `capturedWarningResult` is the router-facing `comparator` half,
+        // the same boundary `handleVerifyRequest` itself enforces.
+        // `capturedBoldSignal` (TRO-569) is the OTHER half — `route.ts`
+        // now also passes `boldSignal.signal` into `routeLabel`, so this
+        // script's own re-derivation must capture and pass the same value
+        // or its consistency check below fails every case whose real
+        // signal is "not-bold". Bold-signal ACCURACY is still scored
+        // separately, read-only, by `pnpm eval:bold-signal-sweep`
+        // (`bold-signal-sweep.ts`) — capturing it here is only about
+        // matching `route.ts`'s own router input, not measuring the
+        // signal itself.
         capturedWarningResult = result.comparator;
+        capturedBoldSignal = result.boldSignal;
         return result;
       } catch (cause) {
         capturedWarningResult = null;
+        capturedBoldSignal = null;
         throw cause; // route.ts's own resolveWarningOrDegrade catches this — matches production exactly.
       }
     },
@@ -432,10 +450,35 @@ export async function runOneCase(
   try {
     const application = buildApplicationRecord(caseSpec);
     const haikuDims = computeResizeDimensions({ width: capturedPreprocessed.width, height: capturedPreprocessed.height }, HAIKU_MAX_LONG_EDGE_PX);
-    const routerResult: LabelRouterResult = routeLabel(capturedExtraction, application, productionComparators, capturedWarningResult, {
-      rejected: false,
-      longEdgePx: Math.max(haikuDims.width, haikuDims.height),
-    });
+    // A stable local, explicitly re-asserted to its own declared type — a
+    // known TypeScript CFA limitation: a `let` reassigned only inside a
+    // closure (`deps.compareGovernmentWarning` above) reads back, in this
+    // OUTER scope, as narrowed to its INITIALIZER's type (`null`) forever,
+    // because CFA does not credit an assignment made inside a nested
+    // function for narrowing purposes here — even though the closure's own
+    // assignment type-checks correctly against the declared type. Passing
+    // `capturedWarningResult` (same pattern) directly as an argument never
+    // exposed this, because `null` is itself a valid `WarningComparatorResult
+    // | null` — only a property access on the "maybe non-null" branch
+    // (`.signal` below) forces narrowing, and without this cast TS reports
+    // that branch as `never`. The `as` re-declares the real declared type;
+    // it changes no runtime behavior.
+    const boldSignal = capturedBoldSignal as BoldSignalResult | null;
+    const routerResult: LabelRouterResult = routeLabel(
+      capturedExtraction,
+      application,
+      productionComparators,
+      capturedWarningResult,
+      {
+        rejected: false,
+        longEdgePx: Math.max(haikuDims.width, haikuDims.height),
+      },
+      // TRO-569 — must match route.ts's own call exactly, or this
+      // re-derivation disagrees with the real response on any case whose
+      // bold signal is "not-bold" (see `capturedBoldSignal`'s own comment
+      // above).
+      boldSignal === null ? null : boldSignal.signal,
+    );
     if (routerResult.labelVerdict !== body.labelVerdict) {
       throw new Error(
         `cascade-runner.ts: case "${caseSpec.caseId}" — re-derived router verdict "${routerResult.labelVerdict}" disagrees with the response body's "${body.labelVerdict}". ` +

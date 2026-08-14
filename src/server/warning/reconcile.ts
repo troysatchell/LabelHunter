@@ -11,10 +11,15 @@
  *   disagree, exactly one equals     -> REVIEW WARNING_MISMATCH
  *   disagree, neither equals         -> REVIEW WARNING_MISMATCH
  *
- * Single-channel (§4.5, OCR unavailable or below the confidence floor):
- *   equals canonical, VLM conf >= 0.90 -> PASS
- *   equals canonical, VLM conf <  0.90 -> REVIEW LOW_IMAGE_QUALITY
- *   differs from canonical             -> REVIEW WARNING_MISMATCH (NEVER FAIL)
+ * Single-channel (§4.5 as amended 2026-08-13 — Troy's ruling, recorded in
+ * cp2-warning-subsystem.md; OCR unavailable or below the confidence
+ * floor):
+ *   equals canonical,  VLM conf >= 0.90 -> PASS
+ *   equals canonical,  VLM conf <  0.90 -> REVIEW LOW_IMAGE_QUALITY
+ *   caps failure,      VLM conf >= 0.90 -> FAIL (caps reason)
+ *   near miss,         any confidence   -> REVIEW WARNING_MISMATCH
+ *   wording mismatch,  VLM conf >= 0.90 -> FAIL (wording reason)
+ *   any non-match,     VLM conf <  0.90 -> REVIEW WARNING_MISMATCH
  *
  * "Agree" (§4.5) means BOTH the folded words AND the caps-check result
  * match between channels — not just the words (`capsResultsEqual`, not a
@@ -118,12 +123,11 @@ const NOTE = {
   nearMiss: "Government Warning differs by a single character. A reviewer must confirm the exact wording.",
   channelsInconsistent: "Government Warning could not be read consistently.",
   lowImageQuality: "Government Warning is not clear enough in this image.",
-  // CP-2 §6.1 does not draft a string for "single channel, not an exact
-  // match, but not a clean near-miss either" — its table's rows are all
-  // either dual-channel or the exact-match/low-confidence single-channel
-  // rows. This is this ticket's own extension of §6.3's style for the
-  // one uncovered case: one reading exists, it is not a clean match, and
-  // §4.5 forbids calling it a FAIL on one channel alone.
+  // Since the 2026-08-13 CP-2 amendment this note covers only the
+  // LOW-CONFIDENCE single-channel non-match: one reading exists, it is
+  // not a clean match, and its confidence sits below the threshold the
+  // pass rule trusts — so there is no certainty to act on either way.
+  // A confident, self-consistent non-match now fails outright instead.
   unconfirmedSingleChannel: "Government Warning could not be confirmed from this image alone.",
 } as const;
 
@@ -152,19 +156,34 @@ function mismatchResult(note: string, channel: WarningComparatorChannel): Warnin
   return { verdict: "MISMATCH", channel, note };
 }
 
-/** CP-2 §4.5's single-channel table. Never returns MISMATCH — "a
- * single-channel FAIL is never allowed, only REVIEW" (this ticket's own
- * load-bearing decision, matching §4.5: "we never accuse on one channel"). */
+/** CP-2 §4.5's single-channel table, as amended 2026-08-13 (Troy's
+ * ruling, recorded in `docs/checkpoints/cp2-warning-subsystem.md`): "it
+ * should fail outright if it's that deterministic." One channel at the
+ * SAME threshold the pass rule already trusts renders EITHER verdict when
+ * the reading is structurally clean — the original "never accuse on one
+ * channel" rule survives only for the genuinely uncertain reads. The
+ * precedence below (caps, then near-miss, then wording) mirrors
+ * `reconcileDualChannel` exactly, so the two tables classify one reading
+ * the same way; only the confidence gate differs.
+ *
+ * §7.1's prefix-casing cross-check still runs AFTER this table and
+ * downgrades a MISMATCH the model's own casing report contradicts — a
+ * self-inconsistent reading is not "absolute certainty" and escalates. */
 function reconcileSingleChannel(vlmEval: CandidateEvaluation, vlmConfidence: number): WarningComparatorResult {
   if (isExactMatch(vlmEval)) {
     return vlmConfidence >= SINGLE_CHANNEL_PASS_CONFIDENCE
       ? matchResult("single")
       : reviewResult("LOW_IMAGE_QUALITY", NOTE.lowImageQuality, "single");
   }
-  // A near miss keeps its precise, distance-based note (CP-2 §5.5) even on
-  // one channel — it describes what was found, not how many readers found
-  // it. Anything else (a caps failure or a real mismatch) gets the generic
-  // single-channel note: one reading is never enough to accuse (§4.5).
+  if (vlmConfidence >= SINGLE_CHANNEL_PASS_CONFIDENCE) {
+    if (hasAnyCapsFailure(vlmEval.caps)) return mismatchResult(capsFailureNote(vlmEval.caps), "single");
+    // A near miss stays REVIEW at any confidence: a single-character
+    // difference is within transcription noise, not a deviation the
+    // amendment's "absolute certainty" covers. Its note stays precise and
+    // distance-based (CP-2 §5.5) — it describes what was found.
+    if (vlmEval.wording === "NEAR_MISS") return reviewResult("WARNING_MISMATCH", NOTE.nearMiss, "single");
+    return mismatchResult(NOTE.wordingMismatch, "single");
+  }
   const note = vlmEval.wording === "NEAR_MISS" ? NOTE.nearMiss : NOTE.unconfirmedSingleChannel;
   return reviewResult("WARNING_MISMATCH", note, "single");
 }

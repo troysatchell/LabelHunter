@@ -261,12 +261,19 @@ proven it at that scale yet.
 read to the front of every request — the same mistake `audit/requirements/gaps.md`'s TH-R2
 entry exists to name, and this document avoids repeating it. `scripts/latency/measure.ts`'s
 `--url` mode could not even authenticate against the gate at first; TRO-568 added the
-`x-access-code` header it needed. With that fix merged, 20 real HTTP verify round-trips against
-the live deployed instance, past the access-code gate, measured **p50 3618 ms, p95 4197 ms**
-(mean 3738 ms, 20 of 20 PASS). That is inside the brief's ~5-second bar, and it is the
-authorized path — a rejected, unauthenticated request returns before any pipeline stage runs
-and would report no timings at all, so this number describes what a real evaluator's request
-actually experiences, not raw cascade latency with the gate subtracted out.
+`x-access-code` header it needed. With that fix merged, the same 20-round-trip measurement
+read **p50 3618 ms** — and then went stale the same way, when four later merges (bold
+measurement from the image's pixels, a spend-settling fix, a reconcile change, an OCR retry)
+changed the measured path again. The figure that stands was taken at the submission commit
+(`159ff96`), against the live deployed instance, past the access-code gate, on 2026-08-13:
+**p50 5616 ms, p95 6160 ms** (mean 5739 ms, 20 of 20 runs succeeded, all PASS verdicts).
+**That is outside the brief's ~5-second bar.** The stage timings say where the time went:
+preprocessing grew from p50 129 ms to 1881 ms across those merges — most plausibly the pixel
+bold measurement every label now gets (TRO-532/533). That attribution is derived from the
+stage table, not separately confirmed. The measurement is still the authorized path — a
+rejected, unauthenticated request returns before any pipeline stage runs and would report no
+timings at all — so this number describes what a real evaluator's request actually
+experiences, not raw cascade latency with the gate subtracted out.
 
 ## Measured results
 
@@ -297,10 +304,12 @@ resolution the router escalates a minority of labels to costs roughly $0.02 more
 labels only. A three-repeat, 38-case live evaluation run cost $1.2518 total, measured
 2026-08-14.
 
-**Latency.** p50 3618 ms, p95 4197 ms, mean 3738 ms — 20 real HTTP verify round-trips against
-the live deployed instance, past the access-code gate, 20 of 20 PASS. Inside the brief's
-~5-second bar. See "Trade-offs and limitations" above for why this figure, not the prior one,
-is the one quoted here.
+**Latency.** p50 5616 ms, p95 6160 ms, mean 5739 ms — 20 real HTTP verify round-trips against
+the live deployed instance at the submission commit (`159ff96`), past the access-code gate,
+20 of 20 PASS, measured 2026-08-13. **Outside the brief's ~5-second bar.** The stage
+breakdown attributes the growth over the prior 3618 ms figure to preprocessing (p50 129 ms →
+1881 ms), most plausibly the per-label pixel bold measurement. See "Trade-offs and
+limitations" above for this figure's full history and why the current one is quoted.
 
 ## What makes this more than the literal ask
 

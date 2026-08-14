@@ -38,6 +38,11 @@ function git(repoRoot: string, args: string[]): { status: number; stdout: string
   return { status: r.status ?? 1, stdout: (r.stdout ?? "").trim() };
 }
 
+/** Escapes text for safe use as a literal inside git's basic regex grammar. */
+function escapeForRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
  * Lists every commit that touched this row's file and names its ticket in
  * its own message, oldest first.
@@ -48,14 +53,23 @@ function git(repoRoot: string, args: string[]): { status: number; stdout: string
  * candidate instead. `replayRule` can then test the rule against each
  * pre-fix snapshot in turn. It does not need to know which one was the
  * real fix.
+ *
+ * The `--grep` pattern is word-boundary anchored. An unanchored ticket id
+ * is a prefix-match risk: "TRO-464" is itself a leading substring of
+ * "TRO-4640", so a commit naming the wrong, longer ticket number would
+ * read as a match for the shorter one. `\b` is a GNU extension git
+ * supports in its default basic-regex grammar — deliberately NOT paired
+ * with `--extended-regexp`, which compiles `\b` as a literal backspace
+ * instead of a word boundary and silently matches nothing at all.
  */
 export function resolveFixCandidates(repoRoot: string, row: LedgerRow): string[] {
+  const pattern = `\\b${escapeForRegExp(row.ticket)}\\b`;
   const result = git(repoRoot, [
     "log",
     "--format=%H",
     "--reverse",
     "--grep",
-    row.ticket,
+    pattern,
     "--",
     row.file,
   ]);
@@ -156,9 +170,25 @@ export function replayRule(
 }
 
 export function loadLedger(path: string): LedgerRow[] {
-  return readFileSync(path, "utf8")
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as LedgerRow);
+  const rows: LedgerRow[] = [];
+  // Split first, filter never — a blank line must keep its own position so
+  // the line number reported below is the file's real line, not a count
+  // over the SURVIVING lines. Filtering out blanks before numbering was
+  // exactly this bug: a blank line before a bad row shifted every
+  // following report short by however many blanks came before it.
+  const lines = readFileSync(path, "utf8").split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === "") continue;
+    try {
+      rows.push(JSON.parse(line) as LedgerRow);
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      // 1-based line number: the file's own first line, not the array's
+      // zero-based index. A bare JSON.parse error names neither the file
+      // nor which of its (often hundreds of) lines is malformed.
+      throw new Error(`loadLedger: invalid JSON at ${path}:${i + 1}: ${reason}`);
+    }
+  }
+  return rows;
 }

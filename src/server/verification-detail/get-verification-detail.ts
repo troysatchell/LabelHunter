@@ -15,7 +15,19 @@ import { applications, fieldResults, labelImages, reviewQueue, verifications } f
 import { FIELD_NAMES, type FieldName } from "../../lib/db/enums";
 import type { RouterFieldKey } from "../router";
 import { buildFieldReasonText } from "../router/reason-text";
-import { FIELD_LABELS, type GetVerificationDetailResult, type VerificationFieldDetail } from "./types";
+import type { BoldSignal } from "../warning";
+import {
+  FIELD_LABELS,
+  type GetVerificationDetailResult,
+  type VerificationBoldSignalDetail,
+  type VerificationFieldDetail,
+} from "./types";
+
+/** `BoldSignal`'s own three legal values, restated here as a runtime array
+ * — `bold-detect.ts` (TRO-532, out of this ticket's scope to edit) exports
+ * only the TYPE, not a runtime list, so this boundary check owns its own
+ * copy rather than reaching into that module for one. */
+const BOLD_SIGNAL_VALUES: readonly BoldSignal[] = ["bold", "not-bold", "uncertain"];
 
 type ApplicationRow = typeof applications.$inferSelect;
 
@@ -76,6 +88,26 @@ function extractResolverNote(resolverOutput: unknown): string | null {
   if (typeof resolverOutput !== "object" || resolverOutput === null) return null;
   const note = (resolverOutput as Record<string, unknown>).note;
   return typeof note === "string" && note.length > 0 ? note : null;
+}
+
+/**
+ * Reads `verifications.bold_signal` (TRO-533) into the Detail view's own
+ * narrow `VerificationBoldSignalDetail` shape — `signal`/`reason` only,
+ * never the numeric fields (`types.ts`'s own comment on why). `null` for
+ * every shape this boundary does not recognize as a well-formed
+ * `BoldSignalResult`, matching `extractResolverNote`'s same "an untyped
+ * jsonb column is validated at the boundary, never trusted just because
+ * the column exists" discipline (standing rule 13) — a column declared
+ * `jsonb` in `schema.ts` carries no runtime guarantee about what is
+ * actually stored there.
+ */
+function parsePersistedBoldSignal(value: unknown): VerificationBoldSignalDetail | null {
+  if (typeof value !== "object" || value === null) return null;
+  const record = value as Record<string, unknown>;
+  const { signal, reason } = record;
+  if (typeof signal !== "string" || !BOLD_SIGNAL_VALUES.includes(signal as BoldSignal)) return null;
+  if (typeof reason !== "string" || reason.length === 0) return null;
+  return { signal: signal as BoldSignal, reason };
 }
 
 export async function getVerificationDetail(
@@ -160,6 +192,7 @@ export async function getVerificationDetail(
       headlineMessage,
       resolvedBySonnet: verificationRow.resolutionPath === "EXTRACTOR_RESOLVER",
       resolverNote: extractResolverNote(reviewQueueRow?.resolverOutput ?? null),
+      boldSignal: parsePersistedBoldSignal(verificationRow.boldSignal),
       labelImage: {
         url: `/api/label-images/${labelImageRow.id}`,
         width: labelImageRow.widthPx,

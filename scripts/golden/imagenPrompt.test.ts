@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BLANK_LABEL_COLOR_HEX, PROMPT_VERSION, buildBackdropPrompt } from "./imagenPrompt";
+import { BLANK_LABEL_COLOR_HEX, BLANK_LABEL_COLOR_RGB, PROMPT_VERSION, buildBackdropPrompt } from "./imagenPrompt";
 import type { BottleScene } from "../../src/lib/golden-set/bottleReference";
 
 const SCENE: BottleScene = {
@@ -41,5 +41,17 @@ describe("buildBackdropPrompt", () => {
 
   it("exposes a stable prompt version for generationMetadata", () => {
     expect(PROMPT_VERSION).toBe("v1");
+  });
+});
+
+describe("BLANK_LABEL_COLOR_HEX / BLANK_LABEL_COLOR_RGB (TRO-510)", () => {
+  it("parses the hex literal to exactly the RGB literal — the two cannot drift apart silently", () => {
+    const hex = BLANK_LABEL_COLOR_HEX.replace("#", "");
+    const parsed = {
+      r: parseInt(hex.slice(0, 2), 16),
+      g: parseInt(hex.slice(2, 4), 16),
+      b: parseInt(hex.slice(4, 6), 16),
+    };
+    expect(parsed).toEqual(BLANK_LABEL_COLOR_RGB);
   });
 });

@@ -16,12 +16,13 @@ interface HarnessProps {
   multiple?: boolean;
   accept?: string;
   onChange?: () => void;
+  onRejected?: () => void;
 }
 
-function Harness({ disabled = false, multiple = false, accept = "image/jpeg,image/png", onChange }: HarnessProps) {
+function Harness({ disabled = false, multiple = false, accept = "image/jpeg,image/png", onChange, onRejected }: HarnessProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   return (
-    <FileDropField inputRef={inputRef} disabled={disabled} hint="Or drop the photo here." hintId="harness-drop-hint">
+    <FileDropField inputRef={inputRef} disabled={disabled} hint="Or drop the photo here." hintId="harness-drop-hint" onRejected={onRejected}>
       <label htmlFor="harness-input">Test file</label>
       <input
         ref={inputRef}
@@ -51,7 +52,7 @@ describe("FileDropField", () => {
     expect(screen.getByLabelText("Test file")).toHaveAttribute("aria-describedby", "harness-drop-hint");
   });
 
-  it("adds no role and no live region — the native input stays the one accessible control", () => {
+  it("gives the zone itself no role and no live region — the native input stays the one accessible control", () => {
     const { container } = render(<Harness />);
     const zone = dropZone(container);
     expect(zone).not.toHaveAttribute("role");
@@ -100,6 +101,31 @@ describe("FileDropField", () => {
     const input = screen.getByLabelText("Test file") as HTMLInputElement;
     expect(input.files?.length ?? 0).toBe(0);
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("tells the caller when a drop carries nothing this input accepts — the one case no caller can see", () => {
+    // No file is assigned, so no `change` event fires and no caller
+    // handler runs. Without this callback the drop is a silent dead end.
+    const onRejected = vi.fn();
+    const { container } = render(<Harness onRejected={onRejected} />);
+
+    fireEvent.drop(dropZone(container), { dataTransfer: { types: ["Files"], files: [makeFile("application.pdf", "application/pdf")] } });
+
+    expect(onRejected).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call onRejected when a drop is accepted", () => {
+    const onRejected = vi.fn();
+    const { container } = render(<Harness onRejected={onRejected} />);
+
+    fireEvent.drop(dropZone(container), { dataTransfer: { types: ["Files"], files: [makeFile("dropped.jpg", "image/jpeg")] } });
+
+    expect(onRejected).not.toHaveBeenCalled();
+  });
+
+  it("adds no live region of its own — a second one in the same form announces one event twice", () => {
+    const { container } = render(<Harness />);
+    expect(container.querySelectorAll('[role="status"], [aria-live]')).toHaveLength(0);
   });
 
   it("does nothing while disabled — no highlight, no assignment, no change event", () => {

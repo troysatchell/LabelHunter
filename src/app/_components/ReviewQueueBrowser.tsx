@@ -250,7 +250,12 @@ export function ReviewQueueBrowser({ fetchItems = defaultFetchItems }: ReviewQue
                 next to the control that reads the rest — a reviewer must
                 never have to work out that items are missing (TH-R3: no
                 instructions needed; TH-R20: always show the reason). */}
-            <p className="review-queue-more__notice" role="status">
+            {/* No `role="status"`: this line states a standing fact a
+                reviewer reads in place, and the one persistent status
+                line above now owns every announcement. With both live,
+                one "Load more" announced twice at once — the new "Loaded
+                N more items." and this line's own changed count. */}
+            <p className="review-queue-more__notice">
               You are seeing the {phase.items.length} oldest items. More items are waiting.
             </p>
             <button type="button" className="secondary-button" disabled={isLoadingMore || isRefreshing} onClick={loadMore}>

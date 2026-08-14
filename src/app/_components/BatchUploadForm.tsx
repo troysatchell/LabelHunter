@@ -299,7 +299,13 @@ export function BatchUploadForm({ submitPreview = submitBatchPreview, submitStar
                   real change event, so `handleFileInputChange` — the
                   stale-preview reset above — runs untouched (see
                   FileDropField.tsx). */}
-              <FileDropField inputRef={manifestInputRef} disabled={isBusy} hint="Or drop the CSV file here." hintId="batch-manifest-drop-hint">
+              <FileDropField
+                inputRef={manifestInputRef}
+                disabled={isBusy}
+                hint="Or drop the CSV file here."
+                hintId="batch-manifest-drop-hint"
+                onRejected={() => setFormError("That file is not a CSV file. Drop a .csv manifest, or use the file button.")}
+              >
                 <input
                   ref={manifestInputRef}
                   id="batch-manifest"
@@ -321,7 +327,13 @@ export function BatchUploadForm({ submitPreview = submitBatchPreview, submitStar
               <span className="field__hint" id="batch-images-hint">
                 Select every image file, or use the zip option below.
               </span>
-              <FileDropField inputRef={imagesInputRef} disabled={isBusy} hint="Or drop the image files here." hintId="batch-images-drop-hint">
+              <FileDropField
+                inputRef={imagesInputRef}
+                disabled={isBusy}
+                hint="Or drop the image files here."
+                hintId="batch-images-drop-hint"
+                onRejected={() => setFormError("Those files are not label images. Drop JPEG, PNG, WebP, or HEIC files.")}
+              >
                 <input
                   ref={imagesInputRef}
                   id="batch-images"

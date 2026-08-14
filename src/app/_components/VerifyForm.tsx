@@ -56,6 +56,7 @@ type Assist = { status: "idle" } | { status: "reading" } | { status: "note"; mes
 type PrefillKey = "beverageType" | "brandName" | "classType" | "alcoholContentPercent" | "netContents";
 
 export const ASSIST_FAILED_MESSAGE = "LabelHunter could not read the label just now. Fill in the fields yourself.";
+export const ASSIST_DROP_REJECTED_MESSAGE = "That file is not a photo LabelHunter can read. Drop a JPEG, PNG, WebP, or HEIC file.";
 export const ASSIST_NOTHING_READ_MESSAGE = "LabelHunter could not read any fields from this photo. Fill them in yourself.";
 
 export interface VerifyFormProps {
@@ -330,7 +331,16 @@ export function VerifyForm({ submit = submitVerification, extract = requestExtra
               prefill clearing, the seq and phase guards — runs untouched
               (see FileDropField.tsx). Disabled with the input: a verify
               in flight must not gain a new photo by drop either. */}
-          <FileDropField inputRef={fileInputRef} disabled={isLoading} hint="Or drop the photo here." hintId="verify-image-drop-hint">
+          <FileDropField
+            inputRef={fileInputRef}
+            disabled={isLoading}
+            hint="Or drop the photo here."
+            hintId="verify-image-drop-hint"
+            // The assist line is this form's one live region; a
+            // rejected drop speaks through it like every other
+            // assist outcome.
+            onRejected={() => setAssist({ status: "note", message: ASSIST_DROP_REJECTED_MESSAGE })}
+          >
             <input
               ref={fileInputRef}
               id="verify-image"

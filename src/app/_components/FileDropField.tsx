@@ -8,11 +8,20 @@
  * bubbling `change` event (`assignDroppedFiles`), so every existing
  * onChange handler runs unmodified.
  *
- * Deliberately NO role, NO live region, and NO button semantics on the
- * div: the native input inside stays the one accessible control, so
- * assistive tech sees exactly the control it saw before this wrapper
- * existed. Post-drop feedback flows through whatever live region the
- * caller already owns (e.g. `VerifyForm`'s assist line).
+ * Deliberately NO role and NO button semantics on the div: the native
+ * input inside stays the one accessible control, so assistive tech sees
+ * exactly the control it saw before this wrapper existed. Feedback for an
+ * ACCEPTED drop flows through whatever live region the caller already
+ * owns (e.g. `VerifyForm`'s assist line), because the input's `change`
+ * event runs the caller's own handler.
+ *
+ * A fully REJECTED drop is the one case the caller cannot see: no file is
+ * assigned, so no `change` event fires and no caller handler runs. That
+ * silence is a dead end — drop a PDF on the photo field and nothing at
+ * all happens. `onRejected` closes it, and the caller writes the message
+ * into the live region it already owns. This component adds no region of
+ * its own: both callers already have exactly one, and a second region in
+ * the same form is what makes one event announce twice.
  *
  * The hint span gets `id={hintId}` so the caller can tie it to the input
  * with `aria-describedby` — the affordance is described on the control,
@@ -31,6 +40,9 @@ export interface FileDropFieldProps {
   hint: string;
   /** The hint span's id, for the caller's `aria-describedby`. */
   hintId: string;
+  /** Called when a drop carries nothing this input accepts. The caller
+   * says so in its own live region — see this file's header comment. */
+  onRejected?: () => void;
   children: ReactNode;
 }
 
@@ -40,7 +52,7 @@ function dragHasFiles(event: DragEvent<HTMLDivElement>): boolean {
   return Array.from(event.dataTransfer.types).includes("Files");
 }
 
-export function FileDropField({ inputRef, disabled = false, hint, hintId, children }: FileDropFieldProps) {
+export function FileDropField({ inputRef, disabled = false, hint, hintId, onRejected, children }: FileDropFieldProps) {
   const [isActive, setActive] = useState(false);
 
   function handleDragOver(event: DragEvent<HTMLDivElement>) {
@@ -65,9 +77,10 @@ export function FileDropField({ inputRef, disabled = false, hint, hintId, childr
     if (disabled) return;
     const input = inputRef.current;
     if (!input) return;
-    // A drop with zero accepted files does nothing — the helper never
-    // clears an existing valid selection (see file-drop.ts).
-    assignDroppedFiles(input, event.dataTransfer.files);
+    // Zero accepted files leaves any existing valid selection alone (see
+    // file-drop.ts) — and fires no `change` event, so the caller hears
+    // nothing unless this tells it.
+    if (assignDroppedFiles(input, event.dataTransfer.files) === 0) onRejected?.();
   }
 
   return (

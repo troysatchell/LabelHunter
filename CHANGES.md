@@ -97,6 +97,91 @@ read differently after the next merge, by design, not by drift. This entry cover
 rounds on the same branch — two local review rounds and this PR-review resync — folded into
 one account rather than left as separate, partly-stale write-ups (lessons.md rule 17).
 
+## TRO-580 — verify route now settles real spend on a validation-failed extraction (2026-08-13)
+
+**The gap (TH-R6).** `/api/verify` reserves budget, then calls Haiku, then settles the
+reservation. On a genuine extraction failure, the route settled the reservation with a
+hardcoded 0. The hardcoded 0 refunded the full reservation, every time. A full refund was
+correct for a transport failure — no response at all. A full refund was wrong for a
+`HaikuExtractionError`. The model did respond. `parseExtractionResponse` rejected the
+response's shape. The paid call already happened. Every malformed-response extraction
+under-counted the daily budget. TRO-576 found and fixed the identical gap in `/api/extract`
+first. This ticket mirrors that fix in `/api/verify`.
+
+**The fix.** The fix is in `src/app/api/verify/route.ts`, inside the `Promise.all` catch
+block around the Haiku call. That block now reads `usageCapture.takeLastUsage()` before it
+settles the reservation — the same read the success path already does — instead of passing
+a hardcoded 0. A model response that fails validation still sets this usage before the
+throw: `client.messages.create` resolves first, and `parseExtractionResponse` runs after,
+so only `parseExtractionResponse` can throw. A genuine transport failure never reaches
+`client.messages.create`. `takeLastUsage()` still answers `null` in that case, so the route
+still refunds the reservation in full — the same behavior as before this ticket.
+
+**Confirmed against the post-TRO-566 route.** TRO-566 changed this route's budget calls.
+The old plain `checkBudget`/`recordSpend` pair became an atomic `reserveBudget`/
+`settleBudget` reservation. The gap TRO-580 fixes was still present in the merged code: the
+catch block settled with a hardcoded 0, no matter what usage the wrapped client had already
+captured.
+
+**Confirmed.** New regression test in `src/app/api/verify/route.test.ts`: "settles the REAL
+captured usage when the model responded but its output failed validation (TRO-580)". A fake
+`extractLabel` makes one call through the usage-capture wrapper, then throws
+`HaikuExtractionError`. The test checks that `settleBudget`'s real-cost argument equals
+`haikuCallCostUsd`'s own computed cost for that usage — the SAME pricing function the route
+itself calls, not a second copy of the formula. Red first: before the fix, the test failed
+with `expected 0 to be greater than 0`, confirming the old hardcoded-0 path. Green after the
+fix. Full `route.test.ts` suite: 37 tests, all passing, including the pre-existing
+transport-failure test (`records nothing when the Haiku call itself fails`) — this confirms
+the null-usage-still-settles-0 path did not change. `pnpm typecheck` is clean.
+
+**How to run.** `pnpm vitest run src/app/api/verify/route.test.ts`.
+
+**Rollback.** Revert the PR. The route goes back to refunding every extraction failure in
+full, including a validation failure that followed a real, paid response.
+
+## TRO-582 — a dedicated image box on a grid, and the warning card shows the real texts (2026-08-13)
+
+**Troy's direction:** "make a dedicated image box, use a grid." Troy also reported earlier
+that the warning row's application-side placeholder ("the statutory warning text, 27 CFR
+part 16") read like missing application data.
+
+**The layout.** Both detail surfaces (`DetailView`, `ReviewItemDetail`) now share one CSS
+Grid (`.detail-layout`, 2fr/3fr `minmax` columns). The single-column collapse below 48rem is
+declared explicitly. The label image lives in a shared `LabelImageFigure` component. It is a
+quiet well on the alt background. `object-fit: contain` with a capped height means a tall
+label never pushes the fields below the fold and is never cropped. The persisted original
+filename renders as a functional caption. The box is sticky in its column on desktop, so the
+artwork stays in view while the reviewer scrolls the field rows they check against it.
+The design read follows the design-taste discipline: this is trust-first product UI, so the
+layout uses a plain grid and adds no decoration.
+
+**The warning card.** The warning row now shows the real texts on all three surfaces
+(`ResultsChecklist`, `DetailView`, `ReviewItemDetail`). The transcription renders with its
+deviating words marked. The statute renders verbatim under "What TTB requires" — one source,
+the comparator's own `CANONICAL_WARNING_TEXT`, never a second copy. The marks come from
+`diffWords` (`src/app/_lib/word-diff.ts`), an LCS word alignment. The alignment is
+display-only: the verdict and reason still come from the comparator (standing rule 11).
+Marks use background tint plus weight — never color alone. Required words the label drops
+with no replacement surface as an explicit `[missing: …]` indicator where they belong. A
+substitution gets no second marker: the replacement's own mark carries the signal. Review
+round 1 caught this class — an omitted clause was previously invisible. Casing
+deviations are deliberately NOT marked by the diff. The caps check's reason line already
+carries them, and marking every token of a title-case warning would bury the wording
+signal.
+
+**Rollback.** Revert the PR. The surfaces return to the flex layout, the bare image, and
+the placeholder citation.
+
+**Confirmed.** The branch adds 15 tests. `word-diff` has 10: the case-10 paraphrase marks
+exactly "pregnant, consume, due, to"; a verbatim warning marks nothing; a title-case warning
+marks nothing; the three omission scenarios pass. `WarningTranscription` has 3 and
+`LabelImageFigure` has 2. I updated one superseded DetailView assertion: the statute itself
+replaces the placeholder citation, and the test restates the standing-rule-11 boundary. All
+389 app tests pass, including the TRO-578 token gate and the contrast test. I verified the
+change live: one real verify call against the local app with the case-10 image rendered the
+grid, the sticky image box, and the marked paraphrase. The PR carries the screenshot.
+`pnpm typecheck` and `pnpm lint` are clean.
+
 ## TRO-581 — a deterministic single-channel warning violation fails outright (2026-08-13)
 
 **Troy's ruling (CP-2 amendment, recorded verbatim in

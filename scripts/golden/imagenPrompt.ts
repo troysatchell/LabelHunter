@@ -1,6 +1,6 @@
 /**
  * Prompt compiler for the realistic-corpus track (design doc §3,
- * docs/superpowers/specs/2026-08-11-realistic-corpus-gemini-design.md). The
+ * docs/design/2026-08-11-realistic-corpus-gemini-design.md). The
  * single place that turns a bottle reference's data (scene, camera
  * condition) into the narrative prose Gemini actually reads. A bottle
  * JSON never carries its own prompt phrasing — this file is the only

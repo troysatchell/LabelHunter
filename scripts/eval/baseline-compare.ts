@@ -1,6 +1,6 @@
 /**
  * The eval harness's regression decision (LH-030 / TRO-470, rewritten by
- * TRO-561) — gate G8 (`scripts/factory/gate.sh`) fails on a live-mode
+ * TRO-561) — the evidence gate fails on a live-mode
  * comparison carrying any problem, and on a cheap-mode one carrying an
  * `"accuracy-below-band"` or `"coverage-mismatch"` problem (see
  * `check.ts`'s own `runCheap`/`runLive` for exactly where that mode split

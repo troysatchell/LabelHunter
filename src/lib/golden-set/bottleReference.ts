@@ -1,7 +1,7 @@
 /**
  * A real bottle reference photo Troy supplies for the realistic-corpus
  * track (design doc §3,
- * docs/superpowers/specs/2026-08-11-realistic-corpus-gemini-design.md). One
+ * docs/design/2026-08-11-realistic-corpus-gemini-design.md). One
  * hand-authored JSON file per photo, committed alongside it under
  * assets/golden/references/. Data only — never its own prompt phrasing.
  * scripts/golden/imagenPrompt.ts is the single place that turns this data

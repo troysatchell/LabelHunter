@@ -321,11 +321,11 @@ function printReportSummary(report: VarianceReport): void {
 
 async function runLive(args: VarianceCliArgs): Promise<void> {
   if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error("variance.ts: ANTHROPIC_API_KEY is not set. source .factory-env in a factory worktree, or set it in .env.local.");
+    throw new Error("variance.ts: ANTHROPIC_API_KEY is not set. Set it in .env.local.");
   }
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
-    throw new Error("variance.ts: DATABASE_URL is not set. source .factory-env in a factory worktree, or set it in .env.local.");
+    throw new Error("variance.ts: DATABASE_URL is not set. Set it in .env.local.");
   }
 
   const manifest = loadGoldenSetManifest();

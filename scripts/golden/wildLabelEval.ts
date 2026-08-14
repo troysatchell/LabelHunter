@@ -205,11 +205,11 @@ function printCaseLine(outcome: CaseRunOutcome, index: number, total: number): v
 
 async function main(): Promise<void> {
   if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error("wildLabelEval: ANTHROPIC_API_KEY is not set. source .factory-env in a factory worktree, or set it in .env.local.");
+    throw new Error("wildLabelEval: ANTHROPIC_API_KEY is not set. Set it in .env.local.");
   }
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
-    throw new Error("wildLabelEval: DATABASE_URL is not set. source .factory-env in a factory worktree, or set it in .env.local.");
+    throw new Error("wildLabelEval: DATABASE_URL is not set. Set it in .env.local.");
   }
 
   const candidates = loadWildLabelCandidates();

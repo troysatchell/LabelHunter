@@ -1,6 +1,6 @@
 /**
  * Tests for build.ts's rendered+ai-backdrop branch (Task 6,
- * docs/superpowers/specs/2026-08-11-realistic-corpus-gemini-design.md).
+ * docs/design/2026-08-11-realistic-corpus-gemini-design.md).
  * The render-and-degrade path (rendered/rendered+degraded) is exercised
  * end-to-end by `pnpm golden:build` itself and by render.test.ts /
  * degrade.test.ts; this file covers only what's new here.

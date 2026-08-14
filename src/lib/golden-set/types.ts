@@ -140,7 +140,7 @@ export interface GoldenExpectedResult {
 /**
  * The three photographic conditions Gemini generates for the
  * realistic-corpus track (design doc §3,
- * docs/superpowers/specs/2026-08-11-realistic-corpus-gemini-design.md).
+ * docs/design/2026-08-11-realistic-corpus-gemini-design.md).
  * Baked into the generation prompt itself, not a `degrade.ts` transform —
  * these are properties of the Gemini-generated photo, not a deterministic
  * sharp filter applied afterward.
@@ -149,7 +149,7 @@ export type CameraCondition = "steady" | "motion-blur" | "camera-shake";
 
 /**
  * How a case's image will be produced. See
- * `docs/superpowers/specs/2026-08-10-golden-label-image-gen-design.md` §2 —
+ * `docs/design/2026-08-10-golden-label-image-gen-design.md` §2 —
  * the render-first hybrid: a spec-driven renderer guarantees exact text,
  * Imagen adds realism only where exact text does not matter.
  */

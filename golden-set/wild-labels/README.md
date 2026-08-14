@@ -1,6 +1,6 @@
 # Wild labels (LH-027 / TRO-530)
 
-Design doc §5, job 2 (`docs/superpowers/specs/2026-08-10-golden-label-image-gen-design.md`):
+Design doc §5, job 2 (`docs/design/2026-08-10-golden-label-image-gen-design.md`):
 about 5 label images generated whole by Gemini, no bottle, no backdrop, no compositing — just
 varied label artwork. Fictional brands only.
 

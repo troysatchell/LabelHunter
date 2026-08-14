@@ -1,6 +1,6 @@
 /**
  * The eval harness's regression gate (LH-030 / TRO-470, TH-R17, TH-R19,
- * PRD §6). `pnpm eval:check` — gate G8 in `scripts/factory/gate.sh`.
+ * PRD §6). `pnpm eval:check` — gate G8 in the evidence gate.
  *
  * TWO MODES, and why the bare command is cheap by default.
  *
@@ -182,11 +182,11 @@ function printComparisonResult(mode: "live" | "cheap", result: RegressionCheckRe
 
 async function runLive(args: ReturnType<typeof parseEvalArgs>): Promise<void> {
   if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error("check.ts: ANTHROPIC_API_KEY is not set. source .factory-env in a factory worktree, or set it in .env.local.");
+    throw new Error("check.ts: ANTHROPIC_API_KEY is not set. Set it in .env.local.");
   }
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
-    throw new Error("check.ts: DATABASE_URL is not set. source .factory-env in a factory worktree, or set it in .env.local.");
+    throw new Error("check.ts: DATABASE_URL is not set. Set it in .env.local.");
   }
 
   const manifest = loadGoldenSetManifest();

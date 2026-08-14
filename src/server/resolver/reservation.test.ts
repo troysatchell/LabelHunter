@@ -1,6 +1,6 @@
 /**
  * The resolver's atomic reservation against a real Postgres database —
- * this worktree's own, via `.factory-env` (TRO-506 / TRO-512, CP-3 §3.3).
+ * your own local one, via `.env.local` (TRO-506 / TRO-512, CP-3 §3.3).
  *
  * No mocked database anywhere in this file. The whole claim under test is
  * that Postgres serializes one `INSERT ... ON CONFLICT` statement so two

@@ -1,6 +1,6 @@
 /**
  * Prompt compiler for the wild-label track (LH-027 / TRO-530, image-gen
- * design doc §5, job 2, `docs/superpowers/specs/2026-08-10-golden-label-
+ * design doc §5, job 2, `docs/design/2026-08-10-golden-label-
  * image-gen-design.md`). Job 1 (backdrops, `imagenPrompt.ts`) composites a
  * renderer's exact-text label onto a photo. Job 2 has no renderer step at
  * all: Gemini draws the WHOLE label — brand, class/type, ABV, net

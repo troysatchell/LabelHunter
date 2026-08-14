@@ -1,7 +1,7 @@
 /**
  * Generates realistic-corpus backdrop photos via Gemini 3.1 Flash Image
  * (design doc §4/§5,
- * docs/superpowers/specs/2026-08-11-realistic-corpus-gemini-design.md).
+ * docs/design/2026-08-11-realistic-corpus-gemini-design.md).
  * For every `(bottle reference, scene, cameraCondition)` combination,
  * builds a prompt (imagenPrompt.ts), calls Gemini with the bottle's real
  * photo as a reference image, detects the blank label region
@@ -836,9 +836,9 @@ export async function main(): Promise<void> {
     // tsx does not load .env.local on its own (confirmed: a bare tsx run
     // with only a .env.local present leaves process.env unset) — pointing
     // at it here would be advice that does not work. Name the two things
-    // that do: source .factory-env, or export the variable directly.
+    // that do: set it in .env.local, or export the variable directly.
     throw new Error(
-      "imagen: GOOGLE_API_KEY is not set. Source .factory-env in a factory worktree, or export " +
+      "imagen: GOOGLE_API_KEY is not set. Set it in .env.local, or export " +
         "GOOGLE_API_KEY before running pnpm golden:imagen.",
     );
   }

@@ -5,8 +5,8 @@
  * runs on its own (same convention as `../batch-queue/test-support.ts` and
  * `../resolver/test-support.ts`).
  *
- * Every fixture writes through the real worktree Postgres database
- * (`../../lib/db`'s `db`, `DATABASE_URL` from `.factory-env`). Unlike the
+ * Every fixture writes through the real local Postgres database
+ * (`../../lib/db`'s `db`, `DATABASE_URL` from `.env.local`). Unlike the
  * batch-queue fixtures, nothing here sets `batchJobId` — every row is a
  * genuine single-label-originated row, `batchJobId: null` throughout,
  * exactly what `src/app/api/verify/route.ts` itself produces.

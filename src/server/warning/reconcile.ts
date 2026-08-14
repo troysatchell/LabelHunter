@@ -104,9 +104,8 @@ export type OcrChannelInput = { available: true; text: string; confidence: numbe
  * over 40 or 45 — that gap is a real, named limit, not a hidden one. See
  * `docs/checkpoints/cp2-warning-subsystem.md`'s dated amendment after
  * §4.5 for the same reasoning with the full sweep table, and
- * `docs/diagnostics/2026-08-12-verdict-miss-triage.md` §3B and
- * `docs/diagnostics/2026-08-12-fix-tickets.md` S2 for the diagnosis this
- * measurement answers.
+ * `docs/diagnostics/2026-08-12-verdict-miss-triage.md` §3B for the
+ * diagnosis this measurement answers.
  */
 export const OCR_CONFIDENCE_FLOOR = 50;
 

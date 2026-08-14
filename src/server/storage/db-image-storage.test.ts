@@ -152,7 +152,7 @@ describe("cross-process round trip through Postgres (TRO-518)", () => {
   beforeEach(() => {
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString) {
-      throw new Error("DATABASE_URL is not set — source .factory-env before running this suite.");
+      throw new Error("DATABASE_URL is not set — see .env.local.example before running this suite.");
     }
     // Two INDEPENDENT pools against the SAME DATABASE_URL — not two
     // references to `../../lib/db`'s one shared pool. This is what makes

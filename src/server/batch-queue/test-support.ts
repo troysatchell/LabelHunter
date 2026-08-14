@@ -5,8 +5,8 @@
  * pattern (`vitest.config.ts`), so this module carries no test cases and
  * never runs on its own (same convention as `../resolver/test-support.ts`).
  *
- * Every fixture writes through the real worktree Postgres database
- * (`../../lib/db`'s `db`, `DATABASE_URL` from `.factory-env`) — this
+ * Every fixture writes through the real local Postgres database
+ * (`../../lib/db`'s `db`, `DATABASE_URL` from `.env.local`) — this
  * ticket's whole point is proving the claim/completion-guard SQL against
  * real Postgres locking, not a mock. `cleanupBatchJobFixture` deletes the
  * one `batch_jobs` row; every FK in `../../lib/db/schema.ts` is

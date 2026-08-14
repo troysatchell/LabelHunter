@@ -8,10 +8,9 @@
 // after it — like --reporter and --outputFile — are silently ignored and no
 // report file is written, even though the run itself appears to succeed.
 //
-// The factory gate and CI both invoke exactly
-// `pnpm test -- --reporter=json --outputFile=<path>` and cannot be edited
-// from this ticket, so the fix lives here: strip one leading "--" before
-// handing argv to vitest.
+// A caller may invoke exactly
+// `pnpm test -- --reporter=json --outputFile=<path>`, so the fix lives
+// here: strip one leading "--" before handing argv to vitest.
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 

@@ -1,6 +1,6 @@
 /**
- * `insertReviewQueueEntry` against a real Postgres database — this
- * worktree's own, via `.factory-env` (DATABASE_URL). No mocking here: the
+ * `insertReviewQueueEntry` against a real Postgres database — your own
+ * local one, via `.env.local` (DATABASE_URL). No mocking here: the
  * whole point is to prove the unique-per-verification constraint and the
  * jsonb round-trip actually work against the schema TRO-457 shipped, not
  * against an assumption about how Drizzle would behave.

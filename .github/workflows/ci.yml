@@ -1,21 +1,14 @@
-# CI — the merge gate the ticket factory depends on.
+# CI — the merge gate for LabelHunter.
 #
-# STATUS: generated at factory build time (2026-08-10), NEVER YET EXECUTED — a
-# workflow file is a hypothesis until a real PR runs it. The scaffold ticket's
-# DoD includes opening a PR and watching this pass for real, then recording
-# `ciActuallyRan: true` in factory/config.yaml.
+# Two jobs run on every pull request and every push to main:
 #
-# Design notes carried from the reference factory:
-# - Test steps run with continue-on-error so the REAL check — testdiff.mjs
-#   comparing failure IDENTITIES against factory/quarantine.json — always runs
-#   and names which test broke. A plain red test step would skip the diff and
-#   report failure without saying what regressed.
-# - The quarantine baseline is read from the checked-out ref of the BASE, via
-#   the gate's own git-show pattern where applicable; here the job checks out
-#   the PR merge ref, and testdiff reads factory/quarantine.json from the base
-#   branch checkout step below.
-# - Pre-scaffold, the repo has no package.json; jobs no-op cleanly so docs-only
-#   PRs are not blocked on machinery that has nothing to check.
+# - `verify` — typecheck, lint, golden-set checks, build, migrate, unit tests,
+#   and the eval-harness regression check.
+# - `e2e` — the Playwright suite against a fake Anthropic server.
+#
+# Neither job needs an ANTHROPIC_API_KEY, and neither job spends real API money.
+# Every model call is faked or read from a committed artifact. See each step's
+# own comment for how.
 
 name: ci
 
@@ -46,40 +39,24 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://labelhunter:labelhunter_ci_password@localhost:5432/labelhunter_ci
-      FACTORY_TICKET: ci
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
 
-      - name: Detect scaffold
-        id: scaffold
-        run: |
-          if [ -f package.json ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::pre-scaffold repo — nothing to verify yet"
-          fi
-
       - name: Setup pnpm
-        if: steps.scaffold.outputs.present == 'true'
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - name: Setup node
-        if: steps.scaffold.outputs.present == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: pnpm
 
       - name: Install
-        if: steps.scaffold.outputs.present == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Install Playwright browsers
-        if: steps.scaffold.outputs.present == 'true'
         # `pnpm install` does not download Playwright's browser binaries — a
         # separate, explicit install step is required. Without it, every test
         # that launches a real Chromium (scripts/golden/build.test.ts,
@@ -89,25 +66,20 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Typecheck
-        if: steps.scaffold.outputs.present == 'true'
         run: pnpm typecheck
 
       - name: Lint
-        if: steps.scaffold.outputs.present == 'true'
         run: pnpm lint
 
       - name: Golden set verify
-        if: steps.scaffold.outputs.present == 'true'
         # LH-006 / TRO-499: manifest schema, image existence both directions,
         # rubric vector coverage. Fast, metadata-only — no browser, no
         # network, no image-generation API call (TH-R7's constrained-network
-        # posture). A separate, clearly labeled step rather than folded into
-        # the big "Unit tests" JSON blob below, so a golden-set regression
-        # reads directly in the job log instead of needing the testdiff.
+        # posture). A separate, clearly labeled step, so a golden-set
+        # regression reads directly in the job log.
         run: pnpm golden:verify
 
       - name: Golden set render smoke
-        if: steps.scaffold.outputs.present == 'true'
         # LH-006 / TRO-499, design doc §7: "render one label headlessly,
         # then run verify.ts." Confirms headless Chromium and the renderer's
         # embedded fonts actually work on THIS runner — no network call,
@@ -118,40 +90,13 @@ jobs:
         run: pnpm golden:render-smoke
 
       - name: Build
-        if: steps.scaffold.outputs.present == 'true'
         run: pnpm build
 
       - name: Migrate
-        if: steps.scaffold.outputs.present == 'true'
         run: pnpm db:migrate
 
-      - name: Unit tests (JSON report)
-        if: steps.scaffold.outputs.present == 'true'
-        # continue-on-error so the identity diff below ALWAYS runs and names
-        # the break; the diff step is what fails the job.
-        continue-on-error: true
-        run: pnpm test -- --reporter=json --outputFile="$RUNNER_TEMP/unit-tests.json"
-
-      - name: Materialize base quarantine
-        if: steps.scaffold.outputs.present == 'true' && github.event_name == 'pull_request'
-        # Read the baseline from the BASE ref, never the PR branch — otherwise
-        # a branch can widen its own quarantine and pass.
-        run: |
-          git fetch origin "${{ github.base_ref }}" --depth 1
-          git show "origin/${{ github.base_ref }}:factory/quarantine.json" > "$RUNNER_TEMP/quarantine-base.json"
-
-      - name: Use working-tree quarantine (push builds)
-        if: steps.scaffold.outputs.present == 'true' && github.event_name != 'pull_request'
-        run: cp factory/quarantine.json "$RUNNER_TEMP/quarantine-base.json"
-
-      - name: Regression check (failure identities vs baseline)
-        if: steps.scaffold.outputs.present == 'true'
-        run: |
-          node scripts/factory/testdiff.mjs \
-            --suite unit \
-            --current "$RUNNER_TEMP/unit-tests.json" \
-            --baseline "$RUNNER_TEMP/quarantine-base.json" \
-            --repo-root "$GITHUB_WORKSPACE"
+      - name: Unit tests
+        run: pnpm test
 
       - name: Eval harness not regressed
         # TRO-470 / LH-030: `pnpm eval:check` with no flags makes NO live
@@ -164,52 +109,31 @@ jobs:
         # sweep — the re-baseline protocol, `pnpm eval:variance -- --live
         # --full --repeats=3 --establish-baseline` (TRO-561; extends the
         # eval:variance sweep rather than a second cascade path) — is a
-        # deliberate, human-or-agent-invoked step that refreshes the
-        # committed report/baseline band together; this job only checks
-        # that the last committed refresh still holds. TRO-561 also made the
-        # baseline a K-repeat BAND, not one run's point — the floor is the
-        # band's own measured minimum, and a corpus edit alone (no code
-        # regression) reports as its own "stale-baseline" problem class,
-        # a loud warning in this cheap mode rather than a false-positive
-        # "regressed" failure (see baseline-compare.ts's own module
-        # comment). Same convention TRO-499 already set for "Golden set
-        # verify"/"Golden set render smoke" above: no live call, no
-        # network. See CHANGES.md's TRO-470 and TRO-561 entries for the
-        # full reasoning and the alternatives each design rejected.
-        if: steps.scaffold.outputs.present == 'true'
-        run: |
-          if node -e 'const p=require("./package.json"); process.exit(p.scripts && p.scripts["eval:check"] ? 0 : 1)'; then
-            pnpm eval:check
-          else
-            echo "::notice::no eval:check script yet (lands with the eval-harness ticket)"
-          fi
+        # deliberate, human-invoked step that refreshes the committed
+        # report/baseline band together; this job only checks that the last
+        # committed refresh still holds. TRO-561 also made the baseline a
+        # K-repeat BAND, not one run's point — the floor is the band's own
+        # measured minimum, and a corpus edit alone (no code regression)
+        # reports as its own "stale-baseline" problem class, a loud warning
+        # in this cheap mode rather than a false-positive "regressed"
+        # failure (see baseline-compare.ts's own module comment).
+        run: pnpm eval:check
 
-      - name: Upload artifacts
-        if: always() && steps.scaffold.outputs.present == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: verify-artifacts
-          path: |
-            ${{ runner.temp }}/unit-tests.json
-          if-no-files-found: ignore
-
-  # TRO-522: pnpm test:e2e (the Playwright suite, TRO-479) as its own,
-  # separately-named check — never folded into "verify"'s G4 unit-test
-  # step. Two independent sources named this gap before this job existed:
-  # TRO-479's own agent, and CodeRabbit's post-merge review. This job
-  # reproduces the same worker + fake-Anthropic-server lifecycle
-  # playwright.config.ts already manages locally (its own `webServer`
-  # array starts the fake model server, the Next.js app, and the batch
-  # worker; see that file for how each process finds the others).
-  #
-  # E2E_LIVE is never set here, on purpose. playwright.config.ts treats an
-  # unset E2E_LIVE as "point every outbound Anthropic call at
-  # scripts/e2e/fake-anthropic-server.ts" — this job spends no real API
-  # money and needs no ANTHROPIC_API_KEY. E2E_LIVE=1 stays a deliberate,
-  # human- or agent-invoked opt-in, run locally, never automatic here.
   e2e:
     name: e2e
     runs-on: ubuntu-latest
+    # TRO-522: pnpm test:e2e (the Playwright suite, TRO-479) as its own,
+    # separately-named check — never folded into the unit-test step above.
+    # This job reproduces the same worker + fake-Anthropic-server lifecycle
+    # playwright.config.ts already manages locally (its own `webServer`
+    # array starts the fake model server, the Next.js app, and the batch
+    # worker; see that file for how each process finds the others).
+    #
+    # E2E_LIVE is never set here, on purpose. playwright.config.ts treats an
+    # unset E2E_LIVE as "point every outbound Anthropic call at
+    # scripts/e2e/fake-anthropic-server.ts" — this job spends no real API
+    # money and needs no ANTHROPIC_API_KEY. E2E_LIVE=1 stays a deliberate,
+    # human-invoked opt-in, run locally, never automatic here.
     services:
       # TRO-562: pinned by digest — see the "verify" job's postgres service
       # comment above for why Dependabot does not track this one.
@@ -227,40 +151,24 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://labelhunter:labelhunter_ci_password@localhost:5432/labelhunter_ci
-      FACTORY_TICKET: ci
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
 
-      - name: Detect scaffold
-        id: scaffold
-        run: |
-          if [ -f package.json ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::pre-scaffold repo — nothing to verify yet"
-          fi
-
       - name: Setup pnpm
-        if: steps.scaffold.outputs.present == 'true'
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - name: Setup node
-        if: steps.scaffold.outputs.present == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: pnpm
 
       - name: Install
-        if: steps.scaffold.outputs.present == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Install Playwright browsers
-        if: steps.scaffold.outputs.present == 'true'
         # Same requirement as the "verify" job's own copy of this step
         # (see its comment): Chromium ships as a separate download `pnpm
         # install` never fetches, and `--with-deps` also installs the
@@ -268,7 +176,6 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Migrate
-        if: steps.scaffold.outputs.present == 'true'
         # The app and worker processes playwright.config.ts's webServer
         # starts below both need a migrated schema to serve real
         # requests — same command the "verify" job runs before its own
@@ -276,7 +183,6 @@ jobs:
         run: pnpm db:migrate
 
       - name: E2E suite (fake Anthropic API — default, no live spend)
-        if: steps.scaffold.outputs.present == 'true'
         # playwright.config.ts's own webServer entries do the rest: build
         # + start the Next.js app, start the batch worker, and (since
         # E2E_LIVE is unset above) start scripts/e2e/fake-anthropic-server.ts
@@ -286,7 +192,7 @@ jobs:
         run: pnpm test:e2e
 
       - name: Upload Playwright artifacts
-        if: always() && steps.scaffold.outputs.present == 'true'
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-artifacts

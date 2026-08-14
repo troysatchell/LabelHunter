@@ -35,8 +35,8 @@ import type { VerifyErrorResponse, VerifySuccessResponse } from "./types";
 
 // This suite makes NO live Anthropic call — every Anthropic response is a
 // canned `makeMockMessage` (same pattern as
-// `src/server/extractor/index.test.ts`). It DOES use the real worktree
-// Postgres database (`DATABASE_URL`, sourced from `.factory-env`) to assert
+// `src/server/extractor/index.test.ts`). It DOES use the real local
+// Postgres database (`DATABASE_URL`, from `.env.local`) to assert
 // persistence — TRO-465's brief calls for this explicitly — and every saved
 // image (TRO-518: `label_image_blobs`, in that same database) is deleted in
 // `afterEach` alongside its `applications` row.

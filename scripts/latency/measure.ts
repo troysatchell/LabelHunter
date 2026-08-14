@@ -7,8 +7,7 @@
  * extraction call against the Anthropic API — never mocked. TH-R2 exists to
  * produce an honest measured number (CLAUDE.md: "never fabricate a
  * number"); a mocked client would answer a different, useless question.
- * `ANTHROPIC_API_KEY` and `DATABASE_URL` must be set — `source .factory-env`
- * in a factory worktree.
+ * `ANTHROPIC_API_KEY` and `DATABASE_URL` must be set in `.env.local`.
  *
  * **What this measures.** `handleVerifyRequest` — the exact function
  * `src/app/api/verify/route.ts`'s `POST` calls — from a fully-formed
@@ -573,16 +572,16 @@ async function main(): Promise<void> {
 
   if (boundary === "in-process" && !process.env.ANTHROPIC_API_KEY) {
     throw new Error(
-      "measure.ts: ANTHROPIC_API_KEY is not set. source .factory-env in a factory worktree, " +
-        "or set it in .env.local before running pnpm latency:check. (Not required for --url " +
+      "measure.ts: ANTHROPIC_API_KEY is not set. Set it in .env.local " +
+        "before running pnpm latency:check. (Not required for --url " +
         "mode — the target server holds its own key, not this script.)",
     );
   }
   const connectionString = process.env.DATABASE_URL;
   if (boundary === "in-process" && !connectionString) {
     throw new Error(
-      "measure.ts: DATABASE_URL is not set. source .factory-env in a factory worktree, " +
-        "or set it in .env.local before running pnpm latency:check.",
+      "measure.ts: DATABASE_URL is not set. Set it in .env.local " +
+        "before running pnpm latency:check.",
     );
   }
 

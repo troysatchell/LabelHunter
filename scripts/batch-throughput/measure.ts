@@ -2,8 +2,8 @@
  * Measures REAL batch throughput against a live local LabelHunter
  * instance (TRO-544 / LH-039, PRD §3.8, TH-R4).
  *
- * Run these commands in three separate terminals. Source `.factory-env`
- * first, or keep `.env.local` present for a plain checkout.
+ * Run these commands in three separate terminals. Keep `.env.local`
+ * present first.
  *
  *   1. pnpm batch:fixture     # builds var/batch-fixture/{manifest.csv,images.zip}
  *   2. pnpm dev               # terminal A — the web app
@@ -375,7 +375,7 @@ async function main(): Promise<void> {
   // connect with default, almost certainly wrong, connection parameters).
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
-    throw new Error("measure.ts: DATABASE_URL is not set. source .factory-env in a factory worktree, or set it in .env.local before running pnpm batch:throughput.");
+    throw new Error("measure.ts: DATABASE_URL is not set. Set it in .env.local before running pnpm batch:throughput.");
   }
   // readCostMeans() itself throws a clear error for a missing or malformed
   // eval-report.json, or one with no resolver calls to average — running
@@ -588,8 +588,8 @@ async function main(): Promise<void> {
         "This run's own per-call token usage was not captured — the batch worker has no usage-capturing seam today.",
       "workerConcurrency provenance is recorded in workerConcurrency.source: an explicitly set environment variable is an " +
         "observation of this script's own environment; a scripts/batch-worker/run.ts default is a configured assumption, not an " +
-        "observation. Either way, the separate worker process is assumed to match only because both terminals sourced the " +
-        "same environment configuration (.factory-env, or .env.local for a plain checkout).",
+        "observation. Either way, the separate worker process is assumed to match only because both terminals read the " +
+        "same environment configuration (.env.local).",
       "This ran on a local dev workstation, not a deployed Render instance. Do not quote these figures as deployed throughput.",
     ],
   };

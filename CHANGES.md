@@ -4,6 +4,41 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-555 — golden-set loader: a warning-absent case must force all three formatting flags to false (2026-08-13)
+
+**The gap.** `GoldenLabelFields` carries three government-warning formatting flags:
+`governmentWarningPrefixAllCaps`, `governmentWarningPrefixBold`, and `governmentWarningBodyBold`.
+Each flag's own doc comment states the same rule: false when the warning is absent. The loader
+checked each flag's type. It did not check that rule. A case could set
+`governmentWarningPresent: false` and `governmentWarningPrefixBold: true` at the same time. A
+formatting claim about text that is not on the label makes no sense. TRO-527 added the two bold
+flags. It left the same gap already present for `governmentWarningPrefixAllCaps`. Fixing only the
+two new flags would have left the loader enforcing the rule for two flags, not three. That is an
+inconsistent boundary. This ticket fixes all three flags together.
+
+**The fix.** `loader.ts` adds a new function: `checkWarningAbsentFlags`. The check runs only when
+`governmentWarningPresent` checks out as the boolean `false`. When it runs, all three formatting
+flags must equal `false` too. Two of the three flags also allow `"unknown"` elsewhere in the
+schema. Here, only `false` passes. The check runs only after each flag's own type check passes.
+This order matters: a malformed flag reports one clear error about itself. It does not also
+trigger a second, confusing error about a value the loader already knows is wrong.
+
+This is executable code, not a comment. `loader.test.ts` proves it several ways:
+
+- Each of the three flags fails validation alone, set to `true`.
+- The two flags that allow `"unknown"` also fail validation set to `"unknown"`.
+- All three flags fail together in one manifest, and the loader reports all three problems in one pass.
+- A warning-present case with all three flags `true` still loads. The check does not fire when it should not.
+- Both real missing-warning cases, `case-12-missing-warning-spirits` and `case-13-missing-warning-wine`, still load. Their flags were already `false`.
+
+**Verify.** Run `pnpm vitest run src/lib/golden-set/loader.test.ts`. All 61 tests pass, 6 of them
+new. Red-first check: before the fix, the 6 new tests failed. `validateManifest` accepted the
+invalid flag combination instead of throwing.
+
+
+
+
+
 ## TRO-530 — LH-027 · wild AI-generated labels, staged pending Troy's review (2026-08-13)
 
 Advances TH-R12. Design doc §5, job 2: about 5 labels Gemini draws whole, no bottle, no

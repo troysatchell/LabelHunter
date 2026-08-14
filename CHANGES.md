@@ -41,8 +41,15 @@ JSON out of `assets/golden/references/`. Paid-spend safety, which the ticket cal
 worth fixing regardless of the flag question: `imagen.ts`'s generation loop had no
 per-target error boundary and no skip-existing check, so one transient failure aborted a
 paid batch and a rerun re-paid for every target already generated. The loop is now the
-exported `runGenerationBatch`: it skips a target whose backdrop and sidecar already exist,
-and one target's failure no longer stops the rest.
+exported `runGenerationBatch`, with three outcomes per target. It skips one whose backdrop
+and sidecar both already exist (no re-spend). It recovers one whose backdrop exists but
+whose sidecar does not — a prior run's paid call that never reached the sidecar write —
+by rebuilding the sidecar from the existing backdrop, with no new Gemini call.
+Otherwise it generates fresh, and one target's failure no longer stops the rest. `generateOne`
+now writes the backdrop PNG immediately after the paid call returns, before detection or the
+sidecar write, so a later failure in either step still leaves a real, recoverable backdrop on
+disk. If a target still fails after the paid call succeeded, the run's spend total counts it —
+checking for the now-written backdrop on disk — instead of undercounting a real charge.
 
 **Minor fixes, same pass.**
 - `imagen.ts`'s sidecar now writes `labelPlacement` as the 4 corners only, matching the
@@ -59,8 +66,12 @@ and one target's failure no longer stops the rest.
 - `golden-set/README.md`: added a note under the build step that a composited photographic
   JPEG is denser than a flat rendered label and should not be expected to land under the
   same ~500KB target.
-- `imagen.ts`'s missing-`GOOGLE_API_KEY` error now names sourcing `.factory-env`, matching
-  `scripts/latency/measure.ts`'s own wording. `tsx` does not load `.env.local` on its own.
+- `imagen.ts`'s missing-`GOOGLE_API_KEY` error names sourcing `.factory-env` or exporting the
+  variable directly. It no longer mentions `.env.local` — confirmed by a direct test that
+  `tsx` does not load it, so that advice did not work.
+- `build.ts`'s backdrop-read catch now checks the caught error's `code`. Only `ENOENT` gets
+  the named "no file exists" message; any other filesystem error (a directory in the way,
+  a permission failure) now passes through unchanged instead of being mislabeled.
 
 **How to run it.** No new command. `pnpm golden:build` and `pnpm golden:imagen` behave the
 same as before, with the fixes above. `pnpm test -- scripts/golden` runs the new and changed
@@ -70,12 +81,13 @@ tests.
 removed, and no existing manifest entry needs editing (no `rendered+ai-backdrop` case exists
 yet).
 
-**Confirmed.** `pnpm typecheck` and `pnpm lint` are clean. The full unit suite passes: 2422
-tests across 190 files. 9 tests are new: 3 in `compositeBackdrop.test.ts` (8 total), 1 in
-`build.test.ts` (3 total), 4 in `imagen.test.ts` (24 total), 1 in `imagenPrompt.test.ts`
+**Confirmed.** `pnpm typecheck` and `pnpm lint` are clean. The full unit suite passes: 2425
+tests across 190 files. 12 tests are new: 3 in `compositeBackdrop.test.ts` (8 total), 2 in
+`build.test.ts` (4 total), 6 in `imagen.test.ts` (26 total), 1 in `imagenPrompt.test.ts`
 (6 total). Every new regression test was confirmed to fail for the stated reason before its
 fix and pass after. No API call was made — every test uses a fake generator or a synthetic
-`sharp` fixture.
+`sharp` fixture. This entry covers two review rounds on the same branch, folded into one
+account rather than left as two separate, partly-stale write-ups (lessons.md rule 17).
 
 ## TRO-578 — design tokens and one visual hierarchy (2026-08-13)
 

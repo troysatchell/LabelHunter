@@ -109,7 +109,14 @@ export async function buildAiBackdropCase(
   let backdropImage: Buffer;
   try {
     backdropImage = readFileSync(backdropPath);
-  } catch {
+  } catch (err) {
+    // Only ENOENT ("no file there") gets the named, helpful message below.
+    // A different code — EISDIR, EACCES, any other I/O error — is a
+    // different, real problem; rethrow it unchanged rather than mislabel
+    // it as "no file exists" when a file does exist.
+    if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") {
+      throw err;
+    }
     // A bare ENOENT here names a file path, not a case. The most common
     // cause: a hand-authored manifest entry's caseId does not exactly
     // match the caseId pnpm golden:imagen generated for its backdrop and

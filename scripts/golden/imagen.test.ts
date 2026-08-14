@@ -258,6 +258,55 @@ describe("runGenerationBatch", () => {
       rmSync(outDir, { recursive: true, force: true });
     }
   });
+
+  it("recovers a target whose backdrop exists but sidecar is missing, without calling generate again (no re-spend) (TRO-510)", async () => {
+    const outDir = mkdtempSync(path.join(tmpdir(), "imagen-test-recover-"));
+    try {
+      // Simulate a prior run that wrote the backdrop PNG (a real, paid
+      // Gemini call) but crashed before the sidecar write.
+      const caseId = targetCaseId(STEADY_TARGET);
+      const image = await fakeGeneratorWithBlankRegion();
+      writeFileSync(path.join(outDir, `${caseId}.png`), image);
+
+      let generateCallCount = 0;
+      const spyGenerate: ImageGenerator = async () => {
+        generateCallCount++;
+        return fakeGeneratorWithBlankRegion();
+      };
+
+      const summary = await runGenerationBatch([STEADY_TARGET], spyGenerate, outDir, () => {});
+
+      expect(generateCallCount).toBe(0);
+      expect(summary.recovered).toEqual([caseId]);
+      expect(summary.generated).toEqual([]);
+      expect(summary.spentUsd).toBe(0);
+
+      const meta = JSON.parse(readFileSync(path.join(outDir, `${caseId}.meta.json`), "utf8"));
+      expect(meta.caseId).toBe(caseId);
+      expect(meta.labelPlacement).not.toBeNull();
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+
+  it("counts a target's spend when the paid call succeeded but a later step (detection) failed (TRO-510)", async () => {
+    const outDir = mkdtempSync(path.join(tmpdir(), "imagen-test-spend-on-failure-"));
+    // generate() "succeeds" (a real paid call returned bytes), but the
+    // bytes are not a decodable image -- detectBlankRegionQuad throws
+    // reading them. generateOne writes the backdrop PNG before calling
+    // detectBlankRegionQuad, so the paid call's cost must still be
+    // counted even though the target ends up in `failed`.
+    const corruptImageGenerate: ImageGenerator = async () => Buffer.from("not a real image");
+    try {
+      const summary = await runGenerationBatch([STEADY_TARGET], corruptImageGenerate, outDir, () => {});
+
+      expect(summary.failed).toEqual([targetCaseId(STEADY_TARGET)]);
+      expect(summary.generated).toEqual([]);
+      expect(summary.spentUsd).toBeGreaterThan(0);
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("path and slug safety", () => {

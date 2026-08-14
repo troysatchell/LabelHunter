@@ -271,9 +271,61 @@ function resolveWithinDir(dir: string, filename: string, what: string): string {
 }
 
 /**
+ * Builds the sidecar JSON text for one target and its detected quad.
+ * Shared by `generateOne` (a fresh Gemini call) and
+ * `rebuildSidecarFromExistingBackdrop` (no new call, an already-written
+ * backdrop) so the two write exactly the same shape.
+ */
+function sidecarJson(caseId: string, target: GenerationTarget, quad: DetectedQuad | null): string {
+  return JSON.stringify(
+    {
+      caseId,
+      referenceBottle: target.bottleId,
+      scene: target.scene.sceneId,
+      cameraCondition: target.cameraCondition,
+      // Only the 4 corners here, matching the manifest schema's own
+      // LabelPlacementQuad shape exactly (src/lib/golden-set/types.ts) —
+      // a human copies this field straight into a manifest entry
+      // (golden-set/README.md's fold-in recipe, step 4). Detector
+      // bookkeeping (pixelCount, imageWidth, imageHeight) is not part of
+      // that schema and does not belong accreting into manifest.json; it
+      // lives under the sibling "detection" key below instead, for
+      // debugging this sidecar on its own.
+      labelPlacement: quad
+        ? {
+            topLeft: quad.topLeft,
+            topRight: quad.topRight,
+            bottomLeft: quad.bottomLeft,
+            bottomRight: quad.bottomRight,
+          }
+        : null,
+      detection: quad
+        ? { pixelCount: quad.pixelCount, imageWidth: quad.imageWidth, imageHeight: quad.imageHeight }
+        : null,
+      generationMetadata: {
+        model: MODEL,
+        resolution: RESOLUTION,
+        promptVersion: PROMPT_VERSION,
+        generatedAt: new Date().toISOString(),
+      },
+    },
+    null,
+    2,
+  );
+}
+
+/**
  * Generates and detects one target's backdrop, writing the raw PNG and a
  * `.meta.json` sidecar to `outDir`. Never writes to
  * `golden-set/manifest.json` — see this file's module comment.
+ *
+ * Writes the backdrop PNG immediately after `generate` returns, before
+ * detection or the sidecar write (TRO-510 review). `generate` is the paid
+ * call; everything after it (blank-region detection, the sidecar
+ * `writeFileSync`) can still fail on its own — a bad image, a full disk.
+ * Persisting the PNG first means a later failure still leaves a real,
+ * already-paid-for backdrop on disk: `rebuildSidecarFromExistingBackdrop`
+ * (below) recovers it on a later run without a second Gemini call.
  */
 export async function generateOne(
   target: GenerationTarget,
@@ -293,77 +345,68 @@ export async function generateOne(
 
   const prompt = buildBackdropPrompt(target.scene, target.cameraCondition);
   const image = await generate(prompt, target.referencePhotoPath);
-  const quad = await detectBlankRegionQuad(image, BLANK_LABEL_COLOR_RGB, DETECTION_TOLERANCE);
-
   writeFileSync(backdropPath, image);
-  writeFileSync(
-    metaPath,
-    JSON.stringify(
-      {
-        caseId,
-        referenceBottle: target.bottleId,
-        scene: target.scene.sceneId,
-        cameraCondition: target.cameraCondition,
-        // Only the 4 corners here, matching the manifest schema's own
-        // LabelPlacementQuad shape exactly (src/lib/golden-set/types.ts) —
-        // a human copies this field straight into a manifest entry
-        // (golden-set/README.md's fold-in recipe, step 4). Detector
-        // bookkeeping (pixelCount, imageWidth, imageHeight) is not part of
-        // that schema and does not belong accreting into manifest.json; it
-        // lives under the sibling "detection" key below instead, for
-        // debugging this sidecar on its own.
-        labelPlacement: quad
-          ? {
-              topLeft: quad.topLeft,
-              topRight: quad.topRight,
-              bottomLeft: quad.bottomLeft,
-              bottomRight: quad.bottomRight,
-            }
-          : null,
-        detection: quad
-          ? { pixelCount: quad.pixelCount, imageWidth: quad.imageWidth, imageHeight: quad.imageHeight }
-          : null,
-        generationMetadata: {
-          model: MODEL,
-          resolution: RESOLUTION,
-          promptVersion: PROMPT_VERSION,
-          generatedAt: new Date().toISOString(),
-        },
-      },
-      null,
-      2,
-    ),
-  );
+
+  const quad = await detectBlankRegionQuad(image, BLANK_LABEL_COLOR_RGB, DETECTION_TOLERANCE);
+  writeFileSync(metaPath, sidecarJson(caseId, target, quad));
   return { caseId, backdropPath, metaPath, detectedQuad: quad };
 }
 
 /**
- * True when a target's backdrop PNG and sidecar JSON already both exist in
- * `outDir`. `runGenerationBatch` checks this before ever calling `generate`
- * — regenerating an already-generated target would spend real money for no
- * reason, most likely after a rerun following an earlier transient failure
- * partway through a batch.
+ * Rebuilds a target's sidecar from its already-written backdrop PNG,
+ * without calling `generate` again. Recovers a target whose backdrop
+ * `generateOne` wrote (a real, already-paid-for Gemini call) but whose run
+ * ended before the sidecar write — a detection failure or a disk error
+ * right after that PNG write, above.
  */
-function caseAlreadyGenerated(caseId: string, outDir: string): boolean {
+async function rebuildSidecarFromExistingBackdrop(
+  target: GenerationTarget,
+  outDir: string,
+): Promise<GenerationResult> {
+  const caseId = targetCaseId(target);
   const backdropPath = resolveWithinDir(outDir, `${caseId}.png`, "backdrop path");
   const metaPath = resolveWithinDir(outDir, `${caseId}.meta.json`, "meta path");
-  return existsSync(backdropPath) && existsSync(metaPath);
+  const image = readFileSync(backdropPath);
+  const quad = await detectBlankRegionQuad(image, BLANK_LABEL_COLOR_RGB, DETECTION_TOLERANCE);
+  writeFileSync(metaPath, sidecarJson(caseId, target, quad));
+  return { caseId, backdropPath, metaPath, detectedQuad: quad };
+}
+
+interface ExistingArtifacts {
+  readonly hasBackdrop: boolean;
+  readonly hasSidecar: boolean;
+}
+
+/**
+ * What already exists on disk for a target's caseId. `runGenerationBatch`
+ * branches on this before ever calling `generate` — regenerating an
+ * already-complete target would spend real money for no reason, and a
+ * backdrop with no sidecar (a prior run's paid call that never finished)
+ * is recoverable without a new call at all.
+ */
+function existingArtifacts(caseId: string, outDir: string): ExistingArtifacts {
+  const backdropPath = resolveWithinDir(outDir, `${caseId}.png`, "backdrop path");
+  const metaPath = resolveWithinDir(outDir, `${caseId}.meta.json`, "meta path");
+  return { hasBackdrop: existsSync(backdropPath), hasSidecar: existsSync(metaPath) };
 }
 
 export interface GenerationBatchSummary {
   readonly generated: readonly string[];
   readonly skipped: readonly string[];
+  readonly recovered: readonly string[];
   readonly failed: readonly string[];
   readonly detectionFailures: readonly string[];
   readonly spentUsd: number;
 }
 
 /**
- * Runs every target in order: skip a target already on disk (no re-spend),
- * otherwise generate it. One target's failure is logged and does not stop
- * the rest of the batch — a single transient error must not abort a paid
- * run that already succeeded on every target before it. `log` defaults to
- * `console.log`/`console.error`; tests inject a no-op or a spy instead.
+ * Runs every target in order. Three outcomes per target: skip one already
+ * complete on disk (no re-spend); recover one with a backdrop but no
+ * sidecar, rebuilding the sidecar with no new call (also no re-spend);
+ * otherwise generate it fresh. One target's failure is logged and does not
+ * stop the rest of the batch — a single transient error must not abort a
+ * paid run that already succeeded on every target before it. `log`
+ * defaults to `console.log`; tests inject a no-op or a spy instead.
  */
 export async function runGenerationBatch(
   targets: readonly GenerationTarget[],
@@ -373,17 +416,39 @@ export async function runGenerationBatch(
 ): Promise<GenerationBatchSummary> {
   const generated: string[] = [];
   const skipped: string[] = [];
+  const recovered: string[] = [];
   const failed: string[] = [];
   const detectionFailures: string[] = [];
   let spentUsd = 0;
 
   for (const target of targets) {
     const caseId = targetCaseId(target);
-    if (caseAlreadyGenerated(caseId, outDir)) {
+    const artifacts = existingArtifacts(caseId, outDir);
+
+    if (artifacts.hasBackdrop && artifacts.hasSidecar) {
       skipped.push(caseId);
       log(`${caseId}: SKIPPED — backdrop and sidecar already exist on disk (no re-spend).`);
       continue;
     }
+
+    if (artifacts.hasBackdrop && !artifacts.hasSidecar) {
+      try {
+        const result = await rebuildSidecarFromExistingBackdrop(target, outDir);
+        recovered.push(result.caseId);
+        if (result.detectedQuad === null) {
+          detectionFailures.push(result.caseId);
+          log(`${result.caseId}: RECOVERED (no new spend) — DETECTION FAILED, needs manual placement.`);
+        } else {
+          log(`${result.caseId}: RECOVERED — sidecar rebuilt from an existing backdrop (no new spend).`);
+        }
+      } catch (err) {
+        failed.push(caseId);
+        const message = err instanceof Error ? err.message : String(err);
+        log(`${caseId}: FAILED to recover the sidecar from an existing backdrop — ${message}.`);
+      }
+      continue;
+    }
+
     try {
       const result = await generateOne(target, generate, outDir);
       spentUsd += ESTIMATED_COST_PER_IMAGE_USD;
@@ -396,6 +461,15 @@ export async function runGenerationBatch(
       }
     } catch (err) {
       failed.push(caseId);
+      // generateOne writes the backdrop PNG immediately after a
+      // successful (paid) generate() call, before detection or the
+      // sidecar write (see generateOne's own comment). A PNG now on disk
+      // for this caseId proves the paid call already happened, even
+      // though generateOne threw afterward — count it so "est. spend so
+      // far" never undercounts a real charge.
+      if (existingArtifacts(caseId, outDir).hasBackdrop) {
+        spentUsd += ESTIMATED_COST_PER_IMAGE_USD;
+      }
       const message = err instanceof Error ? err.message : String(err);
       log(
         `${caseId}: FAILED — ${message}. Continuing with the remaining targets ` +
@@ -404,15 +478,19 @@ export async function runGenerationBatch(
     }
   }
 
-  return { generated, skipped, failed, detectionFailures, spentUsd };
+  return { generated, skipped, recovered, failed, detectionFailures, spentUsd };
 }
 
 export async function main(): Promise<void> {
   const apiKey = process.env.GOOGLE_API_KEY;
   if (!apiKey) {
+    // tsx does not load .env.local on its own (confirmed: a bare tsx run
+    // with only a .env.local present leaves process.env unset) — pointing
+    // at it here would be advice that does not work. Name the two things
+    // that do: source .factory-env, or export the variable directly.
     throw new Error(
-      "imagen: GOOGLE_API_KEY is not set. source .factory-env in a factory worktree, or set it in " +
-        ".env.local before running pnpm golden:imagen (tsx does not load .env.local on its own).",
+      "imagen: GOOGLE_API_KEY is not set. Source .factory-env in a factory worktree, or export " +
+        "GOOGLE_API_KEY before running pnpm golden:imagen.",
     );
   }
   const targets = enumerateTargets();
@@ -426,7 +504,8 @@ export async function main(): Promise<void> {
 
   console.log(
     `\nDone. ${targets.length} target(s): ${summary.generated.length} generated, ` +
-      `${summary.skipped.length} skipped (already on disk), ${summary.failed.length} failed, ` +
+      `${summary.skipped.length} skipped (already on disk), ${summary.recovered.length} recovered ` +
+      `(sidecar rebuilt, no new spend), ${summary.failed.length} failed, ` +
       `${summary.detectionFailures.length} need manual placement, ~$${summary.spentUsd.toFixed(2)} estimated spend.`,
   );
   if (summary.failed.length > 0) {

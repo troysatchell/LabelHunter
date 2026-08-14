@@ -19,6 +19,17 @@
  * call. See `CHANGES.md`'s TRO-470 entry for the full CI-wiring reasoning,
  * including the alternative this design rejected.
  *
+ * CHEAP MODE ALSO CHECKS FOR MANIFEST DRIFT AGAINST THE LIVE FILE (TRO-556).
+ * `compareToBaseline`'s `"stale-baseline"` class compares the committed
+ * report's `manifestContentHash` against the committed baseline's — two
+ * frozen files checked against each other. That misses the case where a
+ * corpus rebuild edited `golden-set/manifest.json` and both frozen files
+ * went stale TOGETHER, still agreeing with each other while describing
+ * images that no longer exist. `runCheap` hashes the live manifest file
+ * (a local file read, not a live API call, so this stays cheap) and warns,
+ * loudly and by name, on a mismatch — see `manifest-drift.ts`'s own module
+ * comment for why this is a warning, never a gate failure.
+ *
  * `pnpm eval:check -- --live` runs the real cascade — real Haiku
  * extraction plus, only for cases the router actually escalates, one real
  * Sonnet resolver call (never forced onto a case the cascade would not
@@ -92,6 +103,7 @@ import { cleanupScratchDirAndPool } from "../latency/cleanup";
 import { parseEvalArgs, resolveCaseIds, validateCheckArgs } from "./args";
 import { compareToBaseline, formatBandLine, hasProblemClass, type RegressionCheckResult } from "./baseline-compare";
 import { REPO_ROOT, runOneCase, type CaseRunOutcome } from "./cascade-runner";
+import { checkManifestDrift } from "./manifest-drift";
 import { hashManifestFile } from "./manifest-hash";
 import { validateEvalBaseline, validateEvalReport } from "./report-validation";
 import { buildEvalReportSummary } from "./summary";
@@ -349,6 +361,33 @@ function runCheap(): void {
     `check.ts: cheap mode — comparing the committed report (measured ${report.measuredAt}) against the committed baseline band ` +
       `(K=${baseline.k}, established ${baseline.establishedAt}). No live call made.`,
   );
+
+  // TRO-556: the two comparisons above check the committed report against
+  // the committed baseline — two frozen files against each other. Neither
+  // touches the LIVE golden-set/manifest.json on disk right now, so a
+  // corpus rebuild that leaves both frozen files stale together is
+  // invisible to them. This one extra read closes that gap: a fast local
+  // file hash, not a live API call, so it stays in cheap mode. Warns, never
+  // fails (manifest-drift.ts's own module comment says why) — including
+  // when the read itself fails. A missing or unreadable manifest file is
+  // exactly the kind of environment problem this warning-not-fail design
+  // exists to survive; letting hashManifestFile's own exception propagate
+  // would crash cheap mode entirely and fail every ticket's gate for an
+  // unrelated reason (CodeRabbit finding, TRO-556 post-merge review).
+  try {
+    const liveManifestHash = hashManifestFile(DEFAULT_MANIFEST_PATH);
+    const drift = checkManifestDrift(report.manifestContentHash, liveManifestHash);
+    if (drift.drifted) {
+      console.warn(`check.ts: WARNING — ${drift.message}`);
+    } else {
+      console.log(`check.ts: ${drift.message}`);
+    }
+  } catch (error) {
+    console.warn(
+      `check.ts: WARNING — could not read the live manifest to check for drift (${error instanceof Error ? error.message : String(error)}). Skipping the drift check; every other cheap-mode check still ran.`,
+    );
+  }
+
   if (report.failures.length > 0) {
     console.error(`check.ts: FAIL — the committed report itself recorded ${report.failures.length} case failure(s); it does not represent a clean run.`);
     process.exitCode = 1;

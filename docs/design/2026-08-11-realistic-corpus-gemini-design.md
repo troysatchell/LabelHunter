@@ -5,7 +5,7 @@
 **Serves:** TH-R12 (test-label set), TH-R10 (imperfect images), rubric V9/X1 and general realism
 evidence, PRD §6 golden set
 **Supersedes:** §5 ("Imagen usage") of
-`docs/superpowers/specs/2026-08-10-golden-label-image-gen-design.md`. That design capped Imagen
+`docs/design/2026-08-10-golden-label-image-gen-design.md`. That design capped Imagen
 at ~6 backdrops and ~5 wild labels, under a $5 budget, because Google API billing was not yet
 enabled. Troy enabled billing on 2026-08-11. This design replaces that cap.
 **Decision:** Gemini 3.1 Flash Image generates realistic bottle photographs — steady, motion-blur,

@@ -204,7 +204,8 @@ if the Anthropic endpoint is unreachable.
 - `golden-set/` — the committed test-label image set and its ground truth
 - `scripts/` — evaluation, latency measurement, and deployment tooling
 - `docs/` — architecture (`PRD.md`), approach and trade-offs (`approach.md`), error states,
-  deployment runbook
+  deployment runbook, design documents, and the checkpoint walkthroughs for the cascade
+  router, the warning subsystem, and the batch queue
 - `audit/requirements/` — the requirements-traceability sweep, mapping this brief's
   requirements to the code and tickets that satisfy them
 

@@ -4,6 +4,100 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-540 — LH-035 · Deskew a baked-in tilt before extraction (2026-08-13)
+
+Advances TH-R10 (stretch). `preprocessImage`'s `.rotate()` call corrects orientation from
+the EXIF tag only (PRD §3.1). A tilt baked into the pixels at capture time writes no EXIF
+tag. That call does nothing to it. Golden-set case-19 has exactly this defect: a 15-degree
+rotation with no EXIF orientation tag at all. Both the Haiku extractor and the classical
+warning-region detector read the tilted image. A live run on 2026-08-12 measured the
+result. Haiku invented a word in the government warning. The label returned REVIEW /
+WARNING_MISMATCH against a golden expectation of PASS.
+
+**What changed.** `src/server/preprocessing/deskew.ts` adds `estimateSkewAngleDeg(image:
+Buffer): Promise<number>`. It measures a baked-in tilt with a row-ink projection. This is
+the same technique `region-detect.ts` uses to find the warning block. Here it runs as an
+angle sweep instead of a block search. The sweep tries candidate angles from -20 to 20
+degrees (`MAX_DESKEW_ANGLE_DEG`, proposed, not measured). It keeps the candidate whose
+row-ink variance forms a true local peak. "Local peak" means strictly higher than both
+neighbors in the sweep, not just the highest raw value. Picking the raw maximum cannot tell
+a real text peak apart from a large flat block of one color. A flat block's row-ink coverage
+changes smoothly as it rotates and never forms a peak. Requiring a local peak is what makes
+that distinction possible. `pipeline.test.ts`'s own EXIF-rotation fixtures are exactly that
+flat shape. Their post-rotation width/height assertions depend on this function returning 0
+on them. `deskew.test.ts` runs the same fixture shape and checks it directly.
+
+Two more changes came from this ticket's own review round. Each candidate angle now gets
+cropped back to one fixed size before scoring. The sweep also runs with bounded concurrency
+(`MAX_CONCURRENT_ANGLE_PASSES`, proposed, not measured), not one unbounded `Promise.all` over
+every angle. The crop keeps every candidate's row count comparable. Without it, a wider
+angle always yields a bigger rotated canvas, with more white padding. The local-peak check
+could mistake that extra padding for a real text signal. A second test proves the sweep
+still recovers a tilt sitting exactly at `MAX_DESKEW_ANGLE_DEG`. That is the boundary case
+an earlier version of the sweep could not reach.
+
+`preprocessImage` (`pipeline.ts`) now runs a second `sharp` pass after the EXIF-orient pass.
+It cannot be one chained call. The angle estimate needs the EXIF-rotated pixels first. The
+second pass rotates by the estimate. It re-derives `width`/`height` from the actual rotated
+output, not from EXIF metadata — metadata cannot predict an arbitrary-angle canvas
+expansion. It adds `deskewAngleDeg` to `PreprocessedImage`'s return shape. Both `original`
+(the OCR channel) and the Haiku/Sonnet variants derive from this one deskewed buffer. The
+fix reaches the extractor and the warning subsystem together. A deskew scoped to the OCR
+crop alone would leave Haiku reading the tilted image.
+
+**Measured, not fixed.** Deskewing restores the OCR channel. Before this change,
+`detectWarningRegionClassical` returned `null` on the raw case-19 file. After it, the same
+function returns a real region: `{x:258,y:776,width:882,height:134}`. Both results are
+measured and recorded as a regression test in `pipeline.test.ts`. A prior investigation
+(`docs/diagnostics/2026-08-12-fix-tickets.md`) used the production reconciler to prove
+something else: a perfect OCR read against Haiku's already-wrong transcription still returns
+REVIEW / WARNING_MISMATCH. Restoring OCR alone cannot fix a model invention downstream of
+it. Deskew helps through the extraction half only. It gives Haiku a level image to read,
+which lowers the chance Haiku invents a word. It does not guarantee a correct read every
+time.
+
+Three live runs today all returned PASS: `pnpm eval:check -- --live
+--case=case-19-rotation-mild-correctable`, model `claude-haiku-4-5`, 2026-08-13. The
+government warning transcribed correctly in every run. Cost: $0.005153 each, $0.015459
+total, real spend, read from the API's own usage response. This is evidence the mitigation
+works. It is not proof it always will. Haiku's own output varies run to run —
+`scripts/eval/args.ts`'s own comment states temperature 0 is not a promise of identical
+output. Case-19's earlier REVIEW result came from exactly one such run. Do not read three
+PASSes as "case-19 fixed."
+
+**Left alone, on purpose.** `NEAR_MISS_MAX_DISTANCE` and `OCR_CONFIDENCE_FLOOR` stay
+unchanged. The ticket's own investigation considered and rejected both changes already, for
+reasons that do not depend on today's measurement. A genuine four-character invention is not
+a near-miss. A perfect OCR read still cannot out-vote a wrong VLM read. Case-19's golden
+expectation stays PASS. The label prints the true statutory text. The model, not the corpus,
+was wrong.
+
+**Tests.** `src/server/preprocessing/deskew.test.ts` (new) covers five cases:
+
+1. Recovers a 15-degree rotation within 2 degrees, on a synthetic label with real text rows.
+2. Recovers a 20-degree rotation the same way, at the sweep's own configured limit.
+3. Returns 0 on a flat single-colour image.
+4. Returns 0 on a dense solid-colour block — the same fixture shape `pipeline.test.ts` uses.
+5. Returns 0 on an unreadable buffer, instead of throwing.
+
+`pipeline.test.ts` (updated) keeps its two pre-existing EXIF-rotation assertions unchanged.
+It also adds two new tests for case-19. The raw file still returns a null region. The
+deskewed buffer returns a non-null region, and an angle within 2 degrees of -15. Two OCR
+integration tests read golden-set JPEGs directly and never call `preprocessImage`
+(`region-detect.test.ts`, `warning/index.test.ts`). They were re-run and pass unchanged, as
+expected. A pipeline-level change cannot move a test that bypasses the pipeline.
+
+**How to run it.** `pnpm test` covers the unit tests. `pnpm eval:check -- --live
+--case=case-19-rotation-mild-correctable` re-runs the live measurement. It costs real money,
+about $0.005 per run.
+
+**Rollback.** Revert this commit. `preprocessImage` returns to EXIF-only rotation.
+`deskewAngleDeg` and `deskew.ts` disappear with it. No schema change. No migration.
+
+
+
+
+
 ## TRO-548 — Factory: gate.sh's review step re-reviews the whole branch every run (2026-08-13)
 
 Factory tooling, not a TH-R requirement. TRO-544's ticket measured the problem directly: its

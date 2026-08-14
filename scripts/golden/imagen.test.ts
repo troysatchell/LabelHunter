@@ -8,7 +8,9 @@ import {
   ensurePngBytes,
   enumerateTargets,
   generateOne,
+  runGenerationBatch,
   targetCaseId,
+  type GenerationTarget,
   type ImageGenerator,
 } from "./imagen";
 
@@ -164,6 +166,151 @@ describe("generateOne", () => {
       expect(result.detectedQuad).toBeNull();
       const meta = JSON.parse(readFileSync(result.metaPath, "utf8"));
       expect(meta.labelPlacement).toBeNull();
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+
+  it("writes only the 4 corners under labelPlacement, detector bookkeeping under a sibling 'detection' key (TRO-510)", async () => {
+    // labelPlacement must match the manifest's own LabelPlacementQuad
+    // schema exactly (src/lib/golden-set/types.ts) -- a human copies this
+    // field straight into a manifest entry. pixelCount/imageWidth/
+    // imageHeight are detector bookkeeping, not part of that schema, and
+    // must not accrete into manifest.json alongside it.
+    const outDir = mkdtempSync(path.join(tmpdir(), "imagen-test-out-"));
+    try {
+      const result = await generateOne(STEADY_TARGET, fakeGeneratorWithBlankRegion, outDir);
+      const meta = JSON.parse(readFileSync(result.metaPath, "utf8"));
+
+      expect(Object.keys(meta.labelPlacement).sort()).toEqual(
+        ["bottomLeft", "bottomRight", "topLeft", "topRight"].sort(),
+      );
+      expect(meta.detection.pixelCount).toBe(result.detectedQuad?.pixelCount);
+      expect(meta.detection.imageWidth).toBe(result.detectedQuad?.imageWidth);
+      expect(meta.detection.imageHeight).toBe(result.detectedQuad?.imageHeight);
+      // A fresh generateOne call's metadata IS real provenance -- the flag
+      // must be false, not just absent (TRO-510 review).
+      expect(meta.generationMetadata.reconstructedFromExistingBackdrop).toBe(false);
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+});
+
+const OTHER_TARGET: GenerationTarget = {
+  bottleId: "amber-whiskey-01",
+  referencePhotoPath: "/fake.jpg",
+  scene: { sceneId: "shelf", setting: "a store shelf", lighting: "cool light" },
+  cameraCondition: "steady",
+};
+
+describe("runGenerationBatch", () => {
+  it("skips a target whose backdrop and sidecar already exist, without calling generate (no re-spend)", async () => {
+    const outDir = mkdtempSync(path.join(tmpdir(), "imagen-test-batch-"));
+    try {
+      // Pre-populate the target's output files, simulating a prior run.
+      await generateOne(STEADY_TARGET, fakeGeneratorWithBlankRegion, outDir);
+
+      let generateCallCount = 0;
+      const spyGenerate: ImageGenerator = async () => {
+        generateCallCount++;
+        return fakeGeneratorWithBlankRegion();
+      };
+
+      const summary = await runGenerationBatch([STEADY_TARGET], spyGenerate, outDir, () => {});
+
+      expect(generateCallCount).toBe(0);
+      expect(summary.skipped).toEqual([targetCaseId(STEADY_TARGET)]);
+      expect(summary.generated).toEqual([]);
+      expect(summary.spentUsd).toBe(0);
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+
+  it("logs one target's failure and continues generating the rest of the batch", async () => {
+    const outDir = mkdtempSync(path.join(tmpdir(), "imagen-test-batch-fail-"));
+    const failingGenerate: ImageGenerator = async () => {
+      throw new Error("simulated transient Gemini failure");
+    };
+    try {
+      const summary = await runGenerationBatch([STEADY_TARGET, OTHER_TARGET], failingGenerate, outDir, () => {});
+
+      expect(summary.failed).toEqual([targetCaseId(STEADY_TARGET), targetCaseId(OTHER_TARGET)]);
+      expect(summary.generated).toEqual([]);
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not let the first target's failure stop the second target from generating", async () => {
+    const outDir = mkdtempSync(path.join(tmpdir(), "imagen-test-batch-partial-"));
+    let calls = 0;
+    const flakyGenerate: ImageGenerator = async () => {
+      calls++;
+      if (calls === 1) throw new Error("simulated transient Gemini failure");
+      return fakeGeneratorWithBlankRegion();
+    };
+    try {
+      const summary = await runGenerationBatch([STEADY_TARGET, OTHER_TARGET], flakyGenerate, outDir, () => {});
+
+      expect(summary.failed).toEqual([targetCaseId(STEADY_TARGET)]);
+      expect(summary.generated).toEqual([targetCaseId(OTHER_TARGET)]);
+      expect(summary.spentUsd).toBeGreaterThan(0);
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+
+  it("recovers a target whose backdrop exists but sidecar is missing, without calling generate again (no re-spend) (TRO-510)", async () => {
+    const outDir = mkdtempSync(path.join(tmpdir(), "imagen-test-recover-"));
+    try {
+      // Simulate a prior run that wrote the backdrop PNG (a real, paid
+      // Gemini call) but crashed before the sidecar write.
+      const caseId = targetCaseId(STEADY_TARGET);
+      const image = await fakeGeneratorWithBlankRegion();
+      writeFileSync(path.join(outDir, `${caseId}.png`), image);
+
+      let generateCallCount = 0;
+      const spyGenerate: ImageGenerator = async () => {
+        generateCallCount++;
+        return fakeGeneratorWithBlankRegion();
+      };
+
+      const summary = await runGenerationBatch([STEADY_TARGET], spyGenerate, outDir, () => {});
+
+      expect(generateCallCount).toBe(0);
+      expect(summary.recovered).toEqual([caseId]);
+      expect(summary.generated).toEqual([]);
+      expect(summary.spentUsd).toBe(0);
+
+      const meta = JSON.parse(readFileSync(path.join(outDir, `${caseId}.meta.json`), "utf8"));
+      expect(meta.caseId).toBe(caseId);
+      expect(meta.labelPlacement).not.toBeNull();
+      // A recovered sidecar's model/resolution/promptVersion/generatedAt
+      // describe THIS run, not whatever run actually produced the existing
+      // PNG -- they must not be mistaken for real provenance. The flag
+      // marks that distinction explicitly (TRO-510 review).
+      expect(meta.generationMetadata.reconstructedFromExistingBackdrop).toBe(true);
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+
+  it("counts a target's spend when the paid call succeeded but a later step (detection) failed (TRO-510)", async () => {
+    const outDir = mkdtempSync(path.join(tmpdir(), "imagen-test-spend-on-failure-"));
+    // generate() "succeeds" (a real paid call returned bytes), but the
+    // bytes are not a decodable image -- detectBlankRegionQuad throws
+    // reading them. generateOne writes the backdrop PNG before calling
+    // detectBlankRegionQuad, so the paid call's cost must still be
+    // counted even though the target ends up in `failed`.
+    const corruptImageGenerate: ImageGenerator = async () => Buffer.from("not a real image");
+    try {
+      const summary = await runGenerationBatch([STEADY_TARGET], corruptImageGenerate, outDir, () => {});
+
+      expect(summary.failed).toEqual([targetCaseId(STEADY_TARGET)]);
+      expect(summary.generated).toEqual([]);
+      expect(summary.spentUsd).toBeGreaterThan(0);
     } finally {
       rmSync(outDir, { recursive: true, force: true });
     }

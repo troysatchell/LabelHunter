@@ -29,7 +29,11 @@ The pipeline is the render-first hybrid design doc §2 lays out:
   blur) that derive an imperfect-photo variant from a clean rendered base. Ground truth
   carries over unchanged. Only the photo condition changes.
 - **`scripts/golden/build.ts`** — orchestrates render → degrade for every case, and writes
-  the committed JPEG at its manifest path. Run it with `pnpm golden:build`.
+  the committed JPEG at its manifest path. Run it with `pnpm golden:build`. The ~500KB
+  per-image target below (`scripts/golden/images.test.ts`) was calibrated against flat
+  rendered labels — large solid areas, modest text. A `rendered+ai-backdrop` case's
+  composited photographic JPEG is denser (real photo texture, not flat color) and should
+  not be expected to land under the same ~500KB figure.
 
 **Staged, not yet folded in — `ai-generated` wild labels (LH-027 / TRO-530).** Design doc §5
 describes about 5 fully `ai-generated` "wild" labels (text included). Five real, committed
@@ -58,25 +62,70 @@ transcription risk that an `ai-generated` case carries.
 The tooling exists now. Synthetic fixtures test the tooling:
 `scripts/golden/{imagenPrompt,blankRegionDetector,compositeBackdrop,imagen}.ts`.
 
-`assets/golden/references/` now holds real bottle photos (TRO-529 / LH-024's five
-`photographed` cases use five of them directly). No case in this manifest has provenance
+`assets/golden/references/` now holds real bottle photos: TRO-529 / LH-024's five
+`photographed` cases use five of them directly. A sixth, `spirits-bottle-01.jpg`, is a
+realistic-corpus bottle reference. One real Gemini-generated backdrop already exists for it
+(`golden-set/backdrops/case-ai-backdrop-spirits-bottle-01-compliance-desk-steady.png`,
+committed before this ticket). No case in this manifest has provenance
 `"rendered+ai-backdrop"` yet, so no case here composites onto a backdrop from this directory.
 
-A future ticket adds the first one, once real bottle photos exist. Follow these steps:
+A future ticket configures the first one — either adopting this existing backdrop or
+generating a new one.
+
+**Pilot gate — clear this before generating the full corpus (design doc §5).** One real
+bottle reference and one real backdrop already exist (above). No manifest case uses
+`rendered+ai-backdrop` provenance yet. `build.ts`'s compositing step has never produced real
+output. The pilot batch needs 6 images total: one bottle, 2 scenes, 3 camera conditions.
+This is a hard gate. Do not generate the rest of the corpus until the pilot batch
+demonstrates all five of:
+
+1. The blank region is actually produced in every pilot image.
+2. It stays geometrically aligned with the bottle, not floating free of the label area.
+3. The `#F0E9DC` color is separable enough from the rest of the scene to detect reliably.
+4. The connected-component detector does not pick up an unrelated cream-colored region
+   elsewhere in the frame (background, bottle cap, table surface).
+5. The recovered perspective quad is good enough for `render.ts`'s label to warp into
+   without visible distortion.
+
+If all five hold, generate the rest of the corpus and run the same detector unattended. If
+detection is flaky on some images, fall back to manual clicking (the fallback path below,
+step 3) for those images only, not the whole corpus.
+
+`pnpm golden:imagen` has no `--bottle` or `--limit` flag — running only the pilot's one
+bottle needs a workaround, not a tool flag: temporarily move every other bottle reference
+JSON file (and its photo) out of `assets/golden/references/`, run the command, then move
+them back. `pnpm golden:imagen` also skips a target whose backdrop PNG and `.meta.json`
+sidecar already exist on disk, so moving the other references back afterward and rerunning
+does not re-pay for the pilot's own 6 images.
+
+Follow these steps for each bottle reference, pilot or full corpus alike:
 
 1. Add a bottle reference JSON file and its photo under `assets/golden/references/`. The
    schema is `src/lib/golden-set/bottleReference.ts`.
 2. Run `pnpm golden:imagen`. For every `(scene, cameraCondition)` combination, the tooling
    writes a backdrop PNG and a `.meta.json` sidecar to `golden-set/backdrops/`. The sidecar
-   records the detected `labelPlacement` and `generationMetadata`. The tooling never edits
-   `manifest.json`.
+   records the detected `labelPlacement` (the 4 corners only — the same shape the manifest's
+   `LabelPlacementQuad` expects) and `generationMetadata`. Detector bookkeeping
+   (`pixelCount`, `imageWidth`, `imageHeight`) lives under its own `detection` key, not inside
+   `labelPlacement` — fold in `labelPlacement` and `generationMetadata` only, not `detection`.
+   Reruns already on disk are skipped (no re-spend); one target's failure is logged and does
+   not stop the rest of the batch. The tooling never edits `manifest.json`. If a run recovers
+   a sidecar from an existing backdrop (no new Gemini call), `generationMetadata` carries
+   `reconstructedFromExistingBackdrop: true`. Its `model`/`resolution`/`promptVersion`/
+   `generatedAt` then describe the recovery run, not what produced the image. Fold in the
+   flag as-is; do not read those four fields as real provenance when it is `true`.
 3. Check the sidecar's `labelPlacement` value. If automatic detection fails, the sidecar
    shows `labelPlacement: null` for that case. `pnpm golden:imagen` also prints "needs
    manual placement" as a reminder. When this happens, measure a valid label-placement
    quadrilateral by hand. Use it instead of the null value.
 4. Hand-author the case's manifest entry: ground truth, category, and vectors, the same as
    every other case. Fold in the sidecar's `referenceBottle`, `scene`, `cameraCondition`,
-   `labelPlacement`, and `generationMetadata`.
+   `labelPlacement`, and `generationMetadata`. Set the entry's own `caseId` to exactly the
+   sidecar's generated case ID (the `case-ai-backdrop-<bottleId>-<sceneId>-<cameraCondition>`
+   string printed by `pnpm golden:imagen`, and recorded as `caseId` inside the sidecar's own
+   `.meta.json`). `pnpm golden:build` looks up the committed backdrop file by that exact
+   name — a different `caseId` fails with a named error that states the case and the
+   expected path, not a bare file-not-found.
 5. Keep `verified: false` until two conditions both hold. First, the entry's
    `labelPlacement` holds the real, measured quadrilateral — it is never the null
    placeholder. Second, a human confirms the composited label is legible and correctly

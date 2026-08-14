@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { compositeLabelOntoBackdrop } from "./compositeBackdrop";
+import { compositeLabelOntoBackdrop, computePreResizeTarget } from "./compositeBackdrop";
 import type { DetectedQuad } from "./blankRegionDetector";
 
 const BACKDROP_COLOR = { r: 10, g: 10, b: 10 };
@@ -270,5 +270,86 @@ describe("compositeLabelOntoBackdrop — genuine trapezoid quad (TRO-509)", () =
     // check below would pass vacuously.
     expect(scanned).toBeGreaterThan(100000);
     expect(missed).toEqual([]);
+  });
+});
+
+describe("computePreResizeTarget", () => {
+  it("returns the quad's top-edge and left-edge lengths, rounded", () => {
+    const quad: DetectedQuad = {
+      topLeft: { x: 300, y: 200 },
+      topRight: { x: 600, y: 200 },
+      bottomLeft: { x: 300, y: 700 },
+      bottomRight: { x: 600, y: 700 },
+      pixelCount: 1,
+      imageWidth: 1000,
+      imageHeight: 1000,
+    };
+    expect(computePreResizeTarget(quad)).toEqual({ width: 300, height: 500 });
+  });
+
+  it("clamps a degenerate (zero-length) edge to a 1-pixel minimum", () => {
+    const quad: DetectedQuad = {
+      topLeft: { x: 100, y: 100 },
+      topRight: { x: 100, y: 100 },
+      bottomLeft: { x: 100, y: 100 },
+      bottomRight: { x: 100, y: 100 },
+      pixelCount: 0,
+      imageWidth: 400,
+      imageHeight: 300,
+    };
+    expect(computePreResizeTarget(quad)).toEqual({ width: 1, height: 1 });
+  });
+});
+
+describe("compositeLabelOntoBackdrop — nearest-neighbor aliasing on minification (TRO-510)", () => {
+  /** 1px-wide vertical black/white stripes across the full label width — the highest spatial frequency a raster can carry. */
+  async function makeStripedLabel(width: number, height: number): Promise<Buffer> {
+    const rects: string[] = [];
+    for (let x = 0; x < width; x++) {
+      const color = x % 2 === 0 ? "255,255,255" : "0,0,0";
+      rects.push(`<rect x="${x}" y="0" width="1" height="${height}" fill="rgb(${color})" />`);
+    }
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${rects.join("")}</svg>`;
+    return sharp(Buffer.from(svg)).png().toBuffer();
+  }
+
+  it("blends fine label detail to mid-gray under 10x minification instead of aliasing to one solid color", async () => {
+    // The renderer's canvas (1000x800, render.ts) is always much larger
+    // than a detected label region — real cases minify by roughly 2-3x per
+    // axis. This fixture uses a 10x minification on a worst-case
+    // alternating pattern to make the aliasing failure unambiguous: with a
+    // stride that is an exact multiple of the 2px stripe period, plain
+    // nearest-neighbor sampling picks the SAME color every time, not a
+    // representative mix. A correct downsample averages many stripes per
+    // destination pixel and lands near mid-gray (measured: 128).
+    const backdrop = await sharp({
+      create: { width: 300, height: 300, channels: 3, background: { r: 10, g: 10, b: 10 } },
+    })
+      .png()
+      .toBuffer();
+    const label = await makeStripedLabel(200, 100);
+    const quad: DetectedQuad = {
+      topLeft: { x: 100, y: 100 },
+      topRight: { x: 120, y: 100 },
+      bottomLeft: { x: 100, y: 120 },
+      bottomRight: { x: 120, y: 120 },
+      pixelCount: 400,
+      imageWidth: 300,
+      imageHeight: 300,
+    };
+
+    const result = await compositeLabelOntoBackdrop(backdrop, label, quad);
+
+    for (const dx of [102, 105, 108, 110, 112, 115, 118]) {
+      const pixel = await pixelAt(result, dx, 110);
+      // Measured after the fix: 128-129 at every sampled column. Before
+      // the fix, every one of these columns reads pure white (255) --
+      // nearest-neighbor's stride (10px) is an exact multiple of the 2px
+      // stripe period, so it always lands on the same stripe color.
+      expect(pixel.r, `x=${dx}`).toBeGreaterThan(90);
+      expect(pixel.r, `x=${dx}`).toBeLessThan(165);
+      expect(pixel.g, `x=${dx}`).toBe(pixel.r);
+      expect(pixel.b, `x=${dx}`).toBe(pixel.r);
+    }
   });
 });

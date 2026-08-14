@@ -193,7 +193,12 @@ describe("mergeResolutionIntoActualVerdict", () => {
     expect(merged.headlineReason).toBeNull();
   });
 
-  it("honest limit: a resolved government_warning can only reach NEEDS_REVIEW, never MISMATCH — this rollup has no OCR channel to corroborate a deviation (mirrors resolver-rollup.ts's rollUpGovernmentWarning)", () => {
+  it("a confidently reworded resolved government_warning reaches MISMATCH and fails the label (2026-08-13 CP-2 amendment, mirrors resolver-rollup.ts)", () => {
+    // Superseded: this test previously asserted the pre-amendment "never
+    // MISMATCH on one channel" limit. The rollup calls the real
+    // reconcileWarningChannels, so it inherited Troy's TRO-581 ruling
+    // automatically — a structurally clean rewording at confidence >=
+    // 0.90 (the fixture's own 0.9) now renders the verdict.
     const routerResult = router(cleanRows(), "REVIEW", "CONFLICTING_EXTRACTION");
     const resolution: ResolverResolution = {
       outcome: "resolved",
@@ -209,9 +214,8 @@ describe("mergeResolutionIntoActualVerdict", () => {
     const merged = mergeResolutionIntoActualVerdict(routerResult, resolution, APPLICATION, FAKE_COMPARATORS, null);
 
     const warning = merged.fields.find((f) => f.field === "government_warning");
-    expect(warning?.verdict).toBe("NEEDS_REVIEW");
-    expect(merged.labelVerdict).toBe("REVIEW");
-    expect(merged.headlineReason).toBe("WARNING_MISMATCH");
+    expect(warning?.verdict).toBe("MISMATCH");
+    expect(merged.labelVerdict).toBe("FAIL");
   });
 
   it("throws when the router result has no row for a field the merge needs — a harness invariant, not a normal input", () => {

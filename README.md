@@ -180,10 +180,9 @@ verdict accuracy, cost per label, and a cascade-vs-single-model comparison.
 - **Access control is live, confirmed against the deployed instance.** A shared access-code
   gate, per-IP and global rate limits, and a daily spend budget merged into `main`
   ([PR #43](https://github.com/troysatchell/LabelHunter/pull/43)) and are now protecting the
-  deployed URL above — checked directly, not assumed from the merge. Known follow-up gaps
-  (batch workers do not re-check the budget mid-run; a database failure during the budget check
-  surfaces as a generic server error, not the designed response) are tracked as
-  [TRO-566](https://linear.app/troysatchell/issue/TRO-566).
+  deployed URL above — checked directly, not assumed from the merge. The budget check runs
+  before every Haiku or Sonnet call, single-label and batch alike. A budget-check failure
+  returns a 503 with a stated reason, never a generic server error.
 
 ## What LabelHunter does not call
 

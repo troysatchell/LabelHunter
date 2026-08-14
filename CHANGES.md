@@ -4,6 +4,86 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-548 — Factory: gate.sh's review step re-reviews the whole branch every run (2026-08-13)
+
+Factory tooling, not a TH-R requirement. TRO-544's ticket measured the problem directly: its
+orchestrator pass ran `gate.sh` 11 times. Each run re-reviewed the full branch diff with
+CodeRabbit, including the previous round's own triage prose. Findings regenerated every round
+(3, 12, 4, 5, 8, 4, 3, 2, 4, 10). Real substance ended at round 12 of 13; the last round was
+seven comment-shortening requests against files that were already stable. Lessons rule 31
+capped this by orchestrator discipline. This ticket makes the cap mechanical.
+
+**What changed.**
+
+1. `scripts/factory/review-capture.ts` adds a `ReviewMode` (`off` | `carry` | `full`) and a
+   `planReview` function. `carry` mode (the default) skips a re-review when the diff since the
+   last real capture touches only `CHANGES.md`, `factory/*.jsonl`, or comment-only hunks. No
+   CodeRabbit process runs on this path — the skip saves real time, not just a relabeled
+   result. `gate-result.json`'s `review` entry records the skip honestly: `carried-forward
+   from <sha> — <reason> (<N> finding(s) from that review still stand)`.
+2. `gate.sh` gets a `--review=off|carry|full` flag. `off` never invokes CodeRabbit (an alias
+   for the old `--skip-review`, kept working). `carry` is the default. `full` always runs a
+   genuine whole-branch review, ignoring any carried-forward history. `--fast`/`--skip-review`
+   combined with an explicit, conflicting `--review=` value is now a hard error. The old
+   single-pass loop let the two silently override each other, based on argument order.
+3. When a real, non-boring change exists since the last review, `review-capture.ts` scopes
+   CodeRabbit's own diff to `--base-commit <last-reviewed-sha>` instead of `--base
+   <BASE_REF>`. The installed CodeRabbit CLI (`coderabbit review --help`, v0.7.2) supports
+   this override directly. `coderabbit.meta.json` now records `scopedFrom`, so a scoped
+   capture's `findings` count is never misread as the whole branch's total.
+4. A dirty working tree defeats the SHA-based carry-forward check: real, uncommitted content
+   exists that no captured SHA can vouch for. `review-capture.ts` now checks `git status
+   --porcelain` itself and treats a dirty tree as no trustworthy previous capture, forcing a
+   real review. `gate.sh`'s own full run already refused on a dirty tree before G10 ran. This
+   is the same guarantee for a standalone invocation.
+5. `isCommentOrBlankLine`'s `#`/`*` markers now check a boundary, not just a bare prefix. A
+   bare `#` matched a TS/JS private class field (`#cache = new Map();`) as a comment — real
+   code, in this repo's own language. `#` now requires whitespace, `!` (a shebang), or
+   end-of-line after it. A bare `*` now requires `/` or whitespace/end-of-line after it, ruling
+   out a glued multiplication like `*2`. Documented remaining gap: `* 2` (with a space) still
+   reads as a JSDoc continuation line. Telling the two apart needs block-comment state across
+   lines — out of scope for a per-line classifier.
+
+**Never weakened.** The FIRST review a ticket branch gets is always a full `--base
+<BASE_REF>` review, in every mode but `--review=off`. `planReview` returns a full run
+unconditionally when no prior capture exists for the branch. The cap applies only to re-runs
+inside one orchestrator pass, matching lessons rule 31's own scope note.
+
+**How to run it.** `scripts/factory/gate.sh` (default `--review=carry`). Force a full
+re-review with `--review=full`. Skip review capture entirely with `--review=off` or the
+existing `--skip-review`.
+
+**Tests.** `scripts/factory/review-capture.test.ts` adds 45 new cases: pure classification
+(`isBoringPath`, `isCommentOrBlankLine`, `parseUnifiedDiff`, `isFileChangeBoring`,
+`isDiffBoring`), the `planReview` decision across every mode and history combination, two
+real-git-repo integration suites (`diffSince`, `isWorkingTreeDirty`), and the `#`/`*` boundary
+cases items 4 and 5 above depend on.
+
+**Review round 1 (this ticket's own first full gate review).** CodeRabbit reported 7
+findings. 4 were fixed: items 2's conflict check, 3's `scopedFrom` field, 4's dirty-tree
+guard, and 5's marker-boundary fix all trace to this round. 2 were corrections to this
+entry's own prose: item 1's sentence length, and this section's test count. 1 was dismissed:
+CodeRabbit asked to merge each scoped review's findings back into the stored
+`coderabbit.json` baseline across runs. Declined — that would resurface a prior round's
+already-triaged findings on the very next capture, the exact repeated-review problem this
+ticket exists to stop.
+
+**Rollback.** Run `scripts/factory/gate.sh --review=full` to force the old always-full-review
+behavior on any one run, with no code change. To remove the feature entirely, revert this
+commit — `review-capture.ts`'s public surface only grew; nothing existing changed shape.
+
+**Proven live, on this ticket's own gate run.** The first `gate.sh` run on this branch ran a
+genuine full review — the cap never touches a branch's first review; see the triage section
+below for its findings. A later run, after a real code fix, reported `review completed with
+no findings (scoped since bb2ebce)`: CodeRabbit reviewed only the diff since the last real
+capture, not the whole branch again. A same-SHA re-run of `review-capture.ts` alone (no new
+commit) returned `carried-forward from 783d41a — no changes since that review` in 0.34
+seconds, invoking CodeRabbit zero times.
+
+
+
+
+
 ## TRO-554 — defect-gate engine hardening: 15 review-round-3 findings, batched (2026-08-13)
 
 **The source.** PR #48 (TRO-508)'s local gate review, round 3, found 15 real hardening gaps.

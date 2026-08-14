@@ -4,6 +4,79 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-510 — realistic-corpus pilot-batch hardening (2026-08-13)
+
+**The point.** No real bottle reference photo exists yet. This pipeline has never run for
+real. A whole-branch review bundled four findings and six minor fixes. This ticket lands
+them before the first real pilot batch runs — never Gemini or Anthropic calls, all fixes
+proven with fakes and fixtures.
+
+**Finding 1 — the label warp aliased.** `compositeBackdrop.ts` minified the renderer's
+1000x800 label onto a typical ~300x500 quad with pure nearest-neighbor sampling: a
+point-sample downsample that can drop or duplicate a thin warning-text stroke.
+`compositeLabelOntoBackdrop` now pre-resizes the label with `sharp`'s lanczos3 kernel to
+approximately the quad's own extent first. Aspect-ratio decision: resize non-uniformly to
+the quad's edge lengths (accept the stretch), not letterboxed. The warp is already a general
+affine map driven by the quad's shape; letterboxing first would only add blank padding bars
+that the same warp would then stretch into the photo.
+
+**Finding 2 — a wrong caseId failed with a bare file-not-found error.** A hand-authored
+manifest entry must reuse the sidecar's exact generated `caseId`. Getting it wrong failed
+`pnpm golden:build` with a bare Node ENOENT — no case name, no hint. `build.ts` now wraps
+the read in a try/catch that names the case and the expected path. `golden-set/README.md`'s
+fold-in recipe now states the `caseId`-matching rule explicitly.
+
+**Finding 3 — already fixed.** The finding claimed `generateWithGemini` hardcodes
+`mimeType: "image/jpeg"` (`imagen.ts:98`). Current code (`imagen.ts:221-246`) already derives
+the reference photo's MIME type from its real content (`detectImageMimeType`), landed by an
+earlier commit on this same file. No change needed — line numbers in the finding were stale
+against `main`.
+
+**Finding 4 — the pilot gate had no tooling affordance.** The design's hard gate (one bottle,
+6 images, 5 pass criteria, before generating the full corpus) was undocumented.
+`golden-set/README.md` now states the gate, its five criteria, and the workaround for running
+only the pilot batch: `pnpm golden:imagen` has no `--bottle`/`--limit` flag by design (not
+required by this ticket), so the pilot run temporarily moves every other bottle reference
+JSON out of `assets/golden/references/`. Paid-spend safety, which the ticket called
+worth fixing regardless of the flag question: `imagen.ts`'s generation loop had no
+per-target error boundary and no skip-existing check, so one transient failure aborted a
+paid batch and a rerun re-paid for every target already generated. The loop is now the
+exported `runGenerationBatch`: it skips a target whose backdrop and sidecar already exist,
+and one target's failure no longer stops the rest.
+
+**Minor fixes, same pass.**
+- `imagen.ts`'s sidecar now writes `labelPlacement` as the 4 corners only, matching the
+  manifest's own `LabelPlacementQuad` shape exactly. Detector bookkeeping (`pixelCount`,
+  `imageWidth`, `imageHeight`) moves to a sibling `detection` key, so it stops accreting into
+  `manifest.json` when a human copies the sidecar's `labelPlacement` field in.
+- `imagenPrompt.test.ts` gained a 3-line test parsing `BLANK_LABEL_COLOR_HEX` and asserting
+  it equals `BLANK_LABEL_COLOR_RGB` — the two were independently authored literals with a
+  comment claiming they cannot drift; nothing enforced that claim before.
+- `build.ts`, `images.test.ts`: swept three stale "LH-005" comments to "a future ticket,"
+  matching `golden-set/README.md`'s own wording for the still-unbuilt `ai-generated` track.
+- `blankRegionDetector.ts`: fixed `MAX_REGION_FRACTION`'s comment. It had its subject and
+  effect backwards against `MIN_REGION_FRACTION`'s own comment right above it.
+- `golden-set/README.md`: added a note under the build step that a composited photographic
+  JPEG is denser than a flat rendered label and should not be expected to land under the
+  same ~500KB target.
+- `imagen.ts`'s missing-`GOOGLE_API_KEY` error now names sourcing `.factory-env`, matching
+  `scripts/latency/measure.ts`'s own wording. `tsx` does not load `.env.local` on its own.
+
+**How to run it.** No new command. `pnpm golden:build` and `pnpm golden:imagen` behave the
+same as before, with the fixes above. `pnpm test -- scripts/golden` runs the new and changed
+tests.
+
+**Rollback.** Revert the PR. Every change is additive or a narrow guard; no schema field was
+removed, and no existing manifest entry needs editing (no `rendered+ai-backdrop` case exists
+yet).
+
+**Confirmed.** `pnpm typecheck` and `pnpm lint` are clean. The full unit suite passes: 2422
+tests across 190 files. 9 tests are new: 3 in `compositeBackdrop.test.ts` (8 total), 1 in
+`build.test.ts` (3 total), 4 in `imagen.test.ts` (24 total), 1 in `imagenPrompt.test.ts`
+(6 total). Every new regression test was confirmed to fail for the stated reason before its
+fix and pass after. No API call was made — every test uses a fake generator or a synthetic
+`sharp` fixture.
+
 ## TRO-578 — design tokens and one visual hierarchy (2026-08-13)
 
 **The point.** Troy: "spacing and hierarchy are incredibly important and scream even louder

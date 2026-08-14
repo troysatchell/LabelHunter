@@ -90,16 +90,23 @@ bold — gets an advisory check, not a hard one. LabelHunter measures it directl
 image's pixels: a stroke-width comparison between the prefix and the body of the warning
 (`measureBoldSignal`, LH-025/LH-026). It reports a three-valued signal — bold, not bold, or
 uncertain — on every verification, shown in the Detail view and scored against real ground
-truth (see "Measured results" below). That signal never changes a verdict; a correctly
-capitalized, correctly worded, non-bold prefix still passes. See "Trade-offs and limitations"
-below for why this stays advisory rather than a hard check, and for the one bold rule this
-signal does not cover.
+truth (see "Measured results" below). The signal still never produces a hard FAIL by itself —
+a stroke-width measurement cannot prove a violation, only suggest one. It does route a label to
+human review: a correctly capitalized, correctly worded label whose prefix measures not bold
+gets a REVIEW verdict instead of a silent PASS (TRO-569), with a reason naming the exact check.
+Bold, uncertain, and a missing signal never change a verdict. See "Trade-offs and limitations"
+below for why this stops short of a hard check, and for the one bold rule this signal does not
+cover.
 
 A separate, older field is a different story and a real, narrower gap: the extractor's own
 self-reported `formatting.bold` (`true`/`false`/`uncertain`, asked for in the Haiku prompt) is
 validated into the response but read by nothing — no router, no comparator, no UI. It is not
-the signal described above; `measureBoldSignal` never reads it. Tracked as
-[TRO-569](https://linear.app/troysatchell/issue/TRO-569).
+the signal described above; `measureBoldSignal` never reads it, and the review-routing rule
+above reads only the pixel-measured signal too. A model's own opinion about its own output is
+not a controlled measurement — the same reasoning CP-2 already applies to the extractor's
+`prefix_casing` self-report (`docs/checkpoints/cp2-warning-subsystem.md` §7.1: "this design
+does not let a model decide a statutory question"). This field stays unrouted; no ticket
+currently tracks closing it.
 
 ### Imperfect images
 
@@ -138,7 +145,7 @@ the whole job.
 | Database | Postgres, via Render, with Drizzle for schema and queries |
 | OCR (warning channel) | `tesseract.js` — pure WASM, no native dependency, works inside Render's constrained runtime |
 | Hosting | Render — a web service, a background worker, and a Postgres database, one Blueprint (`render.yaml`) |
-| Test-label set | 36 committed cases: 31 rendered (clean matches and named defect categories) plus 5 real bottle photographs |
+| Test-label set | 38 committed cases: 33 rendered (clean matches and named defect categories) plus 5 real bottle photographs |
 
 ## Assumptions log
 
@@ -177,27 +184,32 @@ reliability at the cost of the core path.
 
 > **Limitation — bold type on the government warning.** 27 CFR 16.22(a)(2) requires the words
 > "GOVERNMENT WARNING" to print in bold type, and it forbids bold type on the rest of the
-> statement. LabelHunter checks the first rule and reports it as an advisory signal. It does not
-> check the second rule. `measureBoldSignal` measures the prefix's stroke width against the
-> body's, from the image's own pixels — not a vision model's guess. It reports a three-valued
-> signal: bold, not bold, or uncertain. That signal never changes a verdict. Stroke width is a
-> relative measurement. It depends on the typeface, the printed size, the photograph's
-> resolution, and the compression the photograph has already been through. A verdict built on
-> that signal would accuse a compliant label of a violation it cannot prove. LabelHunter does
+> statement. LabelHunter checks the first rule with an advisory signal, not a hard check. It
+> does not check the second rule at all. `measureBoldSignal` measures the prefix's stroke width
+> against the body's, from the image's own pixels — not a vision model's guess. It reports a
+> three-valued signal: bold, not bold, or uncertain. The signal still never produces a hard FAIL
+> by itself. Stroke width is a relative measurement. It depends on the typeface, the printed
+> size, the photograph's resolution, and the compression the photograph has already been
+> through. A verdict built directly on that signal would accuse a compliant label of a violation
+> it cannot prove. Instead, a not-bold reading on an otherwise-matching warning routes the label
+> to human review (TRO-569) — a defensible flag, not an accusation. LabelHunter does
 > hard-enforce the capitalization rule from the same sentence of the regulation, because
 > capitalization survives a photograph and stroke width does not.
 
 `docs/checkpoints/cp2-warning-subsystem.md` §7.2 names the technique
 (`src/server/warning/bold-detect.ts`) and the measured accuracy behind this paragraph:
-`scripts/eval/results/bold-signal-sweep.json` (`pnpm eval:bold-signal-sweep`) scored 25 of 30
-scoreable golden-set cases correctly, 83.3%, measured 2026-08-13.
+`scripts/eval/results/bold-signal-sweep.json` (`pnpm eval:bold-signal-sweep`) scored 27 of 32
+scoreable golden-set cases correctly, 84.4%, measured 2026-08-13 (re-measured after TRO-569 /
+TRO-528 added `case-34-bold-body-warning-violation` — the 30-case, 83.3% figure predates it).
 
 **A separate, narrower gap remains: the extractor's own self-reported `formatting.bold` field is
 still unused.** This is a different field from the one the paragraph above describes — Haiku's
 own guess (`true`/`false`/`uncertain`), asked for in the prompt and validated into the response,
 but read by nothing. `measureBoldSignal` never reads it either; the two are independent
-mechanisms answering the same question two different ways. Tracked as
-[TRO-569](https://linear.app/troysatchell/issue/TRO-569).
+mechanisms answering the same question two different ways. The review-routing rule above reads
+only the pixel-measured signal — a model's opinion about its own output is not the controlled
+measurement a statutory bold check needs. This field stays unrouted; no ticket currently tracks
+closing it.
 
 **Runtime access control is live, confirmed against the deployed instance.** The brief's own
 guidance ("just don't do anything crazy... not storing anything sensitive") sets a light bar

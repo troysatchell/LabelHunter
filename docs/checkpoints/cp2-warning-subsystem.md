@@ -157,7 +157,7 @@ checkable from a photograph:
 |---|---|---|
 | The first two words are `GOVERNMENT WARNING` | § 16.21 wording | **Yes** — part of the exact compare (§5) |
 | Those two words print in capital letters | § 16.22(a)(2) | **Yes** — deterministic, hard-enforced (§7.1) |
-| Those two words print in bold type | § 16.22(a)(2) | **Advisory** — measured and shown; never gates a verdict (§7.2) |
+| Those two words print in bold type | § 16.22(a)(2) | **Advisory** — measured and shown; a `not-bold` reading routes an otherwise-matching label to review, never a hard FAIL (§7.2, TRO-569 update) |
 | The rest does **not** print in bold type | § 16.22(a)(2) | **No** — not checked at all (§7.2, open question 5) |
 
 The fourth rule is a finding. PRD §2 scoped "bold detection" as one thing. The regulation has
@@ -222,7 +222,7 @@ every one of the three now carries a citation rather than an opinion.
 | Is the statement on the label? | **Yes** — `MISSING_REQUIRED_FIELD` branch | §6.1 |
 | Does it match the exact wording and punctuation? | **Yes** — the exact compare | §5 |
 | Are `GOVERNMENT WARNING` in capital letters…? | **Yes** — deterministic capitalization check | §7.1 |
-| …and bold type? | **Advisory** — measured and shown; never gates a verdict | §7.2 |
+| …and bold type? | **Advisory** — measured and shown; routes a `not-bold` match to review, never a hard FAIL | §7.2 |
 | Are the `S` in Surgeon and `G` in General capitalized? | **Yes** — same check, two more positions | §5.4, §7.1 |
 | Does it appear as one statement? | **No** — not checked. See below | §12 |
 | Is it separate and apart from other information? | **No** — spatial, not checked | §12 |
@@ -903,13 +903,23 @@ photograph does not carry the scale that measurement needs.
 ### 7.2 Bold — an advisory signal, not a hard check
 
 PRD §2 scopes bold detection as a pixel measurement: a stroke-width comparison
-(`measureBoldSignal`, LH-025/LH-026), reported as a three-valued advisory signal that never
-changes a verdict. This document keeps that scope and adds the regulatory detail §2.5 uncovered:
-**§ 16.22(a)(2) has two bold rules, and the schema carries one flag.**
+(`measureBoldSignal`, LH-025/LH-026), reported as a three-valued advisory signal that, at CP-2
+time, never changed a verdict. This document keeps that scope and adds the regulatory detail
+§2.5 uncovered: **§ 16.22(a)(2) has two bold rules, and the schema carries one flag.**
+
+**Update (TRO-569 / INT-005, 2026-08-13).** Jenny Park's requirement: the GOVERNMENT WARNING
+prefix "has to be in all caps and bold" (source-TH.md:33). The CP-2-time rule below — "never
+changes a verdict" — let a non-bold prefix pass silently, which widened the requirement into
+something weaker than the brief. INT-005 forbids that. The fix touches exactly one edge: a
+`not-bold` signal alongside an otherwise-MATCH comparator result now degrades the field to
+`NEEDS_REVIEW` (`src/server/router/field-resolution.ts`'s `resolveGovernmentWarningField`).
+Every other guarantee this section states still holds — never a hard FAIL by itself, never a
+change to an existing MISMATCH, never an accusation on `bold` or `uncertain`. The table and the
+four reasons below describe the measurement itself, unchanged by this update.
 
 | Regulation | Producer | Status |
 |---|---|---|
-| `GOVERNMENT WARNING` **shall** print in bold | `measureBoldSignal()`: bold / not-bold / uncertain — a pixel measurement (`src/server/warning/bold-detect.ts`), not a vision-model guess | Advisory only. Never changes a verdict |
+| `GOVERNMENT WARNING` **shall** print in bold | `measureBoldSignal()`: bold / not-bold / uncertain — a pixel measurement (`src/server/warning/bold-detect.ts`), not a vision-model guess | Advisory. Routes a `not-bold` MATCH to human review (TRO-569); never a hard FAIL by itself |
 | The remainder **may not** print in bold | *no producer* | Not checked. Not attempted. Named in the limitation |
 
 Four reasons bold resists a HARD check, in the order they bite:
@@ -933,8 +943,9 @@ RATIO survives more of what they name than an absolute measurement would, but it
 them. A crop below the measurement's own reliability floor, or with no clean prefix/body split,
 reports `uncertain` rather than guessing — `bold-detect.ts`'s own header comment names the exact
 rules. `scripts/eval/results/bold-signal-sweep.json` (`pnpm eval:bold-signal-sweep`) is the
-measured record of where this signal agrees with ground truth and where it does not: 25 of 30
-scoreable golden-set cases, 83.3%, measured 2026-08-13.
+measured record of where this signal agrees with ground truth and where it does not: 27 of 32
+scoreable golden-set cases, 84.4%, measured 2026-08-13 (re-measured after TRO-569 / TRO-528
+added `case-34-bold-body-warning-violation`; the 30-case, 83.3% figure predates it).
 
 ### 7.3 The limitation wording — drafted for reuse
 
@@ -943,13 +954,15 @@ copied verbatim, so the tool and the docs never drift apart on what was promised
 
 > **Limitation — bold type on the government warning.** 27 CFR 16.22(a)(2) requires the words
 > "GOVERNMENT WARNING" to print in bold type, and it forbids bold type on the rest of the
-> statement. LabelHunter checks the first rule and reports it as an advisory signal. It does not
-> check the second rule. `measureBoldSignal` measures the prefix's stroke width against the
-> body's, from the image's own pixels — not a vision model's guess. It reports a three-valued
-> signal: bold, not bold, or uncertain. That signal never changes a verdict. Stroke width is a
-> relative measurement. It depends on the typeface, the printed size, the photograph's
-> resolution, and the compression the photograph has already been through. A verdict built on
-> that signal would accuse a compliant label of a violation it cannot prove. LabelHunter does
+> statement. LabelHunter checks the first rule with an advisory signal, not a hard check. It
+> does not check the second rule at all. `measureBoldSignal` measures the prefix's stroke width
+> against the body's, from the image's own pixels — not a vision model's guess. It reports a
+> three-valued signal: bold, not bold, or uncertain. The signal still never produces a hard FAIL
+> by itself. Stroke width is a relative measurement. It depends on the typeface, the printed
+> size, the photograph's resolution, and the compression the photograph has already been
+> through. A verdict built directly on that signal would accuse a compliant label of a violation
+> it cannot prove. Instead, a not-bold reading on an otherwise-matching warning routes the label
+> to human review (TRO-569) — a defensible flag, not an accusation. LabelHunter does
 > hard-enforce the capitalization rule from the same sentence of the regulation, because
 > capitalization survives a photograph and stroke width does not.
 
@@ -1319,8 +1332,13 @@ are the same magnitude as the signal.
 
 So the design reports a three-valued signal — bold, not bold, uncertain — measured from the
 image's own pixels (`measureBoldSignal`, LH-025/LH-026, not the vision model), shows it as
-advisory in the detail view, and never lets it change a verdict. Turning it into a FAIL would
-accuse a compliant label of a violation we cannot prove.
+advisory in the detail view, and never lets it produce a hard FAIL by itself. Turning it into a
+FAIL would accuse a compliant label of a violation we cannot prove. TRO-569 (2026-08-13) does
+let a `not-bold` reading route an otherwise-matching warning to human review instead of a silent
+PASS — Jenny's own requirement says the prefix "has to be in all caps and bold," and passing a
+non-bold prefix silently would have quietly dropped half of that sentence. Routing to a person is
+still not an accusation; it is the same never-accuse posture applied to the one edge where
+staying silent was itself the wrong call.
 
 One thing I would add, because verifying the regulation turned it up: 16.22(a)(2) actually contains
 *two* bold rules. The first two words must be bold, and the rest must not be. Our schema carries
@@ -1332,7 +1350,8 @@ The technique — stroke-width measurement by morphological erosion on a binariz
 prefix to body at matched x-height — is built and wired in (LH-025/LH-026), not a v2 feature: it
 needed a clean, near-native-resolution crop and a shared typeface, which is exactly why it stays
 advisory rather than a hard check. `scripts/eval/results/bold-signal-sweep.json` has the measured
-accuracy: 25 of 30 scoreable golden-set cases, 83.3%.
+accuracy: 27 of 32 scoreable golden-set cases, 84.4% (re-measured 2026-08-13 after TRO-569 /
+TRO-528 added `case-34-bold-body-warning-violation`).
 
 ---
 

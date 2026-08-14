@@ -1,17 +1,17 @@
 {
   "ticket": "TRO-533 / LH-026",
-  "measuredAt": "2026-08-13T22:07:24.219Z",
+  "measuredAt": "2026-08-14T00:51:03.071Z",
   "manifestVersion": "1.0.0",
-  "goldenSetCommitSha": "0e6e3e1432f63609ad49febf5445fb866cadaf91",
-  "manifestContentHash": "fa3dbcfb60a6ecbd6c2de4ec837c54c72b87e909865ee9429946ac79cc5e0784",
+  "goldenSetCommitSha": "9787ff95c2f8975e96048d0e47c1de68d252db0d",
+  "manifestContentHash": "10a2a5dbcbdddc418de4f24310132812abe769f0df17aabbc5e94da032e062f7",
   "method": "Read-only replay of the bold-signal pipeline (preprocessImage -> detectWarningRegion -> cropForOcr -> measureBoldSignal) against every committed golden-set image, in the same order the verify route's default dependencies call them. Scored against golden-set/manifest.json's label.governmentWarningPrefixBold ground truth (TRO-527 / LH-022). No Anthropic API call. No database write. The only file this script writes is this one.",
-  "caseCount": 36,
-  "scoreableCaseCount": 30,
-  "correctCount": 25,
-  "accuracy": 0.8333333333333334,
+  "caseCount": 38,
+  "scoreableCaseCount": 32,
+  "correctCount": 27,
+  "accuracy": 0.84375,
   "signalDistribution": {
-    "bold": 25,
-    "not-bold": 0,
+    "bold": 26,
+    "not-bold": 1,
     "uncertain": 6,
     "not-measured": 5
   },
@@ -550,6 +550,42 @@
         "y": 526,
         "width": 882,
         "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-33-not-bold-warning-prefix",
+      "category": "clean-match",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": false,
+      "expectedSignal": "not-bold",
+      "measuredSignal": "not-bold",
+      "measuredReason": "the prefix's stroke width does not measure wider than the body's",
+      "measuredRatio": 1.2777777777777777,
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "correct": true
+    },
+    {
+      "caseId": "case-34-bold-body-warning-violation",
+      "category": "clean-match",
+      "governmentWarningPresent": true,
+      "groundTruthPrefixBold": true,
+      "expectedSignal": "bold",
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 1.3333333333333333,
+      "region": {
+        "x": 58,
+        "y": 524,
+        "width": 882,
+        "height": 138
       },
       "detectionMethod": "classical",
       "correct": true

@@ -1,0 +1,610 @@
+{
+  "ticket": "TRO-546",
+  "measuredAt": "2026-08-13T22:44:55.328Z",
+  "manifestVersion": "1.0.0",
+  "method": "Read-only replay of the OCR channel (preprocessImage -> detectWarningRegion -> cropForOcr -> runWarningOcr -> evaluateCandidate) against every committed golden-set image, in the same order the verify route's default dependencies call them and the same method scripts/eval/ocr-floor-sweep.ts (TRO-535/LH-030b) uses. No Anthropic API call. No database write. The only file this script writes is this one — scripts/eval/results/ocr-floor-sweep.json (TRO-535's own artifact) is untouched; its post-TRO-527 image-rebuild staleness is TRO-558's, not this ticket's.",
+  "fixSummary": "src/server/warning/region-detect.ts's detectWarningRegionClassical previously classified 'ink' by comparing each pixel to one fixed absolute grey value (180/255). A row whose WHOLE local background has been darkened (case-22's warning block: brightnessFactor 0.3, region-scoped) then reads as ~88% ink (measured) — over MAX_INK_FRACTION's 60% cap — so the block is discarded as 'a solid fill, not print' and the OCR channel never runs. Fixed by comparing each pixel to its OWN row's 85th-percentile grey value instead of one fixed constant (row detail in region-detect.ts's DARK_RATIO/BACKGROUND_PERCENTILE comments) plus a smaller crop margin (TRO-546: the found ink already sits flush against case-22's hard degradation-region edge; the original margin pushed the crop past it into undegraded pixels, which broke tesseract's page segmentation outright — a fixture-specific artifact, not a property of dim lighting).",
+  "case22": {
+    "caseId": "case-22-low-light-warning-block",
+    "category": "low-light",
+    "governmentWarningPresent": true,
+    "ocrChannelState": "unavailable",
+    "region": null,
+    "detectionMethod": null,
+    "ocrConfidence": null,
+    "wording": null,
+    "distance": null,
+    "capsOk": null
+  },
+  "caseCount": 36,
+  "warningBearingCaseCount": 34,
+  "ocrChannelStateCounts": {
+    "unavailable": 4,
+    "belowFloor": 3,
+    "healthy": 27
+  },
+  "results": [
+    {
+      "caseId": "case-01-clean-match-spirits",
+      "category": "clean-match",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-02-clean-match-beer-no-abv",
+      "category": "clean-match",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-03-clean-match-wine",
+      "category": "clean-match",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 96,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-04-clean-match-spirits-alt-format",
+      "category": "clean-match",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-05-abv-mismatch-application-higher",
+      "category": "abv-mismatch",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-06-abv-mismatch-label-higher",
+      "category": "abv-mismatch",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-07-abv-proof-mismatch-internal",
+      "category": "abv-mismatch",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-08-title-case-warning-prefix-only",
+      "category": "title-case-warning",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 870,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": false
+    },
+    {
+      "caseId": "case-09-title-case-warning-full-statement",
+      "category": "title-case-warning",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 864,
+        "height": 166
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": false
+    },
+    {
+      "caseId": "case-10-reworded-warning-clause-one",
+      "category": "reworded-warning",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 870,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "MISMATCH",
+      "distance": 38,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-11-reworded-warning-clause-two",
+      "category": "reworded-warning",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 134
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "MISMATCH",
+      "distance": 24,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-12-missing-warning-spirits",
+      "category": "missing-warning",
+      "governmentWarningPresent": false,
+      "ocrChannelState": "unavailable",
+      "region": null,
+      "detectionMethod": null,
+      "ocrConfidence": null,
+      "wording": null,
+      "distance": null,
+      "capsOk": null
+    },
+    {
+      "caseId": "case-13-missing-warning-wine",
+      "category": "missing-warning",
+      "governmentWarningPresent": false,
+      "ocrChannelState": "unavailable",
+      "region": null,
+      "detectionMethod": null,
+      "ocrConfidence": null,
+      "wording": null,
+      "distance": null,
+      "capsOk": null
+    },
+    {
+      "caseId": "case-14-case-variant-brand-stones-throw",
+      "category": "case-variant-brand",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-15-case-variant-brand-punctuation",
+      "category": "case-variant-brand",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-16-case-variant-brand-extra-words",
+      "category": "case-variant-brand",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-17-glare-front-label",
+      "category": "glare",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 96,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-18-glare-warning-block",
+      "category": "glare",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 134
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 91,
+      "wording": "MISMATCH",
+      "distance": 46,
+      "capsOk": false
+    },
+    {
+      "caseId": "case-19-rotation-mild-correctable",
+      "category": "rotation",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "unavailable",
+      "region": null,
+      "detectionMethod": null,
+      "ocrConfidence": null,
+      "wording": null,
+      "distance": null,
+      "capsOk": null
+    },
+    {
+      "caseId": "case-20-rotation-severe-upside-down",
+      "category": "rotation",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "unavailable",
+      "region": null,
+      "detectionMethod": null,
+      "ocrConfidence": null,
+      "wording": null,
+      "distance": null,
+      "capsOk": null
+    },
+    {
+      "caseId": "case-21-low-light-front-label",
+      "category": "low-light",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 134
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-22-low-light-warning-block",
+      "category": "low-light",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "unavailable",
+      "region": null,
+      "detectionMethod": null,
+      "ocrConfidence": null,
+      "wording": null,
+      "distance": null,
+      "capsOk": null
+    },
+    {
+      "caseId": "case-23-tiny-warning-text-standard-bottle",
+      "category": "tiny-warning-text",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 520,
+        "width": 878,
+        "height": 28
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 65,
+      "wording": "MISMATCH",
+      "distance": 25,
+      "capsOk": false
+    },
+    {
+      "caseId": "case-25-odd-typography-script-brand",
+      "category": "odd-typography",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-26-odd-typography-blackletter-class-type",
+      "category": "odd-typography",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-27-conflicting-net-contents",
+      "category": "conflicting-application-vs-label",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-28-conflicting-class-type",
+      "category": "conflicting-application-vs-label",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-29-conflicting-brand-name",
+      "category": "conflicting-application-vs-label",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 96,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-30-clean-match-net-contents-alt-format",
+      "category": "clean-match",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-31-title-case-warning-surgeon-general-lowercase",
+      "category": "title-case-warning",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": false
+    },
+    {
+      "caseId": "case-32-reworded-warning-near-miss-missing-comma",
+      "category": "reworded-warning",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 58,
+        "y": 526,
+        "width": 882,
+        "height": 136
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 95,
+      "wording": "NEAR_MISS",
+      "distance": 1,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-35-clean-match-real-photo-flat-scan",
+      "category": "clean-match",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "healthy",
+      "region": {
+        "x": 67,
+        "y": 41,
+        "width": 1034,
+        "height": 406
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 93,
+      "wording": "EXACT_MATCH",
+      "distance": 0,
+      "capsOk": true
+    },
+    {
+      "caseId": "case-36-rotation-real-photo-gentle-curve",
+      "category": "rotation",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "below-floor",
+      "region": {
+        "x": 0,
+        "y": 0,
+        "width": 1000,
+        "height": 187
+      },
+      "detectionMethod": "band-search",
+      "ocrConfidence": 47,
+      "wording": "MISMATCH",
+      "distance": 186,
+      "capsOk": false
+    },
+    {
+      "caseId": "case-37-rotation-real-photo-severe-curve-partial-crop",
+      "category": "rotation",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "below-floor",
+      "region": {
+        "x": 45,
+        "y": 122,
+        "width": 710,
+        "height": 408
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 41,
+      "wording": "MISMATCH",
+      "distance": 192,
+      "capsOk": false
+    },
+    {
+      "caseId": "case-38-glare-real-photo-crown-royal",
+      "category": "glare",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "unavailable",
+      "region": null,
+      "detectionMethod": null,
+      "ocrConfidence": null,
+      "wording": null,
+      "distance": null,
+      "capsOk": null
+    },
+    {
+      "caseId": "case-39-rotation-real-photo-coppola-wraparound",
+      "category": "rotation",
+      "governmentWarningPresent": true,
+      "ocrChannelState": "below-floor",
+      "region": {
+        "x": 0,
+        "y": 0,
+        "width": 1920,
+        "height": 945
+      },
+      "detectionMethod": "classical",
+      "ocrConfidence": 33,
+      "wording": "MISMATCH",
+      "distance": 215,
+      "capsOk": false
+    }
+  ]
+}

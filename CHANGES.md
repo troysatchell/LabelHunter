@@ -4,6 +4,84 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-563 — case-22 corpus decision: strengthen the pixels, keep REVIEW/LOW_IMAGE_QUALITY (2026-08-13)
+
+**The gap.** TRO-546 fixed a real bug. Region detection could not find case-22's warning
+block once it was dark, so the OCR channel never ran. The fix worked. It worked too well:
+after it merged, Tesseract (confidence 95, EXACT_MATCH) and live Haiku (confidence 0.98,
+exact) both read the warning text correctly from the committed pixels. Case-22's own
+degradation (`brightnessFactor 0.3` alone, no contrast or noise change) darkened the block
+but did not degrade its edges. The pixels no longer matched the case's own stated intent.
+The cascade scored the case PASS. The manifest still expected REVIEW/LOW_IMAGE_QUALITY.
+
+**Troy's ruling (2026-08-13, asked directly).** Strengthen the pixels. Keep the expected
+verdict. TRO-516's own C3 fix for case-21 set this precedent: a corpus case's `expected`
+block is ground truth. A human attests it. The code does not adjust it to fit a measurement.
+
+**The fix.**
+1. Re-rendered case-22's image. Added a stronger low-light transform to the warning region:
+   `contrastFactor 0.38` (was off) and `noiseAmplitude 30` (was off), plus a small
+   whole-image blur (`sigma 2.0`). This follows TRO-516's C3 recipe for case-21, then goes
+   further. C3's own exact values (`contrastFactor 0.45`, `noiseAmplitude 22`, `blur 1.6`)
+   were not strong enough here: measured read-only, with no API call, Tesseract still read a
+   near-miss at confidence 94, above `OCR_CONFIDENCE_FLOOR` (50). The comparator still used
+   the dual-channel table at that strength. Strengthened further, past the measured
+   threshold, until `detectWarningRegion` (classical and band-search both) returned null on
+   the real committed image. The OCR channel is now genuinely unavailable. This routes CP-2
+   §4.5's single-channel table, not the dual-channel one.
+2. `golden-set/manifest.json`'s `expected` block for case-22 did not change. Only
+   `degradations` and `notes` changed. Ground truth still says REVIEW/LOW_IMAGE_QUALITY. A
+   human set this value, per this case's own `verified: false` flag
+   (`golden-set/README.md:81-85`).
+3. Two tests depend on this image's real pixels. TRO-546 wrote both against the OLD image:
+   `region-detect.test.ts`'s case-22 test expected OCR to find and read the block, and
+   `bold-detect.test.ts`'s case-22 test expected a bold signal. Both now assert the new,
+   measured behavior: no region found at all. This matches the pattern the case-19/20 tests
+   in the same file already use for a real detection gap. Neither test was weakened. Both
+   still pin one exact result — the result the strengthened pixels actually produce.
+
+**Confirmed, live (real spend, not estimated).** One authorized live Haiku call confirmed
+the result: `pnpm exec tsx scripts/eval/check.ts --live --case=case-22-low-light-warning-block`,
+run against the regenerated image. Haiku transcribed the warning text correctly — an exact
+match to the canonical statute — at confidence 0.65. This is below
+`SINGLE_CHANNEL_PASS_CONFIDENCE` (0.90). The OCR channel was unavailable
+(`warningChannel: "single"`). CP-2 §4.5's single-channel table applies here: an exact match
+at confidence under 0.90 is REVIEW/LOW_IMAGE_QUALITY. The cascade returned
+`labelVerdict: REVIEW`, `reviewReason: LOW_IMAGE_QUALITY` — matching the manifest. Real
+cost: $0.004754 (Haiku extraction) plus $0.010076 (Sonnet resolver) equals $0.01483 total.
+The router correctly escalated to the resolver on `LOW_IMAGE_QUALITY`, per the cascade
+architecture (TH-R19). Committed as `scripts/eval/results/tro-563-case22-live-check.json`.
+
+**TRO-542's territory.** This keeps one working LOW_IMAGE_QUALITY case in the corpus. Before
+this fix, case-22 was the corpus's only case that exercised this trigger, and it had stopped
+firing. Without this fix, zero warning-bearing cases would reach LOW_IMAGE_QUALITY.
+
+**Not run: the golden-set re-baseline protocol** (lessons.md rule 32). This ticket's own
+dispatch brief authorized real spend for one live Haiku call only, about $0.01 to $0.02, to
+confirm the cascade's behavior. It did not authorize the full re-baseline sweep
+(`pnpm eval:variance -- --live --full --repeats=3 --establish-baseline`, about $1 at 36
+cases) that rule 32 otherwise asks a golden-set-touching ticket to run.
+`scripts/eval/check.ts`'s own module comment explains why this is safe to skip here: gate
+G8, in cheap mode, already treats a stale-baseline-only result as a loud, non-blocking
+warning. This design choice exists so one corpus edit does not force every ticket to buy a
+fresh baseline sweep before it can merge. Flagged here for the orchestrator: either
+authorize the re-baseline spend — possibly batched with today's other golden-set-touching
+tickets — or accept the cheap-mode warning as it stands.
+
+**Rollback.** Revert the PR. `golden-set/manifest.json`'s `expected` block for case-22 never
+changed. A revert restores the easier-to-read pixels only. It does not touch ground truth in
+either direction.
+
+**Confirmed.** Red first, for the right reason: `scripts/golden/images.test.ts`'s case-22
+degradation assertion failed against the old manifest values, with the exact
+expected-vs-received values shown in the diff. Green after the manifest edit. `pnpm
+golden:build` regenerated only `case-22-low-light-warning-block.jpg`, confirmed by `git
+status` — no other case's image moved. Full unit suite: 186 test files, 2347 tests, all
+green.
+
+
+
+
 ## TRO-566 — Batch budget enforcement, the check-then-act race, and 500-vs-503 on a DB failure (2026-08-13)
 
 Advances TH-R4, TH-R6, TH-R19. Three findings from PR #43's review of TRO-482's daily budget

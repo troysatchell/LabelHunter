@@ -45,8 +45,15 @@ describe("ReviewActions — TH-R3, two large obvious buttons, no hidden actions"
 
     await user.click(screen.getByRole("button", { name: "Approve" }));
     expect(submit).toHaveBeenCalledWith(42, "APPROVED");
-    expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
+    // Regression test: the clicked button's own label swaps to
+    // "Recording…" while pending, matching the "X-ing…" convention every
+    // other submit button in this app uses — a click that only dims a
+    // button gives a first-time user on a slow connection no way to tell
+    // "it registered" from "it's broken". A screen-reader user gets the
+    // same signal from the role="status" announcement.
+    expect(screen.getByRole("button", { name: "Recording…" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Reject" })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Recording…");
 
     resolve(RECORDED);
     await screen.findByText(/Recorded/);
@@ -60,6 +67,20 @@ describe("ReviewActions — TH-R3, two large obvious buttons, no hidden actions"
 
     await user.click(screen.getByRole("button", { name: "Reject" }));
     expect(submit).toHaveBeenCalledWith(42, "REJECTED");
+  });
+
+  it("swaps the Reject button's own label to 'Recording…' while pending, not Approve's", async () => {
+    const user = userEvent.setup();
+    const { promise } = deferred<RecordDispositionResponse>();
+    const submit = vi.fn().mockReturnValue(promise);
+    render(<ReviewActions reviewQueueId={42} submit={submit} onResolved={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "Reject" }));
+    expect(screen.getByRole("button", { name: "Recording…" })).toBeDisabled();
+    // Approve is disabled too (both buttons lock together), but keeps its
+    // own resting label — only the button the user actually pressed
+    // changes what it says.
+    expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
   });
 
   it("shows a designed error panel on failure, re-enables the buttons, and never calls onResolved", async () => {

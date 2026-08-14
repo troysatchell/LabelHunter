@@ -18,7 +18,7 @@ import { WarningTranscription } from "./WarningTranscription";
 export const VERDICT_ICON: Record<FieldVerdict, string> = {
   MATCH: "✓",
   MISMATCH: "✗",
-  NEEDS_REVIEW: "⚠",
+  NEEDS_REVIEW: "⚠︎",
 };
 
 export const VERDICT_STATUS_TEXT: Record<FieldVerdict, string> = {

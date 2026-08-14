@@ -61,6 +61,19 @@ describe("ReviewItemDetail", () => {
     expect(brandRow).toHaveTextContent("Old Tom Distillery");
   });
 
+  it("colors each field row by its own verdict, not a flat neutral border", () => {
+    // Regression test: VERDICT_ROW_CLASS previously pointed at
+    // `checklist-row--*`, a class family that shares no selector with
+    // `.review-field`'s own later, equal-specificity border-left
+    // shorthand in globals.css — every row rendered with the same
+    // neutral gray border regardless of verdict. `review-field--*` is
+    // scoped to this file's own element and does not have that conflict.
+    render(<ReviewItemDetail item={BASE_ITEM} />);
+
+    expect(screen.getByTestId("review-field-BRAND_NAME")).toHaveClass("review-field--needs_review");
+    expect(screen.getByTestId("review-field-ALCOHOL_CONTENT")).toHaveClass("review-field--match");
+  });
+
   it("renders the label image the reviewer is ruling on, sized from persisted dimensions (TRO-575)", () => {
     render(<ReviewItemDetail item={BASE_ITEM} />);
     const image = screen.getByRole("img", { name: "The label submitted with this application" });

@@ -35,6 +35,20 @@ describe("BatchProgressSummary", () => {
     expect(banner).toHaveTextContent("4 of 10 labels processed.");
   });
 
+  it("gives a batch that could not start an assertive, visually distinct treatment, not the same neutral banner as an in-progress batch", () => {
+    // Regression test: FAILED used to share the exact same
+    // status-banner styling and role="status" as PENDING/RUNNING/
+    // COMPLETED — "Could not start. 0 of 0 labels processed." rendered
+    // with no color signal and no assertive announcement, even though
+    // it is a real failure, the same tier as this app's other designed
+    // error states.
+    render(<BatchProgressSummary progress={progress({ status: "FAILED", totalCount: 0, processedCount: 0 })} />);
+    const banner = screen.getByTestId("batch-status-banner");
+    expect(banner).toHaveTextContent("Could not start.");
+    expect(banner).toHaveAttribute("role", "alert");
+    expect(banner).toHaveClass("batch-progress-summary__status--failed");
+  });
+
   it("shows the four PRD-named summary counts, each labeled plainly", () => {
     render(<BatchProgressSummary progress={progress()} />);
     expect(screen.getByTestId("batch-stat-processed")).toHaveTextContent("4 / 10");

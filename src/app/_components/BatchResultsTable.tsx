@@ -68,6 +68,12 @@ export function BatchResultsTable({ results }: BatchResultsTableProps) {
             <tr key={row.key} className={`batch-results-table__row batch-results-table__row--${row.statusTone}`} data-testid={`batch-result-row-${row.key}`}>
               <th scope="row" className="batch-results-table__label">
                 {row.label}
+                {/* The camera filename alone gives a reviewer nothing to
+                    scan by at the 200-300-row scale this table is built
+                    for (TH-R4) — the brand name is the fact they actually
+                    recognize. Same sub-line pattern the Status column
+                    already uses for statusDetail. */}
+                <p className="batch-results-table__detail">{row.brandName}</p>
               </th>
               <td>
                 <FieldMark verdict={row.brand} />

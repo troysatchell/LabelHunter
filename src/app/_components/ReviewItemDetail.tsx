@@ -14,9 +14,13 @@
  * `src/app/_components/DetailView.tsx` (LH-016/TRO-466, merged since)
  * defines its own `detail-field*` rules for a visually similar per-field
  * comparison; consolidating the two families is TRO-578's job, not a
- * drive-by here. `checklist-row--*` below IS shared on purpose — those
- * classes are already merged (`ResultsChecklist.tsx`), so reusing them is
- * the real "match existing style" this ticket's brief asked for.
+ * drive-by here. `VERDICT_ROW_CLASS` below maps to `review-field--match`
+ * etc., not `checklist-row--*`: an earlier version of this file applied
+ * the `checklist-row--*` verdict classes to a `review-field` element, but
+ * `.review-field`'s own border-left shorthand (added later in
+ * globals.css) won the cascade at equal specificity and silently reset
+ * every verdict color back to neutral gray. `review-field--*` is scoped
+ * to this file's own element and does not have that conflict.
  */
 import type { FieldVerdict, ReviewDisposition } from "../../lib/db/enums";
 import type { ReviewQueueItemDetail } from "../../server/review-queue";
@@ -42,9 +46,9 @@ const VERDICT_STATUS_TEXT: Record<FieldVerdict, string> = {
 };
 
 const VERDICT_ROW_CLASS: Record<FieldVerdict, string> = {
-  MATCH: "checklist-row--match",
-  MISMATCH: "checklist-row--mismatch",
-  NEEDS_REVIEW: "checklist-row--needs_review",
+  MATCH: "review-field--match",
+  MISMATCH: "review-field--mismatch",
+  NEEDS_REVIEW: "review-field--needs_review",
 };
 
 const DISPOSITION_VERB: Record<ReviewDisposition, string> = {
@@ -64,7 +68,7 @@ export function ReviewItemDetail({ item }: ReviewItemDetailProps) {
       </p>
 
       <p className="review-item__context">
-        {item.brandName} — {item.classType} ({item.beverageType})
+        {item.brandName} · {item.classType} ({item.beverageType})
       </p>
       <p className="review-item__waiting">In the queue since {formatTimestampUTC(item.createdAt)}</p>
 

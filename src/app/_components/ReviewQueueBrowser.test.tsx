@@ -165,7 +165,14 @@ describe("ReviewQueueBrowser", () => {
     await screen.findByTestId("review-queue-row-42");
     await user.click(screen.getByRole("button", { name: "Load more" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("LabelHunter could not load the review queue. Try again.");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("LabelHunter could not load the review queue. Try again.");
+    // Regression test: the reviewer clicked "Load more", not "Refresh" —
+    // the panel must name the control they actually pressed, not always
+    // claim a refresh failed (TH-R20: the real reason, never a
+    // plausible-but-wrong one).
+    expect(alert).toHaveTextContent("Could not load more items");
+    expect(alert).not.toHaveTextContent("Could not refresh the review queue");
     expect(screen.getByTestId("review-queue-row-42")).toBeInTheDocument();
     // Still says the queue is deeper than what is on screen — a failed
     // page load must not make a partial list look complete.

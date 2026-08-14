@@ -91,16 +91,30 @@ export function ReviewActions({ reviewQueueId, submit = submitDisposition, onRes
     }
   }
 
+  // In-flight labels, matching the "X-ing…" convention every other submit
+  // button in this app already uses (VerifyForm's "Checking the label…",
+  // BatchUploadForm's "Starting the batch…") — a click that only dims a
+  // button gives a first-time user on a slow connection no way to tell
+  // "it registered" from "it's broken".
+  const approvePending = phase.status === "pending" && phase.disposition === "APPROVED";
+  const rejectPending = phase.status === "pending" && phase.disposition === "REJECTED";
+
   return (
     <div className="review-actions">
       <div className="review-actions__buttons">
         <button type="button" className="primary-button" disabled={isDisabled} onClick={() => void act("APPROVED")}>
-          Approve
+          {approvePending ? "Recording…" : "Approve"}
         </button>
         <button type="button" className="reject-button" disabled={isDisabled} onClick={() => void act("REJECTED")}>
-          Reject
+          {rejectPending ? "Recording…" : "Reject"}
         </button>
       </div>
+
+      {phase.status === "pending" && (
+        <p className="status-banner" role="status">
+          Recording…
+        </p>
+      )}
 
       {phase.status === "success" && (
         <p className="status-banner" role="status">

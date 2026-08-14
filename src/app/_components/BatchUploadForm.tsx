@@ -143,7 +143,13 @@ function BatchPreviewResult({ result, starting, startError, onStart }: BatchPrev
           </button>
           {startError && (
             <div className="error-panel" role="alert">
-              <p className="error-panel__title">Could not start this batch</p>
+              {/* Same lookup the preview-error panel below uses, not a
+                  hardcoded title: a RATE_LIMITED or BUDGET_EXHAUSTED
+                  failure carries a specific, plain-language reason
+                  (PRD §8's key-protection guard), and which button the
+                  reviewer pressed to reach it must not change whether
+                  they get to see it. */}
+              <p className="error-panel__title">{PREVIEW_ERROR_TITLE[startError.kind] ?? "Could not start this batch"}</p>
               <p className="error-panel__message">{startError.message}</p>
             </div>
           )}
@@ -171,7 +177,7 @@ export function BatchUploadForm({ submitPreview = submitBatchPreview, submitStar
     const images = Array.from(imagesInputRef.current?.files ?? []);
     const zip = zipInputRef.current?.files?.[0];
     if (images.length === 0 && (!zip || zip.size === 0)) {
-      setFormError("Add label images before you preview — individual files or one zip file.");
+      setFormError("Add label images before you preview. Choose individual files, or upload one zip file.");
       return null;
     }
     setFormError(null);

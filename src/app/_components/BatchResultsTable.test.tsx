@@ -38,7 +38,7 @@ describe("BatchResultsTable", () => {
 
   it("renders the ⚠ NEEDS_REVIEW mark, with its own visually-hidden status text (CodeRabbit finding, local review round 1)", () => {
     render(<BatchResultsTable results={[row({ warning: "NEEDS_REVIEW", statusTone: "review", statusText: "Needs review." })]} />);
-    expect(screen.getByText("⚠")).toBeInTheDocument();
+    expect(screen.getByText(/⚠/)).toBeInTheDocument();
     expect(screen.getByText("Needs review.", { selector: ".visually-hidden" })).toBeInTheDocument();
   });
 
@@ -80,6 +80,21 @@ describe("BatchResultsTable", () => {
     const rows = [row({ key: "v-1", label: "a.jpg" }), row({ key: "v-2", label: "b.jpg" })];
     render(<BatchResultsTable results={rows} />);
     const cells = screen.getAllByRole("rowheader");
-    expect(cells.map((c) => c.textContent)).toEqual(["a.jpg", "b.jpg"]);
+    // Each label cell also carries the brand name as a visible sub-line
+    // (see the dedicated brandName test below) — the fixture's own
+    // brandName default ("Highland Peak Distillery") appears after the
+    // filename in both rows here.
+    expect(cells.map((c) => c.textContent)).toEqual(["a.jpgHighland Peak Distillery", "b.jpgHighland Peak Distillery"]);
+  });
+
+  it("shows the brand name as a visible sub-line under the filename, not only in the link's aria-label", () => {
+    // Regression test: at the 200-300-row scale this table is built for
+    // (TH-R4), the camera filename alone gives a reviewer nothing to scan
+    // by. The brand name previously reached the DOM only inside a hidden
+    // aria-label, and only for rows that already had a verificationId.
+    render(<BatchResultsTable results={[row({ label: "IMG_20240815_142233.jpg", brandName: "Old Tom Distillery" })]} />);
+    const labelCell = screen.getByRole("rowheader");
+    expect(labelCell).toHaveTextContent("IMG_20240815_142233.jpg");
+    expect(labelCell).toHaveTextContent("Old Tom Distillery");
   });
 });

@@ -11,7 +11,19 @@ import { type BatchProgressErrorResponse, type BatchProgressResponse } from "../
 import { BATCH_PREVIEW_ERROR_KINDS, type BatchPreviewErrorResponse, type BatchPreviewSuccessResponse } from "../api/batch/preview/types";
 import { BATCH_START_ERROR_KINDS, type BatchStartErrorResponse, type BatchStartSuccessResponse } from "../api/batch/start/types";
 
-export type BatchClientErrorKind = "VALIDATION" | "MALFORMED_CSV" | "MALFORMED_ZIP" | "NO_READY_ROWS" | "NOT_FOUND" | "SERVICE";
+// RATE_LIMITED and BUDGET_EXHAUSTED (PRD §8's key-protection guard) were
+// missing from this union even though the server can send either — every
+// call site below already threw them via an unchecked cast. Named here
+// instead of cast around.
+export type BatchClientErrorKind =
+  | "VALIDATION"
+  | "MALFORMED_CSV"
+  | "MALFORMED_ZIP"
+  | "NO_READY_ROWS"
+  | "NOT_FOUND"
+  | "SERVICE"
+  | "RATE_LIMITED"
+  | "BUDGET_EXHAUSTED";
 
 export class BatchClientError extends Error {
   readonly kind: BatchClientErrorKind;

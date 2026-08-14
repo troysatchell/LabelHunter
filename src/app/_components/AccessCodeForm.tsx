@@ -109,8 +109,11 @@ export function AccessCodeFormView({ submit = submitAccessCode, onSuccess }: Acc
           <input
             id="access-code-input"
             name="code"
-            type="password"
+            type="text"
             autoComplete="off"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
             className="field__input"
             value={code}
             onChange={(event) => setCode(event.target.value)}

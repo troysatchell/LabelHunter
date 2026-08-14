@@ -253,6 +253,29 @@ export function VerifyForm({ submit = submitVerification, extract = requestExtra
       netContentsUnit: String(formData.get("netContentsUnit") ?? ""),
     };
 
+    // One validation strategy for the whole form, not two: every required
+    // field is checked here and reported through this component's own
+    // ErrorPanel, the same way the photo check above already works. HTML
+    // `required` is deliberately absent from every control (see the file
+    // header note by the photo input) — a native browser tooltip fires
+    // before `submit`, so it could preempt whichever one of these checks
+    // would otherwise run first, and its wording is out of this app's
+    // control. beverageType and netContentsUnit are not checked here: both
+    // always carry a value from their own `defaultChecked`/`defaultValue`,
+    // so they can never actually be empty.
+    if (values.brandName.trim() === "") {
+      setPhase({ status: "error", kind: "VALIDATION", message: "Add a brand name before you verify." });
+      return;
+    }
+    if (values.classType.trim() === "") {
+      setPhase({ status: "error", kind: "VALIDATION", message: "Add a class or type before you verify." });
+      return;
+    }
+    if (values.netContentsValue.trim() === "") {
+      setPhase({ status: "error", kind: "VALIDATION", message: "Add net contents before you verify." });
+      return;
+    }
+
     setPhase({ status: "loading" });
     try {
       const result = await submit(values);
@@ -285,12 +308,15 @@ export function VerifyForm({ submit = submitVerification, extract = requestExtra
           <label className="field__label" htmlFor="verify-image">
             Label photo
           </label>
-          {/* No `required` here on purpose: this component's own check in
-              `runSubmit` below already catches a missing photo and shows a
-              specific, plain-language panel ("Add a label photo before you
-              verify.") — a clearer message for a first-time user (TH-R3)
-              than a browser's terse native file-input validation tooltip,
-              which also varies by browser. */}
+          {/* No `required` here, or on any other control in this form: this
+              component's own checks in `runSubmit` below catch every
+              missing required value and show a specific, plain-language
+              panel ("Add a label photo before you verify.", and so on) — a
+              clearer message for a first-time user (TH-R3) than a
+              browser's terse native validation tooltip, which also varies
+              by browser and fires before `submit`, so it could silently
+              preempt whichever of these checks would otherwise report
+              first. One validation strategy for the whole form. */}
           <input
             ref={fileInputRef}
             id="verify-image"
@@ -321,7 +347,6 @@ export function VerifyForm({ submit = submitVerification, extract = requestExtra
                   name="beverageType"
                   value={option.value}
                   defaultChecked={index === 0}
-                  required
                   disabled={isLoading}
                   onChange={() => markTouched("beverageType")}
                 />
@@ -340,7 +365,6 @@ export function VerifyForm({ submit = submitVerification, extract = requestExtra
             id="verify-brand-name"
             name="brandName"
             type="text"
-            required
             className="field__input"
             disabled={isLoading}
             onInput={() => markTouched("brandName")}
@@ -356,7 +380,6 @@ export function VerifyForm({ submit = submitVerification, extract = requestExtra
             id="verify-class-type"
             name="classType"
             type="text"
-            required
             className="field__input"
             disabled={isLoading}
             onInput={() => markTouched("classType")}
@@ -399,7 +422,6 @@ export function VerifyForm({ submit = submitVerification, extract = requestExtra
               min={0}
               step="any"
               inputMode="decimal"
-              required
               className="field__input"
               disabled={isLoading}
               onInput={() => markTouched("netContents")}
@@ -412,7 +434,6 @@ export function VerifyForm({ submit = submitVerification, extract = requestExtra
             <select
               id="verify-net-contents-unit"
               name="netContentsUnit"
-              required
               className="field__select"
               disabled={isLoading}
               defaultValue={NET_CONTENTS_UNIT_OPTIONS[0]}

@@ -80,16 +80,16 @@ function correctionApplicationValue(
 
 /**
  * Real property of reusing the production single-channel rule, worth
- * naming explicitly: with no OCR channel, `reconcileWarningChannels` can
- * only ever return MATCH or NEEDS_REVIEW for this field — never MISMATCH
- * (`reconcile.ts`'s own `reconcileSingleChannel` comment: "a single-channel
- * FAIL is never allowed, only REVIEW... we never accuse on one channel").
- * A reworded or wrong-case warning in the Sonnet-only arm therefore always
- * escalates rather than hard-failing, exactly as it would for any other
- * single-channel VLM-only reading in production. This is a real,
- * meaningful difference from the cascade arm's warning field, where the
- * REAL warning subsystem also has an OCR channel and CAN reach MISMATCH —
- * not a benchmark artifact to explain away.
+ * naming explicitly: this arm inherits `reconcile.ts`'s single-channel
+ * table exactly as production applies it. Since the 2026-08-13 CP-2
+ * amendment (TRO-581, Troy's ruling), that table renders EITHER verdict
+ * at confidence >= 0.90 when the reading is structurally clean — so a
+ * confidently reworded or wrong-case warning in the Sonnet-only arm now
+ * hard-fails, exactly as the same reading would in production when OCR
+ * is unavailable. Below the threshold, and for near-misses, it still
+ * escalates to NEEDS_REVIEW. The mirror is automatic: this function
+ * calls the real `reconcileWarningChannels`, so the eval arm can never
+ * drift from the production rule.
  */
 function rollUpGovernmentWarning(field: CorrectionFieldResolution): { verdict: FieldVerdict; reviewReason: ReviewReason | null } {
   if (field.correctedValue === null) {

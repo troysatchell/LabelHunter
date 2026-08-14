@@ -10,19 +10,19 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 `lastCommitTouchingPath(REPO_ROOT, "golden-set")`. That function returns the SHA of the last
 COMMIT to touch `golden-set/`. It says nothing about the working tree at sweep time. Run the
 sweep with an uncommitted `golden-set/` edit, and the artifact still names the last clean
-commit. The artifact then misrepresents what the sweep actually measured — the same
-provenance-integrity gap TRO-558/TRO-559 closed for stale and clobbered artifacts, now showing
-up as working-tree drift instead. `tro-546-case22-ocr-region-check.ts` shares the same OCR
+commit. The artifact then misrepresents what the sweep actually measured. This is the same
+provenance-integrity gap TRO-558/TRO-559 closed for stale and clobbered artifacts — it shows up
+here as working-tree drift instead. `tro-546-case22-ocr-region-check.ts` shares the same OCR
 method and reads the same `golden-set/` images, so the same gap applies there too.
 
 **The fix.** A new function, `assertPathTreeClean`, lives next to `lastCommitTouchingPath` in
 `scripts/eval/git-provenance.ts` — the file the ticket named to check first for reusable
 dirty-tree detection. It runs `git status --porcelain -- <path>` and throws when the output is
 not empty: a staged change, an unstaged change, or an untracked file all count. Both sweep
-scripts call `assertPathTreeClean(REPO_ROOT, "golden-set")` as the first line of `main()`,
-before the manifest loads and before any OCR work runs. A dirty tree now fails in under a
-second, with the exact `git status` output in the error message, instead of running the full
-sweep and writing a mismatched artifact.
+scripts call `assertPathTreeClean(REPO_ROOT, "golden-set")` right after their own argument
+parsing, before the manifest loads and before any OCR work runs. A dirty tree now fails in
+under a second, with the exact `git status` output in the error message, instead of running the
+full sweep and writing a mismatched artifact.
 
 **Confirmed.** `pnpm vitest run scripts/eval/git-provenance.test.ts` — 4 new cases: a clean
 path does not throw, a modified tracked file throws, an untracked file throws, and a failed

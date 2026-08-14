@@ -62,7 +62,9 @@ describe("assertPathTreeClean", () => {
       "change — when the path has a modified tracked file",
     () => {
       mockExecFileSync.mockReturnValueOnce(" M golden-set/images/case-01.jpg\n" as unknown as ReturnType<typeof execFileSync>);
-      expect(() => assertPathTreeClean("/repo", "golden-set")).toThrow(/golden-set.*uncommitted change/);
+      expect(() => assertPathTreeClean("/repo", "golden-set")).toThrow(
+        /golden-set.*uncommitted change[\s\S]*M golden-set\/images\/case-01\.jpg/,
+      );
     },
   );
 

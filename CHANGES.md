@@ -13,10 +13,10 @@ it fails."
 
 **What changed.** CP-2 §4.5's single-channel table said a lone reading may PASS a label at
 confidence ≥ 0.90 but may never FAIL one. That asymmetry trusted the wrong reading. A VLM's
-known transcription failure mode is normalization — silently correcting label text toward
-the statute it knows. So a single-channel exact match is the LESS trustworthy reading, and a
+known transcription failure mode is normalization. It silently corrects label text toward
+the statute it knows. So a single-channel exact match is the LESS trustworthy reading. A
 single-channel coherent deviation is the MORE trustworthy one. The observed cost was case-10
-live: a seeded paraphrased warning downgraded to "could not be confirmed" when the deployed
+live. A seeded paraphrased warning downgraded to "could not be confirmed" when the deployed
 worker's OCR channel failed.
 
 `reconcileSingleChannel` now mirrors the dual-channel table's precedence, gated by the SAME

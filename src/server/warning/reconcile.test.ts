@@ -136,7 +136,7 @@ describe("reconcileWarningChannels — single channel: OCR unavailable (CP-2 §4
     });
   });
 
-  it("VLM near-miss (single channel) -> NEEDS_REVIEW, never FAIL — 'we never accuse on one channel'", () => {
+  it("VLM near-miss (single channel) -> NEEDS_REVIEW, never FAIL — one character is noise, not certainty", () => {
     const result = reconcileWarningChannels(vlm(MISSING_COMMA_TEXT, { confidence: 0.99 }), OCR_UNAVAILABLE);
     assertNeedsReview(result);
     expect(result.reviewReason).toBe("WARNING_MISMATCH");
@@ -146,7 +146,7 @@ describe("reconcileWarningChannels — single channel: OCR unavailable (CP-2 §4
     expect(result.note).toBe("Government Warning differs by a single character. A reviewer must confirm the exact wording.");
   });
 
-  // The five tests below encode Troy's CP-2 amendment (2026-08-13,
+  // The six tests below encode Troy's CP-2 amendment (2026-08-13,
   // docs/checkpoints/cp2-warning-subsystem.md): "it should fail outright
   // if it's that deterministic — if we know with absolute certainty that
   // GOVERNMENT WARNING is not capitalized, it fails." A single channel at

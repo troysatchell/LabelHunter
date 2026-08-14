@@ -527,13 +527,13 @@ a wrong PASS delays a catch, a wrong FAIL accuses a compliant producer of a fede
 > | any non-match, VLM confidence < 0.90 | **REVIEW** `WARNING_MISMATCH` | Below the threshold the pass rule trusts, there is no certainty either way |
 >
 > **Why the original asymmetry was wrong, in its own terms.** The 0.90 threshold already lets
-> one channel *certify* a statutory field. But a VLM's known failure mode when transcribing
-> legal boilerplate is normalization — silently correcting label text toward the canonical
-> statute it knows. That makes the single-channel exact MATCH the *less* trustworthy reading,
-> and the single-channel coherent deviation (three whole-word substitutions the model did not
-> invent) the *more* trustworthy one. The old rule trusted the reading a model is more likely
-> to fake and distrusted the one it cannot plausibly hallucinate. The observed cost was
-> case-10 on the live instance: a seeded, deliberately paraphrased warning downgraded to a
+> one channel *certify* a statutory field. But a VLM's known transcription failure mode on
+> legal boilerplate is normalization. It silently corrects label text toward the canonical
+> statute it knows. So the single-channel exact MATCH is the *less* trustworthy reading. The
+> single-channel coherent deviation is the *more* trustworthy one — a model does not invent
+> three whole-word substitutions. The old rule trusted the reading a model is more likely to
+> fake. It distrusted the one a model cannot plausibly hallucinate. The observed cost was
+> case-10 on the live instance. A seeded, deliberately paraphrased warning downgraded to a
 > shrug ("could not be confirmed") when the OCR channel failed on the deployed worker.
 >
 > **What still protects against false accusation.** Three guards survive, deliberately:
@@ -551,6 +551,8 @@ a wrong PASS delays a catch, a wrong FAIL accuses a compliant producer of a fede
 > mind?"* — Watching the system understate a violation it had already read clearly, on the same
 > screen where the identical evidence at dual-channel confirms FAIL. A high-calibration system
 > reports what it knows; escalation is for what it doesn't.
+>
+> ---
 
 > **Amendment, 2026-08-12 (TRO-535 / LH-030b).** The `60` above was never measured — its own
 > "proposed" label said so, and this section named the ticket that would replace it (§12; §11

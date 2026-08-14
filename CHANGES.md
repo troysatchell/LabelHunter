@@ -4,6 +4,24 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## FACTORY — CHANGES.md history restored after PR #103's merge truncated it (2026-08-14)
+
+**What happened.** PR #103 (TRO-583) resolved a CHANGES.md merge conflict by keeping only
+its own side. That discarded every entry older than TRO-582 — about 12,300 lines. PR #104
+then added one entry on top of the truncated file. CI and the gate's structural check both
+passed, because the surviving fragment was still well-formed.
+
+**How it was found and repaired.** The TRO-569 branch's own merge of main surfaced the
+loss. The orchestrator verified it (`git show ea9a6d0:CHANGES.md | wc -l` = 315 against
+12,669 at `04c86bb`), then rebuilt the file directly on main at `bfa0574`: the healthy
+`04c86bb` file, plus the two lost entries (LOCAL-taste1 and TRO-583), 141 entries total,
+tail verified byte-identical, zero duplicate headers.
+
+**The guard.** The factory's lessons now require a mechanical check after every CHANGES.md
+conflict resolution: the merged entry count must equal origin/main's count plus the new
+entries, and the tail must match origin/main exactly. A resolution that shrinks this file
+is corrupt.
+
 ## TRO-569 / TRO-528 — a non-bold GOVERNMENT WARNING prefix now routes to review (2026-08-13)
 
 **The point.** Jenny Park's requirement: the GOVERNMENT WARNING prefix "has to be in all caps

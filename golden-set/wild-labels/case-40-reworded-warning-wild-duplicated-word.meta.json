@@ -1,0 +1,16 @@
+{
+  "caseId": "case-40-reworded-warning-wild-duplicated-word",
+  "prompt": "Create a flat, front-facing product label graphic for a fictional bottled or canned spirits beverage, as if scanned straight-on with no bottle, no can, no shadow, and no background scene -- just the printed label artwork on a plain neutral background, like a print proof.\n\nBrand name printed prominently: \"Hollow Creek Distillers\"\nClass/type line: \"Straight Rye Whiskey\"\nAlcohol content line: \"47% Alc./Vol. (94 Proof)\"\nNet contents line: \"750 mL\"\n\nGovernment warning statement, printed somewhere on the label:\n\"GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.\"\n\nDesign direction: an ornate Victorian-style label, deep amber and gold color scheme, an engraved-look decorative border, a wax-seal graphic near the brand name, a bold serif display typeface for the brand name. Place the government warning in a bordered box in the lower third of the label, in a small plain serif font.\n\nThis is a fictional brand created for software testing only. Do not depict, reference, or imitate any real, existing brand, distillery, brewery, winery, or trademark.",
+  "usage": {
+    "promptTokenCount": 279,
+    "imageOutputTokenCount": 1120,
+    "otherOutputTokenCount": 354
+  },
+  "costUsd": 0.06840149999999999,
+  "generationMetadata": {
+    "model": "gemini-3.1-flash-image",
+    "resolution": "1K",
+    "promptVersion": "v1",
+    "generatedAt": "2026-08-13T22:42:53.812Z"
+  }
+}

@@ -39,7 +39,12 @@ import { extractZipImageBytes, startBatchFromPairings, type StartBatchPairingInp
 import { checkRequestSize, readLimitedBody } from "../preview/route";
 import { parseBatchPreviewFormData } from "../preview/parse-request";
 import { checkBatchStartRateLimit, type RateLimitCheckResult } from "../../../../server/rate-limit/instances";
-import { checkDailyBudget, BUDGET_EXHAUSTED_MESSAGE, type BudgetStatus } from "../../../../server/budget/daily-budget";
+import {
+  BUDGET_CHECK_UNAVAILABLE_MESSAGE,
+  BUDGET_EXHAUSTED_MESSAGE,
+  checkDailyBudget,
+  type BudgetStatus,
+} from "../../../../server/budget/daily-budget";
 import { db as defaultDb } from "../../../../lib/db";
 import type { BatchStartErrorKind, BatchStartErrorResponse, BatchStartSuccessResponse } from "./types";
 
@@ -95,7 +100,16 @@ export async function handleBatchStartRequest(request: Request, options: HandleB
     return errorResponse(429, "RATE_LIMITED", rateLimitResult.message);
   }
 
-  const budgetStatus = await (options.checkBudget ?? (async () => ALLOW_ALL_BUDGET))();
+  // TRO-566 finding 3 — a ledger read failure must fail closed (no batch
+  // starts either way) with the DESIGNED 503 response, never an unhandled
+  // 500.
+  let budgetStatus: BudgetStatus;
+  try {
+    budgetStatus = await (options.checkBudget ?? (async () => ALLOW_ALL_BUDGET))();
+  } catch (cause) {
+    console.error("Could not check today's spending limit", cause);
+    return errorResponse(503, "SERVICE", BUDGET_CHECK_UNAVAILABLE_MESSAGE);
+  }
   if (budgetStatus.exhausted) {
     return errorResponse(503, "BUDGET_EXHAUSTED", BUDGET_EXHAUSTED_MESSAGE);
   }

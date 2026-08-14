@@ -16,7 +16,13 @@ import type {
   CompareGovernmentWarningFromImageResult,
 } from "../../../server/warning";
 import { deleteLabelImageBlobsWhere, saveLabelImage } from "../../../server/storage/db-image-storage";
-import { BUDGET_EXHAUSTED_MESSAGE, getTodaySpendUsd, recordSpendUsd } from "../../../server/budget/daily-budget";
+import {
+  BUDGET_CHECK_UNAVAILABLE_MESSAGE,
+  BUDGET_EXHAUSTED_MESSAGE,
+  getTodaySpendUsd,
+  reserveDailyBudget,
+  settleBudgetReservation,
+} from "../../../server/budget/daily-budget";
 import { createFixedWindowLimiter } from "../../../server/rate-limit/fixed-window";
 import { checkRateLimitPair } from "../../../server/rate-limit/instances";
 import { defaultDeps, handleVerifyRequest, POST as verifyPOST, type VerifyRouteDeps } from "./route";
@@ -768,12 +774,14 @@ describe("POST /api/verify — government warning wiring (TRO-514, TH-R9)", () =
   });
 });
 
-// TRO-482 / LH-061, PRD §8 — key protection. `checkRateLimit`/`checkBudget`/
-// `recordSpend` are all OPTIONAL on `VerifyRouteDeps` with an always-allow
-// fallback inside `handleVerifyRequest` itself — every test ABOVE this
-// point predates this ticket and needed zero changes to keep passing
-// (confirmed: this file's pre-existing 20 cases pass unmodified). The
-// blocks below are new coverage for the gate itself.
+// TRO-482 / LH-061, PRD §8 — key protection. `checkRateLimit`/`reserveBudget`/
+// `settleBudget` (`reserveBudget`/`settleBudget` renamed from
+// `checkBudget`/`recordSpend` by TRO-566, which replaced the check-then-act
+// pair with an atomic reservation) are all OPTIONAL on `VerifyRouteDeps`
+// with an always-allow fallback inside `handleVerifyRequest` itself — every
+// test ABOVE this point predates this ticket and needed zero changes to
+// keep passing (confirmed: this file's pre-existing 20 cases pass
+// unmodified). The blocks below are new coverage for the gate itself.
 describe("POST /api/verify — rate limit gate (TRO-482)", () => {
   it("rejects with a friendly message and never calls the model when checkRateLimit says no", async () => {
     let extractCalled = false;
@@ -831,11 +839,11 @@ describe("POST /api/verify — rate limit gate (TRO-482)", () => {
   });
 });
 
-describe("POST /api/verify — daily budget gate (TRO-482)", () => {
+describe("POST /api/verify — daily budget gate (TRO-482, reservation shape since TRO-566)", () => {
   it("rejects with a friendly message and never calls the model when the budget is exhausted", async () => {
     let extractCalled = false;
     const deps = makeDeps({
-      checkBudget: async () => ({ exhausted: true, spentUsd: 5, budgetUsd: 5 }),
+      reserveBudget: async () => ({ reserved: false, reservedUsd: 0, spentUsd: 5, budgetUsd: 5 }),
       extractLabel: async (...args) => {
         extractCalled = true;
         return extractLabel(...args);
@@ -853,12 +861,37 @@ describe("POST /api/verify — daily budget gate (TRO-482)", () => {
 
   it("still allows the request through when the budget is NOT exhausted", async () => {
     const deps = makeDeps({
-      checkBudget: async () => ({ exhausted: false, spentUsd: 0.5, budgetUsd: 5 }),
+      reserveBudget: async (estimatedUsd) => ({ reserved: true, reservedUsd: estimatedUsd, spentUsd: 0.5 + estimatedUsd, budgetUsd: 5 }),
       anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
     });
     const response = await post(await buildFormData(), deps);
     expect(response.status).toBe(200);
     createdApplicationIds.push(((await response.json()) as VerifySuccessResponse).applicationId);
+  });
+
+  // TRO-566 finding 3 — a ledger read failure must fail closed (no model
+  // call) with the DESIGNED 503 response, not an unhandled 500.
+  it("returns a designed 503 SERVICE response, not a raw 500, when the budget check itself throws", async () => {
+    let extractCalled = false;
+    const deps = makeDeps({
+      reserveBudget: async () => {
+        throw new Error("connection terminated unexpectedly");
+      },
+      extractLabel: async (...args) => {
+        extractCalled = true;
+        return extractLabel(...args);
+      },
+    });
+    const response = await post(await buildFormData(), deps);
+
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as VerifyErrorResponse;
+    expect(body.error.kind).toBe("SERVICE");
+    expect(body.error.message).toBe(BUDGET_CHECK_UNAVAILABLE_MESSAGE);
+    // Distinct from the exhausted message — a DB blip is not "come back
+    // tomorrow."
+    expect(body.error.message).not.toBe(BUDGET_EXHAUSTED_MESSAGE);
+    expect(extractCalled).toBe(false);
   });
 });
 
@@ -882,7 +915,8 @@ describe("POST /api/verify — real spend recording (TRO-482)", () => {
     const deps = makeDeps({
       // makeMockMessage's own usage: 100 input tokens, 50 output tokens.
       anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
-      recordSpend: (usd) => recordSpendUsd(usd, db, ISOLATED_NOW),
+      reserveBudget: (estimatedUsd) => reserveDailyBudget(estimatedUsd, db, ISOLATED_NOW),
+      settleBudget: (reservedUsd, realUsd) => settleBudgetReservation(reservedUsd, realUsd, db, ISOLATED_NOW),
     });
     const response = await post(await buildFormData(), deps);
     expect(response.status).toBe(200);
@@ -891,16 +925,19 @@ describe("POST /api/verify — real spend recording (TRO-482)", () => {
     const spent = await getTodaySpendUsd(db, ISOLATED_NOW);
     // HAIKU_4_5_PRICING (scripts/eval/usage.ts): $1/MTok in, $5/MTok out.
     // 100 * (1/1_000_000) + 50 * (5/1_000_000) = 0.00035 — the SAME real
-    // formula the eval harness uses, not a re-derived approximation.
+    // formula the eval harness uses, not a re-derived approximation. The
+    // REAL settled cost, not the reservation estimate reserveDailyBudget
+    // held room for before the call.
     expect(spent).toBeCloseTo(0.00035, 6);
   });
 
-  it("records nothing when the Haiku call itself fails — there is no real cost to record", async () => {
+  it("records nothing when the Haiku call itself fails — reserves, then refunds the reservation in full (TRO-566)", async () => {
     const deps = makeDeps({
       anthropicClient: fakeAnthropicClient(async () => {
         throw new APIConnectionError({ message: "network down" });
       }),
-      recordSpend: (usd) => recordSpendUsd(usd, db, ISOLATED_NOW),
+      reserveBudget: (estimatedUsd) => reserveDailyBudget(estimatedUsd, db, ISOLATED_NOW),
+      settleBudget: (reservedUsd, realUsd) => settleBudgetReservation(reservedUsd, realUsd, db, ISOLATED_NOW),
     });
     const response = await post(await buildFormData(), deps);
     expect(response.status).toBe(503);
@@ -958,16 +995,16 @@ describe("POST /api/verify — the default (production) wiring is really bound",
     // The test the merge review asked for, and the one that would have
     // caught the original bug. Before `defaultDeps` bound
     // `anthropicClient`, this route wrapped `undefined` for usage capture,
-    // `takeLastUsage()` always answered null, `recordSpend` never ran, and
-    // `daily_spend` stayed empty forever — so the budget guard read 0 and
-    // could never trip. A test that injects its own recorder proves
-    // nothing about that; it has to be THIS object.
+    // `takeLastUsage()` always answered null, `settleBudget` never ran a
+    // real settlement, and `daily_spend` stayed empty forever — so the
+    // budget guard read 0 and could never trip. A test that injects its
+    // own recorder proves nothing about that; it has to be THIS object.
     //
     // So this runs the real exported `defaultDeps`, spread rather than
     // rebuilt, with exactly one field replaced: the warning comparator,
     // whose real implementation runs OCR. That is not the wiring under
     // test here, and skipping it keeps this test fast. `anthropicClient`,
-    // `checkBudget` and `recordSpend` are all the production bindings.
+    // `reserveBudget` and `settleBudget` are all the production bindings.
     //
     // No network call happens: the spy below intercepts the shared
     // client's own `messages.create`, which is the same object
@@ -1015,8 +1052,8 @@ describe("POST /api/verify — the default (production) wiring is really bound",
     }
   });
 
-  it("enforces the REAL daily budget through POST — fails if defaultDeps loses checkBudget", async () => {
-    // The default `checkBudget` reads "today" from its own `new Date()`,
+  it("enforces the REAL daily budget through POST — fails if defaultDeps loses reserveBudget", async () => {
+    // The default `reserveBudget` reads "today" from its own `new Date()`,
     // so this test moves the clock to the same private, far-future date
     // the spend-recording block above uses. That keeps the row this test
     // writes out of the way of daily-budget.test.ts, which reads and

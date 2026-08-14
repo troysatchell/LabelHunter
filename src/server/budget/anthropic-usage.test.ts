@@ -4,8 +4,9 @@
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, it } from "vitest";
+import { SONNET_5_INTRO_PRICING_CUTOFF } from "../../../scripts/eval/usage";
 import { makeMockMessage } from "../extractor/test-support";
-import { haikuCallCostUsd, wrapAnthropicClientForUsageCapture } from "./anthropic-usage";
+import { haikuCallCostUsd, sonnetCallCostUsd, wrapAnthropicClientForUsageCapture } from "./anthropic-usage";
 
 function fakeClient(create: (params: unknown, options?: unknown) => Promise<Anthropic.Message>): Anthropic {
   return { messages: { create } } as unknown as Anthropic;
@@ -82,5 +83,36 @@ describe("haikuCallCostUsd — reuses scripts/eval/usage.ts's real pricing math,
   it("is zero for zero usage", () => {
     const usage = { ...makeMockMessage("hello").usage, input_tokens: 0, output_tokens: 0 };
     expect(haikuCallCostUsd(usage)).toBe(0);
+  });
+});
+
+// TRO-566 finding 1 — resolve-worker.ts needs the SAME real-cost math for
+// its own Sonnet call, the way extract-worker.ts already has
+// haikuCallCostUsd for Haiku.
+describe("sonnetCallCostUsd — reuses scripts/eval/usage.ts's real Sonnet pricing, time-aware", () => {
+  it("computes a real, non-zero cost at the INTRO rate for a call measured before the cutoff", () => {
+    const usage = { ...makeMockMessage("hello").usage, input_tokens: 1000, output_tokens: 500 };
+    const before = new Date(SONNET_5_INTRO_PRICING_CUTOFF.getTime() - 1000);
+    // SONNET_5_INTRO_PRICING: $2/MTok in, $10/MTok out.
+    // 1000 * (2/1_000_000) + 500 * (10/1_000_000) = 0.002 + 0.005 = 0.007
+    expect(sonnetCallCostUsd(usage, before)).toBeCloseTo(0.007, 8);
+  });
+
+  it("computes the higher STANDARD rate for a call measured after the intro cutoff", () => {
+    const usage = { ...makeMockMessage("hello").usage, input_tokens: 1000, output_tokens: 500 };
+    const after = new Date(SONNET_5_INTRO_PRICING_CUTOFF.getTime() + 1000);
+    // SONNET_5_STANDARD_PRICING: $3/MTok in, $15/MTok out.
+    // 1000 * (3/1_000_000) + 500 * (15/1_000_000) = 0.003 + 0.0075 = 0.0105
+    expect(sonnetCallCostUsd(usage, after)).toBeCloseTo(0.0105, 8);
+  });
+
+  it("is zero for zero usage", () => {
+    const usage = { ...makeMockMessage("hello").usage, input_tokens: 0, output_tokens: 0 };
+    expect(sonnetCallCostUsd(usage, new Date())).toBe(0);
+  });
+
+  it("defaults to now when no measurement time is given", () => {
+    const usage = { ...makeMockMessage("hello").usage, input_tokens: 100, output_tokens: 50 };
+    expect(sonnetCallCostUsd(usage)).toBeGreaterThan(0);
   });
 });

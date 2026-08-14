@@ -11,21 +11,59 @@
 # labelhunter-factory skill.
 #
 # Usage:
-#   scripts/factory/gate.sh                 # full gate
+#   scripts/factory/gate.sh                 # full gate, --review=carry (default)
 #   scripts/factory/gate.sh --fast          # skip build + review capture (inner loop)
-#   scripts/factory/gate.sh --skip-review   # skip review capture only
+#   scripts/factory/gate.sh --skip-review   # skip review capture only (same as --review=off)
+#   scripts/factory/gate.sh --review=off    # never invoke CodeRabbit this run
+#   scripts/factory/gate.sh --review=carry  # default (TRO-548): skip a re-review when the
+#                                            # diff since the last real capture only touches
+#                                            # CHANGES.md, factory/*.jsonl, or comment-only
+#                                            # hunks; scope CodeRabbit to what changed since
+#                                            # then otherwise. The FIRST review a branch gets
+#                                            # is always full, in every mode but --review=off.
+#   scripts/factory/gate.sh --review=full   # always a genuine whole-branch review
 #
 set -uo pipefail
 
+# CodeRabbit finding (this ticket's own first full review, round 1): the
+# original single-pass loop let --fast (implies --review=off) and an
+# explicit --review=X silently override one another based on ARGUMENT
+# ORDER — `--review=full --fast` and `--fast --review=full` disagreed on
+# the resulting mode, with nothing to say so. Parsed in two passes now:
+# collect every flag first, THEN resolve — order no longer matters, and a
+# genuine conflict (--fast/--skip-review alongside an explicit
+# --review=<anything but off>) is rejected outright instead of guessed at.
 FAST=0
-SKIP_REVIEW=0
+SKIP_REVIEW_FLAG=0
+REVIEW_FLAG=""
 for a in "$@"; do
   case "$a" in
-    --fast) FAST=1; SKIP_REVIEW=1 ;;
-    --skip-review) SKIP_REVIEW=1 ;;
+    --fast) FAST=1 ;;
+    --skip-review) SKIP_REVIEW_FLAG=1 ;;
+    --review=off) REVIEW_FLAG="off" ;;
+    --review=carry) REVIEW_FLAG="carry" ;;
+    --review=full) REVIEW_FLAG="full" ;;
     *) echo "unknown arg: $a" >&2; exit 2 ;;
   esac
 done
+
+IMPLIES_OFF=0
+[ "$FAST" = 1 ] && IMPLIES_OFF=1
+[ "$SKIP_REVIEW_FLAG" = 1 ] && IMPLIES_OFF=1
+
+if [ "$IMPLIES_OFF" = 1 ] && [ -n "$REVIEW_FLAG" ] && [ "$REVIEW_FLAG" != off ]; then
+  echo "ERROR: --fast/--skip-review (implies --review=off) conflicts with --review=${REVIEW_FLAG}." >&2
+  echo "       Pass only one: drop --fast/--skip-review, or pass --review=off explicitly." >&2
+  exit 2
+fi
+
+if [ -n "$REVIEW_FLAG" ]; then
+  REVIEW_MODE="$REVIEW_FLAG"
+elif [ "$IMPLIES_OFF" = 1 ]; then
+  REVIEW_MODE="off"
+else
+  REVIEW_MODE="carry"
+fi
 
 WT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
   echo "ERROR: not inside a git repository." >&2; exit 2; }
@@ -137,6 +175,7 @@ record() {           # record <id> <status> <detail>
   [ "$2" = skip ] && icon="skip"
   [ "$2" = warn ] && icon="warn"
   [ "$2" = pass-with-exception ] && icon="ok*"
+  [ "$2" = carried ] && icon="cfwd"
   printf '  [%s] %-22s %s\n' "$icon" "$1" "$3"
   [ "$2" = fail ] && OVERALL=fail
   return 0
@@ -435,8 +474,8 @@ else
   fi
 fi
 
-# --- G10: review capture (advisory — pass/warn/skip only, NEVER fail) --------
-# TRO-560: the capture, retry, and stale-vs-fresh decision now live in
+# --- G10: review capture (advisory — pass/warn/skip/carried only, NEVER fail) -
+# TRO-560: the capture, retry, and stale-vs-fresh decision live in
 # scripts/factory/review-capture.ts (unit-tested) — this block only invokes
 # it and records what it reports. Two defects that block fixed there: (1) an
 # rc!=0 fallback to a previous run's findings now names the SHA it was
@@ -446,13 +485,23 @@ fi
 # — the CLI reports its error as a JSON line on STDOUT, not stderr, so the
 # old code's ".factory/coderabbit.err" pointer was reliably empty on exactly
 # the run it mattered most for (TRO-508, 2026-08-13 comment).
-if [ "$SKIP_REVIEW" = 1 ]; then
-  record review skip "disabled for this run"
+#
+# TRO-548: --review={off,carry,full} (REVIEW_MODE, parsed above) controls
+# how much gets reviewed. The default "carry" is the mechanical form of
+# lessons rule 31: a re-run inside one orchestrator pass carries the
+# previous review forward — no coderabbit invocation at all — when the
+# diff since the last real capture only touches CHANGES.md,
+# factory/*.jsonl, or comment-only hunks, and scopes CodeRabbit's own diff
+# to `--base-commit <that sha>` otherwise, instead of the whole branch
+# every time. The mode itself is passed straight through; review-capture.ts
+# owns the decision so it stays unit-tested rather than re-implemented here.
+if [ "$REVIEW_MODE" = off ]; then
+  record review skip "disabled for this run (--review=off)"
 elif ! command -v coderabbit >/dev/null 2>&1; then
   record review skip "CLI not installed — PR-level review is the authoritative channel"
 else
   CR_JSON="$(pnpm exec tsx scripts/factory/review-capture.ts \
-      --base "${BASE_REF}" --out-dir "${OUT_DIR}" 2>"$OUT_DIR/review-capture.stderr.log")"
+      --base "${BASE_REF}" --mode "${REVIEW_MODE}" --out-dir "${OUT_DIR}" 2>"$OUT_DIR/review-capture.stderr.log")"
   CR_TS_RC=$?
   if [ "$CR_TS_RC" -ne 0 ]; then
     record review warn "review-capture.ts itself failed (rc=${CR_TS_RC}) — see .factory/review-capture.stderr.log"

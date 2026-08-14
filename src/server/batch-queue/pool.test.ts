@@ -215,6 +215,58 @@ describe("startWorkerPool — whole-pool cooldown (CP-3 §5.3)", () => {
     expect(doneAts).toHaveLength(4);
     expect(doneAts[0] - rateLimitAt).toBeGreaterThanOrEqual(COOLDOWN_MS - 50); // small scheduling slack
   });
+
+  // TRO-566 finding 1 — a budget-exhausted item is a POOL-WIDE condition
+  // (the same daily ledger every worker in the pool reads), not a
+  // per-item one. It reuses the SAME whole-pool cooldown a rate limit
+  // triggers, via a distinct `isBudgetExhausted` flag — never conflated
+  // with `isRateLimit` (that flag's own doc comment in backoff.ts is
+  // explicit it means a real 429, nothing else).
+  it("a budget-exhausted outcome ALSO pauses every loop's claiming, the same as a rate limit", async () => {
+    const batchJobId = await trackBatch();
+    const { applicationId, labelImageId } = await createApplicationAndImageFixture(db, batchJobId, "trigger-budget.jpg");
+    await enqueueExtractItemFixture(db, { batchJobId, applicationId, labelImageId });
+
+    const COOLDOWN_MS = 400;
+    let budgetHitAt = 0;
+    const doneAts: number[] = [];
+    const pool = startWorkerPool({
+      db,
+      kind: "EXTRACT",
+      concurrency: 2,
+      leaseSeconds: 60,
+      workerIdPrefix: "test-pool-budget-cooldown",
+      pollIntervalMs: 15,
+      scopeToBatchJobId: batchJobId,
+      processClaim: async (item) => {
+        if (budgetHitAt === 0) {
+          budgetHitAt = Date.now();
+          return { kind: "retry", delayMs: COOLDOWN_MS, isRateLimit: false, isBudgetExhausted: true };
+        }
+        doneAts.push(Date.now());
+        await markDone(db, item.id, item.claimToken as string);
+        return { kind: "done" };
+      },
+    });
+
+    let deadline = Date.now() + 2000;
+    while (budgetHitAt === 0 && Date.now() < deadline) await sleep(10);
+    expect(budgetHitAt).toBeGreaterThan(0);
+
+    const fresh: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      const pair = await createApplicationAndImageFixture(db, batchJobId, `fresh-budget${i}.jpg`);
+      fresh.push(await enqueueExtractItemFixture(db, { batchJobId, applicationId: pair.applicationId, labelImageId: pair.labelImageId }));
+    }
+
+    deadline = Date.now() + 3000;
+    while (doneAts.length < fresh.length && Date.now() < deadline) await sleep(10);
+    pool.stop();
+    await pool.done;
+
+    expect(doneAts).toHaveLength(4);
+    expect(doneAts[0] - budgetHitAt).toBeGreaterThanOrEqual(COOLDOWN_MS - 50);
+  });
 });
 
 describe("startWorkerPool — this loop's own error backoff (distinct from the item/rate-limit backoffs above)", () => {

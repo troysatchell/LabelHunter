@@ -1,0 +1,200 @@
+{
+  "ticket": "TRO-563",
+  "purpose": "One live Haiku call (pnpm exec tsx scripts/eval/check.ts --live --case=case-22-low-light-warning-block) confirming the strengthened case-22 pixels make the cascade actually return REVIEW/LOW_IMAGE_QUALITY again, matching golden-set/manifest.json's expected block. Authorized real spend: ~$0.01-0.02 (Troy's dispatch approval).",
+  "measuredAt": "2026-08-13T17:47Z (real wall-clock; exact API response timestamp not separately captured -- this is the run time, not fabricated)",
+  "realSpendUsd": {
+    "haiku": 0.0047539999999999995,
+    "resolver": 0.010076,
+    "total": 0.01483
+  },
+  "result": {
+    "caseId": "case-22-low-light-warning-block",
+    "category": "low-light",
+    "extraction": {
+      "caseId": "case-22-low-light-warning-block",
+      "category": "low-light",
+      "fields": [
+        {
+          "field": "brandName",
+          "correct": true,
+          "expected": "Amber Hollow Meadery",
+          "actual": "Amber Hollow Meadery",
+          "detail": "Haiku read the brand name correctly.",
+          "confidence": 0.95
+        },
+        {
+          "field": "classType",
+          "correct": true,
+          "expected": "Mead",
+          "actual": "Mead",
+          "detail": "Haiku read the class/type correctly.",
+          "confidence": 0.95
+        },
+        {
+          "field": "abv",
+          "correct": true,
+          "expected": "8%",
+          "actual": "8%",
+          "detail": "Haiku read the correct ABV.",
+          "confidence": 0.95
+        },
+        {
+          "field": "netContents",
+          "correct": true,
+          "expected": "750 mL",
+          "actual": "750 ml",
+          "detail": "Haiku read the correct net contents.",
+          "confidence": 0.95
+        },
+        {
+          "field": "governmentWarning",
+          "correct": true,
+          "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+          "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+          "detail": "Haiku transcribed the government warning correctly.",
+          "confidence": 0.65
+        }
+      ]
+    },
+    "routerVerdict": {
+      "caseId": "case-22-low-light-warning-block",
+      "category": "low-light",
+      "expectedLabelVerdict": "REVIEW",
+      "actualLabelVerdict": "REVIEW",
+      "labelVerdictCorrect": true,
+      "expectedReviewReason": "LOW_IMAGE_QUALITY",
+      "actualReviewReason": "LOW_IMAGE_QUALITY",
+      "reviewReasonCorrect": true,
+      "warningChannel": "single",
+      "lowImageQualityTrigger": null,
+      "fields": [
+        {
+          "field": "brand_name",
+          "expectedVerdict": "MATCH",
+          "actualVerdict": "MATCH",
+          "correct": true,
+          "confidence": 0.95,
+          "actualReviewReason": null
+        },
+        {
+          "field": "class_type",
+          "expectedVerdict": "MATCH",
+          "actualVerdict": "MATCH",
+          "correct": true,
+          "confidence": 0.95,
+          "actualReviewReason": null
+        },
+        {
+          "field": "alcohol_content",
+          "expectedVerdict": "MATCH",
+          "actualVerdict": "MATCH",
+          "correct": true,
+          "confidence": 0.95,
+          "actualReviewReason": null
+        },
+        {
+          "field": "net_contents",
+          "expectedVerdict": "MATCH",
+          "actualVerdict": "MATCH",
+          "correct": true,
+          "confidence": 0.95,
+          "actualReviewReason": null
+        },
+        {
+          "field": "government_warning",
+          "expectedVerdict": "NEEDS_REVIEW",
+          "actualVerdict": "NEEDS_REVIEW",
+          "correct": true,
+          "confidence": 0.65,
+          "actualReviewReason": "LOW_IMAGE_QUALITY"
+        }
+      ]
+    },
+    "cascadeVerdict": {
+      "caseId": "case-22-low-light-warning-block",
+      "category": "low-light",
+      "expectedLabelVerdict": "REVIEW",
+      "actualLabelVerdict": "REVIEW",
+      "labelVerdictCorrect": true,
+      "expectedReviewReason": "LOW_IMAGE_QUALITY",
+      "actualReviewReason": "LOW_IMAGE_QUALITY",
+      "reviewReasonCorrect": true,
+      "warningChannel": null,
+      "lowImageQualityTrigger": null,
+      "fields": [
+        {
+          "field": "brand_name",
+          "expectedVerdict": "MATCH",
+          "actualVerdict": "MATCH",
+          "correct": true,
+          "confidence": 0.95,
+          "actualReviewReason": null
+        },
+        {
+          "field": "class_type",
+          "expectedVerdict": "MATCH",
+          "actualVerdict": "MATCH",
+          "correct": true,
+          "confidence": 0.95,
+          "actualReviewReason": null
+        },
+        {
+          "field": "alcohol_content",
+          "expectedVerdict": "MATCH",
+          "actualVerdict": "MATCH",
+          "correct": true,
+          "confidence": 0.95,
+          "actualReviewReason": null
+        },
+        {
+          "field": "net_contents",
+          "expectedVerdict": "MATCH",
+          "actualVerdict": "MATCH",
+          "correct": true,
+          "confidence": 0.95,
+          "actualReviewReason": null
+        },
+        {
+          "field": "government_warning",
+          "expectedVerdict": "NEEDS_REVIEW",
+          "actualVerdict": "NEEDS_REVIEW",
+          "correct": true,
+          "confidence": 0.65,
+          "actualReviewReason": "LOW_IMAGE_QUALITY"
+        }
+      ]
+    },
+    "haikuCost": {
+      "model": "claude-haiku-4-5",
+      "inputTokens": 2754,
+      "outputTokens": 400,
+      "cacheCreationInputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "usd": 0.0047539999999999995
+    },
+    "resolverCost": {
+      "model": "claude-sonnet-5",
+      "inputTokens": 3493,
+      "outputTokens": 309,
+      "cacheCreationInputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "usd": 0.010076
+    },
+    "resolverOutcome": "resolved",
+    "resolverError": null,
+    "resolverDurationMs": 5178,
+    "imageQuality": {
+      "legible": "partial",
+      "issues": [
+        "low_light",
+        "obstructed"
+      ],
+      "confidence": 0.75
+    },
+    "beverageType": {
+      "value": "mead",
+      "evidence": "Mead",
+      "confidence": 0.95
+    }
+  }
+}

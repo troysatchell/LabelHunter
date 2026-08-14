@@ -496,6 +496,146 @@ describe("validateManifest", () => {
     }
   });
 
+  describe("validateManifest — warning-absent formatting flags (TRO-555)", () => {
+    // A formatting claim about text that is not on the label is meaningless.
+    // governmentWarningPrefixAllCaps has carried this unenforced dependency
+    // since it was added; TRO-527 added the same gap for the two bold
+    // flags. This block fixes all three together (lessons rule 19).
+    const warningAbsentCase = (
+      labelOverrides: Partial<GoldenSetCase["label"]> = {},
+    ): GoldenSetCase =>
+      validCase({
+        label: {
+          ...validCase().label,
+          governmentWarningPresent: false,
+          governmentWarningText: "",
+          governmentWarningPrefixAllCaps: false,
+          governmentWarningPrefixBold: false,
+          governmentWarningBodyBold: false,
+          ...labelOverrides,
+        },
+      });
+
+    it("accepts a warning-absent case with all three flags false", () => {
+      expect(() => validateManifest(manifest([warningAbsentCase()]))).not.toThrow();
+    });
+
+    it("rejects governmentWarningPrefixAllCaps: true on a warning-absent case", () => {
+      const broken = manifest([
+        warningAbsentCase({ governmentWarningPrefixAllCaps: true }),
+      ]);
+      try {
+        validateManifest(broken);
+        expect.unreachable("validateManifest should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(GoldenSetValidationError);
+        const problems = (err as GoldenSetValidationError).problems;
+        expect(
+          problems.some(
+            (p) => p.includes("governmentWarningPrefixAllCaps") && p.includes("governmentWarningPresent"),
+          ),
+        ).toBe(true);
+      }
+    });
+
+    it("rejects governmentWarningPrefixBold: true on a warning-absent case", () => {
+      const broken = manifest([
+        warningAbsentCase({ governmentWarningPrefixBold: true }),
+      ]);
+      try {
+        validateManifest(broken);
+        expect.unreachable("validateManifest should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(GoldenSetValidationError);
+        const problems = (err as GoldenSetValidationError).problems;
+        expect(
+          problems.some(
+            (p) => p.includes("governmentWarningPrefixBold") && p.includes("governmentWarningPresent"),
+          ),
+        ).toBe(true);
+      }
+    });
+
+    it("rejects governmentWarningPrefixBold: \"unknown\" on a warning-absent case", () => {
+      const broken = manifest([
+        warningAbsentCase({ governmentWarningPrefixBold: "unknown" }),
+      ]);
+      try {
+        validateManifest(broken);
+        expect.unreachable("validateManifest should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(GoldenSetValidationError);
+        const problems = (err as GoldenSetValidationError).problems;
+        expect(
+          problems.some(
+            (p) => p.includes("governmentWarningPrefixBold") && p.includes("governmentWarningPresent"),
+          ),
+        ).toBe(true);
+      }
+    });
+
+    it("rejects governmentWarningBodyBold: true on a warning-absent case", () => {
+      const broken = manifest([
+        warningAbsentCase({ governmentWarningBodyBold: true }),
+      ]);
+      try {
+        validateManifest(broken);
+        expect.unreachable("validateManifest should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(GoldenSetValidationError);
+        const problems = (err as GoldenSetValidationError).problems;
+        expect(
+          problems.some(
+            (p) => p.includes("governmentWarningBodyBold") && p.includes("governmentWarningPresent"),
+          ),
+        ).toBe(true);
+      }
+    });
+
+    it("rejects governmentWarningBodyBold: \"unknown\" on a warning-absent case", () => {
+      const broken = manifest([
+        warningAbsentCase({ governmentWarningBodyBold: "unknown" }),
+      ]);
+      try {
+        validateManifest(broken);
+        expect.unreachable("validateManifest should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(GoldenSetValidationError);
+        const problems = (err as GoldenSetValidationError).problems;
+        expect(
+          problems.some(
+            (p) => p.includes("governmentWarningBodyBold") && p.includes("governmentWarningPresent"),
+          ),
+        ).toBe(true);
+      }
+    });
+
+    it("collects all three flag problems in one pass when every flag is wrong", () => {
+      const broken = manifest([
+        warningAbsentCase({
+          governmentWarningPrefixAllCaps: true,
+          governmentWarningPrefixBold: true,
+          governmentWarningBodyBold: "unknown",
+        }),
+      ]);
+      try {
+        validateManifest(broken);
+        expect.unreachable("validateManifest should have thrown");
+      } catch (err) {
+        const problems = (err as GoldenSetValidationError).problems;
+        expect(problems.some((p) => p.includes("governmentWarningPrefixAllCaps"))).toBe(true);
+        expect(problems.some((p) => p.includes("governmentWarningPrefixBold"))).toBe(true);
+        expect(problems.some((p) => p.includes("governmentWarningBodyBold"))).toBe(true);
+      }
+    });
+
+    it("does not flag a warning-present case whose flags are true", () => {
+      // Guards against an overbroad check that fires regardless of
+      // governmentWarningPresent's value.
+      expect(() => validateManifest(manifest([validCase()]))).not.toThrow();
+    });
+  });
+
   describe("validateManifest — rendered+ai-backdrop provenance", () => {
     const aiBackdropCase = (overrides: Partial<GoldenSetCase> = {}): GoldenSetCase =>
       validCase({
@@ -891,6 +1031,19 @@ describe("loadGoldenSetManifest", () => {
     const aiGenerated = result.cases.filter((c) => c.provenance === "ai-generated");
     for (const c of aiGenerated) {
       expect(c.verified, `${c.caseId} is ai-generated and must be verified`).toBe(true);
+    }
+  });
+
+  it("keeps both real missing-warning cases loadable with every formatting flag false (TRO-555)", () => {
+    const result = loadGoldenSetManifest();
+    const missingWarningCases = result.cases.filter((c) => c.category === "missing-warning");
+
+    expect(missingWarningCases.length).toBeGreaterThanOrEqual(2);
+    for (const c of missingWarningCases) {
+      expect(c.label.governmentWarningPresent, `${c.caseId}`).toBe(false);
+      expect(c.label.governmentWarningPrefixAllCaps, `${c.caseId}`).toBe(false);
+      expect(c.label.governmentWarningPrefixBold, `${c.caseId}`).toBe(false);
+      expect(c.label.governmentWarningBodyBold, `${c.caseId}`).toBe(false);
     }
   });
 

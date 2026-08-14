@@ -12,7 +12,7 @@ import { db } from "../../../../lib/db";
 import { batchJobs, batchQueueItems, applications, labelImages } from "../../../../lib/db/schema";
 import { startBatchFromPairings } from "../../../../server/batch-start/start-batch";
 import { deleteLabelImageBlobsWhere } from "../../../../server/storage/db-image-storage";
-import { BUDGET_EXHAUSTED_MESSAGE } from "../../../../server/budget/daily-budget";
+import { BUDGET_CHECK_UNAVAILABLE_MESSAGE, BUDGET_EXHAUSTED_MESSAGE } from "../../../../server/budget/daily-budget";
 import { createFixedWindowLimiter } from "../../../../server/rate-limit/fixed-window";
 import { checkRateLimitPair } from "../../../../server/rate-limit/instances";
 import { handleBatchStartRequest } from "./route";
@@ -315,6 +315,33 @@ describe("POST /api/batch/start — daily budget gate (TRO-482)", () => {
     const body = (await response.json()) as BatchStartErrorResponse;
     expect(body.error.kind).toBe("BUDGET_EXHAUSTED");
     expect(body.error.message).toBe(BUDGET_EXHAUSTED_MESSAGE);
+    expect(startBatchCalled).toBe(false);
+  });
+
+  // TRO-566 finding 3 — a ledger read failure must fail closed (no batch
+  // starts) with the DESIGNED 503 response, not an unhandled 500.
+  it("returns a designed 503 SERVICE response, not a raw 500, when the budget check itself throws", async () => {
+    let startBatchCalled = false;
+    const fd = new FormData();
+    fd.set("manifest", csvFile([HEADER, "spirits,Highland Peak Distillery,Straight Bourbon Whiskey,45,750,mL,bottle-01.jpg"].join("\n")));
+    fd.append("images", await imageFile("bottle-01.jpg"));
+
+    const response = await handleBatchStartRequest(requestWith(fd), {
+      ...testDeps(),
+      checkBudget: async () => {
+        throw new Error("connection terminated unexpectedly");
+      },
+      startBatch: async (pairings) => {
+        startBatchCalled = true;
+        return testDeps().startBatch(pairings);
+      },
+    });
+
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as BatchStartErrorResponse;
+    expect(body.error.kind).toBe("SERVICE");
+    expect(body.error.message).toBe(BUDGET_CHECK_UNAVAILABLE_MESSAGE);
+    expect(body.error.message).not.toBe(BUDGET_EXHAUSTED_MESSAGE);
     expect(startBatchCalled).toBe(false);
   });
 });

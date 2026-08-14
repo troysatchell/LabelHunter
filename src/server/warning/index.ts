@@ -328,7 +328,11 @@ export interface CompareGovernmentWarningFromImageResult {
    * when no crop was ever produced — distinct from a measured
    * `signal: "uncertain"`, which means a crop existed but the measurement
    * itself could not commit to bold or not-bold. Callers persist and
-   * display this value; nothing may fold it back into a verdict. */
+   * display this value, and pass `.signal` to `routeLabel` as its
+   * `warningBoldSignal` parameter (TRO-569): the router degrades an
+   * otherwise-MATCH warning to NEEDS_REVIEW on `not-bold`, and nothing
+   * else. The comparator itself never reads it, and it can never produce
+   * a hard FAIL. */
   boldSignal: BoldSignalResult | null;
 }
 

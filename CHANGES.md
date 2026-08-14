@@ -4,6 +4,20 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-584 (rider) — the boldSignal interface comment states the real routing contract (2026-08-14)
+
+**What changed.** One doc comment: `src/server/warning/index.ts`'s
+`CompareGovernmentWarningFromImageResult.boldSignal`. The old text said "nothing may fold it
+back into a verdict." PR #105 made that false. The comment now states the shipped rule: the
+router degrades an otherwise-MATCH warning to NEEDS_REVIEW on `not-bold`, and nothing else.
+Found by the requirements audit's post-merge TH-R9 delta. Landed alone on Troy's direct call
+so the submission commit carries no false code comments; TRO-584's hash-coupled golden-set
+items still wait for the next re-baseline cycle.
+
+**How to run.** No behavior change. `pnpm typecheck` and `pnpm test` prove nothing moved.
+
+**How to roll back.** Revert the one commit.
+
 ## FACTORY — CHANGES.md history restored after PR #103's merge truncated it (2026-08-14)
 
 **What happened.** PR #103 (TRO-583) resolved a CHANGES.md merge conflict by keeping only

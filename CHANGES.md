@@ -4,6 +4,43 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-582 — a dedicated image box on a grid, and the warning card shows the real texts (2026-08-13)
+
+**Troy's direction:** "make a dedicated image box, use a grid" — plus the earlier report
+that the warning row's "On the application: the statutory warning text (27 CFR part 16)"
+read like missing application data.
+
+**The layout.** Both detail surfaces (`DetailView`, `ReviewItemDetail`) now share one CSS
+Grid (`.detail-layout`, 2fr/3fr `minmax` columns; explicit single-column collapse below
+48rem). The label image lives in a shared `LabelImageFigure` component: a quiet well on the
+alt background, `object-fit: contain` with a capped height so a tall label never pushes the
+fields below the fold and is never cropped, the persisted original filename as a functional
+caption, and sticky positioning in its column on desktop — the artwork stays in view while
+the reviewer scrolls the field rows they are checking against it. Design read per the
+design-taste discipline: trust-first product UI; grid over flex-math; zero decoration.
+
+**The warning card.** The warning row now shows the real texts on all three surfaces
+(`ResultsChecklist`, `DetailView`, `ReviewItemDetail`): the transcription with its deviating
+words marked, and the statute verbatim under "What TTB requires" (one source — the
+comparator's own `CANONICAL_WARNING_TEXT`, never a second copy). The marks come from
+`diffWords` (`src/app/_lib/word-diff.ts`), an LCS word alignment that is display-only: the
+verdict and reason still come from the comparator (standing rule 11). Marks use background
+tint plus weight — never color alone. Casing deviations are deliberately NOT marked by the
+diff; the caps check's reason line already carries them, and marking every token of a
+title-case warning would bury the wording signal.
+
+**Rollback.** Revert the PR. The surfaces return to the flex layout, the bare image, and
+the placeholder citation.
+
+**Confirmed.** 12 new tests: `word-diff` (7 — the case-10 paraphrase marks exactly
+"pregnant, consume, due, to"; verbatim marks nothing; title-case marks nothing),
+`WarningTranscription` (3), `LabelImageFigure` (2). One superseded DetailView assertion
+updated: the placeholder citation is replaced by the statute itself, with the standing-rule-11
+boundary restated in the test. All 386 app tests pass, including the TRO-578 token gate and
+the contrast test. Verified live: one real verify call against the local app with the
+case-10 image rendered the grid, the sticky image box, and the marked paraphrase
+(screenshot in the PR). `pnpm typecheck` and `pnpm lint` are clean.
+
 ## TRO-578 — design tokens and one visual hierarchy (2026-08-13)
 
 **The point.** Troy: "spacing and hierarchy are incredibly important and scream even louder

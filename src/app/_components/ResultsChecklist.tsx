@@ -8,6 +8,7 @@
 import Link from "next/link";
 import type { FieldVerdict, LabelVerdict } from "../../server/router";
 import type { VerifySuccessResponse } from "../api/verify/types";
+import { WarningTranscription } from "./WarningTranscription";
 
 // Exported (LH-042 / TRO-475) so the batch results table
 // (`BatchResultsTable.tsx`) shows the identical icon and status word for
@@ -87,8 +88,24 @@ export function ResultsChecklist({ result }: ResultsChecklistProps) {
             {/* PRD §5: "per-field rows with evidence and reason" — the
                 verbatim label text the extractor copied, not the cleaned
                 `labelValue`, so a reviewer sees exactly what was on the
-                label. */}
-            <span className="checklist-row__evidence">{row.evidence ? `On the label: “${row.evidence}”` : "Not found on the label."}</span>
+                label. The warning row's deviating words are marked
+                (TRO-582) — display alignment only; the verdict and
+                reason still come from the comparator. */}
+            <span className="checklist-row__evidence">
+              {row.evidence ? (
+                row.field === "government_warning" ? (
+                  <>
+                    On the label: &ldquo;
+                    <WarningTranscription transcription={row.evidence} />
+                    &rdquo;
+                  </>
+                ) : (
+                  `On the label: “${row.evidence}”`
+                )
+              ) : (
+                "Not found on the label."
+              )}
+            </span>
             <span className="checklist-row__reason">{row.reason}</span>
           </li>
         ))}

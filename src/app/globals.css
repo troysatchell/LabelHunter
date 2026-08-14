@@ -587,27 +587,9 @@ fieldset.field legend {
    ReviewItemDetail.tsx's file comment; consolidating the two families
    is TRO-578's job). ------------------------------------------------- */
 
-/* These rules place the label artwork beside the field comparison
-   (TRO-575). The values copy .detail-view__layout/.detail-view__image.
-   They stay literal so both screens render identically until TRO-578
-   tokenizes them. */
-.review-item__layout {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-gutter);
-  align-items: flex-start;
-}
-
-.review-item__image {
-  flex: 1 1 18rem;
-  max-width: 100%;
-  height: auto;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-}
-
+/* The artwork-beside-fields layout is a real grid (TRO-582, Troy's
+   direction) — see .detail-layout below; both surfaces share it. */
 .review-field-list {
-  flex: 2 1 22rem;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -752,23 +734,78 @@ fieldset.field legend {
   font-weight: 600;
 }
 
-.detail-view__layout {
-  display: flex;
-  flex-wrap: wrap;
+/* ---- Artwork + fields grid (TRO-582) --------------------------------
+   One shared layout for both detail surfaces (DetailView and
+   ReviewItemDetail): a real CSS Grid, not flex-wrap percentage math.
+   The image column holds a dedicated figure box; the fields column
+   scrolls past it. Single column below 48rem — the explicit mobile
+   collapse, declared here, not assumed. */
+
+.detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
   gap: var(--space-gutter);
-  align-items: flex-start;
+  align-items: start;
 }
 
-.detail-view__image {
-  flex: 1 1 18rem;
-  max-width: 100%;
-  height: auto;
+@media (max-width: 48rem) {
+  .detail-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The dedicated image box. A quiet well on the alt background; the
+   image letterboxes inside it (`contain`) with a capped height, so a
+   tall label photo never pushes the field comparison below the fold and
+   is never cropped — a reviewer must see every edge of the artwork. */
+.label-image-figure {
+  margin: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
+  background: var(--color-bg-alt);
+  padding: var(--space-tight);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-tight);
+}
+
+/* Sticky on the two-column layout only: the artwork stays in view while
+   the reviewer scrolls the field rows they are checking it against —
+   the screen's whole job. Never sticky in the single-column collapse. */
+@media (min-width: 48.0625rem) {
+  .detail-layout .label-image-figure {
+    position: sticky;
+    top: var(--space-stack);
+  }
+}
+
+.label-image-figure__img {
+  width: 100%;
+  height: auto;
+  max-height: min(70vh, 34rem);
+  object-fit: contain;
+  border-radius: var(--radius-control);
+  background: var(--color-bg);
+}
+
+.label-image-figure__caption {
+  color: var(--color-text-muted);
+  font-size: var(--font-meta);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The word-diff mark on a warning transcription (TRO-582): background
+   tint plus weight — two signals, never color alone. */
+.warning-diff-mark {
+  background: var(--color-review-bg);
+  color: inherit;
+  font-weight: 600;
+  padding: 0 0.1rem;
 }
 
 .detail-field-list {
-  flex: 2 1 22rem;
   list-style: none;
   margin: 0;
   padding: 0;

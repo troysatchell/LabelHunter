@@ -25,6 +25,7 @@ import {
   type RunWarningOcrDeps,
 } from "./index";
 import { CANONICAL_WARNING_TEXT } from "./canonical";
+import { OCR_CONFIDENCE_FLOOR } from "./reconcile";
 
 /** A hand-built, well-formed `BoldSignalResult` (TRO-533) — used only to
  * prove `compareGovernmentWarningFromImage` carries whatever
@@ -83,6 +84,7 @@ describe("compareGovernmentWarningFromImage — defensive handling", () => {
       crop: vi.fn(),
       ocr: vi.fn().mockResolvedValue(null),
       measureBoldSignal: vi.fn(),
+      buildRetryVariant: vi.fn(),
     };
     const result = await compareGovernmentWarningFromImage(
       { extracted: extractedWarning({ present: false, transcription: null }), originalImage: Buffer.from([]) },
@@ -99,6 +101,7 @@ describe("compareGovernmentWarningFromImage — defensive handling", () => {
       crop: vi.fn(),
       ocr: vi.fn(),
       measureBoldSignal: vi.fn(),
+      buildRetryVariant: vi.fn(),
     };
     // The VLM channel is otherwise a clean, confident exact match — this
     // proves a rejected OCR-side dependency degrades to single-channel
@@ -121,6 +124,7 @@ describe("compareGovernmentWarningFromImage — wiring, with fast injected fakes
       crop: vi.fn().mockResolvedValue(Buffer.from([])),
       ocr: vi.fn().mockResolvedValue({ text: CANONICAL_WARNING_TEXT, confidence: 92 }),
       measureBoldSignal: vi.fn().mockResolvedValue(FAKE_BOLD_SIGNAL),
+      buildRetryVariant: vi.fn(),
     };
     const result = await compareGovernmentWarningFromImage(
       { extracted: Promise.resolve(extractedWarning()), originalImage: Buffer.from([]) },
@@ -132,6 +136,9 @@ describe("compareGovernmentWarningFromImage — wiring, with fast injected fakes
     expect(result.boldSignal).toEqual(FAKE_BOLD_SIGNAL);
     const cropBufferSeenByOcr = (fakeDeps.crop as ReturnType<typeof vi.fn>).mock.results[0]?.value;
     expect(fakeDeps.measureBoldSignal).toHaveBeenCalledWith(await cropBufferSeenByOcr);
+    // TRO-583: a successful first OCR attempt never touches the retry path.
+    expect(fakeDeps.buildRetryVariant).not.toHaveBeenCalled();
+    expect(fakeDeps.ocr).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to single-channel when region detection finds nothing", async () => {
@@ -140,6 +147,7 @@ describe("compareGovernmentWarningFromImage — wiring, with fast injected fakes
       crop: vi.fn(),
       ocr: vi.fn().mockResolvedValue(null),
       measureBoldSignal: vi.fn(),
+      buildRetryVariant: vi.fn(),
     };
     const result = await compareGovernmentWarningFromImage(
       { extracted: extractedWarning({ confidence: 0.95 }), originalImage: Buffer.from([]) },
@@ -148,7 +156,122 @@ describe("compareGovernmentWarningFromImage — wiring, with fast injected fakes
     expect(result.comparator.verdict).toBe("MATCH"); // single-channel, VLM exact match, confidence >= 0.90
     expect(fakeDeps.crop).not.toHaveBeenCalled(); // nothing to crop — no region was found
     expect(fakeDeps.measureBoldSignal).not.toHaveBeenCalled(); // nothing to measure either
+    // TRO-583: no crop ever existed to retry with — region detection
+    // failing outright is a distinct, earlier failure this ticket does not
+    // retry (see runOcrChannel's own comment on this scope decision).
+    expect(fakeDeps.buildRetryVariant).not.toHaveBeenCalled();
     expect(result.boldSignal).toBeNull();
+  });
+});
+
+/**
+ * TRO-583's own regression tests: the failure-triggered retry runs exactly
+ * once, feeds reconcile the retry's read when it succeeds, and never fires
+ * at all on a successful first read (the happy path stays byte-identical).
+ * `result.comparator.channel` is the load-bearing assertion throughout —
+ * `"dual"` only ever comes out of `reconcileDualChannel`
+ * (`reconcile.ts`, untouched by this ticket), so a test asserting `"dual"`
+ * after a FAILED first attempt is proof the SECOND (retry) reading is what
+ * actually reached reconciliation, not a coincidence of the VLM channel
+ * alone.
+ */
+describe("compareGovernmentWarningFromImage — OCR retry (TRO-583)", () => {
+  const FAKE_REGION: PixelRegion = { x: 0, y: 0, width: 10, height: 10 };
+  const RETRY_VARIANT_BUFFER = Buffer.from("upscaled-variant");
+  const ORIGINAL_CROP_BUFFER = Buffer.from("original-crop");
+
+  it("retries once with the variant when the first attempt times out (null), and reconcile receives the retry's read", async () => {
+    const ocr = vi
+      .fn()
+      .mockResolvedValueOnce(null) // first attempt: TRO-519 degraded shape (timeout or thrown error)
+      .mockResolvedValueOnce({ text: CANONICAL_WARNING_TEXT, confidence: 92 }); // the retry succeeds
+    const buildRetryVariant = vi.fn().mockResolvedValue(RETRY_VARIANT_BUFFER);
+    const fakeDeps: CompareGovernmentWarningFromImageDeps = {
+      detectRegion: vi.fn().mockResolvedValue({ region: FAKE_REGION, method: "classical" }),
+      crop: vi.fn().mockResolvedValue(ORIGINAL_CROP_BUFFER),
+      ocr,
+      measureBoldSignal: vi.fn().mockResolvedValue(null),
+      buildRetryVariant,
+    };
+
+    const result = await compareGovernmentWarningFromImage(
+      { extracted: extractedWarning({ confidence: 0.95 }), originalImage: Buffer.from([]) },
+      fakeDeps,
+    );
+
+    expect(ocr).toHaveBeenCalledTimes(2);
+    expect(buildRetryVariant).toHaveBeenCalledTimes(1);
+    expect(buildRetryVariant).toHaveBeenCalledWith(ORIGINAL_CROP_BUFFER); // the SAME crop — no re-crop, no re-detection
+    expect(ocr).toHaveBeenNthCalledWith(2, RETRY_VARIANT_BUFFER); // the retry reads the VARIANT, not the original crop again
+    expect(result.comparator.verdict).toBe("MATCH");
+    expect(result.comparator.channel).toBe("dual"); // proves reconcile ran on the RETRY's reading, not single-channel VLM-only
+  });
+
+  it("retries once when the first attempt returns a read below OCR_CONFIDENCE_FLOOR — the exact reading reconcile.ts would otherwise discard to single-channel", async () => {
+    const ocr = vi
+      .fn()
+      .mockResolvedValueOnce({ text: "garbled tiny print", confidence: OCR_CONFIDENCE_FLOOR - 1 })
+      .mockResolvedValueOnce({ text: CANONICAL_WARNING_TEXT, confidence: 90 });
+    const buildRetryVariant = vi.fn().mockResolvedValue(RETRY_VARIANT_BUFFER);
+    const fakeDeps: CompareGovernmentWarningFromImageDeps = {
+      detectRegion: vi.fn().mockResolvedValue({ region: FAKE_REGION, method: "classical" }),
+      crop: vi.fn().mockResolvedValue(ORIGINAL_CROP_BUFFER),
+      ocr,
+      measureBoldSignal: vi.fn().mockResolvedValue(null),
+      buildRetryVariant,
+    };
+
+    const result = await compareGovernmentWarningFromImage(
+      { extracted: extractedWarning({ confidence: 0.95 }), originalImage: Buffer.from([]) },
+      fakeDeps,
+    );
+
+    expect(ocr).toHaveBeenCalledTimes(2);
+    expect(buildRetryVariant).toHaveBeenCalledTimes(1);
+    expect(result.comparator.channel).toBe("dual");
+  });
+
+  it("retries at most once — when the retry also fails, degrades to single-channel exactly as the pre-TRO-583 behavior did", async () => {
+    const ocr = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(null); // both attempts fail
+    const buildRetryVariant = vi.fn().mockResolvedValue(RETRY_VARIANT_BUFFER);
+    const fakeDeps: CompareGovernmentWarningFromImageDeps = {
+      detectRegion: vi.fn().mockResolvedValue({ region: FAKE_REGION, method: "classical" }),
+      crop: vi.fn().mockResolvedValue(ORIGINAL_CROP_BUFFER),
+      ocr,
+      measureBoldSignal: vi.fn().mockResolvedValue(null),
+      buildRetryVariant,
+    };
+
+    const result = await compareGovernmentWarningFromImage(
+      { extracted: extractedWarning({ confidence: 0.95 }), originalImage: Buffer.from([]) },
+      fakeDeps,
+    );
+
+    expect(ocr).toHaveBeenCalledTimes(2); // never a second retry
+    expect(buildRetryVariant).toHaveBeenCalledTimes(1);
+    expect(result.comparator.verdict).toBe("MATCH"); // single-channel, VLM exact match, confidence >= 0.90
+    expect(result.comparator.channel).toBe("single");
+  });
+
+  it("does not call buildRetryVariant, and calls ocr exactly once, when the first attempt already succeeds — the happy path is untouched by this ticket", async () => {
+    const ocr = vi.fn().mockResolvedValue({ text: CANONICAL_WARNING_TEXT, confidence: 92 });
+    const buildRetryVariant = vi.fn();
+    const fakeDeps: CompareGovernmentWarningFromImageDeps = {
+      detectRegion: vi.fn().mockResolvedValue({ region: FAKE_REGION, method: "classical" }),
+      crop: vi.fn().mockResolvedValue(ORIGINAL_CROP_BUFFER),
+      ocr,
+      measureBoldSignal: vi.fn().mockResolvedValue(null),
+      buildRetryVariant,
+    };
+
+    const result = await compareGovernmentWarningFromImage(
+      { extracted: extractedWarning({ confidence: 0.95 }), originalImage: Buffer.from([]) },
+      fakeDeps,
+    );
+
+    expect(ocr).toHaveBeenCalledTimes(1);
+    expect(buildRetryVariant).not.toHaveBeenCalled();
+    expect(result.comparator.channel).toBe("dual");
   });
 });
 
@@ -166,6 +289,7 @@ describe("compareGovernmentWarningFromImage — real concurrency (CP-2 §4.4)", 
       crop: vi.fn().mockResolvedValue(Buffer.from([])),
       ocr: vi.fn().mockResolvedValue({ text: CANONICAL_WARNING_TEXT, confidence: 92 }),
       measureBoldSignal: vi.fn().mockResolvedValue(FAKE_BOLD_SIGNAL),
+      buildRetryVariant: vi.fn(),
     };
 
     const resultPromise = compareGovernmentWarningFromImage(
@@ -288,22 +412,32 @@ describe("compareGovernmentWarningFromImage — real image, real OCR, real regio
  * the hung-worker shape, not a real sleep, lessons.md rule 8); region
  * detection, cropping, and `runWarningOcr` itself are all the real
  * production code.
+ *
+ * TRO-583: a timed-out first attempt is now a retry trigger, so the
+ * bounded-degradation property this test proves must hold across BOTH
+ * attempts, not just one — the test advances fake time by
+ * `2 * OCR_TIMEOUT_MS` (this ticket's own analytic worst-case bound: one
+ * retry, each attempt independently bounded by the same TRO-519 deadline)
+ * and asserts `ocr` was actually called twice, not just that a result
+ * eventually came back.
  */
-describe("compareGovernmentWarningFromImage — OCR channel timeout (TRO-519)", () => {
+describe("compareGovernmentWarningFromImage — OCR channel timeout (TRO-519, TRO-583)", () => {
   const FAKE_REGION: PixelRegion = { x: 0, y: 0, width: 10, height: 10 };
 
-  it("degrades to single-channel MATCH, not an indefinite hang, when the real runWarningOcr's own createWorker never resolves", async () => {
+  it("degrades to single-channel MATCH within 2x OCR_TIMEOUT_MS, not an indefinite hang, when the real runWarningOcr's own createWorker never resolves on either attempt", async () => {
     vi.useFakeTimers();
     try {
       const neverResolvingCreateWorker: RunWarningOcrDeps["createWorker"] = vi.fn(
         () => new Promise(() => {}),
       ) as unknown as RunWarningOcrDeps["createWorker"];
 
+      const ocr = vi.fn((crop: Buffer) => runWarningOcr(crop, { createWorker: neverResolvingCreateWorker }));
       const fakeDeps: CompareGovernmentWarningFromImageDeps = {
         detectRegion: vi.fn().mockResolvedValue({ region: FAKE_REGION, method: "classical" }),
         crop: vi.fn().mockResolvedValue(Buffer.from([])),
-        ocr: (crop) => runWarningOcr(crop, { createWorker: neverResolvingCreateWorker }),
+        ocr,
         measureBoldSignal: vi.fn().mockResolvedValue(null),
+        buildRetryVariant: vi.fn().mockResolvedValue(Buffer.from([])),
       };
 
       // A clean, confident VLM read: once OCR degrades to unavailable, CP-2
@@ -316,8 +450,15 @@ describe("compareGovernmentWarningFromImage — OCR channel timeout (TRO-519)", 
         fakeDeps,
       );
 
+      // First attempt's own deadline.
+      await vi.advanceTimersByTimeAsync(OCR_TIMEOUT_MS);
+      // TRO-583's retry fires only after the first attempt is already
+      // known to have failed — advance a second, independent deadline for
+      // the retry's own `runWarningOcr` call.
       await vi.advanceTimersByTimeAsync(OCR_TIMEOUT_MS);
       const result = await resultPromise;
+
+      expect(ocr).toHaveBeenCalledTimes(2); // the original attempt, plus exactly one retry — never more
 
       expect(result.comparator.verdict).toBe("MATCH");
     } finally {

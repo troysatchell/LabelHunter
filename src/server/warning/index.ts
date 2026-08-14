@@ -42,7 +42,8 @@
  */
 import type { ExtractedGovernmentWarning } from "../extractor/types";
 import { cropForOcr, detectWarningRegion } from "./region-detect";
-import { runWarningOcr } from "./ocr";
+import { runWarningOcr, type OcrWarningResult } from "./ocr";
+import { buildOcrRetryVariant, shouldRetryOcr } from "./ocr-retry";
 import { measureBoldSignal, type BoldSignalResult } from "./bold-detect";
 import {
   reconcileWarningChannels,
@@ -73,6 +74,7 @@ export {
   type OcrWarningResult,
   type RunWarningOcrDeps,
 } from "./ocr";
+export { buildOcrRetryVariant, OCR_RETRY_UPSCALE_FACTOR, shouldRetryOcr } from "./ocr-retry";
 export {
   cropForOcr,
   detectWarningRegion,
@@ -120,6 +122,12 @@ export interface CompareGovernmentWarningFromImageDeps {
    * other dependency here is: a test can supply a fake with a controlled
    * result. */
   measureBoldSignal: typeof measureBoldSignal;
+  /** TRO-583 — builds the ONE alternate-preprocessing variant `runOcrChannel`
+   * retries a failed first OCR attempt with. Injectable for the same
+   * reason every other dependency here is: a test can supply a fake that
+   * returns a distinguishable buffer, to prove the retry's OWN read (not
+   * the first attempt's) reaches `ocr`. */
+  buildRetryVariant: typeof buildOcrRetryVariant;
 }
 
 const defaultDeps: CompareGovernmentWarningFromImageDeps = {
@@ -127,6 +135,7 @@ const defaultDeps: CompareGovernmentWarningFromImageDeps = {
   crop: cropForOcr,
   ocr: runWarningOcr,
   measureBoldSignal,
+  buildRetryVariant: buildOcrRetryVariant,
 };
 
 export interface CompareGovernmentWarningFromImageInput {
@@ -176,7 +185,36 @@ export interface CompareGovernmentWarningFromImageInput {
  * (standing rule 13), so `.catch(() => null)` is this function's own
  * boundary check, not a trust in that contract. `boldSignal` stays `null`
  * whenever no crop was ever produced (region detection found nothing) —
- * a state distinct from a measured `signal: "uncertain"`. */
+ * a state distinct from a measured `signal: "uncertain"`.
+ *
+ * **The retry (TRO-583).** Troy's escalation philosophy for this ticket:
+ * "if it doesn't know it should pass it on to the next tier" — the honest
+ * costlier tier for a bad READING is a better read, not a smarter judge
+ * (the Sonnet resolver stays structurally forbidden from ruling on the
+ * warning, CP-1). `ocr-retry.ts`'s `shouldRetryOcr` decides whether the
+ * first attempt counts as that kind of failure (a thrown/timed-out `null`,
+ * TRO-519's shared shape, or a confidence below `OCR_CONFIDENCE_FLOOR` —
+ * the SAME constant `reconcile.ts` uses to decide "would force
+ * single-channel degradation"). Fires ONLY on that failure path, at most
+ * once, against `deps.buildRetryVariant(crop)` — the SAME crop, no second
+ * region detection or re-crop. `deps.ocr`'s own per-call bound
+ * (`OCR_TIMEOUT_MS`, TRO-519) already bounds the retry attempt exactly the
+ * way it bounds the first one, independently — this function adds no
+ * timer of its own, so the analytic worst case for the whole channel is
+ * `2 * OCR_TIMEOUT_MS`, never unbounded (measured retry-cost distribution
+ * and this bound: this ticket's `CHANGES.md` entry).
+ *
+ * When the retry also fails, `retryResult ?? firstResult` falls back to
+ * the FIRST attempt's own shape — `reconcile.ts`'s usability check treats
+ * every combination of "unavailable" and "below floor" identically (both
+ * are `ocrUsable = false`), so this is the exact single-channel outcome
+ * the pre-TRO-583 code already produced, not a new one.
+ *
+ * A successful first attempt (`shouldRetryOcr` false) never calls
+ * `deps.buildRetryVariant` or a second `deps.ocr` at all — the happy path
+ * below this line is unchanged from the pre-TRO-583 code
+ * (`index.test.ts`'s "does not call buildRetryVariant... — the happy path
+ * is untouched by this ticket" test). */
 async function runOcrChannel(
   originalImage: Buffer,
   deps: CompareGovernmentWarningFromImageDeps,
@@ -188,7 +226,15 @@ async function runOcrChannel(
     const crop = await deps.crop(originalImage, detection.region);
     const boldSignal = await deps.measureBoldSignal(crop).catch(() => null);
 
-    const result = await deps.ocr(crop);
+    const firstResult = await deps.ocr(crop);
+
+    let result: OcrWarningResult | null = firstResult;
+    if (shouldRetryOcr(firstResult)) {
+      const retryVariant = await deps.buildRetryVariant(crop);
+      const retryResult = await deps.ocr(retryVariant);
+      result = retryResult ?? firstResult;
+    }
+
     if (!result) return { ocrChannel: { available: false }, boldSignal };
     return { ocrChannel: { available: true, text: result.text, confidence: result.confidence }, boldSignal };
   } catch {

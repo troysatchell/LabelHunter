@@ -6,16 +6,16 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
 ## TRO-583 — retry the OCR channel once before it degrades to single-channel (2026-08-13)
 
-**The problem.** The OCR channel can fail three ways: Tesseract can time out
-(TRO-519), it can throw, or it can return a read below `reconcile.ts`'s
+**The problem.** The OCR channel can fail three ways. Tesseract can time
+out (TRO-519). It can throw. It can return a read below `reconcile.ts`'s
 `OCR_CONFIDENCE_FLOOR`. Every one of these degrades the label to
-single-channel — the VLM reading alone decides the verdict. The deployed
-Fairview seeded row hit this during the TRO-571 OOM window: the OCR channel
-failed, and the verdict fell back to the VLM channel alone.
+single-channel. The VLM reading alone then decides the verdict. The
+deployed Fairview seeded row hit this during the TRO-571 OOM window: the
+OCR channel failed, and the verdict fell back to the VLM channel alone.
 
 **Troy's escalation rule for this ticket.** "If it doesn't know it should
 pass it on to the next tier." A bad OCR reading needs a better read, not a
-smarter judge — the Sonnet resolver stays structurally forbidden from
+smarter judge. The Sonnet resolver stays structurally forbidden from
 ruling on the warning (CP-1, `resolver/schema.ts`, untouched here). So the
 fix is a retry, not an escalation to a model.
 
@@ -23,19 +23,19 @@ fix is a retry, not an escalation to a model.
 pure functions:
 
 - `shouldRetryOcr` — true when the first OCR attempt is `null` (TRO-519's
-  shared timeout-or-thrown shape) or its confidence sits below
-  `OCR_CONFIDENCE_FLOOR` — the SAME constant `reconcile.ts` already uses,
-  imported, not re-guessed.
+  shared timeout-or-thrown shape), or its confidence sits below
+  `OCR_CONFIDENCE_FLOOR`. That is the SAME constant `reconcile.ts` already
+  uses, imported here, not re-guessed.
 - `buildOcrRetryVariant` — upscales the crop 2x (`OCR_RETRY_UPSCALE_FACTOR`)
-  with sharp and re-encodes to PNG, matching `region-detect.ts`'s
+  with sharp and re-encodes to PNG. This matches `region-detect.ts`'s own
   `cropForOcr` encoding.
 
 `src/server/warning/index.ts`'s `runOcrChannel` calls `shouldRetryOcr`
 right after the first `deps.ocr(crop)` call. On a pass, nothing else
-runs — the happy path is unchanged, byte for byte. On a failure, it builds
-the variant from the SAME crop (no second region detection, no re-crop)
-and retries OCR once. `retryResult ?? firstResult` is what reaches
-`reconcile.ts`: the retry's read wins when it exists; when the retry also
+runs. The happy path is unchanged, byte for byte. On a failure, it builds
+the variant from the SAME crop — no second region detection, no re-crop —
+and retries OCR once. `retryOutcome ?? firstResult` is what reaches
+`reconcile.ts`. The retry's read wins when it exists. When the retry also
 fails, the exact single-channel path that ran before this ticket runs
 again. `reconcile.ts`'s verdict tables are untouched.
 
@@ -47,64 +47,94 @@ resolution problem. The corpus's other named failure mode is lighting
 (case-22). Region DETECTION already handles that one, upstream, before a
 crop like this even exists (TRO-546's per-row background estimate).
 Thresholding the crop here a second time would fight that already-tuned
-estimate, not help it. Upscaling has no such conflict, and it is the
-textbook remedy for a resolution problem.
+estimate, not help it. Upscaling has no such conflict. It is the textbook
+remedy for a resolution problem.
 
 **Bound (TH-R2).** Each OCR attempt is bounded independently by TRO-519's
-`OCR_TIMEOUT_MS` (2000ms) — the retry is an ordinary second
-`runWarningOcr` call, not a call sharing one timer with the first (lessons
-rule 23). Analytic worst case for the whole channel:
-`2 * OCR_TIMEOUT_MS` = 4000ms, and only on the failure path — the happy
-path's timing is unchanged by construction. `index.test.ts`'s "OCR channel
-timeout (TRO-519, TRO-583)" test proves this bound holds end to end, with
-fake timers, against the real `runWarningOcr`.
+`OCR_TIMEOUT_MS` (2000ms). The retry's own `deps.ocr` call is an ordinary
+second `runWarningOcr` call, with its own independent timeout — never one
+call sharing a timer with another (lessons rule 23).
+
+One gap remained after the first draft. `deps.buildRetryVariant` itself is
+a sharp call with no timeout of its own. It sat unbounded between the two
+OCR calls. A local CodeRabbit review round 1 finding caught this.
+
+The fix: `runRetryPhaseWithDeadline` (`index.ts`) races `buildRetryVariant`
+then `deps.ocr` together, against ONE shared `OCR_TIMEOUT_MS` timer. That
+is the same constant the first attempt already trusts, not a new number. A
+timeout here abandons the retry and keeps the first attempt's own result.
+It never starts a third attempt.
+
+This makes the channel's worst case exactly `2 * OCR_TIMEOUT_MS` = 4000ms,
+provably — not just in the common case where `buildRetryVariant` happens
+to be fast. This bound applies only on the failure path. The happy path's
+timing is unchanged by construction.
+
+Two tests prove this end to end, with fake timers, against the real
+`runWarningOcr`: `index.test.ts`'s "OCR channel timeout (TRO-519,
+TRO-583)" test (the first attempt times out, then the retry's own OCR
+call also times out) and its "buildRetryVariant itself never resolves"
+test (the variant-build step itself hangs, and the retry never reaches a
+second `deps.ocr` call at all).
 
 **Measured, not fabricated.** Ran `buildOcrRetryVariant` + `runWarningOcr`
-against every golden-set crop region detection can find (31 of 35
+against every golden-set crop region detection can find. That is 31 of 35
 warning-bearing cases — case-20/22/38/39 find no region at all, a
-pre-existing, unrelated gap), locally, tesseract only: no network call, no
-Anthropic API call, no database write.
+pre-existing, unrelated gap. This ran locally, tesseract only: no network
+call, no Anthropic API call, no database write.
 
 Total retry-path cost (variant build + retry OCR), n=31, milliseconds:
 min 338, p50 427, p95 571, max 712, mean 440.
 
 Every measured case landed well under the 2000ms `OCR_TIMEOUT_MS` bound.
-As a side observation: case-23 — one of the two tiny-print cases
+Side observation: case-23 is one of the two tiny-print cases
 `OCR_CONFIDENCE_FLOOR`'s own comment names, measured there at confidence
-58 on the un-upscaled crop — read back at confidence 93 after this
-ticket's 2x upscale, in this same run. One case is not proof the variant
-fixes tiny print in general, but it is direct evidence the chosen variant
-targets the failure mode it was chosen for.
+58 on the un-upscaled crop. In this same run, it read back at confidence
+93 after this ticket's 2x upscale. One case is not proof the variant fixes
+tiny print in general. It is direct evidence the chosen variant targets
+the failure mode it was chosen for.
 
 Deployed p95 re-measurement: not measured on the deployed instance. That
 is out of this ticket's scope. A live end-to-end harness run was
-considered and skipped for one reason: the retry fires only after a
-first-attempt failure, and this measurement already shows most golden-set
-crops read well above the confidence floor on a first attempt. A live run
-would mostly reproduce the existing `eval:check` baseline, not add
+considered and skipped. Reason: the retry fires only after a first-attempt
+failure, and this measurement already shows most golden-set crops read
+well above the confidence floor on a first attempt. A live run would
+mostly reproduce the existing `eval:check` baseline, not add
 retry-specific evidence.
 
-**Tests.** `src/server/warning/ocr-retry.test.ts` (new, 7 tests):
+**Tests.** `src/server/warning/ocr-retry.test.ts` (new, 7 tests) covers
 `shouldRetryOcr` and `buildOcrRetryVariant` in isolation, no OCR call.
 `src/server/warning/index.test.ts` adds a dedicated "OCR retry (TRO-583)"
-block (4 tests): retries once on a `null` first attempt, and reconcile
-receives the retry's read (`result.comparator.channel === "dual"` proves
-this, since only `reconcileDualChannel` ever sets that); retries once on a
-read below `OCR_CONFIDENCE_FLOOR`; retries at most once when the retry
-also fails, falling back to exactly today's single-channel path
-(`channel === "single"`); never calls `buildRetryVariant`, and calls `ocr`
-exactly once, when the first attempt already succeeds. The existing
-TRO-519 timeout test is updated to advance fake time twice
+block (5 tests):
+
+- Retries once on a `null` first attempt. Reconcile receives the retry's
+  read — `result.comparator.channel === "dual"` proves this, since only
+  `reconcileDualChannel` ever sets that.
+- Retries once on a read below `OCR_CONFIDENCE_FLOOR`.
+- Retries at most once when the retry also fails. Falls back to exactly
+  today's single-channel path (`channel === "single"`).
+- Never calls `buildRetryVariant`, and calls `ocr` exactly once, when the
+  first attempt already succeeds.
+- Degrades within `OCR_TIMEOUT_MS`, and never calls `ocr` a second time,
+  when `buildRetryVariant` itself never resolves (the round-1 finding's
+  own regression test).
+
+The existing TRO-519 timeout test is updated to advance fake time twice
 (`2 * OCR_TIMEOUT_MS`) and assert `ocr` was called exactly twice — the
 same bounded-degradation property, now proven across both attempts.
-Confirmed red first for all of this. Reverted the retry wiring in
-`runOcrChannel`, and separately stubbed `ocr-retry.ts`'s own two
-functions, then reran. Every new or changed assertion failed on a real
-call count or a real return value — never an import or type error. Then
-restored the real implementation and reran green.
+
+Confirmed red first for all of this, twice over. First pass: reverted the
+retry wiring in `runOcrChannel`, and separately stubbed `ocr-retry.ts`'s
+own two functions, then reran. Every new or changed assertion failed on a
+real call count or a real return value, never an import or type error.
+Second pass, after the round-1 finding: reverted `runOcrChannel` to the
+unbounded pre-fix shape and reran the new "buildRetryVariant itself never
+resolves" test. It failed with a real 5-second test timeout — the hang
+this fix exists to close. Restored the real implementation both times;
+all tests green after.
 
 **Rollback.** Revert the PR. `runOcrChannel` returns to a single
-`deps.ocr` call; `ocr-retry.ts` stays unused and can be deleted.
+`deps.ocr` call. `ocr-retry.ts` stays unused and can be deleted.
 
 ## TRO-581 — a deterministic single-channel warning violation fails outright (2026-08-13)
 

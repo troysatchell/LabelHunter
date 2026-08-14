@@ -273,6 +273,46 @@ describe("compareGovernmentWarningFromImage — OCR retry (TRO-583)", () => {
     expect(buildRetryVariant).not.toHaveBeenCalled();
     expect(result.comparator.channel).toBe("dual");
   });
+
+  /**
+   * Local CodeRabbit review round 1: an earlier draft bounded only the
+   * retry's own `deps.ocr` call and left `deps.buildRetryVariant` itself
+   * free to hang forever between the two OCR calls — the ticket's own
+   * "never an unbounded hang" instruction does not accept that gap. This
+   * test injects a `buildRetryVariant` that never resolves (the hang
+   * shape, not a real sleep — lessons.md rule 8) and proves the whole
+   * retry phase still degrades within `OCR_TIMEOUT_MS`, never invoking a
+   * second `deps.ocr` call at all — it never gets the chance to.
+   */
+  it("degrades to single-channel within OCR_TIMEOUT_MS, and never calls ocr a second time, when buildRetryVariant itself never resolves", async () => {
+    vi.useFakeTimers();
+    try {
+      const ocr = vi.fn().mockResolvedValue(null); // first attempt fails outright — triggers the retry
+      const buildRetryVariant = vi.fn(() => new Promise<Buffer>(() => {})); // never resolves
+      const fakeDeps: CompareGovernmentWarningFromImageDeps = {
+        detectRegion: vi.fn().mockResolvedValue({ region: FAKE_REGION, method: "classical" }),
+        crop: vi.fn().mockResolvedValue(ORIGINAL_CROP_BUFFER),
+        ocr,
+        measureBoldSignal: vi.fn().mockResolvedValue(null),
+        buildRetryVariant,
+      };
+
+      const resultPromise = compareGovernmentWarningFromImage(
+        { extracted: extractedWarning({ confidence: 0.95 }), originalImage: Buffer.from([]) },
+        fakeDeps,
+      );
+
+      await vi.advanceTimersByTimeAsync(OCR_TIMEOUT_MS);
+      const result = await resultPromise;
+
+      expect(buildRetryVariant).toHaveBeenCalledTimes(1);
+      expect(ocr).toHaveBeenCalledTimes(1); // never reached a second call — buildRetryVariant never handed back a variant
+      expect(result.comparator.verdict).toBe("MATCH"); // single-channel, VLM exact match, confidence >= 0.90
+      expect(result.comparator.channel).toBe("single");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("compareGovernmentWarningFromImage — real concurrency (CP-2 §4.4)", () => {

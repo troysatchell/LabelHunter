@@ -42,7 +42,7 @@
  */
 import type { ExtractedGovernmentWarning } from "../extractor/types";
 import { cropForOcr, detectWarningRegion } from "./region-detect";
-import { runWarningOcr, type OcrWarningResult } from "./ocr";
+import { OCR_TIMEOUT_MS, runWarningOcr, type OcrWarningResult } from "./ocr";
 import { buildOcrRetryVariant, shouldRetryOcr } from "./ocr-retry";
 import { measureBoldSignal, type BoldSignalResult } from "./bold-detect";
 import {
@@ -187,24 +187,34 @@ export interface CompareGovernmentWarningFromImageInput {
  * whenever no crop was ever produced (region detection found nothing) —
  * a state distinct from a measured `signal: "uncertain"`.
  *
- * **The retry (TRO-583).** Troy's escalation philosophy for this ticket:
- * "if it doesn't know it should pass it on to the next tier" — the honest
- * costlier tier for a bad READING is a better read, not a smarter judge
- * (the Sonnet resolver stays structurally forbidden from ruling on the
- * warning, CP-1). `ocr-retry.ts`'s `shouldRetryOcr` decides whether the
- * first attempt counts as that kind of failure (a thrown/timed-out `null`,
- * TRO-519's shared shape, or a confidence below `OCR_CONFIDENCE_FLOOR` —
- * the SAME constant `reconcile.ts` uses to decide "would force
- * single-channel degradation"). Fires ONLY on that failure path, at most
- * once, against `deps.buildRetryVariant(crop)` — the SAME crop, no second
- * region detection or re-crop. `deps.ocr`'s own per-call bound
- * (`OCR_TIMEOUT_MS`, TRO-519) already bounds the retry attempt exactly the
- * way it bounds the first one, independently — this function adds no
- * timer of its own, so the analytic worst case for the whole channel is
- * `2 * OCR_TIMEOUT_MS`, never unbounded (measured retry-cost distribution
- * and this bound: this ticket's `CHANGES.md` entry).
+ * **The retry (TRO-583).** Troy's escalation rule for this ticket: "if it
+ * doesn't know it should pass it on to the next tier." A bad READING
+ * needs a better read, not a smarter judge — the Sonnet resolver stays
+ * structurally forbidden from ruling on the warning (CP-1). `ocr-retry.ts`'s
+ * `shouldRetryOcr` decides whether the first attempt counts as that kind
+ * of failure: a thrown/timed-out `null` (TRO-519's shared shape), or a
+ * confidence below `OCR_CONFIDENCE_FLOOR` — the SAME constant
+ * `reconcile.ts` already uses for "would force single-channel
+ * degradation." The retry fires ONLY on that failure path, at most once,
+ * against the SAME crop (no second region detection, no re-crop).
  *
- * When the retry also fails, `retryResult ?? firstResult` falls back to
+ * **The retry-phase deadline (local CodeRabbit review round 1, TRO-583).**
+ * An earlier draft bounded only the retry's OWN `deps.ocr` call (via that
+ * call's existing per-call `OCR_TIMEOUT_MS`, TRO-519) and left
+ * `deps.buildRetryVariant` itself unbounded between the two OCR calls —
+ * the same gap this comment already names for `deps.detectRegion`/
+ * `deps.crop`, but the ticket's own instruction ("never an unbounded
+ * hang") does not accept that gap here. `runRetryPhaseWithDeadline`
+ * (below) races `deps.buildRetryVariant` THEN `deps.ocr` together against
+ * ONE `OCR_TIMEOUT_MS` timer — the SAME constant the first attempt
+ * already trusts, reused rather than a new, independently-chosen number.
+ * A timeout here abandons the retry and keeps the first attempt's own
+ * result; it never invokes a THIRD attempt. This makes the channel's
+ * analytic worst case exactly `2 * OCR_TIMEOUT_MS`, provably, not just in
+ * the common case where `buildRetryVariant` happens to be fast (measured
+ * distribution and this bound: this ticket's `CHANGES.md` entry).
+ *
+ * When the retry also fails, `retryOutcome ?? firstResult` falls back to
  * the FIRST attempt's own shape — `reconcile.ts`'s usability check treats
  * every combination of "unavailable" and "below floor" identically (both
  * are `ocrUsable = false`), so this is the exact single-channel outcome
@@ -230,15 +240,66 @@ async function runOcrChannel(
 
     let result: OcrWarningResult | null = firstResult;
     if (shouldRetryOcr(firstResult)) {
-      const retryVariant = await deps.buildRetryVariant(crop);
-      const retryResult = await deps.ocr(retryVariant);
-      result = retryResult ?? firstResult;
+      const retryOutcome = await runRetryPhaseWithDeadline(crop, deps);
+      if (retryOutcome !== RETRY_PHASE_TIMED_OUT) {
+        result = retryOutcome ?? firstResult;
+      }
+      // else: the retry phase itself (variant build + retry OCR) hung
+      // past OCR_TIMEOUT_MS — abandon it, keep the first attempt's own
+      // (already-failed) result. "Never an unbounded hang."
     }
 
     if (!result) return { ocrChannel: { available: false }, boldSignal };
     return { ocrChannel: { available: true, text: result.text, confidence: result.confidence }, boldSignal };
   } catch {
     return { ocrChannel: { available: false }, boldSignal: null };
+  }
+}
+
+/** A `Symbol`, not `null`/`undefined`, so it can never collide with a
+ * genuine `OcrWarningResult | null` outcome from the retry phase itself —
+ * mirrors `ocr.ts`'s own `OCR_TIMED_OUT` sentinel pattern (TRO-519). */
+const RETRY_PHASE_TIMED_OUT = Symbol("OCR retry phase timed out");
+
+/**
+ * Runs `deps.buildRetryVariant(crop)` THEN `deps.ocr(variant)` against one
+ * shared `OCR_TIMEOUT_MS` deadline (TRO-583, local CodeRabbit review round
+ * 1) — see `runOcrChannel`'s own header comment for why this exists and
+ * why it is ONE timer, not two nested ones (lessons.md rule 23).
+ *
+ * The retry-phase promise is wrapped in `.catch(() => null)` so it can
+ * NEVER reject — matching this file's own `measureBoldSignal(...).catch(()
+ * => null)` precedent for the same reason: `deps.buildRetryVariant`/
+ * `deps.ocr` are injectable, so a test double's failure mode is not
+ * guaranteed the way the real, contract-abiding implementations' are
+ * (standing rule 13). Without this, a late rejection on the LOSING side of
+ * `Promise.race` (below) — the retry phase rejecting AFTER the deadline
+ * already won — would be an unhandled rejection nobody observes.
+ *
+ * If the deadline wins, the retry phase keeps running in the background,
+ * unawaited — the same "never block on the loser" rule `runWarningOcr`
+ * itself already follows (TRO-519) — but `deps.ocr`'s own production
+ * implementation (`runWarningOcr`) always terminates its own worker
+ * regardless of whether anyone is still awaiting it, so this leaves
+ * nothing running that would not have cleaned up on its own.
+ */
+async function runRetryPhaseWithDeadline(
+  crop: Buffer,
+  deps: CompareGovernmentWarningFromImageDeps,
+): Promise<OcrWarningResult | null | typeof RETRY_PHASE_TIMED_OUT> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<typeof RETRY_PHASE_TIMED_OUT>((resolve) => {
+    timer = setTimeout(() => resolve(RETRY_PHASE_TIMED_OUT), OCR_TIMEOUT_MS);
+  });
+  const retryPhase: Promise<OcrWarningResult | null> = (async () => {
+    const retryVariant = await deps.buildRetryVariant(crop);
+    return deps.ocr(retryVariant);
+  })().catch(() => null);
+
+  try {
+    return await Promise.race([retryPhase, deadline]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

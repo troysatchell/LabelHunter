@@ -5,8 +5,8 @@
  * its committed image path: a clean render (`render.ts`), then — for a
  * `rendered+degraded` case — every degradation recorded in that case's
  * `degradations` list (`degrade.ts`), applied in order. `ai-generated`
- * cases are LH-005's job; this script skips them and leaves their (still
- * absent) image files alone. `photographed` cases (TRO-529 / LH-024) are
+ * cases are a future ticket's job; this script skips them and leaves their
+ * (still absent) image files alone. `photographed` cases (TRO-529 / LH-024) are
  * skipped too, for a sharper reason than "no image yet": their image
  * already exists and is a real camera photograph — running it through this
  * renderer would silently overwrite that photograph with synthetic
@@ -106,7 +106,27 @@ export async function buildAiBackdropCase(
   }
   const labelImage = await renderLabelImage(caseSpec, renderer.page);
   const backdropPath = resolve(backdropsDir, `${caseSpec.caseId}.png`);
-  const backdropImage = readFileSync(backdropPath);
+  let backdropImage: Buffer;
+  try {
+    backdropImage = readFileSync(backdropPath);
+  } catch (err) {
+    // Only ENOENT ("no file there") gets the named, helpful message below.
+    // A different code — EISDIR, EACCES, any other I/O error — is a
+    // different, real problem; rethrow it unchanged rather than mislabel
+    // it as "no file exists" when a file does exist.
+    if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") {
+      throw err;
+    }
+    // A bare ENOENT here names a file path, not a case. The most common
+    // cause: a hand-authored manifest entry's caseId does not exactly
+    // match the caseId pnpm golden:imagen generated for its backdrop and
+    // sidecar (golden-set/README.md's fold-in recipe, step 4).
+    throw new RangeError(
+      `build: case "${caseSpec.caseId}" expects a backdrop photo at ${backdropPath}, but no file exists ` +
+        `there. Confirm this case's "caseId" is exactly the sidecar's generated case ID ` +
+        `(golden-set/README.md's fold-in recipe, step 4).`,
+    );
+  }
   return compositeLabelOntoBackdrop(backdropImage, labelImage, caseSpec.labelPlacement);
 }
 
@@ -166,7 +186,7 @@ async function main(): Promise<void> {
   const aiGeneratedSkipped = manifest.cases.filter((c) => c.provenance === "ai-generated").length;
   const photographedSkipped = manifest.cases.filter((c) => c.provenance === "photographed").length;
   if (aiGeneratedSkipped > 0) {
-    console.log(`Skipped ${aiGeneratedSkipped} ai-generated case(s) — LH-005's job.`);
+    console.log(`Skipped ${aiGeneratedSkipped} ai-generated case(s) — a future ticket's job.`);
   }
   if (photographedSkipped > 0) {
     console.log(

@@ -51,6 +51,35 @@
   --color-review: #9c5400;
   --color-review-bg: #fbf1e3;
   color-scheme: light;
+
+  /* ---- Spacing scale (TRO-578). Six named steps replace twelve ad hoc
+     gap values. Word names, matching the --color-* style; the contrast
+     test's token parser reads only hex-valued tokens, so these are
+     invisible to it by design. */
+  --space-nudge: 0.25rem; /* smallest separation inside a control or badge */
+  --space-tight: 0.5rem; /* label-to-input, icon-to-name */
+  --space-row: 0.75rem; /* list rows, cards in a stack, sibling buttons */
+  --space-stack: 1.25rem; /* page-level blocks */
+  --space-gutter: 1.5rem; /* side-by-side layout columns */
+  --space-form: 1.85rem; /* long-form field separation */
+
+  /* ---- Type scale (TRO-578). Six named sizes replace twelve ad hoc
+     font sizes. Hierarchy rule: weight 700 belongs to the page title and
+     the verdict banner only — the one thing per screen that must win.
+     Labels and badges use 600. Everything small and muted uses one size,
+     --font-meta. */
+  --font-meta: 0.9rem; /* hints, notes, metadata, column labels */
+  --font-text: 1rem; /* body text inside components */
+  --font-body: 1.05rem; /* inputs, controls, banners */
+  --font-lead: 1.15rem; /* emphasized lines: verdict banner, reasons */
+  --font-section: 1.3rem; /* section headings, primary action buttons */
+  --font-icon: 1.4rem; /* the one verdict-icon size, all three families */
+  --font-title: 2rem; /* page title */
+
+  /* ---- Radii (TRO-578). Two named radii replace the unnamed 0.5/0.6
+     split: controls (inputs, buttons) vs cards (panels, banners, rows). */
+  --radius-control: 0.5rem;
+  --radius-card: 0.6rem;
 }
 
 * {
@@ -78,6 +107,11 @@ body {
     Arial,
     sans-serif;
   line-height: 1.6;
+  /* Native controls (the beverage radios) take the brand blue instead of
+     the browser's default accent — before this, the radios rendered in
+     each browser's own color (orange in Chrome), the one element on the
+     verify screen outside the palette (TRO-578). */
+  accent-color: var(--color-primary);
 }
 
 a {
@@ -101,7 +135,7 @@ a:hover {
 }
 
 .page__title {
-  font-size: 2rem;
+  font-size: var(--font-title);
   font-weight: 700;
   letter-spacing: -0.01em;
   margin: 0 0 0.6rem;
@@ -109,7 +143,7 @@ a:hover {
 
 .page__intro {
   color: var(--color-text-muted);
-  font-size: 1.05rem;
+  font-size: var(--font-body);
   margin: 0 0 2.25rem;
 }
 
@@ -130,7 +164,7 @@ a:hover {
 .verify-form {
   display: flex;
   flex-direction: column;
-  gap: 1.85rem;
+  gap: var(--space-form);
 }
 
 /* TRO-482: the access-code entry form (`AccessCodeForm.tsx`) — a much
@@ -140,14 +174,14 @@ a:hover {
 .access-code-form {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: var(--space-stack);
   max-width: 24rem;
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: var(--space-tight);
 }
 
 .field__label {
@@ -156,7 +190,7 @@ a:hover {
 
 .field__hint {
   color: var(--color-text-muted);
-  font-size: 0.9rem;
+  font-size: var(--font-meta);
 }
 
 /* The auto-fill assist (TRO-576). The status line sits under the photo
@@ -165,23 +199,23 @@ a:hover {
    themselves are the content and the assist must never outrank them. */
 .verify-form__assist {
   color: var(--color-text-muted);
-  font-size: 0.9rem;
+  font-size: var(--font-meta);
   min-height: 1.2em;
 }
 
 .field__prefill-note {
   color: var(--color-text-muted);
-  font-size: 0.9rem;
+  font-size: var(--font-meta);
   font-weight: 400;
 }
 
 .field__input,
 .field__select {
   font: inherit;
-  font-size: 1.05rem;
+  font-size: var(--font-body);
   padding: 0.7rem 0.85rem;
   border: 1px solid var(--color-border);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-control);
   background: var(--color-bg);
   color: var(--color-text);
   max-width: 100%;
@@ -189,7 +223,7 @@ a:hover {
 
 .field-row {
   display: flex;
-  gap: 0.75rem;
+  gap: var(--space-row);
   flex-wrap: wrap;
 }
 
@@ -211,15 +245,15 @@ fieldset.field legend {
 
 .beverage-options {
   display: flex;
-  gap: 1.5rem;
+  gap: var(--space-gutter);
   flex-wrap: wrap;
 }
 
 .beverage-options label {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 1.05rem;
+  gap: var(--space-tight);
+  font-size: var(--font-body);
 }
 
 .beverage-options input[type="radio"] {
@@ -228,16 +262,16 @@ fieldset.field legend {
 }
 
 .file-input {
-  font-size: 1.05rem;
+  font-size: var(--font-body);
 }
 
 .primary-button {
   font: inherit;
-  font-size: 1.25rem;
+  font-size: var(--font-section);
   font-weight: 600;
   padding: 0.9rem 1.5rem;
   border: none;
-  border-radius: 0.5rem;
+  border-radius: var(--radius-control);
   background: var(--color-button-bg);
   color: #ffffff;
   cursor: pointer;
@@ -255,11 +289,11 @@ fieldset.field legend {
 
 .secondary-button {
   font: inherit;
-  font-size: 1.05rem;
+  font-size: var(--font-body);
   font-weight: 600;
   padding: 0.65rem 1.2rem;
   border: 1px solid var(--color-border);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-control);
   background: var(--color-bg);
   color: var(--color-primary);
   cursor: pointer;
@@ -295,10 +329,10 @@ fieldset.field legend {
 
 .status-banner {
   padding: 1rem 1.25rem;
-  border-radius: 0.5rem;
+  border-radius: var(--radius-control);
   border: 1px solid var(--color-border);
   background: var(--color-bg-alt);
-  font-size: 1.05rem;
+  font-size: var(--font-body);
 }
 
 /* ---- Error panel (TH-R20 — a designed state, not a toast) ------------
@@ -312,17 +346,17 @@ fieldset.field legend {
   border: 1px solid var(--color-border);
   border-left: 4px solid var(--color-mismatch);
   background: var(--color-mismatch-bg);
-  border-radius: 0.6rem;
+  border-radius: var(--radius-card);
   padding: 1.25rem 1.4rem;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--space-row);
 }
 
 .error-panel__title {
   margin: 0;
-  font-size: 1.15rem;
-  font-weight: 700;
+  font-size: var(--font-lead);
+  font-weight: 600;
   color: var(--color-mismatch);
 }
 
@@ -335,15 +369,15 @@ fieldset.field legend {
 .results {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: var(--space-stack);
 }
 
 .label-verdict-banner {
   padding: 1.1rem 1.3rem;
-  border-radius: 0.6rem;
+  border-radius: var(--radius-card);
   border: 1px solid var(--color-border);
   border-left: 4px solid var(--color-border);
-  font-size: 1.15rem;
+  font-size: var(--font-lead);
   font-weight: 700;
 }
 
@@ -371,17 +405,17 @@ fieldset.field legend {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--space-row);
 }
 
 .checklist-row {
   display: grid;
   grid-template-columns: 2.5rem 1fr;
-  gap: 0.25rem 0.85rem;
+  gap: var(--space-nudge) var(--space-row);
   padding: 0.9rem 1.1rem;
   border: 1px solid var(--color-border);
   border-left: 4px solid var(--color-border);
-  border-radius: 0.6rem;
+  border-radius: var(--radius-card);
   align-items: start;
 }
 
@@ -402,7 +436,7 @@ fieldset.field legend {
 
 .checklist-row__icon {
   grid-row: 1 / span 3;
-  font-size: 1.6rem;
+  font-size: var(--font-icon);
   line-height: 1;
   text-align: center;
 }
@@ -420,16 +454,16 @@ fieldset.field legend {
 }
 
 .checklist-row__field {
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .checklist-row__evidence {
   color: var(--color-text-muted);
-  font-size: 0.95rem;
+  font-size: var(--font-meta);
 }
 
 .checklist-row__reason {
-  font-size: 1rem;
+  font-size: var(--font-text);
 }
 
 /* ---- Review queue (PRD §5 — needs-human items with reason; TH-R22) --- */
@@ -440,24 +474,24 @@ fieldset.field legend {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--space-row);
 }
 
 .review-queue-row {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: var(--space-tight);
   padding: 1.05rem 1.2rem;
   border: 1px solid var(--color-border);
   border-left: 4px solid var(--color-review);
   background: var(--color-review-bg);
-  border-radius: 0.6rem;
+  border-radius: var(--radius-card);
   align-items: flex-start;
 }
 
 .review-queue-row__reason {
   margin: 0;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--color-review);
 }
 
@@ -468,7 +502,7 @@ fieldset.field legend {
 .review-queue-row__waiting {
   margin: 0 0 0.3rem;
   color: var(--color-text-muted);
-  font-size: 0.9rem;
+  font-size: var(--font-meta);
 }
 
 /* What the resolver has done for this item (TRO-512). Quieter than the
@@ -477,7 +511,7 @@ fieldset.field legend {
 .review-queue-row__resolver {
   margin: 0 0 0.3rem;
   color: var(--color-text-muted);
-  font-size: 0.9rem;
+  font-size: var(--font-meta);
 }
 
 /* "More items are waiting" plus its own control (TRO-507). Kept directly
@@ -485,7 +519,7 @@ fieldset.field legend {
 .review-queue-more {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-tight);
   align-items: flex-start;
   margin-top: 1rem;
 }
@@ -498,19 +532,19 @@ fieldset.field legend {
 .review-item-detail {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: var(--space-stack);
 }
 
 .review-item__reason {
   margin: 0;
   padding: 1.1rem 1.3rem;
-  border-radius: 0.6rem;
+  border-radius: var(--radius-card);
   border: 1px solid var(--color-border);
   border-left: 4px solid var(--color-review);
   background: var(--color-review-bg);
   color: var(--color-review);
-  font-size: 1.15rem;
-  font-weight: 700;
+  font-size: var(--font-lead);
+  font-weight: 600;
 }
 
 .review-item__context,
@@ -524,16 +558,16 @@ fieldset.field legend {
 .resolver-suggestion {
   border: 1px solid var(--color-border);
   border-left: 4px solid var(--color-primary);
-  border-radius: 0.6rem;
+  border-radius: var(--radius-card);
   padding: 1rem 1.2rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-tight);
 }
 
 .resolver-suggestion__badge {
   margin: 0;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--color-primary);
 }
 
@@ -560,7 +594,7 @@ fieldset.field legend {
 .review-item__layout {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.5rem;
+  gap: var(--space-gutter);
   align-items: flex-start;
 }
 
@@ -569,7 +603,7 @@ fieldset.field legend {
   max-width: 100%;
   height: auto;
   border: 1px solid var(--color-border);
-  border-radius: 0.6rem;
+  border-radius: var(--radius-card);
 }
 
 .review-field-list {
@@ -579,17 +613,17 @@ fieldset.field legend {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--space-row);
 }
 
 .review-field {
   padding: 0.9rem 1.1rem;
   border: 1px solid var(--color-border);
   border-left: 4px solid var(--color-border);
-  border-radius: 0.6rem;
+  border-radius: var(--radius-card);
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-tight);
 }
 
 .review-field--match {
@@ -610,11 +644,11 @@ fieldset.field legend {
 .review-field__header {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: var(--space-tight);
 }
 
 .review-field__icon {
-  font-size: 1.3rem;
+  font-size: var(--font-icon);
   line-height: 1;
 }
 
@@ -631,12 +665,12 @@ fieldset.field legend {
 }
 
 .review-field__name {
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .review-field__compare {
   display: flex;
-  gap: 1.25rem;
+  gap: var(--space-stack);
   flex-wrap: wrap;
 }
 
@@ -647,17 +681,17 @@ fieldset.field legend {
 }
 
 .review-field__value-label {
-  font-size: 0.85rem;
+  font-size: var(--font-meta);
   color: var(--color-text-muted);
 }
 
 .review-field__value-text {
-  font-size: 1rem;
+  font-size: var(--font-text);
 }
 
 .review-field__reason {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: var(--font-meta);
 }
 
 /* ---- Review actions — two large, obvious buttons (TH-R3) ------------- */
@@ -665,22 +699,22 @@ fieldset.field legend {
 .review-actions {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--space-row);
 }
 
 .review-actions__buttons {
   display: flex;
-  gap: 1rem;
+  gap: var(--space-row);
   flex-wrap: wrap;
 }
 
 .reject-button {
   font: inherit;
-  font-size: 1.25rem;
+  font-size: var(--font-section);
   font-weight: 600;
   padding: 0.9rem 1.5rem;
   border: 1px solid var(--color-mismatch);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-control);
   background: var(--color-bg);
   color: var(--color-mismatch);
   cursor: pointer;
@@ -700,28 +734,28 @@ fieldset.field legend {
 .detail-view {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: var(--space-stack);
 }
 
 .resolved-by-sonnet {
   border: 1px solid var(--color-border);
-  border-radius: 0.6rem;
+  border-radius: var(--radius-card);
   background: var(--color-bg-alt);
   padding: 0.9rem 1.1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: var(--space-tight);
 }
 
 .resolved-by-sonnet__badge {
   margin: 0;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .detail-view__layout {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.5rem;
+  gap: var(--space-gutter);
   align-items: flex-start;
 }
 
@@ -730,7 +764,7 @@ fieldset.field legend {
   max-width: 100%;
   height: auto;
   border: 1px solid var(--color-border);
-  border-radius: 0.6rem;
+  border-radius: var(--radius-card);
 }
 
 .detail-field-list {
@@ -740,17 +774,17 @@ fieldset.field legend {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--space-row);
 }
 
 .detail-field {
   border: 1px solid var(--color-border);
   border-left: 4px solid var(--color-border);
-  border-radius: 0.6rem;
+  border-radius: var(--radius-card);
   padding: 0.9rem 1.1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-tight);
 }
 
 .detail-field--match {
@@ -771,11 +805,11 @@ fieldset.field legend {
 .detail-field__header {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: var(--space-tight);
 }
 
 .detail-field__icon {
-  font-size: 1.4rem;
+  font-size: var(--font-icon);
   line-height: 1;
 }
 
@@ -792,37 +826,34 @@ fieldset.field legend {
 }
 
 .detail-field__name {
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .detail-field__compare {
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem;
+  gap: var(--space-row);
 }
 
 .detail-field__value {
   flex: 1 1 10rem;
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: var(--space-nudge);
 }
 
 .detail-field__value-label {
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-size: var(--font-meta);
   color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
 }
 
 .detail-field__value-text {
-  font-size: 1rem;
+  font-size: var(--font-text);
 }
 
 .detail-field__reason {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: var(--font-meta);
 }
 
 /* LH-025/LH-026 (TRO-532/TRO-533) — the bold advisory line. Muted and
@@ -830,7 +861,7 @@ fieldset.field legend {
    note about the government warning row, never a second verdict. */
 .detail-field__bold-signal {
   margin: 0.4rem 0 0;
-  font-size: 0.85rem;
+  font-size: var(--font-meta);
   color: var(--color-text-muted);
 }
 
@@ -845,14 +876,35 @@ fieldset.field legend {
 
 .page__nav-links {
   display: flex;
-  gap: 0.75rem;
+  gap: var(--space-gutter);
   flex-wrap: wrap;
+}
+
+/* Navigation reads as navigation, not as sibling action buttons
+   (TRO-578): inside the nav row, the shared .secondary-button class
+   drops its button chrome and renders as a plain link. An evaluator
+   scanning for "the one thing to press" (TH-R3) sees exactly one
+   button-shaped primary action per screen; the other screens are a
+   click away as links, the affordance links already have. */
+.page__nav-links .secondary-button {
+  border: none;
+  background: transparent;
+  padding: 0.25rem 0;
+  font-weight: 600;
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.page__nav-links .secondary-button:hover {
+  background: transparent;
+  color: var(--color-primary-hover);
 }
 
 .batch-upload-form {
   display: flex;
   flex-direction: column;
-  gap: 1.85rem;
+  gap: var(--space-form);
   margin-bottom: 1.5rem;
 }
 
@@ -860,13 +912,13 @@ fieldset.field legend {
 .batch-started {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--space-row);
 }
 
 .batch-notice {
   border: 1px solid var(--color-border);
   background: var(--color-bg-alt);
-  border-radius: 0.6rem;
+  border-radius: var(--radius-card);
   padding: 1rem 1.25rem;
 }
 
@@ -910,35 +962,32 @@ fieldset.field legend {
 .batch-progress-summary {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: var(--space-stack);
   margin-bottom: 1.5rem;
 }
 
 .batch-stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-  gap: 1rem;
+  gap: var(--space-row);
   margin: 0;
 }
 
 .batch-stat {
   border: 1px solid var(--color-border);
-  border-radius: 0.6rem;
+  border-radius: var(--radius-card);
   padding: 0.9rem 1.1rem;
 }
 
 .batch-stat dt {
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-size: var(--font-meta);
   color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
 }
 
 .batch-stat dd {
   margin: 0.15rem 0 0;
-  font-size: 1.4rem;
-  font-weight: 700;
+  font-size: var(--font-icon);
+  font-weight: 600;
 }
 
 .batch-stat__note {
@@ -948,15 +997,16 @@ fieldset.field legend {
      note would otherwise pick up from its new parent. */
   font-weight: 400;
   margin: 0.35rem 0 0;
-  font-size: 0.85rem;
+  font-size: var(--font-meta);
   color: var(--color-text-muted);
 }
 
 /* ---- Batch results table ------------------------------------------------ */
 
 .batch-results-heading {
-  font-size: 1.3rem;
-  margin: 0 0 0.75rem;
+  font-size: var(--font-section);
+  font-weight: 600;
+  margin: 0 0 var(--space-row);
 }
 
 /* Wide content scrolls inside its own container — the page body itself
@@ -968,7 +1018,7 @@ fieldset.field legend {
 .batch-results-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.95rem;
+  font-size: var(--font-meta);
 }
 
 .batch-results-table th,
@@ -980,7 +1030,7 @@ fieldset.field legend {
 }
 
 .batch-results-table thead th {
-  font-size: 0.85rem;
+  font-size: var(--font-meta);
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--color-text-muted);
@@ -1007,7 +1057,7 @@ fieldset.field legend {
 
 .batch-results-table__detail {
   margin: 0.25rem 0 0;
-  font-size: 0.85rem;
+  font-size: var(--font-meta);
   color: var(--color-text-muted);
 }
 
@@ -1015,8 +1065,8 @@ fieldset.field legend {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.1rem;
-  font-weight: 700;
+  font-size: var(--font-body);
+  font-weight: 600;
 }
 
 .batch-mark--match {

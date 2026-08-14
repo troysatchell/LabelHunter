@@ -46,7 +46,7 @@ export const ReviewQueueList = memo(function ReviewQueueList({ items }: ReviewQu
         <li key={item.id} className="review-queue-row" data-testid={`review-queue-row-${item.id}`}>
           <p className="review-queue-row__reason">{item.reasonText}</p>
           <p className="review-queue-row__context">
-            {item.brandName} — {item.classType}
+            {item.brandName} · {item.classType}
           </p>
           <p className="review-queue-row__waiting">
             Waiting since <time dateTime={item.createdAt}>{formatTimestampUTC(item.createdAt)}</time>

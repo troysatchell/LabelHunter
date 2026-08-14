@@ -31,6 +31,17 @@ function isTerminal(status: BatchProgressResponse["status"]): boolean {
   return status === "COMPLETED" || status === "FAILED";
 }
 
+/** True when two poll payloads carry identical data (TRO-577). The poll
+ * used to call `setPhase` with a fresh object every tick, so a batch
+ * sitting still re-rendered the whole summary + results table every
+ * `pollIntervalMs` — felt as a scroll hitch every few seconds on a long
+ * results table. The payload is plain JSON from the API with arrays in a
+ * stable server-side order, so string equality is an exact, cheap
+ * comparison here. Exported for its own unit tests. */
+export function isSameProgress(a: BatchProgressResponse, b: BatchProgressResponse): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 export interface BatchProgressBrowserProps {
   batchJobId: number;
   /** Injected in tests; defaults to the real network call. */
@@ -108,6 +119,15 @@ export function BatchProgressBrowser({ batchJobId, fetchProgress = fetchBatchPro
           requestInFlight = false;
           if (thisSequence < latestApplied) return;
           latestApplied = thisSequence;
+          // Skip the update when nothing changed AND there is no stale
+          // poll-error banner to clear — a still batch then re-renders
+          // nothing (TRO-577). When a previous tick errored, the update
+          // must still run even on identical data, because clearing
+          // pollErrorMessage is itself a visible change.
+          const current = phaseRef.current;
+          if (current.status === "success" && current.pollErrorMessage === null && isSameProgress(current.progress, progress)) {
+            return;
+          }
           setPhase({ status: "success", progress, pollErrorMessage: null });
         },
         (error: unknown) => {

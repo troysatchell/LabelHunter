@@ -527,11 +527,12 @@ export async function measureBoldSignal(image: Buffer): Promise<BoldSignalResult
  * check). Split out as its own pure function so the decision itself is
  * directly unit-testable on synthetic numbers — the same house-style
  * reason the changepoint search's boundary behavior gets synthetic tests
- * too (this ticket's own instructions): a real image that lands exactly
- * on the `not-bold` band (confident, no overlap, ratio under threshold)
- * is not in the current golden set at all — see this file's test suite
- * for why, and standing rule 2 for why that gap is stated rather than
- * papered over with a fabricated fixture.
+ * too (this ticket's own instructions). Proven three ways in this file's
+ * test suite: directly, on hand-picked numbers; against a controlled
+ * synthetic image; and against `golden-set/manifest.json`'s
+ * `case-33-not-bold-warning-prefix` — a real, rendered, non-synthetic
+ * image TRO-527's own CHANGES.md entry had already flagged as missing
+ * ("None of these 32 cases tests a bold violation").
  */
 export function classifyBoldSignal(
   ratio: number,

@@ -53,7 +53,9 @@ import {
 import { readLabelImage as defaultReadLabelImage } from "../storage/db-image-storage";
 import {
   compareGovernmentWarningFromImage as defaultCompareGovernmentWarning,
+  type BoldSignalResult,
   type CompareGovernmentWarningFromImageInput,
+  type CompareGovernmentWarningFromImageResult,
 } from "../warning";
 import { classifyModelCallError, computeBackoffDelayMs, DEFAULT_BACKOFF_CONFIG, type BackoffConfig } from "./backoff";
 import type { ClaimedBatchQueueItem } from "./claim";
@@ -84,7 +86,7 @@ export interface ExtractWorkerDeps {
    * the concurrency requirement can hold that promise open. Defaults to
    * the real function in `defaultDeps()` below — production callers do
    * not need to set this. */
-  compareGovernmentWarning?: (input: CompareGovernmentWarningFromImageInput) => Promise<WarningComparatorResult>;
+  compareGovernmentWarning?: (input: CompareGovernmentWarningFromImageInput) => Promise<CompareGovernmentWarningFromImageResult>;
   backoffConfig: BackoffConfig;
 }
 
@@ -160,9 +162,9 @@ function defaultDeps(): ExtractWorkerDeps {
  * implementation is a well-behaved `async function`.
  */
 async function resolveWarningOrDegrade(
-  compare: (input: CompareGovernmentWarningFromImageInput) => Promise<WarningComparatorResult>,
+  compare: (input: CompareGovernmentWarningFromImageInput) => Promise<CompareGovernmentWarningFromImageResult>,
   input: CompareGovernmentWarningFromImageInput,
-): Promise<WarningComparatorResult | null> {
+): Promise<CompareGovernmentWarningFromImageResult | null> {
   try {
     return await compare(input);
   } catch {
@@ -230,6 +232,10 @@ export async function processExtractClaim(item: ClaimedBatchQueueItem, deps: Par
   let extraction: HaikuExtractionResult;
   let routerResult: ReturnType<typeof routeLabel>;
   let application: ApplicationRow;
+  // TRO-533 — the bold advisory signal, captured alongside `warningResult`
+  // below but never threaded into `routeLabel`. `null` until the warning
+  // check actually runs.
+  let boldSignalResult: BoldSignalResult | null = null;
 
   try {
     // Two independent reads — run concurrently, not sequentially.
@@ -264,8 +270,12 @@ export async function processExtractClaim(item: ClaimedBatchQueueItem, deps: Par
       originalImage: original,
     });
 
-    let warningResult: WarningComparatorResult | null;
-    [extraction, warningResult] = await Promise.all([extractionPromise, warningPromise]);
+    let warningOutcome: CompareGovernmentWarningFromImageResult | null;
+    [extraction, warningOutcome] = await Promise.all([extractionPromise, warningPromise]);
+    // TRO-533 — see `verify/route.ts`'s identical split: `warningResult` is
+    // the ONLY piece of `warningOutcome` that reaches `routeLabel`, below.
+    const warningResult: WarningComparatorResult | null = warningOutcome?.comparator ?? null;
+    boldSignalResult = warningOutcome?.boldSignal ?? null;
 
     const applicationRecord = toApplicationRecord(application);
     // longEdgePx comes from the variant sharp ACTUALLY produced
@@ -303,6 +313,10 @@ export async function processExtractClaim(item: ClaimedBatchQueueItem, deps: Par
           // verify/route.ts:225-227's own comment: LH-014's resolver
           // updates this once it consumes the review_queue row.
           resolutionPath: "EXTRACTOR_ONLY",
+          // TRO-533 — persisted for every batch verification too, matching
+          // verify/route.ts exactly. Advisory only: `routerResult` above
+          // was already decided without ever seeing `boldSignalResult`.
+          boldSignal: boldSignalResult,
         })
         .returning();
 

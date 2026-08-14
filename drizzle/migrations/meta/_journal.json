@@ -64,6 +64,13 @@
       "when": 1786638599861,
       "tag": "0008_tricky_banshee",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786658049566,
+      "tag": "0009_tro_533_bold_signal",
+      "breakpoints": true
     }
   ]
 }

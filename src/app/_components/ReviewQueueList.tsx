@@ -5,6 +5,7 @@
  * it, the same division `ResultsChecklist.tsx` uses, so it is testable
  * with no network.
  */
+import { memo } from "react";
 import Link from "next/link";
 import { formatTimestampUTC } from "../_lib/format-timestamp";
 import type { ReviewQueueListItemWire, ReviewQueueResolverStatus } from "../api/review-queue/types";
@@ -30,7 +31,11 @@ const RESOLVER_STATUS_TEXT: Record<ReviewQueueResolverStatus, string> = {
   waiting: "LabelHunter has not checked this item yet.",
 };
 
-export function ReviewQueueList({ items }: ReviewQueueListProps) {
+/** Memoized (TRO-577): the browser's phase transitions ("refreshing",
+ * "loading-more") keep the same `items` array reference, so a click on
+ * Refresh or Load more mid-scroll re-renders only the status chrome, not
+ * every row. */
+export const ReviewQueueList = memo(function ReviewQueueList({ items }: ReviewQueueListProps) {
   if (items.length === 0) {
     return <p className="status-banner">No items need review right now.</p>;
   }
@@ -56,11 +61,22 @@ export function ReviewQueueList({ items }: ReviewQueueListProps) {
               applications can share one brand — so the stable item id
               anchors the name too (CodeRabbit finding, local review
               round 9). */}
-          <Link href={`/review-queue/${item.id}`} className="secondary-button" aria-label={`Review this item: ${item.brandName} (#${item.id})`}>
+          {/* prefetch={false} (TRO-577): with the default, every row's
+              link prefetches its detail route as it scrolls into the
+              viewport — a burst of speculative server renders (DB queries
+              included) fired mid-scroll, felt as random hitches. The
+              detail page is one deliberate click away; nothing here needs
+              to load before that click. */}
+          <Link
+            href={`/review-queue/${item.id}`}
+            prefetch={false}
+            className="secondary-button"
+            aria-label={`Review this item: ${item.brandName} (#${item.id})`}
+          >
             Review this item
           </Link>
         </li>
       ))}
     </ul>
   );
-}
+});

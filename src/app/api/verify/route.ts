@@ -127,6 +127,7 @@ import { buildFieldReasonText } from "../../../server/router/reason-text";
 import {
   compareGovernmentWarningFromImage as defaultCompareGovernmentWarning,
   type CompareGovernmentWarningFromImageInput,
+  type CompareGovernmentWarningFromImageResult,
 } from "../../../server/warning";
 import { saveLabelImage as defaultSaveLabelImage, type SavedLabelImage } from "../../../server/storage/db-image-storage";
 import { checkVerifyRateLimit, type RateLimitCheckResult } from "../../../server/rate-limit/instances";
@@ -161,8 +162,11 @@ export interface VerifyRouteDeps {
    * with a controlled result or controlled timing, the same DI shape as
    * every other dependency here. Called with the extraction as a still-
    * pending `Promise` (see this file's header comment); a fake that wants
-   * to prove the concurrency requirement can hold that promise open. */
-  compareGovernmentWarning: (input: CompareGovernmentWarningFromImageInput) => Promise<WarningComparatorResult>;
+   * to prove the concurrency requirement can hold that promise open.
+   * Returns `{ comparator, boldSignal }` (TRO-533) — `comparator` is the
+   * ONLY piece that ever reaches `routeLabel`, below; `boldSignal` is
+   * persisted separately and never folded into the router's input. */
+  compareGovernmentWarning: (input: CompareGovernmentWarningFromImageInput) => Promise<CompareGovernmentWarningFromImageResult>;
   saveLabelImage: (bytes: Buffer, originalFilename: string) => Promise<SavedLabelImage>;
   comparators: FieldComparators;
   /** Threaded into `extractLabel`'s own `options.client` — see the
@@ -269,7 +273,7 @@ function errorResponse(status: number, kind: VerifyErrorKind, message: string): 
 async function resolveWarningOrDegrade(
   compare: VerifyRouteDeps["compareGovernmentWarning"],
   input: CompareGovernmentWarningFromImageInput,
-): Promise<WarningComparatorResult | null> {
+): Promise<CompareGovernmentWarningFromImageResult | null> {
   try {
     return await compare(input);
   } catch {
@@ -398,15 +402,24 @@ export async function handleVerifyRequest(request: Request, deps: VerifyRouteDep
   });
 
   let extraction: HaikuExtractionResult;
-  let warningResult: WarningComparatorResult | null;
+  let warningOutcome: CompareGovernmentWarningFromImageResult | null;
   try {
-    [extraction, warningResult] = await Promise.all([extractionPromise, warningPromise]);
+    [extraction, warningOutcome] = await Promise.all([extractionPromise, warningPromise]);
   } catch (cause) {
     if (cause instanceof HaikuExtractionError) {
       return errorResponse(502, "EXTRACTION", "LabelHunter could not read this label. Take a clearer photo and try again.");
     }
     return errorResponse(503, "SERVICE", "LabelHunter could not reach the verification service. Try again.");
   }
+
+  // TRO-533 — `warningOutcome` carries the router-facing comparator result
+  // AND the bold advisory signal, kept apart on purpose (see
+  // `CompareGovernmentWarningFromImageResult`'s own doc comment,
+  // `../../../server/warning`). `warningResult` is the ONLY one of the two
+  // that reaches `routeLabel`, below — `boldSignalResult` is persisted
+  // separately (the transaction below) and never touches the router.
+  const warningResult: WarningComparatorResult | null = warningOutcome?.comparator ?? null;
+  const boldSignalResult = warningOutcome?.boldSignal ?? null;
 
   // TRO-482 — the Haiku call above succeeded and really happened; its real
   // cost is owed regardless of what happens next in this request. Recorded
@@ -510,6 +523,11 @@ export async function handleVerifyRequest(request: Request, deps: VerifyRouteDep
           // LH-014's resolver updates this once it consumes the
           // review_queue row below.
           resolutionPath: "EXTRACTOR_ONLY",
+          // TRO-533 — persisted for EVERY verification, escalated or not
+          // (`schema.ts`'s own comment on this column). Advisory only:
+          // `result.labelVerdict` above was already decided by `routeLabel`
+          // without ever seeing `boldSignalResult`.
+          boldSignal: boldSignalResult,
         })
         .returning();
 

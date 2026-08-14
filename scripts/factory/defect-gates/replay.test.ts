@@ -1,9 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { LedgerRow } from "./replay";
-import { replayRule, resolveFixCandidates, selectCorpusRows, summariseReplay } from "./replay";
+import {
+  loadLedger,
+  replayRule,
+  resolveFixCandidates,
+  selectCorpusRows,
+  summariseReplay,
+} from "./replay";
 import rule from "./rules/vacuous-empty-quantifier";
 import type { Rule } from "./types";
+
+/**
+ * Runs a git command in a scratch repo, using an explicit test identity and
+ * an argument array — never a shell string (`run.ts`'s own `sh` documents
+ * why: a shell string hands any metacharacter in an argument to `/bin/sh
+ * -c`, where it gets parsed instead of passed through literally).
+ */
+function scratchGit(cwd: string, args: string[]): string {
+  const result = spawnSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], {
+    cwd,
+    encoding: "utf8",
+  });
+  if (result.status !== 0) {
+    const detail = result.stderr || result.error?.message || `exit code ${result.status}`;
+    throw new Error(`git ${args.join(" ")} failed: ${detail}`);
+  }
+  return (result.stdout ?? "").trim();
+}
 
 const repoRoot = execSync("git rev-parse --show-toplevel", { encoding: "utf8" }).trim();
 
@@ -52,13 +79,14 @@ describe.skipIf(isShallowRepo)("resolveFixCandidates", () => {
     expect(shas.length).toBeGreaterThanOrEqual(2);
     for (const sha of shas) expect(sha).toMatch(/^[0-9a-f]{40}$/);
     // git log --reverse lists the oldest commit first. Confirm ordering by
-    // asking git which of the first two commits is the ancestor.
+    // asking git which of the first two commits is the ancestor. Argv, not
+    // a shell string with a `&& echo yes || echo no` trick — `git
+    // merge-base --is-ancestor`'s own exit code already answers yes/no.
     if (shas.length >= 2) {
-      const order = execSync(`git merge-base --is-ancestor ${shas[0]} ${shas[1]} && echo yes || echo no`, {
+      const result = spawnSync("git", ["merge-base", "--is-ancestor", shas[0], shas[1]], {
         cwd: repoRoot,
-        encoding: "utf8",
-      }).trim();
-      expect(order).toBe("yes");
+      });
+      expect(result.status).toBe(0);
     }
   });
 
@@ -71,6 +99,101 @@ describe.skipIf(isShallowRepo)("resolveFixCandidates", () => {
       summary: "s",
     });
     expect(shas).toEqual([]);
+  });
+});
+
+describe("resolveFixCandidates word-boundary anchoring", () => {
+  // A real scratch repo, not this repo's history — the point is a
+  // deterministic, minimal reproduction of the prefix-match risk: a commit
+  // naming a LONGER ticket number ("TRO-4640") must not read as a match for
+  // a SHORTER one ("TRO-464") just because it starts with the same digits.
+  function scratchRepoWithCommitMessage(message: string): { dir: string; file: string } {
+    const dir = mkdtempSync(join(tmpdir(), "dg-replay-boundary-"));
+    scratchGit(dir, ["init", "-q"]);
+    writeFileSync(join(dir, "a.ts"), "export const a = 1;\n");
+    scratchGit(dir, ["add", "a.ts"]);
+    scratchGit(dir, ["commit", "-q", "-m", message]);
+    return { dir, file: "a.ts" };
+  }
+
+  it("does not match a longer ticket number that merely starts with the target ticket's digits", () => {
+    const { dir, file } = scratchRepoWithCommitMessage("TRO-4640: unrelated change");
+    try {
+      const shas = resolveFixCandidates(dir, {
+        ticket: "TRO-464",
+        file,
+        disposition: "fixed",
+        category: "c",
+        summary: "s",
+      });
+      expect(shas).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("still matches the ticket when it appears with a non-word character on both sides", () => {
+    const { dir, file } = scratchRepoWithCommitMessage("fix(TRO-464): the real fix");
+    try {
+      const shas = resolveFixCandidates(dir, {
+        ticket: "TRO-464",
+        file,
+        disposition: "fixed",
+        category: "c",
+        summary: "s",
+      });
+      expect(shas).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("loadLedger", () => {
+  it("names the file and line number when a row fails to parse", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dg-ledger-"));
+    const ledgerPath = join(dir, "bad-ledger.jsonl");
+    try {
+      writeFileSync(ledgerPath, '{"ticket":"TRO-1"}\nnot json at all\n{"ticket":"TRO-2"}\n');
+      let thrown: unknown;
+      try {
+        loadLedger(ledgerPath);
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).toBeInstanceOf(Error);
+      const message = (thrown as Error).message;
+      expect(message).toContain(ledgerPath);
+      expect(message).toContain(":2");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the true source line number even when a blank line precedes the bad row", () => {
+    // A blank row is skipped, not counted as a ledger entry — but skipping
+    // it must not shift the line numbers reported for anything after it.
+    // Line 1 is the good row, line 2 is blank, line 3 is the bad JSON: the
+    // error must name line 3, not line 2 (the position it would land at
+    // if blank lines were filtered out before numbering).
+    const dir = mkdtempSync(join(tmpdir(), "dg-ledger-"));
+    const ledgerPath = join(dir, "bad-ledger-blank.jsonl");
+    try {
+      writeFileSync(
+        ledgerPath,
+        '{"ticket":"TRO-1"}\n\nnot json at all\n{"ticket":"TRO-2"}\n',
+      );
+      let thrown: unknown;
+      try {
+        loadLedger(ledgerPath);
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).toBeInstanceOf(Error);
+      expect((thrown as Error).message).toContain(":3:");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -1,0 +1,238 @@
+{
+  "note": "LH-027 / TRO-530 candidate wild-label cases. NOT part of golden-set/manifest.json yet -- see README.md in this directory for why and for the exact fold-in steps. Every case below is shaped as a full GoldenSetCase (src/lib/golden-set/types.ts) so folding one in is a copy/paste plus the two edits the README names (imagePath, verified). Ground truth in every `label` object was transcribed by looking directly at the committed image at golden-set/wild-labels/<caseId>.png, zoomed where needed -- never from the prompt that requested it (scripts/golden/wildLabelPrompt.ts). `verified` is false on every case: only Troy sets that flag (this repo's standing rule).",
+  "cases": [
+    {
+      "caseId": "case-40-reworded-warning-wild-duplicated-word",
+      "description": "Wild AI-generated spirits label, ornate Victorian design. The government warning renders with a duplicated word fragment, a real generation defect, not a requested one. A real --live eval run (golden-set/wild-labels/results/wild-eval-report.json) shows the OCR channel disagreeing with Haiku's own (accurate) reading here, which CP-2 §4.5's dual-channel rule routes to REVIEW rather than a one-channel FAIL.",
+      "category": "reworded-warning",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/wild-labels/case-40-reworded-warning-wild-duplicated-word.png",
+      "provenance": "ai-generated",
+      "verified": false,
+      "vectors": [],
+      "application": {
+        "brandName": "Hollow Creek Distillers",
+        "classType": "Straight Rye Whiskey",
+        "abvPercent": 47,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Hollow Creek Distillers",
+        "classType": "Straight Rye Whiskey",
+        "abvPresent": true,
+        "abvText": "47% Alc./Vol. (94 Proof)",
+        "abvPercent": 47,
+        "proof": 94,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic holic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "WARNING_MISMATCH",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 47% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": {
+            "verdict": "NEEDS_REVIEW",
+            "reason": "The rendered warning duplicates a word fragment (\"alcoholic holic beverages\") and the OCR channel disagrees with the vision reading. CP-2 §4.5 routes a dual-channel disagreement to REVIEW, never a one-channel FAIL, so a reviewer must confirm the exact wording."
+          }
+        }
+      },
+      "notes": "PENDING FOLD-IN (LH-027 / TRO-530) -- verified stays false until Troy confirms this transcription against the committed image and folds this case into golden-set/manifest.json (see golden-set/wild-labels/README.md). The duplicated \"holic\" fragment is clearly legible at full resolution; this is a high-confidence transcription, not a guess. EXPECTED VERDICT CORRECTED after a real --live eval run: a first-pass human judgment called this a confident FAIL, but CP-2 §4.5's own documented dual-channel table never allows a FAIL from disagreement alone -- only from both channels independently landing on the SAME deviation. The real run confirmed OCR and Haiku's vision reading disagree here, so REVIEW/WARNING_MISMATCH is the architecturally correct expectation, not FAIL. See golden-set/wild-labels/results/wild-eval-report.json for the real router output this correction is based on."
+    },
+    {
+      "caseId": "case-41-tiny-warning-text-wild-craft-ipa",
+      "description": "Wild AI-generated beer label, modern minimalist can-front design. The government warning renders as tiny print rotated 90 degrees along the right edge, with visible word corruption.",
+      "category": "tiny-warning-text",
+      "beverageType": "beer",
+      "imagePath": "golden-set/wild-labels/case-41-tiny-warning-text-wild-craft-ipa.png",
+      "provenance": "ai-generated",
+      "verified": false,
+      "vectors": [],
+      "application": {
+        "brandName": "Foghorn Brewing Co.",
+        "classType": "India Pale Ale",
+        "abvPercent": 6.8,
+        "netContentsValue": 12,
+        "netContentsUnit": "fl oz"
+      },
+      "label": {
+        "brandName": "Foghorn Brewing Co.",
+        "classType": "India Pale Ale",
+        "abvPresent": true,
+        "abvText": "6.8% Alc./Vol.",
+        "abvPercent": 6.8,
+        "netContentsText": "12 fl oz",
+        "netContentsValue": 12,
+        "netContentsUnit": "fl oz",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages alctilus during pregnancy becaucy becuse of the risk of birth defects. (2) Consumption of alcoholic beverages alcoholic beverages impars ailty to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "WARNING_MISMATCH",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 6.8% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 12 fl oz, matching the application." },
+          "governmentWarning": {
+            "verdict": "NEEDS_REVIEW",
+            "reason": "The warning prints as tiny text rotated 90 degrees, with apparent word corruption and a duplicated clause. A reviewer must confirm the exact wording against the image."
+          }
+        }
+      },
+      "notes": "PENDING FOLD-IN (LH-027 / TRO-530) -- verified stays false until Troy confirms this transcription against the committed image and folds this case into golden-set/manifest.json (see golden-set/wild-labels/README.md). LOWER-CONFIDENCE TRANSCRIPTION, flagged explicitly: this warning is genuinely hard to read even zoomed in (tiny, rotated, and internally garbled). governmentWarningText above is a careful best-effort reading, not a certain one -- one short fragment near the start of the second wrapped line (\"alctilus\") is the least certain part. This uncertainty is itself why the expected verdict is REVIEW, not a confidently-asserted FAIL: the case tests whether the app also treats a hard-to-read warning as needing a human, not whether it can out-read a garbled render more confidently than this transcription does."
+    },
+    {
+      "caseId": "case-42-odd-typography-wild-script-wine",
+      "description": "Wild AI-generated wine label, elegant minimal design with a flowing script brand typeface. The government warning text itself transcribes exactly, but a real --live eval run shows the OCR channel disagreeing with Haiku's (correct) reading of this image, which CP-2 §4.5's dual-channel rule routes to REVIEW rather than PASS.",
+      "category": "odd-typography",
+      "beverageType": "wine",
+      "imagePath": "golden-set/wild-labels/case-42-odd-typography-wild-script-wine.png",
+      "provenance": "ai-generated",
+      "verified": false,
+      "vectors": [],
+      "application": {
+        "brandName": "Amberfield Cellars",
+        "classType": "Pinot Noir",
+        "abvPercent": 13.5,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Amberfield Cellars",
+        "classType": "Pinot Noir",
+        "abvPresent": true,
+        "abvText": "13.5% Alc./Vol.",
+        "abvPercent": 13.5,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "WARNING_MISMATCH",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 13.5% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": {
+            "verdict": "NEEDS_REVIEW",
+            "reason": "The warning text matches the statute word for word by vision reading, but the OCR channel disagrees on this image. CP-2 §4.5 routes a dual-channel disagreement to REVIEW even when one channel's reading is exactly correct."
+          }
+        }
+      },
+      "notes": "PENDING FOLD-IN (LH-027 / TRO-530) -- verified stays false until Troy confirms this transcription against the committed image and folds this case into golden-set/manifest.json (see golden-set/wild-labels/README.md). The script brand typeface is the odd-typography angle here. EXPECTED VERDICT CORRECTED after a real --live eval run: a first-pass human judgment called this a clean PASS because the warning text reads exactly right. The real run showed the OCR corroboration channel disagreeing with Haiku's correct vision reading on this specific image (warningChannel: \"dual\", reviewReason: WARNING_MISMATCH) -- CP-2 §4.5's documented table means that disagreement alone routes to REVIEW, regardless of which channel is actually right. This is real, useful evidence: real-world label variation (here, a script-fonted label overall, even though the warning block itself is plain print) can trip the OCR corroboration channel in ways the plain rendered corpus never exercises. See golden-set/wild-labels/results/wild-eval-report.json."
+    },
+    {
+      "caseId": "case-43-odd-typography-wild-highcontrast-gin",
+      "description": "Wild AI-generated spirits label, ultra-modern high-contrast neon-on-black design with a bold condensed typeface. The government warning renders in full, exact print inside a small cornered box.",
+      "category": "odd-typography",
+      "beverageType": "spirits",
+      "imagePath": "golden-set/wild-labels/case-43-odd-typography-wild-highcontrast-gin.png",
+      "provenance": "ai-generated",
+      "verified": false,
+      "vectors": [],
+      "application": {
+        "brandName": "Vaultline Gin Co.",
+        "classType": "London Dry Gin",
+        "abvPercent": 42,
+        "netContentsValue": 750,
+        "netContentsUnit": "mL"
+      },
+      "label": {
+        "brandName": "Vaultline Gin Co.",
+        "classType": "London Dry Gin",
+        "abvPresent": true,
+        "abvText": "42% Alc./Vol. (84 Proof)",
+        "abvPercent": 42,
+        "proof": 84,
+        "netContentsText": "750 mL",
+        "netContentsValue": 750,
+        "netContentsUnit": "mL",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
+      },
+      "expected": {
+        "labelVerdict": "PASS",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 42% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 750 mL, matching the application." },
+          "governmentWarning": { "verdict": "MATCH", "reason": "Warning text matches the statute word for word; prefix is all-caps and bold." }
+        }
+      },
+      "notes": "PENDING FOLD-IN (LH-027 / TRO-530) -- verified stays false until Troy confirms this transcription against the committed image and folds this case into golden-set/manifest.json (see golden-set/wild-labels/README.md). Line 3 hyphenates \"Consump-tion\" at the line wrap -- normal typesetting hyphenation, transcribed as the unhyphenated word \"Consumption\", not a text defect."
+    },
+    {
+      "caseId": "case-44-odd-typography-wild-woodcut-stout",
+      "description": "Wild AI-generated beer label, rustic hand-drawn woodcut illustration style with a distressed hand-lettered brand typeface. The government warning text itself transcribes exactly, but a real --live eval run shows the OCR channel disagreeing with Haiku's (correct) reading of this image, which CP-2 §4.5's dual-channel rule routes to REVIEW rather than PASS.",
+      "category": "odd-typography",
+      "beverageType": "beer",
+      "imagePath": "golden-set/wild-labels/case-44-odd-typography-wild-woodcut-stout.png",
+      "provenance": "ai-generated",
+      "verified": false,
+      "vectors": [],
+      "application": {
+        "brandName": "Millrace Stout Works",
+        "classType": "Oatmeal Stout",
+        "abvPercent": 5.4,
+        "netContentsValue": 16,
+        "netContentsUnit": "fl oz"
+      },
+      "label": {
+        "brandName": "Millrace Stout Works",
+        "classType": "Oatmeal Stout",
+        "abvPresent": true,
+        "abvText": "5.4% Alc./Vol.",
+        "abvPercent": 5.4,
+        "netContentsText": "16 fl oz",
+        "netContentsValue": 16,
+        "netContentsUnit": "fl oz",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": false
+      },
+      "expected": {
+        "labelVerdict": "REVIEW",
+        "reviewReason": "WARNING_MISMATCH",
+        "fields": {
+          "brandName": { "verdict": "MATCH", "reason": "Label brand matches the application exactly." },
+          "classType": { "verdict": "MATCH", "reason": "Label class/type matches the application exactly." },
+          "abv": { "verdict": "MATCH", "reason": "Label states 5.4% ABV, matching the application." },
+          "netContents": { "verdict": "MATCH", "reason": "Label states 16 fl oz, matching the application." },
+          "governmentWarning": {
+            "verdict": "NEEDS_REVIEW",
+            "reason": "The warning text matches the statute word for word by vision reading, but the OCR channel disagrees on this image. CP-2 §4.5 routes a dual-channel disagreement to REVIEW even when one channel's reading is exactly correct."
+          }
+        }
+      },
+      "notes": "PENDING FOLD-IN (LH-027 / TRO-530) -- verified stays false until Troy confirms this transcription against the committed image and folds this case into golden-set/manifest.json (see golden-set/wild-labels/README.md). EXPECTED VERDICT CORRECTED after a real --live eval run: a first-pass human judgment called this a clean PASS because the warning text reads exactly right. The real run showed the OCR corroboration channel disagreeing with Haiku's correct vision reading on this specific image (warningChannel: \"dual\", reviewReason: WARNING_MISMATCH) -- CP-2 §4.5's documented table means that disagreement alone routes to REVIEW, regardless of which channel is actually right. See golden-set/wild-labels/results/wild-eval-report.json."
+    }
+  ]
+}

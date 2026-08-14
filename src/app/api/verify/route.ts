@@ -1,98 +1,25 @@
 /**
- * POST /api/verify — the single-label verify flow (TRO-465, PRD §3.8, §5,
- * TH-R1).
+ * POST /api/verify — the single-label verify flow (PRD §3.8, TH-R1).
  *
- * One request does the whole cascade's fast path: preprocess the uploaded
- * photo, run the Haiku extractor, route the result deterministically, and
- * persist every table PRD §3.6 names for a single-label verify
- * (`applications`, `label_images`, `verifications`, `field_results`, and
- * `review_queue` when the label needs review). It returns per-field
- * verdicts plus the label verdict in the same response — no polling.
+ * One request preprocesses the photo, runs the Haiku extractor, routes the
+ * result, and returns every field verdict. No polling.
  *
- * On a REVIEW route this returns immediately with the reason (PRD §3.8's
- * "verdict or an explicit flag" latency contract). It never calls Sonnet —
- * the cascade is the architecture (TH-R19): Sonnet only ever sees escalations
- * the router routed to it, and only LH-014's resolver (a sibling ticket, not
- * yet merged) calls it, asynchronously, off the `review_queue` row this
- * route writes.
+ * Four rules hold this route together.
  *
- * **Comparators.** LH-013 (TRO-463) merged: `productionComparators`
- * (`../../../server/comparators`) — fuzzy brand/class matching (normalized
- * similarity, TH-R8's STONE'S THROW case), and real ABV/net-contents
- * parsing — is wired in below. `brand_name`/`class_type` still never
- * assert `MISMATCH` (CP-1 §5.3: distance beyond threshold routes to
- * REVIEW, a judgment call, never a silent FAIL); `alcohol_content` and
- * `net_contents` now DO assert `MISMATCH` on a genuine numeric
- * disagreement (LH-013's own design, not this ticket's). This is the ONE
- * place a `FieldComparators` value reaches `routeLabel` in this route —
- * this ticket's earlier provisional stand-in (`provisional-comparators.ts`)
- * is deleted, superseded by this import.
+ * 1. **It never calls Sonnet** (TH-R19). A REVIEW verdict writes a
+ *    `review_queue` row and returns. A background worker resolves it later.
+ * 2. **The warning check runs beside Haiku, not after it** (CP-2 §4.4). It
+ *    receives the extraction as a pending promise, never an awaited value.
+ * 3. **A warning failure degrades one field, never the request.**
+ *    `resolveWarningOrDegrade` catches it and passes `null`, which the
+ *    router reads as NEEDS_REVIEW — uncertain beats wrong.
+ * 4. **The warning check reads the full-resolution image**, never the
+ *    resized Haiku variant. CP-2 §8.3: the resize drops below the OCR
+ *    engine's usable resolution at the statute's 1 mm minimum print size.
  *
- * **Government warning (TRO-514).** LH-020 built the comparator. This
- * route now calls it on every request: `deps.compareGovernmentWarning`
- * (default `compareGovernmentWarningFromImage`, `../../../server/warning`)
- * reaches `routeLabel` as a real `WarningComparatorResult`, not a
- * hardcoded `null`. TH-R9's word-for-word check is live.
- *
- * CP-2 §4.4 sets two rules for the call, both about latency:
- *
- * 1. **Concurrent, not serial.** `deps.compareGovernmentWarning` starts
- *    before the Haiku call resolves. It receives the extraction as a
- *    still-pending `Promise` (`extractionPromise.then(...)`, never an
- *    `await`ed value) — so region detection and OCR run alongside Haiku,
- *    not after it. PRD §3.8's latency budget has no room for both,
- *    serially.
- * 2. **A thrown error degrades one field. It never fails the request.** A
- *    REVIEW outcome is `compareGovernmentWarning`'s normal return value,
- *    not a throw — `reconcileWarningChannels` is pure and synchronous, and
- *    the OCR half already converts its own failures to
- *    `{ available: false }` (`../../../server/warning/index.ts`). A throw
- *    here means a genuine infrastructure failure. `resolveWarningOrDegrade`
- *    (below) catches it — a synchronous throw or a rejected promise, either
- *    one — and passes `null` for `warningResult`: the same "uncertain beats
- *    wrong" behavior this route always had. `resolveGovernmentWarningField`
- *    (`../../../server/router/field-resolution.ts`) already routes a
- *    `null` result to `NEEDS_REVIEW`, never a fabricated match.
- *
- * The comparator reads `preprocessed.original`, the full-resolution image
- * — never the resized `haikuVariant`. CP-2 §8.3: the resized variant falls
- * below the OCR engine's usable resolution at the statute's legal minimum
- * print size (1 mm).
- *
- * **Single-label resolution trigger (TRO-511, CP-3 §9/§12 open question
- * 5).** On a REVIEW verdict this route still inserts a `review_queue` row
- * immediately, unchanged — a human sees "needs review" the moment this
- * request returns (PRD §5), never gated on a Sonnet call this route does
- * NOT make (TH-R19, PRD §3.8's 5-second budget). New: the row now ALSO
- * carries `resolverInput`, a `{ schemaVersion, extraction, router,
- * flaggedFields }` snapshot built by `deriveFlaggedFields`/
- * `buildResolverInputSnapshot` (`../../../server/batch-queue/resolver-snapshot`
- * — the SAME pure functions the batch `EXTRACT` worker already uses for its
- * own `batch_queue_items.resolver_input` snapshot, CP-3 §2.3, reused here
- * rather than re-derived). `src/server/single-label-resolve`'s worker polls
- * for exactly this: a `review_queue` row with `resolverInput` set and no
- * resolution yet, and calls `resolveEscalatedLabel` for it off the request
- * path, in the SAME background-worker process PRD §3.6 names (singular).
- *
- * **Per-stage timing (TRO-539, PRD §3.8).** Every 200 response carries a
- * `Server-Timing` header with one measured entry per PRD §3.8 stage --
- * preprocess, ocr, haiku, router, db (`./server-timing.ts`). `ocr` times
- * `deps.compareGovernmentWarning` as a whole (region detection + OCR +
- * reconciliation, CP-2 §4.4) -- PRD §3.8's table names the row "OCR"; this
- * is the closest single number this route can attribute to it without
- * instrumenting inside the warning subsystem's own internals. `db` times
- * `deps.saveLabelImage` (TRO-518: image bytes to Postgres) together with
- * the transaction below, as one combined figure -- PRD §3.8's table has no
- * separate row for "save the image" versus "write the verification
- * tables". `haiku` and `ocr` run concurrently (rule 1 above); their
- * reported durations can overlap in wall-clock time and are not meant to
- * sum to the total. A non-200 response carries no `Server-Timing` header --
- * an early error means at least one stage never ran, and a header with a
- * missing entry is worse than no header (a reader could mistake "absent"
- * for "0ms"). `scripts/latency/measure.ts`'s `--url` mode
- * (`parseServerTimingHeader`) reads this header off a real network
- * response to get the same per-stage breakdown a browser's own DevTools
- * Network panel already shows for any request.
+ * Every 200 response carries a `Server-Timing` header, one entry per PRD
+ * §3.8 stage. A non-200 carries none: a reader would misread a missing
+ * entry as 0 ms.
  */
 import { NextResponse } from "next/server";
 import { performance } from "node:perf_hooks";

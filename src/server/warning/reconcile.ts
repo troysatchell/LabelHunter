@@ -1,9 +1,9 @@
 /**
- * Dual/single-channel reconciliation (LH-020 / TRO-468, CP-2 §4.5, §6,
- * §7.1, TH-R9) — the function that turns two candidate readings (or one,
- * when OCR is unavailable) into the router's `WarningComparatorResult`.
+ * Dual/single-channel reconciliation (CP-2 §4.5, §6, §7.1, TH-R9). It
+ * turns two candidate readings — or one, when OCR is unavailable — into
+ * the router's `WarningComparatorResult`.
  *
- * The decision tables this implements, quoted from CP-2:
+ * The decision tables it implements, quoted from CP-2:
  *
  * Dual-channel (§4.5):
  *   agree,    both equal canonical   -> PASS
@@ -21,22 +21,17 @@
  *   wording mismatch,  VLM conf >= 0.90 -> FAIL (wording reason)
  *   any non-match,     VLM conf <  0.90 -> REVIEW WARNING_MISMATCH
  *
- * "Agree" (§4.5) means BOTH the folded words AND the caps-check result
- * match between channels — not just the words (`capsResultsEqual`, not a
- * bare string equality).
+ * "Agree" means both the folded words AND the caps result match between
+ * channels, not the words alone.
  *
- * The near-miss band (§5.5) and the caps hard-fail rule interact inside
- * the "agree" branch: a shared near-miss (distance 1-2, caps OK) is
- * REVIEW, matching §6.1's own unconditional "near miss -> REVIEW" row and
- * §2.6's missing-comma finding; a shared caps failure is FAIL regardless
- * of distance (§5.5 guard 1); a shared distance->=3 mismatch is FAIL
- * (§4.5's "both differ" row, and its own stated reason: two independent
- * engines agreeing on the same deviation is not a coincidental slip).
+ * Inside the agree branch: a shared near miss (distance 1–2, caps OK) is
+ * REVIEW; a shared caps failure is FAIL at any distance; a shared distance
+ * of 3 or more is FAIL, because two independent engines landing on the
+ * same deviation is not a coincidental slip.
  *
- * §7.1's model cross-check ("code derives the casing; it does not trust
- * the model's report... when the derived casing and the model's
- * prefix_casing disagree, the result is REVIEW") is applied last, and can
- * only downgrade a PASS or FAIL to REVIEW — never the reverse.
+ * §7.1's cross-check runs last. Code derives the casing and never trusts
+ * the model's own report of it. A disagreement can only downgrade PASS or
+ * FAIL to REVIEW, never the reverse.
  */
 import { capsResultsEqual, hasAnyCapsFailure, isPrefixAllCaps } from "./caps";
 import { evaluateCandidate, isExactMatch, type CandidateEvaluation } from "./wording-compare";
@@ -65,47 +60,31 @@ export interface VlmWarningCandidate {
 export type OcrChannelInput = { available: true; text: string; confidence: number } | { available: false };
 
 /**
- * CP-2 §4.5 / §12 open question 7 / TRO-535 (LH-030b): an OCR candidate
- * below this Tesseract confidence is discarded — the dual-channel path
- * falls back to single-channel rules as though OCR had not run at all.
+ * An OCR candidate below this Tesseract confidence is discarded, and the
+ * dual-channel path falls back to single-channel rules (CP-2 §4.5).
  *
- * MEASURED, 2026-08-12. `scripts/eval/ocr-floor-sweep.ts` replayed the OCR
- * channel (`detectWarningRegion` -> `cropForOcr` -> `runWarningOcr` ->
- * `evaluateCandidate`) read-only against all 32 golden-set cases — no API
- * call, no repo file written except the artifact
- * (`scripts/eval/results/ocr-floor-sweep.json`). Every warning-bearing
- * case's confidence landed in one of two clusters, with a wide, empty gap
- * between them:
+ * MEASURED 2026-08-12 by `scripts/eval/ocr-floor-sweep.ts`, replaying the
+ * OCR channel against all 32 golden-set cases. Confidence fell into two
+ * clusters with an empty gap between them:
  *
- *   - {56, 58} — case-24 and case-23, tiny warning print. A real, if badly
- *     degraded, reading: distance 42 and 47 from canonical, far past the
- *     near-miss band.
- *   - {91, 95, 96} — every other warning-bearing case, including one
- *     glare-affected reading (case-18) that stayed confident despite
- *     reading garbage — Tesseract's own confidence is not a read-quality
- *     oracle, which is exactly why the dual-channel AGREEMENT check, not
- *     this floor, is the real safety net.
+ *   - {56, 58} — case-24 and case-23, tiny warning print. Badly degraded
+ *     but real: 42 and 47 edits from canonical.
+ *   - {91, 95, 96} — every other warning-bearing case, including a glare
+ *     reading (case-18) that stayed confident on garbage. Tesseract's
+ *     confidence is not a read-quality oracle, which is why the
+ *     dual-channel agreement check is the real safety net.
  *
- * The old floor of 60 sits INSIDE that gap — above both tiny-print
- * readings — which is exactly why it always discarded case-23 and
- * case-24's OCR evidence, however badly the print degraded, and let a
- * single confident VLM channel PASS a label whose only other reader
- * produced 47 and 42 edits of garbage (TH-R9, rubric V4). A floor
- * anywhere else in that 59-90 gap repeats the same bug: the corpus draws
- * no boundary there, but nothing in it admits the tiny-print evidence
- * either. The floor had to move below the low cluster, not within the gap
- * above it.
+ * The old floor of 60 sat inside that gap, above both tiny-print readings.
+ * It discarded their evidence and let one confident vision channel PASS a
+ * label whose only other reader produced 40-plus edits of garbage. Any
+ * floor in the 59–90 gap repeats that bug.
  *
- * Set to 50 — the midpoint of Tesseract's 0-100 confidence scale, not the
- * minimum value that flips two cases (55 or 56 would already do that).
- * 50 sits a genuine 6-8 points under both measured tiny-print readings.
- * The corpus has no case between blank-crop noise (confidence 0,
- * `ocr.test.ts`'s own measured floor) and 56, so nothing here proves 50
- * over 40 or 45 — that gap is a real, named limit, not a hidden one. See
- * `docs/checkpoints/cp2-warning-subsystem.md`'s dated amendment after
- * §4.5 for the same reasoning with the full sweep table, and
- * `docs/diagnostics/2026-08-12-verdict-miss-triage.md` §3B for the
- * diagnosis this measurement answers.
+ * 50 is the midpoint of the 0–100 scale, 6–8 points under both tiny-print
+ * readings — not the minimum that flips them (56 would). The corpus holds
+ * nothing between blank-crop noise at 0 and 56, so this does not prove 50
+ * over 40 or 45. That is a named limit, not a hidden one. See
+ * `docs/checkpoints/cp2-warning-subsystem.md`'s amendment after §4.5 for
+ * the full sweep table.
  */
 export const OCR_CONFIDENCE_FLOOR = 50;
 

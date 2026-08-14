@@ -1,42 +1,24 @@
 /**
- * Turns an accepted batch preview's matched pairings into a real, running
- * batch job (LH-042 / TRO-475).
+ * Turns an accepted batch preview's matched pairings into a running batch
+ * job. It is the caller that connects the preview to the queue: the
+ * preview writes nothing, and the worker pool never flips a batch to
+ * RUNNING.
  *
- * **This connection did not exist before this ticket.** `buildBatchPreview`
- * (`../batch/index.ts`) explicitly never writes to the database or enqueues
- * anything — its own file comment names LH-041/LH-042 as the tickets that
- * do. LH-041 built the queue and worker pool, but its own worker entry
- * point says the same thing from the other side: `scripts/batch-worker/run.ts`'s
- * file comment states plainly that it "does not... flip a batch to RUNNING
- * — `lifecycle.ts`'s `startBatchJob` is the hook a future batch-creation
- * caller (LH-040/LH-042) uses for that." This module is that caller.
+ * Per pairing it mirrors the single-label shape — preprocess the image,
+ * save the original, insert `applications` and `label_images`. It then
+ * hands the whole set to `enqueueExtractItems` and `startBatchJob`. It
+ * owns no queue logic itself.
  *
- * Mirrors `src/app/api/verify/route.ts`'s single-label shape, run once per
- * matched pairing: preprocess the image (EXIF-correct, validate, decode),
- * save the original to disk, insert `applications` + `label_images`. Once
- * every pairing has been through that, the whole set is handed to LH-041's
- * own, already-tested `enqueueExtractItems` + `startBatchJob`
- * (`../batch-queue`) — this module owns none of that queue logic itself,
- * matching this ticket's own scope rule (never touch `../batch-queue`'s
- * core claim/complete/pool logic).
+ * **One bad image fails that pairing, never the batch** (PRD §3.5). A
+ * pairing whose image will not decode comes back in `skippedImages`, never
+ * silently dropped. If every pairing fails, the batch is marked FAILED
+ * rather than left RUNNING at `totalCount = 0` — an empty running batch
+ * would never reach COMPLETED.
  *
- * **One bad image fails only that pairing, never the whole batch start**
- * (PRD §3.5: "one bad image fails that item, never the job" — the same rule
- * applies here as it does to an already-running batch). A pairing whose
- * image cannot be decoded or saved is reported back in `skippedImages`,
- * never silently dropped (TH-R20), and simply never becomes a queued label.
- * If EVERY pairing fails this way, the batch is marked `FAILED` rather than
- * left `RUNNING` with `totalCount = 0` forever — an empty running batch
- * would never reach `COMPLETED`, since nothing would ever call
- * `maybeCompleteBatchJob` for it.
- *
- * Deliberately sequential, not concurrent, unlike the worker pool's own
- * claim loop. PRD §3.5's "never serial" rule ("never `for image: await
- * extract(image)` serially") targets EXTRACTION throughput once a batch is
- * running — this is a one-time ingestion step, and batch mode is
- * throughput-bound, not latency-bound, for the run itself (PRD §3.8). Not
- * measured against a real multi-hundred-image upload; a future ticket can
- * parallelize this with bounded concurrency if that turns out to matter.
+ * Ingestion is sequential on purpose. PRD §3.5's "never serial" rule
+ * targets extraction throughput once a batch runs; this is a one-time
+ * step. It is not measured against a multi-hundred-image upload, so
+ * bounded concurrency here is open work if that turns out to matter.
  */
 import { db as defaultDb } from "../../lib/db";
 import { applications, batchJobs, labelImages } from "../../lib/db/schema";

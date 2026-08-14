@@ -1,44 +1,26 @@
 /**
- * The shared access-code gate's credential logic (TRO-482 / LH-061, PRD
- * §8, escalation.md rule 7 — security semantics, human read before merge).
+ * The shared access-code gate's credential logic (PRD §8).
  *
- * PRD §8: "shared access code gate (in README for evaluators)." One
- * secret, `ACCESS_CODE`, shared by every evaluator — not a per-user
- * account (PRD §2: "No auth/user accounts"). Two ways to present it,
- * both checked here:
- *   1. A long-lived httpOnly cookie, set by `POST /api/access-code`
- *      (`../../app/api/access-code/route.ts`) after a correct submission
- *      on the `/access-code` page (`../../app/access-code/page.tsx`) — the
- *      browser flow.
- *   2. The `x-access-code` header, for non-browser callers (API-only
- *      testing, evaluator scripts) — PRD §8's own design mandate: "do not
- *      force everything through a browser flow."
+ * One secret, `ACCESS_CODE`, shared by every evaluator — no user accounts
+ * (PRD §2). A caller presents it two ways, both checked here:
+ *   1. An httpOnly cookie, set by `POST /api/access-code` after a correct
+ *      submission on the `/access-code` page. The browser flow.
+ *   2. The `x-access-code` header, for scripts and API tests. PRD §8: "do
+ *      not force everything through a browser flow."
  *
- * `src/proxy.ts` calls `hasValidAccessCode` on every request to a
- * protected route/page. This module owns only the credential check. It
- * does not decide the redirect or the 401 — that is `src/proxy.ts`'s job.
+ * This module owns the credential check alone. `src/proxy.ts` decides the
+ * redirect or the 401.
  *
- * **Untrusted input (standing rule 18).** Both the header and the cookie
- * are adversarial input from outside the trust boundary — validated
- * explicitly here, never assumed to look like a real code. Neither is
- * ever logged: this module has no logging of its own, and the callers
- * below never pass a candidate value to `console.*`.
+ * **Both inputs are adversarial.** Each is validated explicitly, never
+ * assumed to look like a code, and never logged.
  *
- * **Constant-time comparison, and why it is async.** `constantTimeEquals`
- * hashes both operands (SHA-256) before comparing, so the comparison
- * always runs over two fixed-length 32-byte digests regardless of the
- * candidate's own (attacker-controlled) length, and it prevents a naive
- * `===`'s character-by-character short-circuit from leaking how many
- * leading characters matched via response timing. `src/proxy.ts`
- * (formerly `middleware.ts` — TRO-482 built this after Next 16's rename;
- * `npx @next/codemod middleware-to-proxy` confirmed the new convention)
- * runs in Next's Edge Runtime, which does NOT support `node:crypto`
- * (confirmed empirically: `pnpm build` throws "A Node.js module is loaded
- * ('node:crypto')... which is not supported in the Edge Runtime" the
- * first time this file imported it). The Web Crypto API
- * (`crypto.subtle`), a global in both the Edge Runtime and Node.js 20+,
- * works in both places — the cost is that `SubtleCrypto.digest` is
- * Promise-based, so every function in this file that hashes is async too.
+ * **The comparison is constant-time, and async because of it.**
+ * `constantTimeEquals` hashes both operands to 32-byte digests first, so
+ * the compare runs over a fixed length whatever the candidate's length,
+ * and no short-circuit leaks how many leading characters matched. It uses
+ * Web Crypto, not `node:crypto`: `src/proxy.ts` runs in Next's Edge
+ * Runtime, where a `node:crypto` import fails the build. `SubtleCrypto
+ * .digest` returns a promise, so every function here that hashes is async.
  */
 
 export const ACCESS_CODE_COOKIE_NAME = "lh_access_code";

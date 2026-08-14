@@ -1,16 +1,12 @@
 /**
- * Production rate-limit instances and numbers for LabelHunter's two
- * expensive routes (TRO-482 / LH-061, PRD §8): `/api/verify` and
- * `/api/batch/start` ("batch submission" — PRD §8's own phrase). Each
- * route gets a per-IP limiter AND a global limiter; both must pass.
+ * Production rate-limit instances for the two expensive routes (PRD §8):
+ * `/api/verify` and `/api/batch/start`. Each gets a per-IP limiter and a
+ * global limiter. Both must pass.
  *
- * **The numbers, and the reasoning behind each one.** PRD §4: Haiku
- * extraction ~$0.005/label; Sonnet resolution ~$0.02 on an estimated
- * 10-15% of labels — roughly $0.0075/label blended (see
- * `../budget/daily-budget.ts`'s own header comment for the full
- * derivation). These limits are sized around real evaluator behavior, not
- * a guess: the golden set is ~20-30 labels (PRD §6); a human clicking
- * "Verify" by hand rarely exceeds one submission every few seconds.
+ * The numbers are sized around real evaluator behavior, not a guess. A
+ * label costs roughly $0.0075 blended (PRD §4), the golden set is 20–30
+ * labels, and a human clicking Verify rarely beats one submission every
+ * few seconds.
  *
  * | Limiter | Limit | Window | Reasoning |
  * |---|---|---|---|
@@ -19,19 +15,13 @@
  * | batch-start, per-IP | 5 | 60s | A batch submission can carry hundreds of images (PRD §3.5) — no legitimate user starts more than a handful of batches per minute. |
  * | batch-start, global | 20 | 60s | Same reasoning as verify's global limit, sized down to match batch-start's own much lower legitimate per-IP rate. |
  *
- * Those four windows are 60s for one reason: PRD §8 names "per-IP +
- * global rate limits" without a specific number, and a single, consistent
- * window length keeps the friendly "wait N seconds" message meaningful
- * across every rejection a user might see, rather than requiring them to
- * remember which route uses which window.
+ * All four windows are 60s so the "wait N seconds" message means the same
+ * thing on every rejection a user can see.
  *
- * **`/api/access-code` is limited too, on different reasoning** (TRO-482,
- * merge review round 1). That endpoint protects no model call, so it
- * costs nothing to run. It is limited because it is the one endpoint
- * `../../proxy.ts` exempts from the gate, so anyone can reach it without
- * a credential — which is exactly what makes it the place to guess the
- * shared code. `../auth/access-code.ts` compares in constant time, and
- * that buys nothing at all against an attacker who may simply keep
+ * **`/api/access-code` is limited on different reasoning.** It protects no
+ * model call, so it costs nothing to run. It is the one endpoint the proxy
+ * exempts from the gate, which makes it the place to guess the shared code.
+ * A constant-time compare buys nothing against someone who simply keeps
  * guessing. This limiter is what makes guessing impractical.
  *
  * | Limiter | Limit | Window | Reasoning |
@@ -66,55 +56,26 @@ export const ACCESS_CODE_GLOBAL_WINDOW_MS = 15 * 60_000;
 const GLOBAL_KEY = "__global__";
 
 /**
- * The client's own IP address, from `x-forwarded-for` (TRO-565 finding 2).
+ * The client's own IP address, from `x-forwarded-for`.
  *
- * **Untrusted input (standing rule 18).** `x-forwarded-for` is a plain HTTP
- * request header — any caller can set it to anything, including a fresh,
- * random value on every single request. Before this fix, `getClientIp`
- * took the FIRST entry, on the documented assumption that Render writes
- * the real client there. Taking the caller's own, self-reported value as a
- * rate-limit KEY defeats the limiter it feeds: an attacker who rotates
- * that header gets a brand-new per-IP bucket on every request, including
- * against `/api/access-code`'s 10-per-15-minutes brute-force guard
- * (`ACCESS_CODE_IP_LIMIT` below) — exactly the protection this file's own
- * header comment says that limiter exists to provide.
+ * **`x-forwarded-for` is untrusted input.** Any caller can set it, and a
+ * fresh value per request mints a fresh per-IP bucket — which would defeat
+ * the access-code brute-force guard this limiter exists to provide.
  *
- * **The fix: trust only the RIGHTMOST entry.** A well-formed reverse proxy
- * APPENDS the peer address it directly observed to whatever
- * `x-forwarded-for` value it received — it never rewrites what came
- * before. This server receives the request from exactly one upstream hop
- * (Render's own edge/load balancer); that upstream is the only party
- * capable of adding the LAST entry, because that entry is appended after
- * the request has already left the caller's control. Every entry before
- * it — including position 0 — passed through the caller's own hands
- * first, so none of them can be trusted as an identity, no matter how many
- * of them there are.
+ * **So trust only the RIGHTMOST entry.** A well-formed proxy appends the
+ * peer address it observed and never rewrites what came before. The last
+ * entry is added after the request leaves the caller's control, so it is
+ * the only one the caller cannot forge.
  *
- * **What this ticket did, and did not, independently confirm about
- * Render's own behavior.** Render's public docs ("How Render handles DDoS
- * attacks") confirm traffic passes through Cloudflare AND Render's own
- * load balancer before reaching this app, and direct a developer to read
- * `x-forwarded-for` for the real client IP — but do not spell out, in any
- * page this ticket could read directly, whether Render's edge REWRITES
- * position 0 or only ever APPENDS. A single, five-years-old Render-staff
- * forum reply claims the former; Render's own current DDoS-protection
- * article, read directly for this ticket, does not repeat or confirm that
- * claim. Given that conflict, and given no access to the live deployment
- * to measure it directly (this ticket has no deploy credentials), trusting
- * the rightmost entry is the documented, conservative default: it holds
- * regardless of which of those two behaviors turns out to be true, and its
- * only failure mode is OVER-restrictive (several real callers sharing one
- * upstream hop share one bucket), never under-protective (a caller minting
- * unlimited fresh buckets). Confirming Render's exact hop count and
- * rewrite behavior against the live deployment — send a request carrying a
- * forged leading `x-forwarded-for` entry and inspect what this function
- * actually receives — is real follow-up work this ticket flags but does
- * not do.
+ * Render's docs confirm the request passes through Cloudflare and Render's
+ * load balancer, but do not state whether the edge rewrites position 0 or
+ * only appends. The rightmost entry holds either way. Its only failure
+ * mode is over-restrictive — callers behind one hop share a bucket — never
+ * under-protective. Confirming Render's hop count against the live
+ * deployment is open follow-up work.
  *
- * Falls back to a fixed placeholder, never throws, when the header is
- * absent (local dev with no proxy in front of it) — every caller with no
- * header shares one bucket, a safe degraded behavior rather than silently
- * exempting them from the limit altogether.
+ * With no header at all, every caller shares one placeholder bucket. That
+ * degrades safely instead of exempting them.
  */
 export function getClientIp(request: Request): string {
   const forwardedFor = request.headers.get("x-forwarded-for");

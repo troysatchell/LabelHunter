@@ -1,45 +1,24 @@
 /**
- * Skew estimation (TRO-540 / LH-035).
+ * Skew estimation. This module only measures the tilt; `pipeline.ts` feeds
+ * the estimate into a second `sharp().rotate()` pass to correct it.
  *
- * `preprocessImage`'s `.rotate()` call (`pipeline.ts`) corrects orientation
- * from the EXIF tag only, by design (PRD §3.1). A tilt baked into the
- * pixels at capture time — the photographer held the camera at an angle —
- * writes no EXIF orientation tag, so that call does nothing to it. Both
- * the Haiku extractor and the classical warning-region detector
- * (`../warning/region-detect.ts`) then read a tilted image. Measured on
- * golden-set case-19: a 15-degree baked-in rotation, no EXIF block at
- * all, and `detectWarningRegionClassical` returns `null` against it.
+ * `preprocessImage` corrects orientation from the EXIF tag alone (PRD
+ * §3.1). A tilt baked in at capture time writes no EXIF tag, so both the
+ * extractor and the classical region detector read a tilted image.
+ * Measured on golden-set case-19: 15 degrees baked in, no EXIF block, and
+ * `detectWarningRegionClassical` returns `null`.
  *
- * This module only measures the tilt. `pipeline.ts` does the correction,
- * by feeding this module's estimate into a second `sharp().rotate()`
- * pass.
+ * Method: a row-ink projection run as an angle sweep. Rotate the analysis
+ * image by each candidate angle and count ink pixels per row. At the
+ * correct angle text rows sit horizontal — dense on a line, near-empty in
+ * the gap — so row-ink variance peaks sharply. A wrong angle blurs
+ * adjacent rows together and flattens it.
  *
- * Method: a row-ink projection, the same technique `region-detect.ts`
- * uses to find the warning block, run here as an angle sweep instead of a
- * block search. For each candidate angle, rotate the (downscaled)
- * analysis image by that angle and count ink pixels per row. At the
- * correct angle, real text rows are horizontal — dense ink on a line,
- * near-empty in the gap before the next one — so that angle's row-ink
- * profile has a sharp, isolated peak in its variance across rows. An
- * angle even a little off blurs adjacent rows together and flattens it.
- *
- * The peak must be a **local** one — strictly higher than both
- * immediate neighbors in the sweep, not just the highest value seen. A
- * large flat block of one color (no text at all) is the case this
- * distinction exists for: rotating a solid rectangle against a white
- * background changes row-ink coverage smoothly and monotonically as the
- * angle grows (the rotated corners eat further into the edge rows at
- * every step) — never a peak, since a monotonic curve has no point where
- * both neighbors score lower. `pipeline.test.ts`'s own EXIF-rotation
- * fixtures are exactly this shape (a single flat fill), so this
- * distinction is what keeps their post-rotation width/height assertions
- * unchanged (see `deskew.test.ts`'s equivalent fixture for the direct
- * proof).
- *
- * Every candidate is cropped back to a fixed size after rotating, and the
- * sweep itself runs with bounded concurrency — see
- * `rowInkVarianceAtAngle`'s and `MAX_CONCURRENT_ANGLE_PASSES`'s own
- * comments for why.
+ * The peak must be **local**: strictly higher than both neighbors, not
+ * merely the highest value seen. A flat block of one color has no text and
+ * no peak — rotating a solid rectangle changes row coverage monotonically,
+ * and a monotonic curve never scores below both neighbors. That is what
+ * keeps `pipeline.test.ts`'s flat-fill EXIF fixtures untouched.
  */
 import sharp from "sharp";
 import type { Metadata as SharpMetadata } from "sharp";

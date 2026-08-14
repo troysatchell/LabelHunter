@@ -77,12 +77,13 @@ export type BoldSignal = "bold" | "not-bold" | "uncertain";
 export interface BoldSignalResult {
   readonly signal: BoldSignal;
   /** ASD-STE100, written for the same compliance-agent audience as every
-   * other reason string in this subsystem (CP-2 §6.3) — even though this
-   * signal has no UI wiring yet (that is TRO-533's job). */
+   * other reason string in this subsystem (CP-2 §6.3). TRO-533 wired this
+   * string into the Detail view. */
   readonly reason: string;
   /** Prefix stroke width ÷ body stroke width, both cap-height-normalized.
-   * `null` when no split was found. Not a pass/fail input — exposed for
-   * tests and future telemetry only. */
+   * `null` when no split was found. Not a routing input — the router
+   * consumes only the classified `signal` (TRO-569); this raw ratio is
+   * persisted and displayed for review context. */
   readonly ratio: number | null;
   /** Where in the line's own ink width the prefix/body boundary was
    * found, 0-1. `null` when no split was found. */

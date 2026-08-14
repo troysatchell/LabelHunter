@@ -64,18 +64,21 @@ narrative are current.
 **How to run.** `pnpm test` (unit), `pnpm golden:verify`, `pnpm golden:build`,
 `pnpm eval:bold-signal-sweep --force` (re-measures the sweep; local, no API call).
 
-**How to roll back.** Revert this PR. `resolveGovernmentWarningField` returns to ignoring
-`boldSignal`; `routeLabel`'s sixth parameter becomes dead but harmless (still optional,
-default `null`); `case-33`'s `expected` reverts to `PASS`/`MATCH`; `case-34` and its image
-can stay committed (not itself a rollback risk — nothing reads `governmentWarningBodyBold`)
-or be removed with it.
+**How to roll back.** Revert this PR whole. A full revert removes the routing rule, the
+`warningBoldSignal` parameter, the golden-set changes, and the baseline band together —
+rule 32 then requires a fresh re-baseline. To disable only the routing rule, revert the
+`field-resolution.ts` degrade branch alone; the `warningBoldSignal` parameter then becomes
+dead but harmless (still optional, default `null`). `case-34` and its image can stay
+committed either way — `scripts/golden/render.ts` reads `governmentWarningBodyBold` only
+to render the case image; no verdict path reads it.
 
 **Confirmed.** `src/server/router/field-resolution.test.ts` (10 assertions covering the full
 (verdict, signal) grid, the original 7 each confirmed to fail for the right reason against the
 pre-TRO-569 code before the fix landed), `src/app/api/verify/route.test.ts`'s inverted
 government-warning-wiring test, and `src/server/batch-queue/extract-worker.test.ts`'s inverted
-plus 4 new cells all pass. Full `pnpm typecheck`, `pnpm lint`, and `pnpm test`: green (2659/2659
-after the final merge). `pnpm golden:verify`: 38 cases, PASS. `pnpm eval:bold-signal-sweep`
+plus 4 new cells all pass. Full `pnpm typecheck`, `pnpm lint`, and `pnpm test`: green — 2677
+passed / 2677 total, 200 files, measured at this entry's final commit (earlier rounds of this
+branch measured 2659 and 2673 as sibling merges and this branch's own test splits landed). `pnpm golden:verify`: 38 cases, PASS. `pnpm eval:bold-signal-sweep`
 (re-run on the clean committed tree after adding its own `assertPathTreeClean` guard, matching
 `ocr-floor-sweep.ts`'s precedent): 27/32, 84.4%, measured 2026-08-14, no API call — observed,
 not derived. The authorized live re-baseline (rule 32) ran and passed: `pnpm eval:variance --

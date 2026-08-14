@@ -365,7 +365,7 @@ export const verifications = pgTable(
     // (`src/server/warning/index.ts`'s `CompareGovernmentWarningFromImageResult`)
     // but a SEPARATE return value — the caller (`verify/route.ts`,
     // `extract-worker.ts`) reads that value TWICE: once live, in memory,
-    // as `routeLabel`'s optional sixth parameter (where a `not-bold`
+    // as `routeLabel`'s optional `warningBoldSignal` parameter (where a `not-bold`
     // signal degrades an otherwise-MATCH `government_warning` row to
     // `NEEDS_REVIEW`), and again here, to persist the full measurement for
     // display. This COLUMN itself is write-only for that purpose: nothing

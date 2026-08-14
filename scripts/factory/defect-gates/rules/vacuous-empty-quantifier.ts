@@ -105,6 +105,39 @@ function walkOwnScope(node: ts.Node, visit: (n: ts.Node) => void): void {
 }
 
 /**
+ * True when a test expression reads `<receiver>.length` (or `?.length`)
+ * anywhere inside it, matched structurally against the actual receiver
+ * node — not by searching the condition's source text for a substring.
+ *
+ * A substring check reads `wxs.length` as mentioning `xs` — "xs.length" is
+ * a trailing substring of "wxs.length" — and wrongly treats a guard on one
+ * variable as proof about a completely different one. Walking the real
+ * property-access nodes and comparing each one's own receiver text against
+ * `receiverText` in full rejects that false match.
+ */
+function conditionMentionsReceiverLength(
+  test: ts.Expression,
+  receiverText: string,
+  sourceFile: ts.SourceFile,
+): boolean {
+  let found = false;
+  const visit = (n: ts.Node): void => {
+    if (found) return;
+    if (
+      ts.isPropertyAccessExpression(n) &&
+      n.name.text === "length" &&
+      n.expression.getText(sourceFile) === receiverText
+    ) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(test);
+  return found;
+}
+
+/**
  * True when an `if` mentioning `<receiver>.length` exits before the call,
  * in the same function scope.
  */
@@ -127,10 +160,7 @@ function hasPrecedingLengthGuard(
     // branch's own condition proves the opposite — the receiver IS empty
     // right there.
     if (n.getEnd() > callStart) return;
-    const test = n.expression.getText(sourceFile);
-    const mentionsLength =
-      test.includes(`${receiverText}.length`) || test.includes(`${receiverText}?.length`);
-    if (!mentionsLength) return;
+    if (!conditionMentionsReceiverLength(n.expression, receiverText, sourceFile)) return;
     const exits =
       ts.isReturnStatement(n.thenStatement) ||
       ts.isThrowStatement(n.thenStatement) ||
@@ -243,6 +273,13 @@ function isDirectSinkUse(node: ts.Node): boolean {
  *
  * A variable declared but never read again decides nothing. A zero-read
  * variable is never a sink.
+ *
+ * The search uses `walkOwnScope`, not the shared `walk`, so it never enters
+ * a nested function. `walk` matches an identifier by text alone, with no
+ * real scope resolution — a nested function that shadows the same name
+ * with its own, unrelated declaration (`const helper = () => { const ok =
+ * true; return ok; }`) would then read as the OUTER `ok` reaching a sink,
+ * when that return belongs entirely to the inner variable.
  */
 function reachesSinkThroughVariable(declaration: ts.VariableDeclaration, sourceFile: ts.SourceFile): boolean {
   if (!ts.isIdentifier(declaration.name)) return false;
@@ -255,7 +292,7 @@ function reachesSinkThroughVariable(declaration: ts.VariableDeclaration, sourceF
   const name = declaration.name.text;
   const declarationEnd = declaration.getEnd();
   let hit = false;
-  walk(fn.body as ts.Node, (n) => {
+  walkOwnScope(fn.body as ts.Node, (n) => {
     if (hit) return;
     if (!ts.isIdentifier(n) || n === declaration.name || n.text !== name) return;
     if (n.getStart(sourceFile) <= declarationEnd) return; // only a later read
@@ -302,6 +339,29 @@ function reachesDecisionSink(call: ts.CallExpression, sourceFile: ts.SourceFile)
   return false;
 }
 
+/**
+ * Names the specific failure an empty collection causes for this
+ * quantifier. `.every()` (and `.some()`, though this rule never fires for
+ * it) returns a value on an empty collection — the value is just wrong.
+ * An unseeded `.reduce()` does not return a wrong value on an empty
+ * collection; it throws a `TypeError`. The two are different defects, and
+ * a message written for one is misleading for the other.
+ */
+function emptyCollectionMessage(name: string): string {
+  if (name === "reduce") {
+    return (
+      `.reduce() decides a program outcome over a collection that may be empty. ` +
+      `An unseeded .reduce() throws on an empty collection instead of returning a ` +
+      `default value. Guard the empty case, or pass an initial value.`
+    );
+  }
+  return (
+    `.${name}() decides a program outcome over a collection that may be empty. ` +
+    `An empty collection makes .${name}() vacuously true. Guard the empty case, ` +
+    `or state explicitly what empty means.`
+  );
+}
+
 function checkSource(filePath: string, text: string, _ctx: RuleContext): Finding[] {
   const sourceFile = parse(filePath, text);
   const findings: Finding[] = [];
@@ -330,10 +390,7 @@ function checkSource(filePath: string, text: string, _ctx: RuleContext): Finding
       file: filePath,
       line: lineOf(sourceFile, node),
       identity: violationIdentity(meta.id, filePath, fnName, node.getText(sourceFile)),
-      message:
-        `.${name}() decides a program outcome over a collection that may be empty. ` +
-        `An empty collection makes .${name}() vacuously true. Guard the empty case, ` +
-        `or state explicitly what empty means.`,
+      message: emptyCollectionMessage(name),
       repairability: meta.repairability,
       exemptedBy: null,
     });

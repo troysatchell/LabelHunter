@@ -37,7 +37,7 @@ import {
 } from "../../src/server/warning";
 import { parseArtifactGuardArgs, writeGuardedJsonArtifact } from "./artifact-guard";
 import { REPO_ROOT } from "./cascade-runner";
-import { lastCommitTouchingPath } from "./git-provenance";
+import { assertPathTreeClean, lastCommitTouchingPath } from "./git-provenance";
 import { hashManifestFile } from "./manifest-hash";
 
 export interface OcrFloorSweepCaseResult {
@@ -142,6 +142,12 @@ async function main(): Promise<void> {
     console.error("This script only accepts --out=<path> and --force.");
     process.exit(2);
   }
+  // TRO-564: fail before doing any OCR work, not after, when golden-set/ has
+  // an uncommitted change — otherwise the artifact's goldenSetCommitSha
+  // below would cite the last clean commit while actually having measured
+  // different (uncommitted) images.
+  assertPathTreeClean(REPO_ROOT, "golden-set");
+
   const manifest = loadGoldenSetManifest();
   console.log(`ocr-floor-sweep.ts: sweeping ${manifest.cases.length} golden-set case(s), OCR channel only, no API call.`);
 

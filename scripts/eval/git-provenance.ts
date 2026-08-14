@@ -20,6 +20,15 @@
  *     at all (CLAUDE.md: "never fabricate a number" — a SHA is identifying
  *     data, not a number, but the same discipline applies) — fail loudly
  *     instead of writing one.
+ *
+ * `assertPathTreeClean` (TRO-564) THROWS too, for the same reason as
+ * `lastCommitTouchingPath`, and the two are meant to be called together: a
+ * commit SHA is only real provenance for what a script actually measured
+ * when the working tree at that path matches the commit exactly. Recording
+ * `lastCommitTouchingPath`'s SHA alone, with no clean-tree check first, lets
+ * a script measure uncommitted `golden-set/` edits while its artifact still
+ * cites the last clean commit — TRO-535/TRO-546's `ocr-floor-sweep.ts` and
+ * `tro-546-case22-ocr-region-check.ts` did exactly this until this ticket.
  */
 import { execFileSync } from "node:child_process";
 
@@ -57,4 +66,32 @@ export function lastCommitTouchingPath(repoRoot: string, relativePath: string): 
     throw new Error(`git-provenance: no commit in this branch's history touches "${relativePath}" — nothing to record as its provenance.`);
   }
   return sha;
+}
+
+/**
+ * Throws when `relativePath` has any uncommitted change — staged, unstaged,
+ * or untracked — via `git status --porcelain -- <relativePath>`. Any
+ * non-empty output means the working tree at that path does not match its
+ * last commit, so a `lastCommitTouchingPath` SHA recorded alongside it would
+ * misrepresent what a script actually read from disk. Call this BEFORE
+ * `lastCommitTouchingPath` so a dirty tree fails loudly instead of
+ * producing a provenance SHA that looks clean but is not. Also throws when
+ * the git command itself fails — a caller cannot treat "could not check" as
+ * equivalent to "checked and it's clean."
+ */
+export function assertPathTreeClean(repoRoot: string, relativePath: string): void {
+  let status: string;
+  try {
+    status = execFileSync("git", ["status", "--porcelain", "--", relativePath], { cwd: repoRoot, encoding: "utf8" });
+  } catch (cause) {
+    throw new Error(
+      `git-provenance: could not check whether "${relativePath}" is clean: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+  }
+  if (status.trim().length > 0) {
+    throw new Error(
+      `git-provenance: "${relativePath}" has an uncommitted change, so its recorded commit SHA would not match what was ` +
+        `actually measured. Commit or discard these changes before running this sweep:\n${status}`,
+    );
+  }
 }

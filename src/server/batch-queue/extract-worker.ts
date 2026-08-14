@@ -344,7 +344,10 @@ export async function processExtractClaim(item: ClaimedBatchQueueItem, deps: Par
   let routerResult: ReturnType<typeof routeLabel>;
   let application: ApplicationRow;
   // TRO-533 — the bold advisory signal, captured alongside `warningResult`
-  // below but never threaded into `routeLabel`. `null` until the warning
+  // below. TRO-569: its `.signal` discriminant IS threaded into
+  // `routeLabel` too (a separate argument, never folded into
+  // `warningResult` itself) — see `field-resolution.ts`'s own header
+  // comment for the degrade rule this enables. `null` until the warning
   // check actually runs.
   let boldSignalResult: BoldSignalResult | null = null;
 
@@ -420,10 +423,19 @@ export async function processExtractClaim(item: ClaimedBatchQueueItem, deps: Par
     // `computeResizeDimensions` call against the same width/height — one
     // real source of truth for what was actually sent to the model,
     // instead of two call sites that could silently drift apart.
-    routerResult = routeLabel(extraction, applicationRecord, d.comparators, warningResult, {
-      rejected: false,
-      longEdgePx: Math.max(haikuVariant.dims.width, haikuVariant.dims.height),
-    });
+    routerResult = routeLabel(
+      extraction,
+      applicationRecord,
+      d.comparators,
+      warningResult,
+      {
+        rejected: false,
+        longEdgePx: Math.max(haikuVariant.dims.width, haikuVariant.dims.height),
+      },
+      // TRO-569 — same wiring as verify/route.ts: only the `.signal`
+      // discriminant reaches the router.
+      boldSignalResult?.signal ?? null,
+    );
 
     // Mirrors verify/route.ts's own defensive invariant check exactly —
     // standing rule 13: name the invariant, don't trust it silently.
@@ -451,8 +463,10 @@ export async function processExtractClaim(item: ClaimedBatchQueueItem, deps: Par
           // updates this once it consumes the review_queue row.
           resolutionPath: "EXTRACTOR_ONLY",
           // TRO-533 — persisted for every batch verification too, matching
-          // verify/route.ts exactly. Advisory only: `routerResult` above
-          // was already decided without ever seeing `boldSignalResult`.
+          // verify/route.ts exactly, independent of what `routeLabel` did
+          // with it. TRO-569: `routerResult` above WAS computed with
+          // `boldSignalResult.signal` in view (the MATCH -> REVIEW degrade
+          // rule) — this column still stores the full result.
           boldSignal: boldSignalResult,
         })
         .returning();

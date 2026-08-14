@@ -891,10 +891,13 @@ describe("loadGoldenSetManifest", () => {
     // Troy's own instruction, mid-TRO-532, after noticing every one of the
     // 30 warning-bearing cases TRO-527 backfilled carries
     // governmentWarningPrefixBold: true (see bold-detect.test.ts's own
-    // header for the full story). case-34 stays reserved for LH-023 /
-    // TRO-528. 37, not 32 — growth, not drift.
+    // header for the full story). TRO-528 / LH-023 fills the last
+    // reserved slot, case-34-bold-body-warning-violation, and TRO-569 /
+    // INT-005 flips case-33's own `expected` from PASS to REVIEW in the
+    // same change (see that case's own `notes`). 38, not 32 — growth, not
+    // drift.
     expect(result.cases.length).toBeGreaterThanOrEqual(20);
-    expect(result.cases.length).toBeLessThanOrEqual(37);
+    expect(result.cases.length).toBeLessThanOrEqual(38);
 
     const ids = result.cases.map((c) => c.caseId);
     expect(new Set(ids).size).toBe(ids.length);

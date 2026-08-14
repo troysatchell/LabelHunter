@@ -1,11 +1,11 @@
 {
   "ticket": "TRO-470 / LH-030",
-  "measuredAt": "2026-08-13T22:40:24.815Z",
+  "measuredAt": "2026-08-14T01:40:25.445Z",
   "mode": "live",
   "haikuModel": "claude-haiku-4-5",
   "sonnetModel": "claude-sonnet-5",
   "manifestVersion": "1.0.0",
-  "manifestContentHash": "7b1c3bb1326077be2b4b7471d4539a4e1a34e84ce50a9111e061df6fd79ff49e",
+  "manifestContentHash": "e19a48c1f2c54a92d1f4fc207df472cf87ff048ea5d4c33c6d7258b820c552e3",
   "caseIds": [
     "case-01-clean-match-spirits",
     "case-02-clean-match-beer-no-abv",
@@ -39,6 +39,7 @@
     "case-31-title-case-warning-surgeon-general-lowercase",
     "case-32-reworded-warning-near-miss-missing-comma",
     "case-33-not-bold-warning-prefix",
+    "case-34-bold-body-warning-violation",
     "case-35-clean-match-real-photo-flat-scan",
     "case-36-rotation-real-photo-gentle-curve",
     "case-37-rotation-real-photo-severe-curve-partial-crop",
@@ -48,108 +49,108 @@
   "requestedFull": true,
   "summary": {
     "extractionAccuracy": {
-      "total": 185,
-      "correct": 162,
-      "rate": 0.8756756756756757
+      "total": 190,
+      "correct": 169,
+      "rate": 0.8894736842105263
     },
     "extractionAccuracyByField": {
       "brandName": {
-        "total": 37,
-        "correct": 30,
-        "rate": 0.8108108108108109
+        "total": 38,
+        "correct": 32,
+        "rate": 0.8421052631578947
       },
       "classType": {
-        "total": 37,
-        "correct": 31,
-        "rate": 0.8378378378378378
+        "total": 38,
+        "correct": 32,
+        "rate": 0.8421052631578947
       },
       "abv": {
-        "total": 37,
+        "total": 38,
         "correct": 35,
-        "rate": 0.9459459459459459
+        "rate": 0.9210526315789473
       },
       "netContents": {
-        "total": 37,
-        "correct": 34,
-        "rate": 0.918918918918919
+        "total": 38,
+        "correct": 35,
+        "rate": 0.9210526315789473
       },
       "governmentWarning": {
-        "total": 37,
-        "correct": 32,
-        "rate": 0.8648648648648649
+        "total": 38,
+        "correct": 35,
+        "rate": 0.9210526315789473
       }
     },
     "routerVerdictAccuracy": {
-      "total": 37,
-      "correct": 32,
-      "rate": 0.8648648648648649
+      "total": 38,
+      "correct": 34,
+      "rate": 0.8947368421052632
     },
     "fieldVerdictAccuracyByField": {
       "brand_name": {
-        "total": 37,
+        "total": 38,
         "correct": 34,
-        "rate": 0.918918918918919
+        "rate": 0.8947368421052632
       },
       "class_type": {
-        "total": 37,
-        "correct": 35,
-        "rate": 0.9459459459459459
+        "total": 38,
+        "correct": 36,
+        "rate": 0.9473684210526315
       },
       "alcohol_content": {
-        "total": 37,
-        "correct": 36,
-        "rate": 0.972972972972973
+        "total": 38,
+        "correct": 37,
+        "rate": 0.9736842105263158
       },
       "net_contents": {
-        "total": 37,
-        "correct": 37,
+        "total": 38,
+        "correct": 38,
         "rate": 1
       },
       "government_warning": {
-        "total": 37,
-        "correct": 33,
-        "rate": 0.8918918918918919
+        "total": 38,
+        "correct": 35,
+        "rate": 0.9210526315789473
       }
     },
     "reviewReasonAccuracy": {
-      "total": 16,
-      "correct": 9,
-      "rate": 0.5625
+      "total": 17,
+      "correct": 11,
+      "rate": 0.6470588235294118
     },
     "warningSegmentation": {
-      "total": 37,
+      "total": 38,
       "clean": {
-        "count": 22,
-        "rate": 0.5945945945945946
+        "count": 21,
+        "rate": 0.5526315789473685
       },
       "trueMismatch": {
         "count": 5,
-        "rate": 0.13513513513513514
+        "rate": 0.13157894736842105
       },
       "resolutionSuspect": {
-        "count": 8,
-        "rate": 0.21621621621621623
+        "count": 10,
+        "rate": 0.2631578947368421
       },
       "notFound": {
         "count": 2,
-        "rate": 0.05405405405405406
+        "rate": 0.05263157894736842
       },
       "singleChannelPass": {
-        "count": 1,
-        "rate": 0.02702702702702703
+        "count": 0,
+        "rate": 0
       }
     },
     "cascadeVerdictAccuracy": {
-      "total": 37,
-      "correct": 30,
-      "rate": 0.8108108108108109
+      "total": 38,
+      "correct": 34,
+      "rate": 0.8947368421052632
     },
     "extractionReliabilityDiagram": [
       {
         "decile": 0,
-        "n": 21,
-        "correct": 5,
-        "rate": 0.23809523809523808
+        "n": 20,
+        "correct": 4,
+        "rate": 0.2
       },
       {
         "decile": 1,
@@ -177,33 +178,33 @@
       },
       {
         "decile": 5,
-        "n": 0,
+        "n": 1,
         "correct": 0,
         "rate": 0
       },
       {
         "decile": 6,
         "n": 1,
-        "correct": 0,
-        "rate": 0
+        "correct": 1,
+        "rate": 1
       },
       {
         "decile": 7,
-        "n": 2,
-        "correct": 0,
-        "rate": 0
+        "n": 4,
+        "correct": 2,
+        "rate": 0.5
       },
       {
         "decile": 8,
-        "n": 2,
-        "correct": 0,
-        "rate": 0
+        "n": 3,
+        "correct": 1,
+        "rate": 0.3333333333333333
       },
       {
         "decile": 9,
-        "n": 159,
-        "correct": 157,
-        "rate": 0.9874213836477987
+        "n": 161,
+        "correct": 161,
+        "rate": 1
       }
     ]
   },
@@ -949,7 +950,7 @@
             "expected": "Copper Kettle Spirits",
             "actual": "Copper Kettle Spirits",
             "detail": "Haiku read the brand name correctly.",
-            "confidence": 1
+            "confidence": 0.99
           },
           {
             "field": "classType",
@@ -957,7 +958,7 @@
             "expected": "Vodka",
             "actual": "Vodka",
             "detail": "Haiku read the class/type correctly.",
-            "confidence": 1
+            "confidence": 0.99
           },
           {
             "field": "abv",
@@ -965,7 +966,7 @@
             "expected": "40%",
             "actual": "40%",
             "detail": "Haiku read the correct ABV.",
-            "confidence": 1
+            "confidence": 0.99
           },
           {
             "field": "netContents",
@@ -973,7 +974,7 @@
             "expected": "750 mL",
             "actual": "750 ml",
             "detail": "Haiku read the correct net contents.",
-            "confidence": 1
+            "confidence": 0.99
           },
           {
             "field": "governmentWarning",
@@ -1002,7 +1003,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 1,
+            "confidence": 0.99,
             "actualReviewReason": null
           },
           {
@@ -1010,7 +1011,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 1,
+            "confidence": 0.99,
             "actualReviewReason": null
           },
           {
@@ -1018,7 +1019,7 @@
             "expectedVerdict": "MISMATCH",
             "actualVerdict": "MISMATCH",
             "correct": true,
-            "confidence": 1,
+            "confidence": 0.99,
             "actualReviewReason": null
           },
           {
@@ -1026,7 +1027,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 1,
+            "confidence": 0.99,
             "actualReviewReason": null
           },
           {
@@ -1056,7 +1057,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 1,
+            "confidence": 0.99,
             "actualReviewReason": null
           },
           {
@@ -1064,7 +1065,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 1,
+            "confidence": 0.99,
             "actualReviewReason": null
           },
           {
@@ -1072,7 +1073,7 @@
             "expectedVerdict": "MISMATCH",
             "actualVerdict": "MISMATCH",
             "correct": true,
-            "confidence": 1,
+            "confidence": 0.99,
             "actualReviewReason": null
           },
           {
@@ -1080,7 +1081,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 1,
+            "confidence": 0.99,
             "actualReviewReason": null
           },
           {
@@ -1115,7 +1116,7 @@
       "beverageType": {
         "value": "spirits",
         "evidence": "Vodka",
-        "confidence": 1
+        "confidence": 0.99
       }
     },
     {
@@ -1278,10 +1279,10 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2754,
-        "outputTokens": 358,
+        "outputTokens": 397,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.004544
+        "usd": 0.004739
       },
       "resolverCost": null,
       "resolverOutcome": null,
@@ -1313,7 +1314,7 @@
             "expected": "Millrace Distillery",
             "actual": "Millrace Distillery",
             "detail": "Haiku read the brand name correctly.",
-            "confidence": 0.99
+            "confidence": 1
           },
           {
             "field": "classType",
@@ -1321,7 +1322,7 @@
             "expected": "Straight Rye Whiskey",
             "actual": "Straight Rye Whiskey",
             "detail": "Haiku read the class/type correctly.",
-            "confidence": 0.99
+            "confidence": 1
           },
           {
             "field": "abv",
@@ -1329,7 +1330,7 @@
             "expected": "43%",
             "actual": "43%",
             "detail": "Haiku read the correct ABV.",
-            "confidence": 0.99
+            "confidence": 1
           },
           {
             "field": "netContents",
@@ -1337,7 +1338,7 @@
             "expected": "750 mL",
             "actual": "750 ml",
             "detail": "Haiku read the correct net contents.",
-            "confidence": 0.99
+            "confidence": 1
           },
           {
             "field": "governmentWarning",
@@ -1366,7 +1367,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -1374,7 +1375,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -1382,7 +1383,7 @@
             "expectedVerdict": "NEEDS_REVIEW",
             "actualVerdict": "NEEDS_REVIEW",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": "AMBIGUOUS_ABV"
           },
           {
@@ -1390,7 +1391,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -1420,7 +1421,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -1428,7 +1429,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -1436,7 +1437,7 @@
             "expectedVerdict": "NEEDS_REVIEW",
             "actualVerdict": "NEEDS_REVIEW",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": "LOW_MODEL_CONFIDENCE"
           },
           {
@@ -1444,7 +1445,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 1,
             "actualReviewReason": null
           },
           {
@@ -1460,22 +1461,22 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2754,
-        "outputTokens": 417,
+        "outputTokens": 378,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.0048389999999999996
+        "usd": 0.0046440000000000006
       },
       "resolverCost": {
         "model": "claude-sonnet-5",
-        "inputTokens": 3558,
-        "outputTokens": 464,
+        "inputTokens": 3548,
+        "outputTokens": 663,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.011755999999999999
+        "usd": 0.013726
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 7618,
+      "resolverDurationMs": 8903,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -1486,7 +1487,7 @@
       "beverageType": {
         "value": "spirits",
         "evidence": "Straight Rye Whiskey",
-        "confidence": 0.99
+        "confidence": 1
       }
     },
     {
@@ -1649,10 +1650,10 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2754,
-        "outputTokens": 372,
+        "outputTokens": 411,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.004614
+        "usd": 0.004809
       },
       "resolverCost": null,
       "resolverOutcome": null,
@@ -1831,10 +1832,10 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2754,
-        "outputTokens": 423,
+        "outputTokens": 384,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.004869
+        "usd": 0.004674
       },
       "resolverCost": null,
       "resolverOutcome": null,
@@ -1898,7 +1899,7 @@
             "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, pregnant women should not consume alcoholic beverages due to the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
             "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, pregnant women should not consume alcoholic beverages due to the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
             "detail": "Haiku transcribed the government warning correctly.",
-            "confidence": 1
+            "confidence": 0.99
           }
         ]
       },
@@ -1951,7 +1952,7 @@
             "expectedVerdict": "MISMATCH",
             "actualVerdict": "MISMATCH",
             "correct": true,
-            "confidence": 1,
+            "confidence": 0.99,
             "actualReviewReason": null
           }
         ]
@@ -2005,7 +2006,7 @@
             "expectedVerdict": "MISMATCH",
             "actualVerdict": "MISMATCH",
             "correct": true,
-            "confidence": 1,
+            "confidence": 0.99,
             "actualReviewReason": null
           }
         ]
@@ -2377,28 +2378,28 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2754,
-        "outputTokens": 293,
+        "outputTokens": 254,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.0042190000000000005
+        "usd": 0.004024
       },
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3342,
-        "outputTokens": 138,
+        "outputTokens": 117,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.008064
+        "usd": 0.007854
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 4029,
+      "resolverDurationMs": 3349,
       "imageQuality": {
         "legible": "yes",
         "issues": [
           "none"
         ],
-        "confidence": 0.95
+        "confidence": 0.99
       },
       "beverageType": {
         "value": "spirits",
@@ -2516,8 +2517,8 @@
         "actualLabelVerdict": "REVIEW",
         "labelVerdictCorrect": true,
         "expectedReviewReason": "MISSING_REQUIRED_FIELD",
-        "actualReviewReason": "LOW_MODEL_CONFIDENCE",
-        "reviewReasonCorrect": false,
+        "actualReviewReason": "MISSING_REQUIRED_FIELD",
+        "reviewReasonCorrect": true,
         "warningChannel": null,
         "lowImageQualityTrigger": null,
         "fields": [
@@ -2559,7 +2560,7 @@
             "actualVerdict": "NEEDS_REVIEW",
             "correct": true,
             "confidence": 0,
-            "actualReviewReason": "LOW_MODEL_CONFIDENCE"
+            "actualReviewReason": "MISSING_REQUIRED_FIELD"
           }
         ]
       },
@@ -2571,17 +2572,10 @@
         "cacheReadInputTokens": 0,
         "usd": 0.004139
       },
-      "resolverCost": {
-        "model": "claude-sonnet-5",
-        "inputTokens": 3302,
-        "outputTokens": 133,
-        "cacheCreationInputTokens": 0,
-        "cacheReadInputTokens": 0,
-        "usd": 0.007934
-      },
-      "resolverOutcome": "needs-human",
-      "resolverError": null,
-      "resolverDurationMs": 4460,
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": "Resolver response failed validation (1 problem(s)):\n  - government_warning: disposition is RESOLVED_MISMATCH but corrected_value is null — a decided answer must carry the reading it was decided from",
+      "resolverDurationMs": null,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -2755,10 +2749,10 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2754,
-        "outputTokens": 375,
+        "outputTokens": 414,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.004629
+        "usd": 0.004824
       },
       "resolverCost": null,
       "resolverOutcome": null,
@@ -2937,10 +2931,10 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2754,
-        "outputTokens": 371,
+        "outputTokens": 410,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.004609
+        "usd": 0.004804
       },
       "resolverCost": null,
       "resolverOutcome": null,
@@ -3134,7 +3128,7 @@
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 3850,
+      "resolverDurationMs": 3986,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -3157,10 +3151,10 @@
         "fields": [
           {
             "field": "brandName",
-            "correct": false,
+            "correct": true,
             "expected": "Sable Ridge Distillery",
-            "actual": "Sable Ridge",
-            "detail": "Haiku read \"Sable Ridge\"; the label prints \"Sable Ridge Distillery\".",
+            "actual": "Sable Ridge Distillery",
+            "detail": "Haiku read the brand name correctly.",
             "confidence": 0.99
           },
           {
@@ -3201,10 +3195,10 @@
         "caseId": "case-17-glare-front-label",
         "category": "glare",
         "expectedLabelVerdict": "REVIEW",
-        "actualLabelVerdict": "REVIEW",
-        "labelVerdictCorrect": true,
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": false,
         "expectedReviewReason": "LOW_IMAGE_QUALITY",
-        "actualReviewReason": "AMBIGUOUS_BRAND",
+        "actualReviewReason": null,
         "reviewReasonCorrect": false,
         "warningChannel": "dual",
         "lowImageQualityTrigger": null,
@@ -3212,10 +3206,10 @@
           {
             "field": "brand_name",
             "expectedVerdict": "NEEDS_REVIEW",
-            "actualVerdict": "NEEDS_REVIEW",
-            "correct": true,
+            "actualVerdict": "MATCH",
+            "correct": false,
             "confidence": 0.99,
-            "actualReviewReason": "AMBIGUOUS_BRAND"
+            "actualReviewReason": null
           },
           {
             "field": "class_type",
@@ -3308,22 +3302,15 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2754,
-        "outputTokens": 377,
+        "outputTokens": 380,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.004639
+        "usd": 0.004654
       },
-      "resolverCost": {
-        "model": "claude-sonnet-5",
-        "inputTokens": 3540,
-        "outputTokens": 319,
-        "cacheCreationInputTokens": 0,
-        "cacheReadInputTokens": 0,
-        "usd": 0.01027
-      },
-      "resolverOutcome": "resolved",
+      "resolverCost": null,
+      "resolverOutcome": null,
       "resolverError": null,
-      "resolverDurationMs": 5707,
+      "resolverDurationMs": null,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -3444,10 +3431,10 @@
         "caseId": "case-18-glare-warning-block",
         "category": "glare",
         "expectedLabelVerdict": "REVIEW",
-        "actualLabelVerdict": "PASS",
-        "labelVerdictCorrect": false,
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
         "expectedReviewReason": "LOW_IMAGE_QUALITY",
-        "actualReviewReason": null,
+        "actualReviewReason": "LOW_MODEL_CONFIDENCE",
         "reviewReasonCorrect": false,
         "warningChannel": null,
         "lowImageQualityTrigger": null,
@@ -3487,10 +3474,10 @@
           {
             "field": "government_warning",
             "expectedVerdict": "NEEDS_REVIEW",
-            "actualVerdict": "MATCH",
-            "correct": false,
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true,
             "confidence": 0.95,
-            "actualReviewReason": null
+            "actualReviewReason": "LOW_MODEL_CONFIDENCE"
           }
         ]
       },
@@ -3505,14 +3492,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3485,
-        "outputTokens": 296,
+        "outputTokens": 351,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.00993
+        "usd": 0.01048
       },
-      "resolverOutcome": "resolved",
+      "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 4298,
+      "resolverDurationMs": 5402,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -3567,11 +3554,11 @@
           },
           {
             "field": "governmentWarning",
-            "correct": false,
+            "correct": true,
             "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because use of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-            "detail": "Haiku's transcription differs from what the label prints.",
-            "confidence": 0.92
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly.",
+            "confidence": 0.98
           }
         ]
       },
@@ -3579,12 +3566,12 @@
         "caseId": "case-19-rotation-mild-correctable",
         "category": "rotation",
         "expectedLabelVerdict": "PASS",
-        "actualLabelVerdict": "REVIEW",
-        "labelVerdictCorrect": false,
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": true,
         "expectedReviewReason": null,
-        "actualReviewReason": "WARNING_MISMATCH",
+        "actualReviewReason": null,
         "reviewReasonCorrect": true,
-        "warningChannel": "single",
+        "warningChannel": "dual",
         "lowImageQualityTrigger": null,
         "fields": [
           {
@@ -3622,10 +3609,10 @@
           {
             "field": "government_warning",
             "expectedVerdict": "MATCH",
-            "actualVerdict": "NEEDS_REVIEW",
-            "correct": false,
-            "confidence": 0.92,
-            "actualReviewReason": "WARNING_MISMATCH"
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.98,
+            "actualReviewReason": null
           }
         ]
       },
@@ -3633,12 +3620,12 @@
         "caseId": "case-19-rotation-mild-correctable",
         "category": "rotation",
         "expectedLabelVerdict": "PASS",
-        "actualLabelVerdict": "REVIEW",
-        "labelVerdictCorrect": false,
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": true,
         "expectedReviewReason": null,
-        "actualReviewReason": "LOW_MODEL_CONFIDENCE",
+        "actualReviewReason": null,
         "reviewReasonCorrect": true,
-        "warningChannel": null,
+        "warningChannel": "dual",
         "lowImageQualityTrigger": null,
         "fields": [
           {
@@ -3676,38 +3663,31 @@
           {
             "field": "government_warning",
             "expectedVerdict": "MATCH",
-            "actualVerdict": "NEEDS_REVIEW",
-            "correct": false,
-            "confidence": 0.92,
-            "actualReviewReason": "LOW_MODEL_CONFIDENCE"
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.98,
+            "actualReviewReason": null
           }
         ]
       },
       "haikuCost": {
         "model": "claude-haiku-4-5",
-        "inputTokens": 3264,
-        "outputTokens": 418,
+        "inputTokens": 3268,
+        "outputTokens": 377,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.005354
+        "usd": 0.005153
       },
-      "resolverCost": {
-        "model": "claude-sonnet-5",
-        "inputTokens": 4042,
-        "outputTokens": 238,
-        "cacheCreationInputTokens": 0,
-        "cacheReadInputTokens": 0,
-        "usd": 0.010464
-      },
-      "resolverOutcome": "needs-human",
+      "resolverCost": null,
+      "resolverOutcome": null,
       "resolverError": null,
-      "resolverDurationMs": 4694,
+      "resolverDurationMs": null,
       "imageQuality": {
         "legible": "yes",
         "issues": [
-          "rotation"
+          "none"
         ],
-        "confidence": 0.95
+        "confidence": 0.98
       },
       "beverageType": {
         "value": "spirits",
@@ -3890,7 +3870,7 @@
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 8284,
+      "resolverDurationMs": 7639,
       "imageQuality": {
         "legible": "no",
         "issues": [
@@ -4098,7 +4078,7 @@
             "expected": "Amber Hollow Meadery",
             "actual": "Amber Hollow Meadery",
             "detail": "Haiku read the brand name correctly.",
-            "confidence": 0.99
+            "confidence": 0.95
           },
           {
             "field": "classType",
@@ -4106,7 +4086,7 @@
             "expected": "Mead",
             "actual": "Mead",
             "detail": "Haiku read the class/type correctly.",
-            "confidence": 0.99
+            "confidence": 0.95
           },
           {
             "field": "abv",
@@ -4114,7 +4094,7 @@
             "expected": "8%",
             "actual": "8%",
             "detail": "Haiku read the correct ABV.",
-            "confidence": 0.99
+            "confidence": 0.95
           },
           {
             "field": "netContents",
@@ -4122,7 +4102,7 @@
             "expected": "750 mL",
             "actual": "750 ml",
             "detail": "Haiku read the correct net contents.",
-            "confidence": 0.99
+            "confidence": 0.95
           },
           {
             "field": "governmentWarning",
@@ -4130,7 +4110,7 @@
             "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
             "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
             "detail": "Haiku transcribed the government warning correctly.",
-            "confidence": 0.98
+            "confidence": 0.65
           }
         ]
       },
@@ -4138,12 +4118,12 @@
         "caseId": "case-22-low-light-warning-block",
         "category": "low-light",
         "expectedLabelVerdict": "REVIEW",
-        "actualLabelVerdict": "PASS",
-        "labelVerdictCorrect": false,
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
         "expectedReviewReason": "LOW_IMAGE_QUALITY",
-        "actualReviewReason": null,
-        "reviewReasonCorrect": false,
-        "warningChannel": "dual",
+        "actualReviewReason": "LOW_IMAGE_QUALITY",
+        "reviewReasonCorrect": true,
+        "warningChannel": "single",
         "lowImageQualityTrigger": null,
         "fields": [
           {
@@ -4151,7 +4131,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 0.95,
             "actualReviewReason": null
           },
           {
@@ -4159,7 +4139,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 0.95,
             "actualReviewReason": null
           },
           {
@@ -4167,7 +4147,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 0.95,
             "actualReviewReason": null
           },
           {
@@ -4175,16 +4155,16 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 0.95,
             "actualReviewReason": null
           },
           {
             "field": "government_warning",
             "expectedVerdict": "NEEDS_REVIEW",
-            "actualVerdict": "MATCH",
-            "correct": false,
-            "confidence": 0.98,
-            "actualReviewReason": null
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true,
+            "confidence": 0.65,
+            "actualReviewReason": "LOW_IMAGE_QUALITY"
           }
         ]
       },
@@ -4192,12 +4172,12 @@
         "caseId": "case-22-low-light-warning-block",
         "category": "low-light",
         "expectedLabelVerdict": "REVIEW",
-        "actualLabelVerdict": "PASS",
-        "labelVerdictCorrect": false,
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
         "expectedReviewReason": "LOW_IMAGE_QUALITY",
-        "actualReviewReason": null,
-        "reviewReasonCorrect": false,
-        "warningChannel": "dual",
+        "actualReviewReason": "LOW_IMAGE_QUALITY",
+        "reviewReasonCorrect": true,
+        "warningChannel": null,
         "lowImageQualityTrigger": null,
         "fields": [
           {
@@ -4205,7 +4185,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 0.95,
             "actualReviewReason": null
           },
           {
@@ -4213,7 +4193,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 0.95,
             "actualReviewReason": null
           },
           {
@@ -4221,7 +4201,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 0.95,
             "actualReviewReason": null
           },
           {
@@ -4229,42 +4209,50 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.99,
+            "confidence": 0.95,
             "actualReviewReason": null
           },
           {
             "field": "government_warning",
             "expectedVerdict": "NEEDS_REVIEW",
-            "actualVerdict": "MATCH",
-            "correct": false,
-            "confidence": 0.98,
-            "actualReviewReason": null
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true,
+            "confidence": 0.65,
+            "actualReviewReason": "LOW_IMAGE_QUALITY"
           }
         ]
       },
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2754,
-        "outputTokens": 393,
+        "outputTokens": 400,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.004719
+        "usd": 0.0047539999999999995
       },
-      "resolverCost": null,
-      "resolverOutcome": null,
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3493,
+        "outputTokens": 309,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.010076
+      },
+      "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": null,
+      "resolverDurationMs": 5165,
       "imageQuality": {
-        "legible": "yes",
+        "legible": "partial",
         "issues": [
-          "none"
+          "low_light",
+          "obstructed"
         ],
-        "confidence": 0.95
+        "confidence": 0.75
       },
       "beverageType": {
         "value": "mead",
         "evidence": "Mead",
-        "confidence": 0.99
+        "confidence": 0.95
       }
     },
     {
@@ -4435,14 +4423,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3479,
-        "outputTokens": 304,
+        "outputTokens": 302,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.009998
+        "usd": 0.009978
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 5186,
+      "resolverDurationMs": 4995,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -4683,7 +4671,7 @@
             "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
             "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
             "detail": "Haiku transcribed the government warning correctly.",
-            "confidence": 0.98
+            "confidence": 0.99
           }
         ]
       },
@@ -4736,7 +4724,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.98,
+            "confidence": 0.99,
             "actualReviewReason": null
           }
         ]
@@ -4790,7 +4778,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.98,
+            "confidence": 0.99,
             "actualReviewReason": null
           }
         ]
@@ -4798,10 +4786,10 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2754,
-        "outputTokens": 380,
+        "outputTokens": 419,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.004654
+        "usd": 0.004849
       },
       "resolverCost": null,
       "resolverOutcome": null,
@@ -4833,7 +4821,7 @@
             "expected": "Cascade Peak Brewing",
             "actual": "Cascade Peak Brewing",
             "detail": "Haiku read the brand name correctly.",
-            "confidence": 1
+            "confidence": 0.99
           },
           {
             "field": "classType",
@@ -4841,7 +4829,7 @@
             "expected": "Imperial Stout",
             "actual": "Imperial Stout",
             "detail": "Haiku read the class/type correctly.",
-            "confidence": 1
+            "confidence": 0.99
           },
           {
             "field": "abv",
@@ -4849,7 +4837,7 @@
             "expected": "9.5%",
             "actual": "9.5%",
             "detail": "Haiku read the correct ABV.",
-            "confidence": 1
+            "confidence": 0.99
           },
           {
             "field": "netContents",
@@ -4857,7 +4845,7 @@
             "expected": "22 fl oz",
             "actual": "22 fl oz",
             "detail": "Haiku read the correct net contents.",
-            "confidence": 1
+            "confidence": 0.99
           },
           {
             "field": "governmentWarning",
@@ -4886,7 +4874,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 1,
+            "confidence": 0.99,
             "actualReviewReason": null
           },
           {
@@ -4894,7 +4882,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 1,
+            "confidence": 0.99,
             "actualReviewReason": null
           },
           {
@@ -4902,7 +4890,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 1,
+            "confidence": 0.99,
             "actualReviewReason": null
           },
           {
@@ -4910,7 +4898,7 @@
             "expectedVerdict": "MISMATCH",
             "actualVerdict": "MISMATCH",
             "correct": true,
-            "confidence": 1,
+            "confidence": 0.99,
             "actualReviewReason": null
           },
           {
@@ -4940,7 +4928,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 1,
+            "confidence": 0.99,
             "actualReviewReason": null
           },
           {
@@ -4948,7 +4936,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 1,
+            "confidence": 0.99,
             "actualReviewReason": null
           },
           {
@@ -4956,7 +4944,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 1,
+            "confidence": 0.99,
             "actualReviewReason": null
           },
           {
@@ -4964,7 +4952,7 @@
             "expectedVerdict": "MISMATCH",
             "actualVerdict": "MISMATCH",
             "correct": true,
-            "confidence": 1,
+            "confidence": 0.99,
             "actualReviewReason": null
           },
           {
@@ -4999,7 +4987,7 @@
       "beverageType": {
         "value": "beer",
         "evidence": "Imperial Stout",
-        "confidence": 1
+        "confidence": 0.99
       }
     },
     {
@@ -5170,14 +5158,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3531,
-        "outputTokens": 242,
+        "outputTokens": 179,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.009482
+        "usd": 0.008852
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 4766,
+      "resolverDurationMs": 4790,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -5359,14 +5347,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3550,
-        "outputTokens": 165,
+        "outputTokens": 159,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.008749999999999999
+        "usd": 0.00869
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 4172,
+      "resolverDurationMs": 3907,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -5722,10 +5710,10 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2754,
-        "outputTokens": 377,
+        "outputTokens": 416,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.004639
+        "usd": 0.004834
       },
       "resolverCost": null,
       "resolverOutcome": null,
@@ -5757,7 +5745,7 @@
             "expected": "Larkspur Hollow Brewing",
             "actual": "Larkspur Hollow Brewing",
             "detail": "Haiku read the brand name correctly.",
-            "confidence": 1
+            "confidence": 0.99
           },
           {
             "field": "classType",
@@ -5765,7 +5753,7 @@
             "expected": "Amber Ale",
             "actual": "Amber Ale",
             "detail": "Haiku read the class/type correctly.",
-            "confidence": 1
+            "confidence": 0.99
           },
           {
             "field": "abv",
@@ -5773,7 +5761,7 @@
             "expected": "5.8%",
             "actual": "5.8%",
             "detail": "Haiku read the correct ABV.",
-            "confidence": 1
+            "confidence": 0.99
           },
           {
             "field": "netContents",
@@ -5781,7 +5769,7 @@
             "expected": "12 fl oz",
             "actual": "12 fl oz",
             "detail": "Haiku read the correct net contents.",
-            "confidence": 1
+            "confidence": 0.99
           },
           {
             "field": "governmentWarning",
@@ -5796,6 +5784,195 @@
       "routerVerdict": {
         "caseId": "case-32-reworded-warning-near-miss-missing-comma",
         "category": "reworded-warning",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": "WARNING_MISMATCH",
+        "actualReviewReason": "WARNING_MISMATCH",
+        "reviewReasonCorrect": true,
+        "warningChannel": "dual",
+        "lowImageQualityTrigger": null,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": "WARNING_MISMATCH"
+          }
+        ]
+      },
+      "cascadeVerdict": {
+        "caseId": "case-32-reworded-warning-near-miss-missing-comma",
+        "category": "reworded-warning",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": "WARNING_MISMATCH",
+        "actualReviewReason": "WARNING_MISMATCH",
+        "reviewReasonCorrect": true,
+        "warningChannel": null,
+        "lowImageQualityTrigger": null,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": "WARNING_MISMATCH"
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2754,
+        "outputTokens": 401,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004759
+      },
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3533,
+        "outputTokens": 294,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.010006
+      },
+      "resolverOutcome": "resolved",
+      "resolverError": null,
+      "resolverDurationMs": 5152,
+      "imageQuality": {
+        "legible": "yes",
+        "issues": [
+          "none"
+        ],
+        "confidence": 0.99
+      },
+      "beverageType": {
+        "value": "beer",
+        "evidence": "Amber Ale",
+        "confidence": 0.99
+      }
+    },
+    {
+      "caseId": "case-33-not-bold-warning-prefix",
+      "category": "clean-match",
+      "extraction": {
+        "caseId": "case-33-not-bold-warning-prefix",
+        "category": "clean-match",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Cinder Hollow Winery",
+            "actual": "Cinder Hollow Winery",
+            "detail": "Haiku read the brand name correctly.",
+            "confidence": 1
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Chardonnay",
+            "actual": "Chardonnay",
+            "detail": "Haiku read the class/type correctly.",
+            "confidence": 1
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "13%",
+            "actual": "13%",
+            "detail": "Haiku read the correct ABV.",
+            "confidence": 1
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents.",
+            "confidence": 1
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly.",
+            "confidence": 0.99
+          }
+        ]
+      },
+      "routerVerdict": {
+        "caseId": "case-33-not-bold-warning-prefix",
+        "category": "clean-match",
         "expectedLabelVerdict": "REVIEW",
         "actualLabelVerdict": "REVIEW",
         "labelVerdictCorrect": true,
@@ -5848,14 +6025,14 @@
         ]
       },
       "cascadeVerdict": {
-        "caseId": "case-32-reworded-warning-near-miss-missing-comma",
-        "category": "reworded-warning",
+        "caseId": "case-33-not-bold-warning-prefix",
+        "category": "clean-match",
         "expectedLabelVerdict": "REVIEW",
         "actualLabelVerdict": "REVIEW",
         "labelVerdictCorrect": true,
         "expectedReviewReason": "WARNING_MISMATCH",
-        "actualReviewReason": "WARNING_MISMATCH",
-        "reviewReasonCorrect": true,
+        "actualReviewReason": "LOW_MODEL_CONFIDENCE",
+        "reviewReasonCorrect": false,
         "warningChannel": null,
         "lowImageQualityTrigger": null,
         "fields": [
@@ -5897,211 +6074,29 @@
             "actualVerdict": "NEEDS_REVIEW",
             "correct": true,
             "confidence": 0.99,
-            "actualReviewReason": "WARNING_MISMATCH"
+            "actualReviewReason": "LOW_MODEL_CONFIDENCE"
           }
         ]
       },
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2754,
-        "outputTokens": 401,
+        "outputTokens": 361,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.004759
+        "usd": 0.0045590000000000006
       },
       "resolverCost": {
         "model": "claude-sonnet-5",
-        "inputTokens": 3523,
-        "outputTokens": 310,
+        "inputTokens": 3516,
+        "outputTokens": 347,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.010145999999999999
+        "usd": 0.010502000000000001
       },
-      "resolverOutcome": "resolved",
+      "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 4904,
-      "imageQuality": {
-        "legible": "yes",
-        "issues": [
-          "none"
-        ],
-        "confidence": 0.99
-      },
-      "beverageType": {
-        "value": "beer",
-        "evidence": "Amber Ale",
-        "confidence": 1
-      }
-    },
-    {
-      "caseId": "case-33-not-bold-warning-prefix",
-      "category": "clean-match",
-      "extraction": {
-        "caseId": "case-33-not-bold-warning-prefix",
-        "category": "clean-match",
-        "fields": [
-          {
-            "field": "brandName",
-            "correct": true,
-            "expected": "Cinder Hollow Winery",
-            "actual": "Cinder Hollow Winery",
-            "detail": "Haiku read the brand name correctly.",
-            "confidence": 0.99
-          },
-          {
-            "field": "classType",
-            "correct": true,
-            "expected": "Chardonnay",
-            "actual": "Chardonnay",
-            "detail": "Haiku read the class/type correctly.",
-            "confidence": 0.99
-          },
-          {
-            "field": "abv",
-            "correct": true,
-            "expected": "13%",
-            "actual": "13%",
-            "detail": "Haiku read the correct ABV.",
-            "confidence": 0.99
-          },
-          {
-            "field": "netContents",
-            "correct": true,
-            "expected": "750 mL",
-            "actual": "750 ml",
-            "detail": "Haiku read the correct net contents.",
-            "confidence": 0.99
-          },
-          {
-            "field": "governmentWarning",
-            "correct": true,
-            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
-            "detail": "Haiku transcribed the government warning correctly.",
-            "confidence": 0.99
-          }
-        ]
-      },
-      "routerVerdict": {
-        "caseId": "case-33-not-bold-warning-prefix",
-        "category": "clean-match",
-        "expectedLabelVerdict": "PASS",
-        "actualLabelVerdict": "PASS",
-        "labelVerdictCorrect": true,
-        "expectedReviewReason": null,
-        "actualReviewReason": null,
-        "reviewReasonCorrect": true,
-        "warningChannel": "dual",
-        "lowImageQualityTrigger": null,
-        "fields": [
-          {
-            "field": "brand_name",
-            "expectedVerdict": "MATCH",
-            "actualVerdict": "MATCH",
-            "correct": true,
-            "confidence": 0.99,
-            "actualReviewReason": null
-          },
-          {
-            "field": "class_type",
-            "expectedVerdict": "MATCH",
-            "actualVerdict": "MATCH",
-            "correct": true,
-            "confidence": 0.99,
-            "actualReviewReason": null
-          },
-          {
-            "field": "alcohol_content",
-            "expectedVerdict": "MATCH",
-            "actualVerdict": "MATCH",
-            "correct": true,
-            "confidence": 0.99,
-            "actualReviewReason": null
-          },
-          {
-            "field": "net_contents",
-            "expectedVerdict": "MATCH",
-            "actualVerdict": "MATCH",
-            "correct": true,
-            "confidence": 0.99,
-            "actualReviewReason": null
-          },
-          {
-            "field": "government_warning",
-            "expectedVerdict": "MATCH",
-            "actualVerdict": "MATCH",
-            "correct": true,
-            "confidence": 0.99,
-            "actualReviewReason": null
-          }
-        ]
-      },
-      "cascadeVerdict": {
-        "caseId": "case-33-not-bold-warning-prefix",
-        "category": "clean-match",
-        "expectedLabelVerdict": "PASS",
-        "actualLabelVerdict": "PASS",
-        "labelVerdictCorrect": true,
-        "expectedReviewReason": null,
-        "actualReviewReason": null,
-        "reviewReasonCorrect": true,
-        "warningChannel": "dual",
-        "lowImageQualityTrigger": null,
-        "fields": [
-          {
-            "field": "brand_name",
-            "expectedVerdict": "MATCH",
-            "actualVerdict": "MATCH",
-            "correct": true,
-            "confidence": 0.99,
-            "actualReviewReason": null
-          },
-          {
-            "field": "class_type",
-            "expectedVerdict": "MATCH",
-            "actualVerdict": "MATCH",
-            "correct": true,
-            "confidence": 0.99,
-            "actualReviewReason": null
-          },
-          {
-            "field": "alcohol_content",
-            "expectedVerdict": "MATCH",
-            "actualVerdict": "MATCH",
-            "correct": true,
-            "confidence": 0.99,
-            "actualReviewReason": null
-          },
-          {
-            "field": "net_contents",
-            "expectedVerdict": "MATCH",
-            "actualVerdict": "MATCH",
-            "correct": true,
-            "confidence": 0.99,
-            "actualReviewReason": null
-          },
-          {
-            "field": "government_warning",
-            "expectedVerdict": "MATCH",
-            "actualVerdict": "MATCH",
-            "correct": true,
-            "confidence": 0.99,
-            "actualReviewReason": null
-          }
-        ]
-      },
-      "haikuCost": {
-        "model": "claude-haiku-4-5",
-        "inputTokens": 2754,
-        "outputTokens": 400,
-        "cacheCreationInputTokens": 0,
-        "cacheReadInputTokens": 0,
-        "usd": 0.0047539999999999995
-      },
-      "resolverCost": null,
-      "resolverOutcome": null,
-      "resolverError": null,
-      "resolverDurationMs": null,
+      "resolverDurationMs": 5471,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -6112,7 +6107,187 @@
       "beverageType": {
         "value": "wine",
         "evidence": "Chardonnay",
-        "confidence": 0.99
+        "confidence": 1
+      }
+    },
+    {
+      "caseId": "case-34-bold-body-warning-violation",
+      "category": "clean-match",
+      "extraction": {
+        "caseId": "case-34-bold-body-warning-violation",
+        "category": "clean-match",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Ridgeline Brewing Co.",
+            "actual": "Ridgeline Brewing Co.",
+            "detail": "Haiku read the brand name correctly.",
+            "confidence": 1
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Session Pilsner",
+            "actual": "Session Pilsner",
+            "detail": "Haiku read the class/type correctly.",
+            "confidence": 1
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "5.4%",
+            "actual": "5.4%",
+            "detail": "Haiku read the correct ABV.",
+            "confidence": 1
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "16 fl oz",
+            "actual": "16 fl oz",
+            "detail": "Haiku read the correct net contents.",
+            "confidence": 1
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly.",
+            "confidence": 1
+          }
+        ]
+      },
+      "routerVerdict": {
+        "caseId": "case-34-bold-body-warning-violation",
+        "category": "clean-match",
+        "expectedLabelVerdict": "PASS",
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
+        "actualReviewReason": null,
+        "reviewReasonCorrect": true,
+        "warningChannel": "dual",
+        "lowImageQualityTrigger": null,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 1,
+            "actualReviewReason": null
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 1,
+            "actualReviewReason": null
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 1,
+            "actualReviewReason": null
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 1,
+            "actualReviewReason": null
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 1,
+            "actualReviewReason": null
+          }
+        ]
+      },
+      "cascadeVerdict": {
+        "caseId": "case-34-bold-body-warning-violation",
+        "category": "clean-match",
+        "expectedLabelVerdict": "PASS",
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
+        "actualReviewReason": null,
+        "reviewReasonCorrect": true,
+        "warningChannel": "dual",
+        "lowImageQualityTrigger": null,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 1,
+            "actualReviewReason": null
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 1,
+            "actualReviewReason": null
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 1,
+            "actualReviewReason": null
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 1,
+            "actualReviewReason": null
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 1,
+            "actualReviewReason": null
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2754,
+        "outputTokens": 402,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004764
+      },
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null,
+      "imageQuality": {
+        "legible": "yes",
+        "issues": [],
+        "confidence": 0.95
+      },
+      "beverageType": {
+        "value": "beer",
+        "evidence": "Session Pilsner",
+        "confidence": 1
       }
     },
     {
@@ -6160,7 +6335,7 @@
             "expected": "GOVERNMENT WARNING: (1) ACCORDING TO THE SURGEON GENERAL, WOMEN SHOULD NOT DRINK ALCOHOLIC BEVERAGES DURING PREGNANCY BECAUSE OF THE RISK OF BIRTH DEFECTS. (2) CONSUMPTION OF ALCOHOLIC BEVERAGES IMPAIRS YOUR ABILITY TO DRIVE A CAR OR OPERATE MACHINERY, AND MAY CAUSE HEALTH PROBLEMS.",
             "actual": "GOVERNMENT WARNING: (1) ACCORDING TO THE SURGEON GENERAL, WOMEN SHOULD NOT DRINK ALCOHOLIC BEVERAGES DURING PREGNANCY BECAUSE OF THE RISK OF BIRTH DEFECTS. (2) CONSUMPTION OF ALCOHOLIC BEVERAGES IMPAIRS YOUR ABILITY TO DRIVE A CAR OR OPERATE MACHINERY, AND MAY CAUSE HEALTH PROBLEMS.",
             "detail": "Haiku transcribed the government warning correctly.",
-            "confidence": 0.95
+            "confidence": 0.98
           }
         ]
       },
@@ -6213,7 +6388,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.95,
+            "confidence": 0.98,
             "actualReviewReason": null
           }
         ]
@@ -6267,7 +6442,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.95,
+            "confidence": 0.98,
             "actualReviewReason": null
           }
         ]
@@ -6283,14 +6458,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 4072,
-        "outputTokens": 912,
+        "outputTokens": 908,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.017264
+        "usd": 0.017224000000000003
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 8827,
+      "resolverDurationMs": 9338,
       "imageQuality": {
         "legible": "partial",
         "issues": [
@@ -6362,7 +6537,7 @@
         "expectedReviewReason": "MISSING_REQUIRED_FIELD",
         "actualReviewReason": "LOW_IMAGE_QUALITY",
         "reviewReasonCorrect": false,
-        "warningChannel": "single",
+        "warningChannel": "dual",
         "lowImageQualityTrigger": "FIELD_CONFIDENCE",
         "fields": [
           {
@@ -6400,10 +6575,10 @@
           {
             "field": "government_warning",
             "expectedVerdict": "MATCH",
-            "actualVerdict": "MATCH",
-            "correct": true,
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": false,
             "confidence": 0.9,
-            "actualReviewReason": null
+            "actualReviewReason": "WARNING_MISMATCH"
           }
         ]
       },
@@ -6425,7 +6600,7 @@
             "actualVerdict": "NEEDS_REVIEW",
             "correct": true,
             "confidence": 0,
-            "actualReviewReason": "LOW_MODEL_CONFIDENCE"
+            "actualReviewReason": null
           },
           {
             "field": "class_type",
@@ -6433,7 +6608,7 @@
             "actualVerdict": "NEEDS_REVIEW",
             "correct": true,
             "confidence": 0,
-            "actualReviewReason": "LOW_MODEL_CONFIDENCE"
+            "actualReviewReason": null
           },
           {
             "field": "alcohol_content",
@@ -6454,10 +6629,10 @@
           {
             "field": "government_warning",
             "expectedVerdict": "MATCH",
-            "actualVerdict": "MATCH",
-            "correct": true,
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": false,
             "confidence": 0.9,
-            "actualReviewReason": null
+            "actualReviewReason": "LOW_MODEL_CONFIDENCE"
           }
         ]
       },
@@ -6471,15 +6646,15 @@
       },
       "resolverCost": {
         "model": "claude-sonnet-5",
-        "inputTokens": 3877,
-        "outputTokens": 934,
+        "inputTokens": 3401,
+        "outputTokens": 746,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.017094
+        "usd": 0.014262
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 8816,
+      "resolverDurationMs": 7810,
       "imageQuality": {
         "legible": "partial",
         "issues": [
@@ -6537,9 +6712,9 @@
             "field": "governmentWarning",
             "correct": false,
             "expected": "GOVERNMENT WARNING: [text continues off the right edge of frame, cut by the bottle's curvature] SURGEON GENERAL, WOMEN SHOULD [cut] BEVERAGES DURING PREGNANCY [cut] BIRTH DEFECTS. (2) CONSUMPTION [cut] IMPAIRS YOUR ABILITY TO DRIVE [cut] MACHINERY, AND MAY CAUSE HEALTH [cut]",
-            "actual": "GOVERNMENT WARNING: (1) ACCORDING TO THE SURGEON GENERAL, WOMEN SHOULD NOT DRINK ALCOHOLIC BEVERAGES DURING PREGNANCY BECAUSE OF THE RISK OF BIRTH DEFECTS. (2) CONSUMPTION OF ALCOHOLIC BEVERAGES IMPAIRS YOUR ABILITY TO DRIVE A CAR OR OPERATE MACHINERY, AND MAY CAUSE HEALTH PROBLEMS.",
+            "actual": "GOVERNMENT WARNING: SURGEON GENERAL, WOMEN SHOULD NOT DRINK ALCOHOLIC BEVERAGES DURING PREGNANCY AS BIRTH DEFECTS. (2) CONSUMPTION OF ALCOHOLIC BEVERAGES IMPAIRS YOUR ABILITY TO DRIVE A CAR, OPERATE MACHINERY, AND MAY CAUSE HEALTH",
             "detail": "Haiku's transcription differs from what the label prints.",
-            "confidence": 0.6
+            "confidence": 0.7
           }
         ]
       },
@@ -6592,8 +6767,8 @@
             "expectedVerdict": "NEEDS_REVIEW",
             "actualVerdict": "NEEDS_REVIEW",
             "correct": true,
-            "confidence": 0.6,
-            "actualReviewReason": "CONFLICTING_EXTRACTION"
+            "confidence": 0.7,
+            "actualReviewReason": "WARNING_MISMATCH"
           }
         ]
       },
@@ -6646,7 +6821,7 @@
             "expectedVerdict": "NEEDS_REVIEW",
             "actualVerdict": "NEEDS_REVIEW",
             "correct": true,
-            "confidence": 0.6,
+            "confidence": 0.7,
             "actualReviewReason": "LOW_MODEL_CONFIDENCE"
           }
         ]
@@ -6654,22 +6829,22 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2261,
-        "outputTokens": 373,
+        "outputTokens": 442,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.004126
+        "usd": 0.004471
       },
       "resolverCost": {
         "model": "claude-sonnet-5",
-        "inputTokens": 3130,
-        "outputTokens": 1735,
+        "inputTokens": 3279,
+        "outputTokens": 1633,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.02361
+        "usd": 0.022888
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 19359,
+      "resolverDurationMs": 16947,
       "imageQuality": {
         "legible": "partial",
         "issues": [
@@ -6681,8 +6856,8 @@
       },
       "beverageType": {
         "value": "spirits",
-        "evidence": "GOVERNMENT WARNING SURGEON GENERAL",
-        "confidence": 0.7
+        "evidence": "GOVERNMENT WARNING: SURGEON GENERAL, WOMEN SHOULD NOT DRINK ALCOHOLIC BEVERAGES DURING PREGNANCY AS BIRTH DEFECTS. (2) CONSUMPTION OF ALCOHOLIC BEVERAGES IMPAIRS YOUR ABILITY TO DRIVE A CAR, OPERATE MACHINERY, AND MAY CAUSE HEALTH",
+        "confidence": 0.85
       }
     },
     {
@@ -6696,8 +6871,8 @@
             "field": "brandName",
             "correct": false,
             "expected": "(not shown in this crop)",
-            "actual": "CROWN ROYAL",
-            "detail": "Haiku read \"CROWN ROYAL\"; the label prints \"(not shown in this crop)\".",
+            "actual": "Crown Royal",
+            "detail": "Haiku read \"Crown Royal\"; the label prints \"(not shown in this crop)\".",
             "confidence": 0.85
           },
           {
@@ -6710,11 +6885,11 @@
           },
           {
             "field": "abv",
-            "correct": true,
+            "correct": false,
             "expected": "(no ABV statement on the label)",
-            "actual": "(not read)",
-            "detail": "Haiku correctly read no ABV statement.",
-            "confidence": 0
+            "actual": "VT-ME 150",
+            "detail": "Haiku read \"VT-ME 150\"; the label has no ABV statement.",
+            "confidence": 0.55
           },
           {
             "field": "netContents",
@@ -6722,13 +6897,13 @@
             "expected": "750 mL",
             "actual": "750 ml",
             "detail": "Haiku read the correct net contents.",
-            "confidence": 0.9
+            "confidence": 0.75
           },
           {
             "field": "governmentWarning",
             "correct": false,
             "expected": "GOVERNMENT WARNING: (1) ACCORDING TO THE SURGEON GENERAL, WOMEN SHOULD NOT DRINK ALCOHOLIC BEVERAGES DURING PREGNANCY BECAUSE OF THE RISK OF BIRTH DEFECTS. (2) CONSUMPTION OF ALCOHOLIC BEVERAGES IMPAIRS YOUR ABILITY TO DRIVE A CAR OR OPERATE MACHINERY, AND MAY CAUSE HEALTH PROBLEMS.",
-            "actual": "GOVERNMENT WARNING: (1) ACCORDING TO THE SURGEON GENERAL, WOMEN SHOULD NOT DRINK ALCOHOLIC BEVERAGES DURING PREGNANCY BECAUSE OF THE RISK OF BIRTH DEFECTS. (2) CONSUMPTION OF ALCOHOLIC BEVERAGES IMPAIRS YOUR ABILITY TO DRIVE A CAR OR OPERATE MACHINERY AND MAY CAUSE HEALTH PROBLEMS.",
+            "actual": "GOVERNMENT WARNING: WOMEN SHOULD NOT DRINK ALCOHOLIC BEVERAGES BECAUSE OF THE RISK OF BIRTH DEFECTS. CONSUMPTION OF ALCOHOLIC BEVERAGES IMPAIRS YOUR ABILITY TO DRIVE A CAR OR OPERATE MACHINERY AND MAY CAUSE HEALTH PROBLEMS.",
             "detail": "Haiku's transcription differs from what the label prints.",
             "confidence": 0.7
           }
@@ -6767,15 +6942,15 @@
             "expectedVerdict": "NEEDS_REVIEW",
             "actualVerdict": "NEEDS_REVIEW",
             "correct": true,
-            "confidence": 0,
-            "actualReviewReason": null
+            "confidence": 0.55,
+            "actualReviewReason": "AMBIGUOUS_ABV"
           },
           {
             "field": "net_contents",
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.9,
+            "confidence": 0.75,
             "actualReviewReason": null
           },
           {
@@ -6821,15 +6996,15 @@
             "expectedVerdict": "NEEDS_REVIEW",
             "actualVerdict": "NEEDS_REVIEW",
             "correct": true,
-            "confidence": 0,
-            "actualReviewReason": null
+            "confidence": 0.55,
+            "actualReviewReason": "LOW_MODEL_CONFIDENCE"
           },
           {
             "field": "net_contents",
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.9,
+            "confidence": 0.75,
             "actualReviewReason": null
           },
           {
@@ -6844,36 +7019,36 @@
       },
       "haikuCost": {
         "model": "claude-haiku-4-5",
-        "inputTokens": 2906,
-        "outputTokens": 391,
+        "inputTokens": 3274,
+        "outputTokens": 365,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.004861
+        "usd": 0.005099
       },
       "resolverCost": {
         "model": "claude-sonnet-5",
-        "inputTokens": 3904,
-        "outputTokens": 872,
+        "inputTokens": 4716,
+        "outputTokens": 1021,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.016528
+        "usd": 0.019642
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 8886,
+      "resolverDurationMs": 10214,
       "imageQuality": {
         "legible": "partial",
         "issues": [
-          "glare",
           "rotation",
+          "glare",
           "cropped"
         ],
         "confidence": 0.65
       },
       "beverageType": {
         "value": "spirits",
-        "evidence": "PRODUCT OF CANADA",
-        "confidence": 0.75
+        "evidence": "IMPORTED BY THE CROWN ROYAL COMPANY",
+        "confidence": 0.8
       }
     },
     {
@@ -6913,15 +7088,15 @@
             "expected": "750 mL",
             "actual": "750 ml",
             "detail": "Haiku read the correct net contents.",
-            "confidence": 0.9
+            "confidence": 0.8
           },
           {
             "field": "governmentWarning",
-            "correct": false,
+            "correct": true,
             "expected": "GOVERNMENT WARNING: (1) ACCORDING TO THE SURGEON GENERAL, WOMEN SHOULD NOT DRINK ALCOHOLIC BEVERAGES DURING PREGNANCY BECAUSE OF THE RISK OF BIRTH DEFECTS. (2) CONSUMPTION OF ALCOHOLIC BEVERAGES IMPAIRS YOUR ABILITY TO DRIVE A CAR OR OPERATE MACHINERY, AND MAY CAUSE HEALTH PROBLEMS.",
-            "actual": "GOVERNMENT WARNING: (1) ACCORDING TO THE SURGEON GENERAL, WOMEN SHOULD NOT DRINK ALCOHOLIC BEVERAGES DURING PREGNANCY BECAUSE OF THE RISK OF BIRTH DEFECTS. (2) CONSUMPTION OF ALCOHOLIC BEVERAGES IMPAIRS YOUR ABILITY TO DRIVE A CAR OR OPERATE MACHINERY AND MAY CAUSE HEALTH PROBLEMS.",
-            "detail": "Haiku's transcription differs from what the label prints.",
-            "confidence": 0.75
+            "actual": "GOVERNMENT WARNING: (1) ACCORDING TO THE SURGEON GENERAL, WOMEN SHOULD NOT DRINK ALCOHOLIC BEVERAGES DURING PREGNANCY BECAUSE OF THE RISK OF BIRTH DEFECTS. (2) CONSUMPTION OF ALCOHOLIC BEVERAGES IMPAIRS YOUR ABILITY TO DRIVE A CAR OR OPERATE MACHINERY, AND MAY CAUSE HEALTH PROBLEMS.",
+            "detail": "Haiku transcribed the government warning correctly.",
+            "confidence": 0.7
           }
         ]
       },
@@ -6966,7 +7141,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.9,
+            "confidence": 0.8,
             "actualReviewReason": null
           },
           {
@@ -6974,8 +7149,8 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "NEEDS_REVIEW",
             "correct": false,
-            "confidence": 0.75,
-            "actualReviewReason": "WARNING_MISMATCH"
+            "confidence": 0.7,
+            "actualReviewReason": "LOW_IMAGE_QUALITY"
           }
         ]
       },
@@ -6986,7 +7161,7 @@
         "actualLabelVerdict": "REVIEW",
         "labelVerdictCorrect": true,
         "expectedReviewReason": "MISSING_REQUIRED_FIELD",
-        "actualReviewReason": "LOW_MODEL_CONFIDENCE",
+        "actualReviewReason": "LOW_IMAGE_QUALITY",
         "reviewReasonCorrect": false,
         "warningChannel": null,
         "lowImageQualityTrigger": null,
@@ -7020,7 +7195,7 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "MATCH",
             "correct": true,
-            "confidence": 0.9,
+            "confidence": 0.8,
             "actualReviewReason": null
           },
           {
@@ -7028,46 +7203,46 @@
             "expectedVerdict": "MATCH",
             "actualVerdict": "NEEDS_REVIEW",
             "correct": false,
-            "confidence": 0.75,
-            "actualReviewReason": "LOW_MODEL_CONFIDENCE"
+            "confidence": 0.7,
+            "actualReviewReason": "LOW_IMAGE_QUALITY"
           }
         ]
       },
       "haikuCost": {
         "model": "claude-haiku-4-5",
-        "inputTokens": 3270,
-        "outputTokens": 440,
+        "inputTokens": 3240,
+        "outputTokens": 397,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.00547
+        "usd": 0.0052250000000000005
       },
       "resolverCost": {
         "model": "claude-sonnet-5",
-        "inputTokens": 5479,
-        "outputTokens": 1301,
+        "inputTokens": 7441,
+        "outputTokens": 2358,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.023968
+        "usd": 0.038461999999999996
       },
-      "resolverOutcome": "needs-human",
+      "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 12315,
+      "resolverDurationMs": 21991,
       "imageQuality": {
         "legible": "partial",
         "issues": [
           "rotation",
-          "glare",
-          "low_light"
+          "blur",
+          "glare"
         ],
         "confidence": 0.65
       },
       "beverageType": {
         "value": "wine",
-        "evidence": "FRANCIS FORD COPPOLA WINERY",
+        "evidence": "COPPOLA WINERY",
         "confidence": 0.85
       }
     }
   ],
-  "totalCostUsd": 0.38904,
+  "totalCostUsd": 0.4017650000000001,
   "failures": []
 }

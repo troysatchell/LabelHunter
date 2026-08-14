@@ -140,13 +140,15 @@ human instead. `docs/approach.md` has the full design.
 
 > **Limitation — bold type on the government warning.** 27 CFR 16.22(a)(2) requires the words
 > "GOVERNMENT WARNING" to print in bold type, and it forbids bold type on the rest of the
-> statement. LabelHunter checks the first rule and reports it as an advisory signal. It does not
-> check the second rule. `measureBoldSignal` measures the prefix's stroke width against the
-> body's, from the image's own pixels — not a vision model's guess. It reports a three-valued
-> signal: bold, not bold, or uncertain. That signal never changes a verdict. Stroke width is a
-> relative measurement. It depends on the typeface, the printed size, the photograph's
-> resolution, and the compression the photograph has already been through. A verdict built on
-> that signal would accuse a compliant label of a violation it cannot prove. LabelHunter does
+> statement. LabelHunter checks the first rule with an advisory signal, not a hard check. It
+> does not check the second rule at all. `measureBoldSignal` measures the prefix's stroke width
+> against the body's, from the image's own pixels — not a vision model's guess. It reports a
+> three-valued signal: bold, not bold, or uncertain. The signal still never produces a hard FAIL
+> by itself. Stroke width is a relative measurement. It depends on the typeface, the printed
+> size, the photograph's resolution, and the compression the photograph has already been
+> through. A verdict built directly on that signal would accuse a compliant label of a violation
+> it cannot prove. Instead, a not-bold reading on an otherwise-matching warning routes the label
+> to human review (TRO-569) — a defensible flag, not an accusation. LabelHunter does
 > hard-enforce the capitalization rule from the same sentence of the regulation, because
 > capitalization survives a photograph and stroke width does not.
 

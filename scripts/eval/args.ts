@@ -23,7 +23,7 @@
 import type { ReviewReason } from "../../src/server/router/types";
 
 /**
- * A fixed, deliberately small subset of the 31-case golden set
+ * A fixed, deliberately small subset of the golden set (38 cases today)
  * (`golden-set/manifest.json`), chosen to span every `LabelVerdict` and a
  * spread of `GoldenSetCategory` values without running (and paying for)
  * the whole set on every `--live` invocation:
@@ -91,23 +91,25 @@ export const DEFAULT_SAMPLE_CASE_IDS: readonly string[] = [
 /**
  * This map records which `ReviewReason` each `DEFAULT_SAMPLE_CASE_IDS`
  * case actually produced, in the committed `eval-report.json` run this
- * repo carries now (`measuredAt: "2026-08-13T13:39:02.626Z"`, 31 cases,
- * from TRO-542's own authorized `pnpm eval:check -- --live --full`). It
- * uses the router stage — `VerdictCaseScore.actualReviewReason` on
+ * repo carries now (`measuredAt: "2026-08-14T01:40:25.445Z"`, 38 cases,
+ * from TRO-569 / TRO-528's own authorized re-baseline: `pnpm eval:variance
+ * -- --live --full --repeats=3 --establish-baseline`, repeat 1). It uses
+ * the router stage — `VerdictCaseScore.actualReviewReason` on
  * `routerVerdict`, the same stage `EvalReportSummary.reviewReasonAccuracy`
  * scores (`types.ts`'s own comment on that field). `null` means the
  * router verdict was PASS or FAIL, with no `reviewReason`.
  *
  * This is a snapshot of one measured run (TRO-541 / LH-036, refreshed by
- * TRO-542). It is not a claim about what the pipeline can or cannot
- * produce on a different run — `DEFAULT_REPEATS`'s own comment below
- * already records real run-to-run variance for case-17, and this exact
- * map is the second time that variance changed a committed value here:
- * `case-17-glare-front-label` moved from `null` (PASS) to
- * `"AMBIGUOUS_BRAND"` between the two runs, with no code change to
- * case-17's own path. `args.test.ts` checks this map against the same
- * committed report on every test run, so a stale value here fails loudly
- * instead of drifting silently from measured reality.
+ * TRO-542, refreshed again by TRO-569). It is not a claim about what the
+ * pipeline can or cannot produce on a different run — `DEFAULT_REPEATS`'s
+ * own comment below already records real run-to-run variance for
+ * case-17, and this exact map is now the THIRD time that variance changed
+ * a committed value here: `case-17-glare-front-label` moved `null` (PASS)
+ * -> `"AMBIGUOUS_BRAND"` (TRO-542) -> back to `null` (TRO-569), with no
+ * code change to case-17's own path either time. `args.test.ts` checks
+ * this map against the same committed report on every test run, so a
+ * stale value here fails loudly instead of drifting silently from
+ * measured reality.
  */
 export const DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS: Readonly<Record<string, ReviewReason | null>> = {
   "case-01-clean-match-spirits": null,
@@ -116,13 +118,13 @@ export const DEFAULT_SAMPLE_ACTUAL_REVIEW_REASONS: Readonly<Record<string, Revie
   "case-08-title-case-warning-prefix-only": null,
   "case-12-missing-warning-spirits": "MISSING_REQUIRED_FIELD",
   "case-14-case-variant-brand-stones-throw": null,
-  "case-17-glare-front-label": "AMBIGUOUS_BRAND",
+  "case-17-glare-front-label": null,
   "case-25-odd-typography-script-brand": null,
 };
 
 /**
  * Hard ceiling on how many cases one `--live` invocation may run — the
- * golden set's own size (36 cases today, TRO-529 / LH-024's 5 real-
+ * golden set's own size (38 cases today, TRO-529 / LH-024's 5 real-
  * photograph cases included). `--full` already reaches this ceiling by
  * design; this constant exists so a future larger golden set
  * cannot silently make one careless invocation far more expensive than any

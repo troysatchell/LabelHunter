@@ -4,6 +4,92 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-569 / TRO-528 — a non-bold GOVERNMENT WARNING prefix now routes to review (2026-08-13)
+
+**The point.** Jenny Park's requirement: the GOVERNMENT WARNING prefix "has to be in all caps
+and bold." LabelHunter already measured bold type from the image's own pixels
+(`measureBoldSignal`, TRO-532/TRO-533) and showed it in the Detail view. It never reached a
+verdict. A non-bold, otherwise-compliant label passed cleanly. Troy ruled this Urgent
+(TRO-569): an advisory review flag is defensible under CP-2's never-accuse posture; a silent
+PASS is not. INT-005 governs the fix — an interpretation may never widen a requirement into
+something weaker than the brief.
+
+**The rule.** When the government warning comparator already reaches `verdict: "MATCH"` AND
+the same image's bold signal reads `"not-bold"`, the field degrades to `NEEDS_REVIEW` with a
+reason naming the exact check: "'GOVERNMENT WARNING' must print in bold type; the measured
+prefix is not bold." The label verdict becomes `REVIEW`, never a silent `PASS`. Every other
+edge stays exactly as TRO-533 built it: `"uncertain"`, `"bold"`, and a missing signal never
+touch a verdict — never accuse on uncertainty (standing rule 12). A `"not-bold"` signal never
+produces a hard FAIL, and never touches an existing MISMATCH or NEEDS_REVIEW — it only touches
+the MATCH -> REVIEW edge.
+
+**Where it lives.** `src/server/router/field-resolution.ts`'s `resolveGovernmentWarningField`
+— the router's own boundary, not `src/server/warning/reconcile.ts` (a peer ticket, TRO-581,
+owns that file). `routeLabel` (`src/server/router/index.ts`) takes the bold signal as a new,
+optional sixth parameter, `warningBoldSignal`, default `null` — every pre-existing call site
+keeps compiling and behaving unchanged. Both call paths thread the same `.signal` value in:
+`src/app/api/verify/route.ts` and `src/server/batch-queue/extract-worker.ts`. The full
+`BoldSignalResult` (ratio, reason, both stroke widths) still persists on every verification,
+independent of what the router does with `.signal` — that part of TRO-533's design did not
+change.
+
+**Reused `WARNING_MISMATCH`, not a new `ReviewReason`.** A new enum member would need a
+Postgres migration (`ReviewReason` is a real `pgEnum` column, `review_queue.reason`) for a
+Phase-1, offline-only ticket, and the UI components that render a field's reason
+(`ResultsChecklist.tsx`, `ReviewItemDetail.tsx`, `DetailView.tsx`) already render whichever
+string `buildFieldReasonText` returns — none of them switch on the `ReviewReason` value itself.
+`buildFieldReasonText` already prefers a comparator's own note over the generic reason text, so
+the specific bold-prefix sentence above reaches the UI exactly as written, with no copy-mapping
+edit needed in any TRO-582-owned file. No collision with TRO-581 or TRO-582 files occurred.
+
+**Golden set (TRO-528 / LH-023).** `case-33-not-bold-warning-prefix`'s `expected` flips from
+`PASS`/`MATCH` to `REVIEW`/`NEEDS_REVIEW` (`WARNING_MISMATCH`) — the real, rendered proof of
+the rule above, alongside `field-resolution.test.ts`'s synthetic unit tests. New
+`case-34-bold-body-warning-violation`: prefix bold (compliant), body also bold (27 CFR
+16.22(a)(2) forbids it). Nothing in this pipeline measures body bold, so this case stays
+`PASS`/`MATCH` — it documents that limitation with a real image rather than only a comment.
+`scripts/golden/render.ts` already supported an independently-bold body span (TRO-527); no
+renderer change was needed. 38 cases total now (33 rendered, 5 photographed).
+`pnpm eval:bold-signal-sweep` re-measured 27 of 32 scoreable cases correct, 84.4% (was 25 of
+30, 83.3%, before `case-34` existed) — a real, local, pixel-only re-measurement, no API call.
+
+**Docs.** `src/server/warning/bold-detect.ts` and `src/server/warning/index.ts`'s header
+comments now name the TRO-569 update in place, next to the rule they supersede.
+`docs/approach.md` and `docs/checkpoints/cp2-warning-subsystem.md` (§7.2, §7.3, and the CP-2
+Q&A defend-it script) move from "that signal never changes a verdict" to the review-routing
+rule, keep the honest "never a hard FAIL by itself" half, and cite the re-measured
+bold-signal-sweep figure. `golden-set/README.md`'s case counts and the case-33/case-34
+narrative are current.
+
+**How to run.** `pnpm test` (unit), `pnpm golden:verify`, `pnpm golden:build`,
+`pnpm eval:bold-signal-sweep --force` (re-measures the sweep; local, no API call).
+
+**How to roll back.** Revert this PR whole. A full revert removes the routing rule, the
+`warningBoldSignal` parameter, the golden-set changes, and the baseline band together —
+rule 32 then requires a fresh re-baseline. To disable only the routing rule, revert the
+`field-resolution.ts` degrade branch alone; the `warningBoldSignal` parameter then becomes
+dead but harmless (still optional, default `null`). `case-34` and its image can stay
+committed either way — `scripts/golden/render.ts` reads `governmentWarningBodyBold` only
+to render the case image; no verdict path reads it.
+
+**Confirmed.** `src/server/router/field-resolution.test.ts` (10 assertions covering the full
+(verdict, signal) grid, the original 7 each confirmed to fail for the right reason against the
+pre-TRO-569 code before the fix landed), `src/app/api/verify/route.test.ts`'s inverted
+government-warning-wiring test, and `src/server/batch-queue/extract-worker.test.ts`'s inverted
+plus 4 new cells all pass. Full `pnpm typecheck`, `pnpm lint`, and `pnpm test`: green — 2677
+passed / 2677 total, 200 files, measured at this entry's final commit (earlier rounds of this
+branch measured 2659 and 2673 as sibling merges and this branch's own test splits landed). `pnpm golden:verify`: 38 cases, PASS. `pnpm eval:bold-signal-sweep`
+(re-run on the clean committed tree after adding its own `assertPathTreeClean` guard, matching
+`ocr-floor-sweep.ts`'s precedent): 27/32, 84.4%, measured 2026-08-14, no API call — observed,
+not derived. The authorized live re-baseline (rule 32) ran and passed: `pnpm eval:variance --
+--live --full --repeats=3 --establish-baseline`, 38 cases x 3 repeats, 0 failures, $1.2518 —
+extraction accuracy 88.9%–88.9%, cascade-verdict accuracy 86.8%–89.5% (K=3). `pnpm eval:check`
+(cheap mode, no live call): manifest hash matches, no drift, both bands pass. Full
+`scripts/factory/gate.sh`: every check `[ok]` except a `[warn]` on `review` — the local
+CodeRabbit capture timed out 3 times running (rc=124 each), most likely because this branch's
+diff against `main` is unusually large (it also repairs upstream's own truncated `CHANGES.md`,
+a separate finding reported to the orchestrator, not part of this ticket's own change). Gate
+verdict: `pass`.
 ## LOCAL-taste1 — a UX polish pass across every screen, audited against design-taste-frontend's applicable rules and TH-R3 (2026-08-13)
 
 **Troy's direction:** apply the `design-taste-frontend` skill's taste "across the entire

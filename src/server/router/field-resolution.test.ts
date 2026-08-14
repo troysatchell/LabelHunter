@@ -304,3 +304,155 @@ describe("resolveGovernmentWarningField — the WARNING_MISMATCH contract (CP-1 
   // with no `reviewReason` is a compile error, not a runtime default to
   // test — CP-1 §5.3's contract always names a reason for a REVIEW result.
 });
+
+describe("resolveGovernmentWarningField — TRO-569 / INT-005: the bold-signal degrade rule", () => {
+  // Jenny Park's requirement (source-TH.md:33): the GOVERNMENT WARNING
+  // prefix "has to be in all caps and bold." Before TRO-569, the pixel-
+  // measured bold signal was persisted and shown but never reached this
+  // function — a non-bold prefix passed silently. TRO-569 (Urgent, Troy-
+  // ruled): a not-bold prefix routes to human review instead. INT-005: an
+  // interpretation may never widen a requirement into something weaker
+  // than the brief — a silent PASS was exactly that widening. Routing to
+  // review is defensible (CP-2's never-accuse posture); silently passing
+  // is not.
+
+  it("a 'not-bold' signal degrades an otherwise-MATCH verdict to NEEDS_REVIEW, with a reason naming the exact check", () => {
+    const resolution = resolveGovernmentWarningField({
+      required: true,
+      overrideRejected: false,
+      absent: false,
+      lowImageQuality: false,
+      warningResult: { verdict: "MATCH" },
+      boldSignal: "not-bold",
+    });
+    expect(resolution.verdict).toBe("NEEDS_REVIEW");
+    expect(resolution.reviewReason).toBe("WARNING_MISMATCH");
+    expect(resolution.comparatorNote).toBe("'GOVERNMENT WARNING' must print in bold type; the measured prefix is not bold.");
+  });
+
+  it("a 'bold' signal leaves a MATCH untouched — never accuse a compliant prefix", () => {
+    const resolution = resolveGovernmentWarningField({
+      required: true,
+      overrideRejected: false,
+      absent: false,
+      lowImageQuality: false,
+      warningResult: { verdict: "MATCH" },
+      boldSignal: "bold",
+    });
+    expect(resolution.verdict).toBe("MATCH");
+    expect(resolution.reviewReason).toBeNull();
+  });
+
+  it("an 'uncertain' signal leaves a MATCH untouched — never accuse on uncertainty (standing rule 12)", () => {
+    const resolution = resolveGovernmentWarningField({
+      required: true,
+      overrideRejected: false,
+      absent: false,
+      lowImageQuality: false,
+      warningResult: { verdict: "MATCH" },
+      boldSignal: "uncertain",
+    });
+    expect(resolution.verdict).toBe("MATCH");
+    expect(resolution.reviewReason).toBeNull();
+  });
+
+  it("no bold signal at all (e.g. no crop was ever produced) leaves a MATCH untouched", () => {
+    const resolution = resolveGovernmentWarningField({
+      required: true,
+      overrideRejected: false,
+      absent: false,
+      lowImageQuality: false,
+      warningResult: { verdict: "MATCH" },
+      boldSignal: null,
+    });
+    expect(resolution.verdict).toBe("MATCH");
+    expect(resolution.reviewReason).toBeNull();
+  });
+
+  it("a 'not-bold' signal never touches an existing MISMATCH — only the MATCH -> REVIEW edge exists", () => {
+    const resolution = resolveGovernmentWarningField({
+      required: true,
+      overrideRejected: false,
+      absent: false,
+      lowImageQuality: false,
+      warningResult: { verdict: "MISMATCH", note: "Government Warning wording differs from the required text." },
+      boldSignal: "not-bold",
+    });
+    expect(resolution.verdict).toBe("MISMATCH");
+    expect(resolution.reviewReason).toBeNull();
+    expect(resolution.comparatorNote).toBe("Government Warning wording differs from the required text.");
+  });
+
+  it("a 'not-bold' signal never overrides an existing NEEDS_REVIEW result — the comparator's own reason wins", () => {
+    const resolution = resolveGovernmentWarningField({
+      required: true,
+      overrideRejected: false,
+      absent: false,
+      lowImageQuality: false,
+      warningResult: { verdict: "NEEDS_REVIEW", reviewReason: "LOW_IMAGE_QUALITY" },
+      boldSignal: "not-bold",
+    });
+    expect(resolution.verdict).toBe("NEEDS_REVIEW");
+    expect(resolution.reviewReason).toBe("LOW_IMAGE_QUALITY");
+  });
+
+  it("a 'not-bold' signal never produces a hard FAIL — the degrade target is NEEDS_REVIEW, never MISMATCH", () => {
+    const resolution = resolveGovernmentWarningField({
+      required: true,
+      overrideRejected: false,
+      absent: false,
+      lowImageQuality: false,
+      warningResult: { verdict: "MATCH" },
+      boldSignal: "not-bold",
+    });
+    expect(resolution.verdict).not.toBe("MISMATCH");
+  });
+
+  // The remaining cells the orchestrator's self-review round asked for
+  // explicitly: a `bold`/`uncertain` signal never touches an existing
+  // NEEDS_REVIEW or MISMATCH result either — the degrade rule only ever
+  // fires on the MATCH -> REVIEW edge, so every OTHER (verdict, signal)
+  // pair is a no-op by construction. These pass immediately against the
+  // already-shipped code; they are new coverage, not a red-first
+  // regression test — stated plainly rather than staged as a fake red.
+
+  it("a 'bold' signal never overrides an existing NEEDS_REVIEW result", () => {
+    const resolution = resolveGovernmentWarningField({
+      required: true,
+      overrideRejected: false,
+      absent: false,
+      lowImageQuality: false,
+      warningResult: { verdict: "NEEDS_REVIEW", reviewReason: "LOW_IMAGE_QUALITY" },
+      boldSignal: "bold",
+    });
+    expect(resolution.verdict).toBe("NEEDS_REVIEW");
+    expect(resolution.reviewReason).toBe("LOW_IMAGE_QUALITY");
+  });
+
+  it("an 'uncertain' signal never overrides an existing NEEDS_REVIEW result", () => {
+    const resolution = resolveGovernmentWarningField({
+      required: true,
+      overrideRejected: false,
+      absent: false,
+      lowImageQuality: false,
+      warningResult: { verdict: "NEEDS_REVIEW", reviewReason: "LOW_IMAGE_QUALITY" },
+      boldSignal: "uncertain",
+    });
+    expect(resolution.verdict).toBe("NEEDS_REVIEW");
+    expect(resolution.reviewReason).toBe("LOW_IMAGE_QUALITY");
+  });
+
+  it("an 'uncertain' signal never touches an existing MISMATCH", () => {
+    const resolution = resolveGovernmentWarningField({
+      required: true,
+      overrideRejected: false,
+      absent: false,
+      lowImageQuality: false,
+      warningResult: { verdict: "MISMATCH", note: "Government Warning wording differs from the required text." },
+      boldSignal: "uncertain",
+    });
+    expect(resolution.verdict).toBe("MISMATCH");
+    expect(resolution.reviewReason).toBeNull();
+    expect(resolution.comparatorNote).toBe("Government Warning wording differs from the required text.");
+  });
+});

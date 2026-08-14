@@ -26,6 +26,9 @@ import {
   resolveGovernmentWarningField,
 } from "./field-resolution";
 import { isConflictingExtraction, isLowImageQuality, warningPresentTranscriptionDisagree } from "./label-blockers";
+// Type-only — see field-resolution.ts's own comment on this same import
+// for why it creates no cycle with `../warning`.
+import type { BoldSignal } from "../warning/bold-detect";
 import {
   applyFieldOverrides,
   applyGovernmentWarningOverrides,
@@ -143,6 +146,19 @@ export function routeLabel(
   comparators: FieldComparators,
   warningResult: WarningComparatorResult | null,
   preprocessing: PreprocessingSignal,
+  /**
+   * LH-025's pixel-measured bold advisory signal (TRO-532/TRO-533), for
+   * the SAME image `warningResult` was compared against — `../warning`'s
+   * `compareGovernmentWarningFromImage` returns it as a sibling field,
+   * never folded into `warningResult` itself (that module's own header
+   * comment). Optional, default `null`, so every pre-TRO-569 call site
+   * (this router's own test files, `src/server/comparators/index.test.ts`)
+   * keeps compiling and behaving unchanged. TRO-569 / INT-005:
+   * `resolveGovernmentWarningField` (`field-resolution.ts`) degrades an
+   * otherwise-MATCH warning to NEEDS_REVIEW when this reads `"not-bold"` —
+   * the only edge this parameter touches.
+   */
+  warningBoldSignal: BoldSignal | null = null,
 ): LabelRouterResult {
   const requiredTable = REQUIRED_FIELD_TABLE[application.beverageType];
 
@@ -274,6 +290,10 @@ export function routeLabel(
     absent: warningAbsent,
     lowImageQuality,
     warningResult: warningState.overrideRejected || warningAbsent ? null : warningResult,
+    // TRO-569 — nulled the same way `warningResult` is above: the degrade
+    // rule only ever matters once a real comparator result exists to
+    // degrade.
+    boldSignal: warningState.overrideRejected || warningAbsent ? null : warningBoldSignal,
   });
   if (warningResolution.reviewReason) reasonsPresent.add(warningResolution.reviewReason);
 

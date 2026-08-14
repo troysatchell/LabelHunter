@@ -46,7 +46,7 @@ it stood on 2026-08-12. It compares the cascade against a Sonnet-only pipeline. 
 Sonnet-only arm resolves every field of every label with the expensive model, no router
 involved. The cascade won on both axes measured that day. Label-verdict accuracy: 71.9% (23 of
 32) against the Sonnet-only arm's 37.5% (12 of 32). Total cost: $0.28 against $0.47, for the
-same 32 cases. This is a separate, earlier measurement from the K=3, 36-case accuracy band in
+same 32 cases. This is a separate, earlier measurement from the K=3, 38-case accuracy band in
 "Measured results" below. That band scores the cascade alone, on the current larger golden set.
 It is not a like-for-like comparison against a Sonnet-only arm.
 
@@ -90,16 +90,23 @@ bold — gets an advisory check, not a hard one. LabelHunter measures it directl
 image's pixels: a stroke-width comparison between the prefix and the body of the warning
 (`measureBoldSignal`, LH-025/LH-026). It reports a three-valued signal — bold, not bold, or
 uncertain — on every verification, shown in the Detail view and scored against real ground
-truth (see "Measured results" below). That signal never changes a verdict; a correctly
-capitalized, correctly worded, non-bold prefix still passes. See "Trade-offs and limitations"
-below for why this stays advisory rather than a hard check, and for the one bold rule this
-signal does not cover.
+truth (see "Measured results" below). The signal still never produces a hard FAIL by itself —
+a stroke-width measurement cannot prove a violation, only suggest one. It does route a label to
+human review: a correctly capitalized, correctly worded label whose prefix measures not bold
+gets a REVIEW verdict instead of a silent PASS (TRO-569), with a reason naming the exact check.
+Bold, uncertain, and a missing signal never change a verdict. See "Trade-offs and limitations"
+below for why this stops short of a hard check, and for the one bold rule this signal does not
+cover.
 
 A separate, older field is a different story and a real, narrower gap: the extractor's own
 self-reported `formatting.bold` (`true`/`false`/`uncertain`, asked for in the Haiku prompt) is
 validated into the response but read by nothing — no router, no comparator, no UI. It is not
-the signal described above; `measureBoldSignal` never reads it. Tracked as
-[TRO-569](https://linear.app/troysatchell/issue/TRO-569).
+the signal described above; `measureBoldSignal` never reads it, and the review-routing rule
+above reads only the pixel-measured signal too. A model's own opinion about its own output is
+not a controlled measurement — the same reasoning CP-2 already applies to the extractor's
+`prefix_casing` self-report (`docs/checkpoints/cp2-warning-subsystem.md` §7.1: "this design
+does not let a model decide a statutory question"). This field stays unrouted; no ticket
+currently tracks closing it.
 
 ### Imperfect images
 
@@ -138,7 +145,7 @@ the whole job.
 | Database | Postgres, via Render, with Drizzle for schema and queries |
 | OCR (warning channel) | `tesseract.js` — pure WASM, no native dependency, works inside Render's constrained runtime |
 | Hosting | Render — a web service, a background worker, and a Postgres database, one Blueprint (`render.yaml`) |
-| Test-label set | 36 committed cases: 31 rendered (clean matches and named defect categories) plus 5 real bottle photographs |
+| Test-label set | 38 committed cases: 33 rendered (clean matches and named defect categories) plus 5 real bottle photographs |
 
 ## Assumptions log
 
@@ -177,27 +184,33 @@ reliability at the cost of the core path.
 
 > **Limitation — bold type on the government warning.** 27 CFR 16.22(a)(2) requires the words
 > "GOVERNMENT WARNING" to print in bold type, and it forbids bold type on the rest of the
-> statement. LabelHunter checks the first rule and reports it as an advisory signal. It does not
-> check the second rule. `measureBoldSignal` measures the prefix's stroke width against the
-> body's, from the image's own pixels — not a vision model's guess. It reports a three-valued
-> signal: bold, not bold, or uncertain. That signal never changes a verdict. Stroke width is a
-> relative measurement. It depends on the typeface, the printed size, the photograph's
-> resolution, and the compression the photograph has already been through. A verdict built on
-> that signal would accuse a compliant label of a violation it cannot prove. LabelHunter does
+> statement. LabelHunter checks the first rule with an advisory signal, not a hard check. It
+> does not check the second rule at all. `measureBoldSignal` measures the prefix's stroke width
+> against the body's, from the image's own pixels — not a vision model's guess. It reports a
+> three-valued signal: bold, not bold, or uncertain. The signal still never produces a hard FAIL
+> by itself. Stroke width is a relative measurement. It depends on the typeface, the printed
+> size, the photograph's resolution, and the compression the photograph has already been
+> through. A verdict built directly on that signal would accuse a compliant label of a violation
+> it cannot prove. Instead, a not-bold reading on an otherwise-matching warning routes the label
+> to human review (TRO-569) — a defensible flag, not an accusation. LabelHunter does
 > hard-enforce the capitalization rule from the same sentence of the regulation, because
 > capitalization survives a photograph and stroke width does not.
 
 `docs/checkpoints/cp2-warning-subsystem.md` §7.2 names the technique
 (`src/server/warning/bold-detect.ts`) and the measured accuracy behind this paragraph:
-`scripts/eval/results/bold-signal-sweep.json` (`pnpm eval:bold-signal-sweep`) scored 25 of 30
-scoreable golden-set cases correctly, 83.3%, measured 2026-08-13.
+`scripts/eval/results/bold-signal-sweep.json` (`pnpm eval:bold-signal-sweep`) scored 27 of 32
+scoreable golden-set cases correctly, 84.4%, measured 2026-08-14 against the clean committed
+tree (re-measured after TRO-569 / TRO-528 added `case-34-bold-body-warning-violation` — the
+30-case, 83.3% figure predates it).
 
 **A separate, narrower gap remains: the extractor's own self-reported `formatting.bold` field is
 still unused.** This is a different field from the one the paragraph above describes — Haiku's
 own guess (`true`/`false`/`uncertain`), asked for in the prompt and validated into the response,
 but read by nothing. `measureBoldSignal` never reads it either; the two are independent
-mechanisms answering the same question two different ways. Tracked as
-[TRO-569](https://linear.app/troysatchell/issue/TRO-569).
+mechanisms answering the same question two different ways. The review-routing rule above reads
+only the pixel-measured signal — a model's opinion about its own output is not the controlled
+measurement a statutory bold check needs. This field stays unrouted; no ticket currently tracks
+closing it.
 
 **Runtime access control is live, confirmed against the deployed instance.** The brief's own
 guidance ("just don't do anything crazy... not storing anything sensitive") sets a light bar
@@ -257,13 +270,13 @@ actually experiences, not raw cascade latency with the gate subtracted out.
 
 ## Measured results
 
-**Accuracy.** Measured over the full 36-case golden set, three repeated live runs (`K=3`), to
-report a real range instead of one lucky run:
+**Accuracy.** Measured over the full 38-case golden set, three repeated live runs (`K=3`,
+measured 2026-08-14, TRO-569's re-baseline), to report a real range instead of one lucky run:
 
 | Metric | Band |
 |---|---|
-| Field extraction accuracy | 87.2%–87.8% |
-| Cascade-verdict accuracy (end-to-end, after Sonnet resolution) | 80.6%–83.3% |
+| Field extraction accuracy | 88.9%–88.9% |
+| Cascade-verdict accuracy (end-to-end, after Sonnet resolution) | 86.8%–89.5% |
 
 Extraction is solid. Verdict accuracy is lower — this prototype's clearest open problem. Most
 of the gap traces to one repeated pattern: a deliberately degraded or ambiguous image reads
@@ -272,12 +285,17 @@ confidently on a single channel, masking a case that should have landed on "need
 concrete next steps.
 
 Earlier in this project a single accuracy run measured 65.6%. Three things drove the
-improvement to the current band: the warning subsystem's dual-channel check, better router
-rules, and a larger, harder golden set. No single lucky change explains it.
+improvement to this band: the warning subsystem's dual-channel check, better router rules, and
+a larger, harder golden set. No single lucky change explains it. The band moved again between
+the 36-case and 38-case corpus (87.2%–87.8% / 80.6%–83.3% before, above now) — TRO-569's own
+two new cases (`case-33`, `case-34`) and TRO-581's single-channel-certainty amendment both
+landed between the two measurements; `scripts/eval/baseline-archive/` keeps every prior band,
+dated, for anyone checking which corpus a past figure described.
 
 **Cost.** The Haiku extraction every label gets costs roughly $0.005 per label. The Sonnet
 resolution the router escalates a minority of labels to costs roughly $0.02 more, on those
-labels only. A three-repeat, 36-case live evaluation run cost about $1.20 total.
+labels only. A three-repeat, 38-case live evaluation run cost $1.2518 total, measured
+2026-08-14.
 
 **Latency.** p50 3618 ms, p95 4197 ms, mean 3738 ms — 20 real HTTP verify round-trips against
 the live deployed instance, past the access-code gate, 20 of 20 PASS. Inside the brief's
@@ -314,7 +332,9 @@ Cascade-verdict accuracy, covered above under "Imperfect images" and "Measured r
 degraded-image cases still return a confident wrong verdict. Bold type on the government
 warning, covered above under "The government warning gets a stricter check" and "Trade-offs and
 limitations": 16.22(a)(2) states two bold rules, and only the first (the prefix must be bold) is
-measured and shown, advisory only — never enforced as a hard check, by design. The second (the
-remainder must not print bold) is not checked at all. See `audit/requirements/gaps.md` for the
+measured and shown — advisory, and by design never a hard, automatic FAIL, though a not-bold
+reading now routes an otherwise-matching label to human review instead of a silent pass
+(TRO-569). The second (the remainder must not print bold) is not checked at all. See
+`audit/requirements/gaps.md` for the
 current, complete list, with the concrete next step
 named for each row.

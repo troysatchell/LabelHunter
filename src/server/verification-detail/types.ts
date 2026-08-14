@@ -105,10 +105,13 @@ export interface VerificationDetail {
    * measured bold advisory signal for this verification's government
    * warning — `null` when it was never measured (no warning-region crop
    * existed for this label; `schema.ts`'s own `verifications.boldSignal`
-   * comment names this the same distinct state). ADVISORY ONLY: this
-   * value plays no part in `labelVerdict` or any `VerificationFieldDetail`
-   * above — `getVerificationDetail` reads it straight off the persisted
-   * row, after `routeLabel` already decided the verdict.
+   * comment names this the same distinct state). ADVISORY: it never
+   * produces a hard FAIL by itself, but TRO-569 / INT-005 does route it
+   * into `routeLabel`'s `government_warning` verdict — a `not-bold`
+   * reading degrades an otherwise-MATCH row to `NEEDS_REVIEW`, which
+   * `labelVerdict` and the `government_warning` row above already reflect
+   * by the time `getVerificationDetail` reads this persisted value; this
+   * field itself is display-only and changes nothing further.
    */
   boldSignal: VerificationBoldSignalDetail | null;
 }

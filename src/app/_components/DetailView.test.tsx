@@ -148,7 +148,7 @@ describe("DetailView", () => {
   });
 
   describe("bold advisory line (LH-025/LH-026, TRO-532/TRO-533, TH-R9, TH-R20)", () => {
-    it("shows an advisory line on the government warning row for a real BoldSignalResult, stating plainly it never changes the verdict", () => {
+    it("shows an advisory line on the government warning row for a real BoldSignalResult, stating plainly it never fails a label by itself (TRO-569 / INT-005)", () => {
       render(
         <DetailView
           detail={{
@@ -160,7 +160,7 @@ describe("DetailView", () => {
       const advisory = screen.getByTestId("bold-signal-advisory");
       expect(advisory).toHaveTextContent("finds the prefix bold");
       expect(advisory).toHaveTextContent("The prefix's stroke width measures wider than the body's.");
-      expect(advisory).toHaveTextContent("It never changes the verdict.");
+      expect(advisory).toHaveTextContent("It never fails a label by itself.");
       // Lives on the government_warning row, not some other field's row.
       expect(screen.getByTestId("detail-field-government_warning")).toContainElement(advisory);
     });

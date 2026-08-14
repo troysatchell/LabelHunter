@@ -1,57 +1,57 @@
 {
   "ticket": "TRO-561 (re-baseline protocol; lineage: TRO-470 / LH-030)",
-  "establishedAt": "2026-08-14T01:40:25.445Z",
+  "establishedAt": "2026-08-13T22:40:24.815Z",
   "k": 3,
   "repeats": [
     {
       "repeatIndex": 1,
       "extractionAccuracy": {
-        "total": 190,
-        "correct": 169,
-        "rate": 0.8894736842105263
+        "total": 185,
+        "correct": 162,
+        "rate": 0.8756756756756757
       },
       "cascadeVerdictAccuracy": {
-        "total": 38,
-        "correct": 34,
-        "rate": 0.8947368421052632
+        "total": 37,
+        "correct": 30,
+        "rate": 0.8108108108108109
       }
     },
     {
       "repeatIndex": 2,
       "extractionAccuracy": {
-        "total": 190,
-        "correct": 169,
-        "rate": 0.8894736842105263
+        "total": 185,
+        "correct": 162,
+        "rate": 0.8756756756756757
       },
       "cascadeVerdictAccuracy": {
-        "total": 38,
-        "correct": 33,
-        "rate": 0.868421052631579
+        "total": 37,
+        "correct": 30,
+        "rate": 0.8108108108108109
       }
     },
     {
       "repeatIndex": 3,
       "extractionAccuracy": {
-        "total": 190,
-        "correct": 169,
-        "rate": 0.8894736842105263
+        "total": 185,
+        "correct": 162,
+        "rate": 0.8756756756756757
       },
       "cascadeVerdictAccuracy": {
-        "total": 38,
-        "correct": 33,
-        "rate": 0.868421052631579
+        "total": 37,
+        "correct": 31,
+        "rate": 0.8378378378378378
       }
     }
   ],
   "extractionAccuracyBand": {
-    "min": 0.8894736842105263,
-    "max": 0.8894736842105263,
+    "min": 0.8756756756756757,
+    "max": 0.8756756756756757,
     "spread": 0
   },
   "cascadeVerdictAccuracyBand": {
-    "min": 0.868421052631579,
-    "max": 0.8947368421052632,
-    "spread": 0.02631578947368418
+    "min": 0.8108108108108109,
+    "max": 0.8378378378378378,
+    "spread": 0.027027027027026973
   },
   "perCaseVerdictSets": {
     "case-01-clean-match-spirits": [
@@ -106,11 +106,11 @@
       "PASS"
     ],
     "case-18-glare-warning-block": [
-      "PASS",
-      "REVIEW"
+      "PASS"
     ],
     "case-19-rotation-mild-correctable": [
-      "PASS"
+      "PASS",
+      "REVIEW"
     ],
     "case-20-rotation-severe-upside-down": [
       "REVIEW"
@@ -119,7 +119,7 @@
       "PASS"
     ],
     "case-22-low-light-warning-block": [
-      "REVIEW"
+      "PASS"
     ],
     "case-23-tiny-warning-text-standard-bottle": [
       "PASS"
@@ -149,9 +149,6 @@
       "REVIEW"
     ],
     "case-33-not-bold-warning-prefix": [
-      "REVIEW"
-    ],
-    "case-34-bold-body-warning-violation": [
       "PASS"
     ],
     "case-35-clean-match-real-photo-flat-scan": [
@@ -171,8 +168,8 @@
     ]
   },
   "manifestVersion": "1.0.0",
-  "manifestContentHash": "e19a48c1f2c54a92d1f4fc207df472cf87ff048ea5d4c33c6d7258b820c552e3",
-  "goldenSetCommitSha": "91057dbbf16bcefb85110a01d36f3a1900018e20",
+  "manifestContentHash": "7b1c3bb1326077be2b4b7471d4539a4e1a34e84ce50a9111e061df6fd79ff49e",
+  "goldenSetCommitSha": "9787ff95c2f8975e96048d0e47c1de68d252db0d",
   "caseIds": [
     "case-01-clean-match-spirits",
     "case-02-clean-match-beer-no-abv",
@@ -206,7 +203,6 @@
     "case-31-title-case-warning-surgeon-general-lowercase",
     "case-32-reworded-warning-near-miss-missing-comma",
     "case-33-not-bold-warning-prefix",
-    "case-34-bold-body-warning-violation",
     "case-35-clean-match-real-photo-flat-scan",
     "case-36-rotation-real-photo-gentle-curve",
     "case-37-rotation-real-photo-severe-curve-partial-crop",
@@ -215,10 +211,10 @@
   ],
   "haikuModel": "claude-haiku-4-5",
   "sonnetModel": "claude-sonnet-5",
-  "codeCommitSha": "1ea3eb25ad40b14018339787babfd4d5d33dcdfb",
+  "codeCommitSha": "267a62fa8ceab433a40796af249dd526744783d3",
   "costUsd": {
-    "totalUsd": 1.2517609999999997,
-    "meanHaikuCallUsd": 0.004682885964912281,
-    "meanSonnetCallUsd": 0.014358240000000001
+    "totalUsd": 1.192079,
+    "meanHaikuCallUsd": 0.0046733423423423424,
+    "meanSonnetCallUsd": 0.013202705882352941
   }
 }

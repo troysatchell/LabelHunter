@@ -28,17 +28,25 @@
  * calling a model itself (this ticket's comparator calls no model — it
  * consumes the transcription the extractor already produced).
  *
- * **The bold advisory signal (LH-025/LH-026, TRO-532/TRO-533, CP-2
+ * **The bold advisory signal (LH-025/LH-026/TRO-569, TRO-532/TRO-533, CP-2
  * §7.2/§7.3, TH-R9).** `compareGovernmentWarningFromImage` also measures
  * `measureBoldSignal` (`./bold-detect`) against the SAME crop
  * `runOcrChannel` already produces for OCR — no second region detection,
  * no second crop. The result travels in `CompareGovernmentWarningFromImageResult
  * .boldSignal`, a field that sits BESIDE `.comparator`, never inside it.
  * `bold-detect.ts`'s own header comment states the boundary this split
- * exists to guarantee: the signal must never produce a hard FAIL by
- * itself and must never gate a MATCH. Keeping it off `WarningComparatorResult`
- * — the one shape that reaches `routeLabel` — makes that guarantee a type
- * error to violate, not just a rule to remember (standing rule 10).
+ * still guarantees: the signal must never produce a hard FAIL by itself.
+ * Keeping it off `WarningComparatorResult` makes THAT guarantee a type
+ * error to violate, not just a rule to remember (standing rule 10) — a
+ * `not-bold` signal can never, by construction, become part of the
+ * comparator's own MATCH/MISMATCH decision.
+ *
+ * TRO-569 narrows the OTHER half of the old rule ("must never gate a
+ * MATCH"): `.boldSignal.signal` now ALSO reaches `routeLabel`, as its own
+ * separate, optional parameter — `WarningComparatorResult` still carries
+ * nothing about bold. The router (`../router/field-resolution.ts`)
+ * degrades an otherwise-MATCH warning to `NEEDS_REVIEW` on a `not-bold`
+ * signal; it can still never turn one into a MISMATCH.
  */
 import type { ExtractedGovernmentWarning } from "../extractor/types";
 import { cropForOcr, detectWarningRegion } from "./region-detect";

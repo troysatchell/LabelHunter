@@ -23,6 +23,11 @@ export function buildDocument(input: BuildInput) {
   const rules = input.results.map((result) => {
     const baseline = input.baselines[result.id] ?? [];
     const pin = input.pins[result.id];
+    if (!pin) {
+      throw new Error(
+        `buildDocument: no pin decision for rule '${result.id}' — every RuleResult needs a matching pins entry.`,
+      );
+    }
     const introduced = introducedFindings(result.findings, baseline);
     const preExisting = preExistingFindings(result.findings, baseline).length;
     let status = result.status;
@@ -57,6 +62,30 @@ export function buildDocument(input: BuildInput) {
     notRun: [] as string[],
     exitCode: failing.length > 0 ? 1 : 0,
   };
+}
+
+/**
+ * Formats the console lines for one report: every introduced finding, plus
+ * one line naming the failure detail for any rule with status "error".
+ *
+ * A rule can error with zero introduced findings — a pin-resolution
+ * failure (see `main`) never touches `findings` at all. Printing only per-
+ * finding lines then produced a blank report next to an exit code 1, with
+ * no clue why the gate failed. The error line is printed even when the
+ * same rule also has introduced findings, so neither detail hides the
+ * other.
+ */
+export function formatReportLines(doc: ReturnType<typeof buildDocument>): string[] {
+  const lines: string[] = [];
+  for (const rule of doc.rules) {
+    if (rule.status === "error") {
+      lines.push(`  ERROR   ${rule.id}  ${rule.error ?? "unknown error"}`);
+    }
+    for (const f of rule.introduced) {
+      lines.push(`  ${rule.mode === "blocking" ? "FAIL" : "report"}  ${f.file}:${f.line}  ${f.message}`);
+    }
+  }
+  return lines;
 }
 
 /**
@@ -158,11 +187,7 @@ function main(): void {
   });
 
   writeFileSync(join(outDir, "defect-gate.json"), JSON.stringify(doc, null, 2) + "\n");
-  for (const rule of doc.rules) {
-    for (const f of rule.introduced) {
-      console.log(`  ${rule.mode === "blocking" ? "FAIL" : "report"}  ${f.file}:${f.line}  ${f.message}`);
-    }
-  }
+  for (const line of formatReportLines(doc)) console.log(line);
   process.exit(doc.exitCode);
 }
 

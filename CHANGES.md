@@ -87,6 +87,489 @@ before the revert; no migration, no schema change.
 
 
 
+
+## TRO-540 — LH-035 · Deskew a baked-in tilt before extraction (2026-08-13)
+
+Advances TH-R10 (stretch). `preprocessImage`'s `.rotate()` call corrects orientation from
+the EXIF tag only (PRD §3.1). A tilt baked into the pixels at capture time writes no EXIF
+tag. That call does nothing to it. Golden-set case-19 has exactly this defect: a 15-degree
+rotation with no EXIF orientation tag at all. Both the Haiku extractor and the classical
+warning-region detector read the tilted image. A live run on 2026-08-12 measured the
+result. Haiku invented a word in the government warning. The label returned REVIEW /
+WARNING_MISMATCH against a golden expectation of PASS.
+
+**What changed.** `src/server/preprocessing/deskew.ts` adds `estimateSkewAngleDeg(image:
+Buffer): Promise<number>`. It measures a baked-in tilt with a row-ink projection. This is
+the same technique `region-detect.ts` uses to find the warning block. Here it runs as an
+angle sweep instead of a block search. The sweep tries candidate angles from -20 to 20
+degrees (`MAX_DESKEW_ANGLE_DEG`, proposed, not measured). It keeps the candidate whose
+row-ink variance forms a true local peak. "Local peak" means strictly higher than both
+neighbors in the sweep, not just the highest raw value. Picking the raw maximum cannot tell
+a real text peak apart from a large flat block of one color. A flat block's row-ink coverage
+changes smoothly as it rotates and never forms a peak. Requiring a local peak is what makes
+that distinction possible. `pipeline.test.ts`'s own EXIF-rotation fixtures are exactly that
+flat shape. Their post-rotation width/height assertions depend on this function returning 0
+on them. `deskew.test.ts` runs the same fixture shape and checks it directly.
+
+Two more changes came from this ticket's own review round. Each candidate angle now gets
+cropped back to one fixed size before scoring. The sweep also runs with bounded concurrency
+(`MAX_CONCURRENT_ANGLE_PASSES`, proposed, not measured), not one unbounded `Promise.all` over
+every angle. The crop keeps every candidate's row count comparable. Without it, a wider
+angle always yields a bigger rotated canvas, with more white padding. The local-peak check
+could mistake that extra padding for a real text signal. A second test proves the sweep
+still recovers a tilt sitting exactly at `MAX_DESKEW_ANGLE_DEG`. That is the boundary case
+an earlier version of the sweep could not reach.
+
+`preprocessImage` (`pipeline.ts`) now runs a second `sharp` pass after the EXIF-orient pass.
+It cannot be one chained call. The angle estimate needs the EXIF-rotated pixels first. The
+second pass rotates by the estimate. It re-derives `width`/`height` from the actual rotated
+output, not from EXIF metadata — metadata cannot predict an arbitrary-angle canvas
+expansion. It adds `deskewAngleDeg` to `PreprocessedImage`'s return shape. Both `original`
+(the OCR channel) and the Haiku/Sonnet variants derive from this one deskewed buffer. The
+fix reaches the extractor and the warning subsystem together. A deskew scoped to the OCR
+crop alone would leave Haiku reading the tilted image.
+
+**Measured, not fixed.** Deskewing restores the OCR channel. Before this change,
+`detectWarningRegionClassical` returned `null` on the raw case-19 file. After it, the same
+function returns a real region: `{x:258,y:776,width:882,height:134}`. Both results are
+measured and recorded as a regression test in `pipeline.test.ts`. A prior investigation
+(`docs/diagnostics/2026-08-12-fix-tickets.md`) used the production reconciler to prove
+something else: a perfect OCR read against Haiku's already-wrong transcription still returns
+REVIEW / WARNING_MISMATCH. Restoring OCR alone cannot fix a model invention downstream of
+it. Deskew helps through the extraction half only. It gives Haiku a level image to read,
+which lowers the chance Haiku invents a word. It does not guarantee a correct read every
+time.
+
+Three live runs today all returned PASS: `pnpm eval:check -- --live
+--case=case-19-rotation-mild-correctable`, model `claude-haiku-4-5`, 2026-08-13. The
+government warning transcribed correctly in every run. Cost: $0.005153 each, $0.015459
+total, real spend, read from the API's own usage response. This is evidence the mitigation
+works. It is not proof it always will. Haiku's own output varies run to run —
+`scripts/eval/args.ts`'s own comment states temperature 0 is not a promise of identical
+output. Case-19's earlier REVIEW result came from exactly one such run. Do not read three
+PASSes as "case-19 fixed."
+
+**Left alone, on purpose.** `NEAR_MISS_MAX_DISTANCE` and `OCR_CONFIDENCE_FLOOR` stay
+unchanged. The ticket's own investigation considered and rejected both changes already, for
+reasons that do not depend on today's measurement. A genuine four-character invention is not
+a near-miss. A perfect OCR read still cannot out-vote a wrong VLM read. Case-19's golden
+expectation stays PASS. The label prints the true statutory text. The model, not the corpus,
+was wrong.
+
+**Tests.** `src/server/preprocessing/deskew.test.ts` (new) covers five cases:
+
+1. Recovers a 15-degree rotation within 2 degrees, on a synthetic label with real text rows.
+2. Recovers a 20-degree rotation the same way, at the sweep's own configured limit.
+3. Returns 0 on a flat single-colour image.
+4. Returns 0 on a dense solid-colour block — the same fixture shape `pipeline.test.ts` uses.
+5. Returns 0 on an unreadable buffer, instead of throwing.
+
+`pipeline.test.ts` (updated) keeps its two pre-existing EXIF-rotation assertions unchanged.
+It also adds two new tests for case-19. The raw file still returns a null region. The
+deskewed buffer returns a non-null region, and an angle within 2 degrees of -15. Two OCR
+integration tests read golden-set JPEGs directly and never call `preprocessImage`
+(`region-detect.test.ts`, `warning/index.test.ts`). They were re-run and pass unchanged, as
+expected. A pipeline-level change cannot move a test that bypasses the pipeline.
+
+**How to run it.** `pnpm test` covers the unit tests. `pnpm eval:check -- --live
+--case=case-19-rotation-mild-correctable` re-runs the live measurement. It costs real money,
+about $0.005 per run.
+
+**Rollback.** Revert this commit. `preprocessImage` returns to EXIF-only rotation.
+`deskewAngleDeg` and `deskew.ts` disappear with it. No schema change. No migration.
+
+
+
+
+
+## TRO-548 — Factory: gate.sh's review step re-reviews the whole branch every run (2026-08-13)
+
+Factory tooling, not a TH-R requirement. TRO-544's ticket measured the problem directly: its
+orchestrator pass ran `gate.sh` 11 times. Each run re-reviewed the full branch diff with
+CodeRabbit, including the previous round's own triage prose. Findings regenerated every round
+(3, 12, 4, 5, 8, 4, 3, 2, 4, 10). Real substance ended at round 12 of 13; the last round was
+seven comment-shortening requests against files that were already stable. Lessons rule 31
+capped this by orchestrator discipline. This ticket makes the cap mechanical.
+
+**What changed.**
+
+1. `scripts/factory/review-capture.ts` adds a `ReviewMode` (`off` | `carry` | `full`) and a
+   `planReview` function. `carry` mode (the default) skips a re-review when the diff since the
+   last real capture touches only `CHANGES.md`, `factory/*.jsonl`, or comment-only hunks. No
+   CodeRabbit process runs on this path — the skip saves real time, not just a relabeled
+   result. `gate-result.json`'s `review` entry records the skip honestly: `carried-forward
+   from <sha> — <reason> (<N> finding(s) from that review still stand)`.
+2. `gate.sh` gets a `--review=off|carry|full` flag. `off` never invokes CodeRabbit (an alias
+   for the old `--skip-review`, kept working). `carry` is the default. `full` always runs a
+   genuine whole-branch review, ignoring any carried-forward history. `--fast`/`--skip-review`
+   combined with an explicit, conflicting `--review=` value is now a hard error. The old
+   single-pass loop let the two silently override each other, based on argument order.
+3. When a real, non-boring change exists since the last review, `review-capture.ts` scopes
+   CodeRabbit's own diff to `--base-commit <last-reviewed-sha>` instead of `--base
+   <BASE_REF>`. The installed CodeRabbit CLI (`coderabbit review --help`, v0.7.2) supports
+   this override directly. `coderabbit.meta.json` now records `scopedFrom`, so a scoped
+   capture's `findings` count is never misread as the whole branch's total.
+4. A dirty working tree defeats the SHA-based carry-forward check: real, uncommitted content
+   exists that no captured SHA can vouch for. `review-capture.ts` now checks `git status
+   --porcelain` itself and treats a dirty tree as no trustworthy previous capture, forcing a
+   real review. `gate.sh`'s own full run already refused on a dirty tree before G10 ran. This
+   is the same guarantee for a standalone invocation.
+5. `isCommentOrBlankLine`'s `#`/`*` markers now check a boundary, not just a bare prefix. A
+   bare `#` matched a TS/JS private class field (`#cache = new Map();`) as a comment — real
+   code, in this repo's own language. `#` now requires whitespace, `!` (a shebang), or
+   end-of-line after it. A bare `*` now requires `/` or whitespace/end-of-line after it, ruling
+   out a glued multiplication like `*2`. Documented remaining gap: `* 2` (with a space) still
+   reads as a JSDoc continuation line. Telling the two apart needs block-comment state across
+   lines — out of scope for a per-line classifier.
+
+**Never weakened.** The FIRST review a ticket branch gets is always a full `--base
+<BASE_REF>` review, in every mode but `--review=off`. `planReview` returns a full run
+unconditionally when no prior capture exists for the branch. The cap applies only to re-runs
+inside one orchestrator pass, matching lessons rule 31's own scope note.
+
+**How to run it.** `scripts/factory/gate.sh` (default `--review=carry`). Force a full
+re-review with `--review=full`. Skip review capture entirely with `--review=off` or the
+existing `--skip-review`.
+
+**Tests.** `scripts/factory/review-capture.test.ts` adds 45 new cases: pure classification
+(`isBoringPath`, `isCommentOrBlankLine`, `parseUnifiedDiff`, `isFileChangeBoring`,
+`isDiffBoring`), the `planReview` decision across every mode and history combination, two
+real-git-repo integration suites (`diffSince`, `isWorkingTreeDirty`), and the `#`/`*` boundary
+cases items 4 and 5 above depend on.
+
+**Review round 1 (this ticket's own first full gate review).** CodeRabbit reported 7
+findings. 4 were fixed: items 2's conflict check, 3's `scopedFrom` field, 4's dirty-tree
+guard, and 5's marker-boundary fix all trace to this round. 2 were corrections to this
+entry's own prose: item 1's sentence length, and this section's test count. 1 was dismissed:
+CodeRabbit asked to merge each scoped review's findings back into the stored
+`coderabbit.json` baseline across runs. Declined — that would resurface a prior round's
+already-triaged findings on the very next capture, the exact repeated-review problem this
+ticket exists to stop.
+
+**Rollback.** Run `scripts/factory/gate.sh --review=full` to force the old always-full-review
+behavior on any one run, with no code change. To remove the feature entirely, revert this
+commit — `review-capture.ts`'s public surface only grew; nothing existing changed shape.
+
+**Proven live, on this ticket's own gate run.** The first `gate.sh` run on this branch ran a
+genuine full review — the cap never touches a branch's first review; see the triage section
+below for its findings. A later run, after a real code fix, reported `review completed with
+no findings (scoped since bb2ebce)`: CodeRabbit reviewed only the diff since the last real
+capture, not the whole branch again. A same-SHA re-run of `review-capture.ts` alone (no new
+commit) returned `carried-forward from 783d41a — no changes since that review` in 0.34
+seconds, invoking CodeRabbit zero times.
+
+
+
+
+
+## TRO-554 — defect-gate engine hardening: 15 review-round-3 findings, batched (2026-08-13)
+
+**The source.** PR #48 (TRO-508)'s local gate review, round 3, found 15 real hardening gaps.
+All 15 sit in the defect-gate engine itself — the tool that checks every other branch, not
+label-verification code. Round 2 already fixed every substantive defect that round found.
+Round 3's findings changed no shipped behavior: recall stayed 1.0, G11 still classified a real
+diff correctly, and the 74-test suite was green. Per lessons rule 31, they land here as one
+batch instead of fix-iterating forever.
+
+**The fixes, by file.**
+
+- `ast.ts`: an anonymous class expression assigned to a variable or property now takes that
+  name. `const x = class { validate() {} }` reports `x.validate`, not `<anonymous>.validate`.
+  A class expression with no owner (a bare call argument) still falls back to `<anonymous>`.
+- `baseline.ts`: `fileAtRef` validates the ref before it reads the path. A bad `BASE_REF` now
+  throws by name. Before this fix, it read as "no baseline" for every file in the diff. A
+  `git show` failure that is not a missing path (a corrupt object, a permissions error) now
+  throws too, instead of silently returning null.
+- `rules/vacuous-empty-quantifier.ts`: the preceding-guard scan now matches the receiver
+  against the real AST node, not a substring of the guard's source text. The old check read
+  `wxs.length` as a guard on `xs`. `reachesSinkThroughVariable` now walks its own function
+  scope only. A nested function's own shadowed variable, same name, can no longer read as the
+  outer variable reaching a decision. The finding message now names `.reduce()`'s real failure.
+  It throws on an empty collection. It does not return a vacuously-true value, the way
+  `.every()` does — the message no longer reuses one quantifier's wording for the other.
+- `run.ts`: the console report now prints a rule's own error detail when its status is
+  `"error"`, even with no introduced findings to point to. A pin-resolution failure used to
+  exit 1 with a blank report. `buildDocument` now throws a named error when a result's rule id
+  has no matching `pins` entry, instead of a bare "Cannot read properties of undefined."
+- `replay.ts`: the `--grep` ticket pattern is now word-boundary anchored. An unanchored
+  "TRO-464" is a leading substring of "TRO-4640". A commit naming the wrong, longer ticket
+  could read as a match for the shorter one. `loadLedger` now names the file and the 1-based
+  line number when a row fails to parse. That line number stays correct even when a blank line
+  sits before the bad row — the count runs over the file's real lines, never over a filtered
+  list that silently drops blanks and shifts every later number short.
+- `replay-cli.ts`: the entrypoint guard now recognizes both `.ts` (the dev path) and `.js` (a
+  compiled build), matched against the file's exact basename — not a suffix check, which also
+  matched an unrelated file like "notreplay-cli.ts". A `.ts`-only check let a built CLI exit 0
+  and do nothing. The loaded rule module's shape is validated before anything reads `.meta` off
+  it, naming the rule id and the exact missing piece. Its `sh` helper now runs `spawnSync` with
+  an argument array, matching `run.ts` — never a shell string.
+
+**Not included.** Five doc/prose-only findings from the same review round. Lessons rule 31
+already dismissed them. This ticket does not reopen them.
+
+**Confirmed.** All 15 items landed with a test; none needed rejection. 104 tests pass across
+the 9 `scripts/factory/defect-gates/*.test.ts` files, up from 74 before this ticket (`pnpm
+vitest run scripts/factory/defect-gates/`, observed 2026-08-13). `pnpm typecheck` and `pnpm
+lint` are clean.
+
+The word-boundary fix caught a real regression before it shipped. An early draft paired the
+anchor with `--extended-regexp`. That flag compiles `\b` as a literal backspace in this git
+version (2.50.1), not a word boundary, so it silently matched nothing at all. The break showed
+up against this repo's own real TRO-464/TRO-511 commit history, not only a synthetic fixture —
+dropping `--extended-regexp` fixed it. Replay recall stays 1.0
+(`factory/replay/vacuous-empty-quantifier.v1.json`, unchanged). G11 passes on this branch's own
+diff.
+
+A local review round on the first version of this batch found 3 more real findings — the
+entrypoint-basename check, the ledger blank-line count, and this entry's own sentence length —
+all fixed above and recorded in the review ledger.
+
+
+
+
+
+## TRO-564 — the OCR sweeps now refuse to run against a dirty golden-set/ tree (2026-08-13)
+
+**The gap.** `ocr-floor-sweep.ts` records `goldenSetCommitSha` from
+`lastCommitTouchingPath(REPO_ROOT, "golden-set")`. That function returns the SHA of the last
+COMMIT to touch `golden-set/`. It says nothing about the working tree at sweep time. Run the
+sweep with an uncommitted `golden-set/` edit, and the artifact still names the last clean
+commit. The artifact then misrepresents what the sweep actually measured. This is the same
+provenance-integrity gap TRO-558/TRO-559 closed for stale and clobbered artifacts — it shows up
+here as working-tree drift instead. `tro-546-case22-ocr-region-check.ts` shares the same OCR
+method and reads the same `golden-set/` images, so the same gap applies there too.
+
+**The fix.** A new function, `assertPathTreeClean`, lives next to `lastCommitTouchingPath` in
+`scripts/eval/git-provenance.ts` — the file the ticket named to check first for reusable
+dirty-tree detection. It runs `git status --porcelain -- <path>` and throws when the output is
+not empty: a staged change, an unstaged change, or an untracked file all count. Both sweep
+scripts call `assertPathTreeClean(REPO_ROOT, "golden-set")` right after their own argument
+parsing, before the manifest loads and before any OCR work runs. A dirty tree now fails in
+under a second, with the exact `git status` output in the error message, instead of running the
+full sweep and writing a mismatched artifact.
+
+**Confirmed.** `pnpm vitest run scripts/eval/git-provenance.test.ts` — 4 new cases: a clean
+path does not throw, a modified tracked file throws, an untracked file throws, and a failed
+git command throws (never treated as "clean"). All 9 cases in the file pass. `pnpm typecheck`
+and `pnpm lint` are clean.
+
+Manually confirmed against the real script, not just the mocked unit test (observed
+2026-08-13): dirtied `golden-set/README.md`, ran `pnpm eval:ocr-floor-sweep`, and it failed in
+0.7s with the new error message and wrote no artifact. Reverted the change, re-ran the same
+command, and it completed its normal 36-case sweep in 19s and wrote the artifact as before.
+
+
+
+
+
+## TRO-556 — eval:check cheap mode now warns on manifest drift against the live file (2026-08-13)
+
+**The gap.** `scripts/eval/results/eval-report.json` and `scripts/eval/baseline.json` each carry
+a `manifestContentHash` (TRO-538). `eval:check` cheap mode compared only these two committed
+files against each other. It never read `golden-set/manifest.json` itself. A corpus rebuild
+could edit the manifest. Both frozen files could go stale together and still agree with each
+other. Gate G8 would pass. The committed accuracy evidence would describe images that no longer
+exist.
+
+**The fix.** `scripts/eval/manifest-drift.ts` adds one pure comparison. It checks the report's
+committed hash against a hash of the live manifest file, computed right now. `check.ts`'s cheap
+mode calls `hashManifestFile` — the same function live mode already uses. Cheap mode prints the
+result on every run. A match prints "no drift detected." A mismatch prints a loud, named
+`MANIFEST DRIFT` warning. The check reads one local file. It makes no live API call, so cheap
+mode stays cheap. The warning never fails the gate. A fail would block every corpus ticket the
+moment a golden-set PR merged, possibly before anyone ran the re-baseline protocol. The existing
+`stale-baseline` check already avoids this failure on its own axis. This new warning avoids the
+same failure on a different axis. See `check.ts`'s own module comment for the full reasoning.
+
+**Evidence.** `scripts/eval/manifest-drift.test.ts` proves two things: the function stays silent
+on a matching hash, and it fires the named warning on a synthetic mismatch. A manual run
+confirmed the same behavior against the real committed files:
+
+1. With the report's hash intact, `pnpm eval:check` printed "no drift detected" and exited 0.
+2. With the report's `manifestContentHash` field temporarily corrupted, the same command printed
+   the `MANIFEST DRIFT` warning and still exited 0.
+3. I then restored the corrupted file from the untouched backup copy.
+
+**State at pickup.** Both committed artifacts (`eval-report.json`, `baseline.json`) already carry
+the same hash as the live manifest: `fa3dbcf...`. TRO-561's authorized re-baseline sweep set this
+hash. No drift exists as of August 13, 2026. This ticket needs no live-eval refresh.
+
+**Rollback.** Revert this entry's commit. `check.ts` then compares the two committed files only,
+again. It no longer reads the live manifest file.
+
+
+
+
+
+## TRO-555 — golden-set loader: a warning-absent case must force all three formatting flags to false (2026-08-13)
+
+**The gap.** `GoldenLabelFields` carries three government-warning formatting flags:
+`governmentWarningPrefixAllCaps`, `governmentWarningPrefixBold`, and `governmentWarningBodyBold`.
+Each flag's own doc comment states the same rule: false when the warning is absent. The loader
+checked each flag's type. It did not check that rule. A case could set
+`governmentWarningPresent: false` and `governmentWarningPrefixBold: true` at the same time. A
+formatting claim about text that is not on the label makes no sense. TRO-527 added the two bold
+flags. It left the same gap already present for `governmentWarningPrefixAllCaps`. Fixing only the
+two new flags would have left the loader enforcing the rule for two flags, not three. That is an
+inconsistent boundary. This ticket fixes all three flags together.
+
+**The fix.** `loader.ts` adds a new function: `checkWarningAbsentFlags`. The check runs only when
+`governmentWarningPresent` checks out as the boolean `false`. When it runs, all three formatting
+flags must equal `false` too. Two of the three flags also allow `"unknown"` elsewhere in the
+schema. Here, only `false` passes. The check runs only after each flag's own type check passes.
+This order matters: a malformed flag reports one clear error about itself. It does not also
+trigger a second, confusing error about a value the loader already knows is wrong.
+
+This is executable code, not a comment. `loader.test.ts` proves it several ways:
+
+- Each of the three flags fails validation alone, set to `true`.
+- The two flags that allow `"unknown"` also fail validation set to `"unknown"`.
+- All three flags fail together in one manifest, and the loader reports all three problems in one pass.
+- A warning-present case with all three flags `true` still loads. The check does not fire when it should not.
+- Both real missing-warning cases, `case-12-missing-warning-spirits` and `case-13-missing-warning-wine`, still load. Their flags were already `false`.
+
+**Verify.** Run `pnpm vitest run src/lib/golden-set/loader.test.ts`. All 61 tests pass, 6 of them
+new. Red-first check: before the fix, the 6 new tests failed. `validateManifest` accepted the
+invalid flag combination instead of throwing.
+
+
+
+
+
+## TRO-530 — LH-027 · wild AI-generated labels, staged pending Troy's review (2026-08-13)
+
+Advances TH-R12. Design doc §5, job 2: about 5 labels Gemini draws whole, no bottle, no
+backdrop, no compositing. Real COLA artwork varies in layout, color, ornament, typeface, and
+warning placement. The renderer's own labels do not. This ticket adds that variety.
+
+**What changed.**
+
+1. `scripts/golden/wildLabelPrompt.ts` is new. It compiles 5 wild-label prompts — a fictional
+   brand and design brief each, varying beverage type, layout, typeface, color, and warning
+   placement. A shared guardrail clause on every prompt forbids a real brand or trademark.
+2. `scripts/golden/imagen.ts` adds a text-only Gemini generation path (`generateWildLabelOne`,
+   `generateAllWildLabels`, `mainWild`), reusing job 1's API client shape and sidecar-writer
+   pattern. Run it with `pnpm golden:imagen:wild`. `computeWildLabelCostUsd` computes exact
+   cost per call from that call's own real token usage, never an estimate. The pricing it uses
+   is confirmed live against `ai.google.dev/gemini-api/docs/pricing`, on 2026-08-13.
+3. `pnpm golden:imagen:wild` generated 5 real images, committed at
+   `golden-set/wild-labels/*.png`. A human transcribed what actually rendered into
+   `golden-set/wild-labels/candidates.json` — the real text, not the requested text. Two labels
+   show a real generation defect: one warning duplicates a word fragment, one renders as tiny,
+   rotated, partly-corrupted print.
+4. `scripts/golden/wildLabelEval.ts` is new (`pnpm golden:wild-eval`). It runs each candidate
+   through the real cascade (`runOneCase`, unmodified) and writes
+   `golden-set/wild-labels/results/wild-eval-report.json`. Real result: 24/25 extraction fields
+   correct (the one miss is the intentionally-uncertain garbled-warning case), and 5/5 ROUTER
+   label verdicts matching the corrected expected values (`expected` predicts the router's
+   decision, not the cascade's post-resolver end state — see the README's own scope note).
+5. `verified` stays `false` on all 5 candidate cases. That flag is Troy's decision alone
+   (this repo's standing rule) — this ticket never sets it. The 5 cases stay OUT of
+   `golden-set/manifest.json` on purpose: `src/lib/golden-set/loader.ts` refuses to load ANY
+   manifest containing an unverified `ai-generated` case, for every one of this repo's ~30
+   other callers, not just this ticket's own tests. Landing an unverified case there would have
+   broken the whole suite. `golden-set/wild-labels/README.md` documents why and lists the exact
+   fold-in steps for whoever lands them later.
+
+**A real finding, not assumed away.** A first-pass ground truth judged 3 of the 5 cases by "can
+a human read this correctly" alone. A live `pnpm golden:wild-eval` run showed the real router
+disagreeing — CP-2 §4.5's dual-channel rule routes an OCR/vision disagreement to REVIEW even
+when the vision reading is exactly right, and real decorative typefaces trip that disagreement
+in ways the renderer's plain corpus never does. `candidates.json`'s `expected` blocks now match
+that corrected, evidence-backed ground truth, not the first guess.
+
+**Real spend, itemized, from real API responses (never estimated):**
+
+| What | Amount |
+|---|---|
+| 5 committed wild-label images (`golden-set/wild-labels/*.meta.json`) | $0.3414435 |
+| Final `pnpm golden:wild-eval` run (committed `wild-eval-report.json`) | $0.088572 |
+| One earlier `pnpm golden:wild-eval` run, superseded by the corrected re-run above | ~$0.0925 |
+| One discarded probe call during development (image not committed) | $0.068096 |
+| **Total** | **~$0.591** |
+
+The two `~` rows are rounded: read from this terminal's own printed per-case lines (4 decimal
+places each), not from a saved exact-precision report — the first `wild-eval-report.json` was
+overwritten by the corrected re-run before this entry was written. Every other figure is the
+exact value a real API response (or its sidecar) reported. Design doc §5 estimates the full set
+under $5. The measured total is about 12% of that budget.
+
+**Rollback.** Revert the PR. `golden-set/wild-labels/` and its two new scripts disappear;
+`golden-set/manifest.json` never changed, so nothing else is affected.
+
+**Review.** 7 CodeRabbit findings, all triaged and recorded (`factory/review-findings.jsonl`).
+4 minor prose-style (CHANGES.md and two READMEs, ASD-STE100 sentence-length) — fixed. 2 major
+boundary-validation — fixed: `extractWildLabelUsage` now throws on missing or inconsistent
+usage data instead of defaulting to 0 (a degraded response must not silently read as \$0
+spend); `loadWildLabelCandidates` now resolves symlinks and confirms every `imagePath` stays
+inside `golden-set/wild-labels/`, matching `imagen.ts`/`build.ts`'s existing containment
+discipline for every other golden-set image path. 1 major dismissed: the finding asked to
+change `cascade-runner.ts`'s resolver-merge logic (shared, tested, already-documented, out of
+scope) so a router-level warning mismatch survives unchanged into the cascade end state —
+`types.ts`/`check.ts` already establish golden-set `expected` as router-level by design, and
+`cascade-runner.ts`'s own "SECOND HONEST LIMIT" comment already documents why it cannot. Added
+an explicit scope note to `golden-set/wild-labels/README.md` instead.
+
+**Review, round 2.** The gate's review step re-reviews the whole branch every run, including
+round 1's own triage prose (`.claude/skills/labelhunter-factory/references/lessons.md` rule
+31). 15 findings this round: 11 minor prose-style re-flags on CHANGES.md and the two READMEs —
+dismissed per rule 31's stop rule, no shipped behavior or factual claim changed. 3 fixed:
+`loadWildLabelCandidates` now runs the full case set through the real `validateManifest`
+(patched the same way its own test does) before any candidate reaches a paid `runOneCase`
+call; `extractWildLabelUsage` now rejects a fractional or negative token count, not only a
+missing one; the wild-label Gemini request now sets `imageConfig.imageSize` explicitly instead
+of relying on the SDK's documented (and, across 6 real calls, consistently observed) "1K"
+default. 1 trivial fixed alongside it (the same `imageConfig` change covers both). 6 new test
+cases (46 → 52).
+
+**Review, round 3.** 14 findings: 8 minor prose-style re-flags — dismissed per rule 31 again.
+1 dismissed after verification, not just judgment: a finding claimed `review-ledger.mjs`'s
+`report` command uses a finding's `file` field to resolve a "replay corpus," and asked for
+round 2's grouped-dismissal entries to use real paths for that reason. Reading
+`review-ledger.mjs` itself shows `report` only ever prints `file` as free text — no path
+resolution, no replay mechanism exists in this file. 5 fixed, all real: `extractWildLabelUsage`
+now folds in `thoughtsTokenCount` when present — the SDK's own type documents it as separate
+from `candidatesTokenCount`, so a reasoning-model call that used it would otherwise
+under-report real spend; a misplaced doc comment now sits directly above the function it
+describes; `loadWildLabelCandidates` now validates each `cases[]` entry is a well-shaped object
+with a string `caseId`/`imagePath` before reading either, instead of crashing with a raw,
+confusing error; one test's own name and comment claimed to prove containment survives a
+"maliciously-constructed caseId" that (given `assertSafeSlug` runs first, unlike job 1's
+`generateOne`) can never actually reach that code path — renamed to describe what it actually
+verifies; `CHANGES.md` now marks the eval harness's 5/5 result as router-level explicitly, and
+its cost table shows the 5-image total's real, exact precision, with a footnote naming the two
+figures that are honestly rounded (read from terminal output, not a saved report). 7 new test
+cases (52 → 59).
+
+**Review, round 4 — last round; stop rule invoked.** 13 findings. 7 more prose-style re-flags
+and 1 test-readability preference (moving a repeated try/finally into an `afterEach`, equal
+correctness either way) — dismissed per rule 31. 5 fixed, all real: the repeated statutory
+warning literal in `wildLabelPrompt.ts` is now one shared constant, not five copies;
+`WILD_LABELS_DIRECTORY` is now `realpathSync`-resolved so both sides of the containment check's
+`path.relative` share the same physical-path basis as the already-resolved candidate path (a
+symlinked checkout path could otherwise disagree about what "inside" means); `wildLabelEval.ts`'s
+`main()` now catches a per-case harness error instead of letting it discard every
+already-collected outcome and skip writing the report; `printCaseLine`'s field count now reads
+`r.extraction.fields.length` instead of a hardcoded `5`; `mainWild`'s spend summary now prints
+from a `finally` block, so a real, already-spent total is never silently dropped if a later
+request in the same run fails. No new automated test covers the exact "a case throws mid-run"
+path in `wildLabelEval.ts`'s `main()` — `runOneCase` isn't dependency-injected there, matching
+`scripts/eval/check.ts`'s own `runLive`, which carries the identical gap; the fix is a real,
+reviewed code change, verified by inspection and by the unchanged, still-passing existing
+suite, not by a new mocked test. Round 4 (like round 3) mixed genuine, non-prose findings in
+with the recurring prose noise — the stop rule (lessons.md rule 31) applies to that prose
+subset, never to a round wholesale; every round's real findings got fixed. Stopping here: the
+CHANGES.md/README prose has now been rewritten to the same standard three times running, and
+further re-review is expected to keep re-flagging the identical paragraphs.
+
+**Confirmed.** `scripts/golden/wildLabelPrompt.test.ts`, `wildLabelImagen.test.ts`, and
+`wildLabelCandidates.test.ts` are new — 59 test cases across four triage rounds, red first
+every round with new coverage, green after each implementation. The candidates' schema shape
+is checked against the real, current `GoldenSetCase` validator (`verified`/`imagePath` patched
+to their post-fold-in values for that one check only, never written to disk) — both in the
+test suite and in `loadWildLabelCandidates` itself. `pnpm typecheck` is clean. The full
+2414-test unit suite and the existing `imagen.test.ts`/`imagenPrompt.test.ts` job-1 suites
+still pass unchanged.
 ## TRO-578 — design tokens and one visual hierarchy (2026-08-13)
 
 **The point.** Troy: "spacing and hierarchy are incredibly important and scream even louder

@@ -64,3 +64,15 @@ export type AllowedInputFormat = (typeof ALLOWED_INPUT_FORMATS)[number];
  * original upload's format.
  */
 export const OUTPUT_MEDIA_TYPE = "image/jpeg" as const;
+
+/**
+ * Ceiling for the deskew angle sweep (TRO-540 / LH-035, `deskew.ts`), in
+ * degrees each direction. A baked-in tilt from a hand-held phone photo is
+ * a few degrees to perhaps 15-20 in a genuinely crooked shot (case-19's
+ * measured degradation is 15). **Proposed, not measured** — no sweep of
+ * this specific bound against the golden set has run yet. Wider raises
+ * the cost of every `estimateSkewAngleDeg` call (one more candidate angle
+ * per degree of range); narrower risks missing a real, badly-tilted
+ * photo. 20 is a starting bound, not a tuned one.
+ */
+export const MAX_DESKEW_ANGLE_DEG = 20;

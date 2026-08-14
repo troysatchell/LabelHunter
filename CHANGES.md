@@ -28,6 +28,12 @@ casing report contradicts. Certainty renders the verdict. Doubt escalates.
 
 **Rollback.** Revert the PR. The single-channel table returns to never-FAIL.
 
+**The ripple.** The eval harness's Sonnet-only arm (`scripts/eval/resolver-rollup.ts`)
+calls the real `reconcileWarningChannels`, so it inherited the amendment automatically. Its
+doc comment and two tests encoded the old "never MISMATCH on one channel" property — both
+updated to the amended behavior, with a below-threshold case preserving the REVIEW path.
+The gate's test diff caught this ripple; nothing shipped untested.
+
 **Confirmed.** Red first: four new tests failed against the old table for the right reasons
 (REVIEW where the ruling demands MISMATCH; the cross-check interaction). The superseded
 "never accuse on one channel" assertions were rewritten under the amendment's authority —

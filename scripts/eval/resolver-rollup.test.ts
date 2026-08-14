@@ -118,15 +118,29 @@ describe("rollUpResolverResolution", () => {
     expect(result.fields.find((f) => f.field === "government_warning")?.verdict).toBe("MATCH");
   });
 
-  it("government_warning: a reworded transcription -> NEEDS_REVIEW (single channel never hard-fails), with a real, specific reviewReason", () => {
+  it("government_warning: a confidently reworded transcription -> MISMATCH (2026-08-13 CP-2 amendment: certainty renders the verdict)", () => {
+    // Superseded: this test previously asserted NEEDS_REVIEW ("single
+    // channel never hard-fails"). Troy's TRO-581 ruling flipped the
+    // single-channel table for structurally clean readings at confidence
+    // >= 0.90 — the fixture's own 0.9 sits exactly at the threshold the
+    // pass rule already trusted.
     const resolution = allMatchResolution();
     resolution.fields[4] = correction("government_warning", {
       correctedValue: CANONICAL_WARNING.replace("women should not drink", "women must never consume"),
     });
     const result = rollUpResolverResolution(resolution, APPLICATION, FAKE_COMPARATORS);
     const field = result.fields.find((f) => f.field === "government_warning");
-    // Never MISMATCH with no OCR channel to corroborate — see
-    // resolver-rollup.ts's rollUpGovernmentWarning doc comment.
+    expect(field?.verdict).toBe("MISMATCH");
+  });
+
+  it("government_warning: the same rewording BELOW 0.90 confidence still escalates to NEEDS_REVIEW with a real reviewReason", () => {
+    const resolution = allMatchResolution();
+    resolution.fields[4] = correction("government_warning", {
+      correctedValue: CANONICAL_WARNING.replace("women should not drink", "women must never consume"),
+      confidence: 0.7,
+    });
+    const result = rollUpResolverResolution(resolution, APPLICATION, FAKE_COMPARATORS);
+    const field = result.fields.find((f) => f.field === "government_warning");
     expect(field?.verdict).toBe("NEEDS_REVIEW");
     expect(result.headlineReason).toBe("WARNING_MISMATCH");
   });

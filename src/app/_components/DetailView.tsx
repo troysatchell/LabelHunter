@@ -11,7 +11,10 @@
  */
 import type { FieldVerdict } from "../../server/router";
 import type { VerificationBoldSignalDetail, VerificationDetail, VerificationFieldDetail } from "../../server/verification-detail";
+import { CANONICAL_WARNING_TEXT } from "../../server/warning/canonical";
+import { LabelImageFigure } from "./LabelImageFigure";
 import { LABEL_BANNER_CLASS, labelVerdictText } from "./ResultsChecklist";
+import { WarningTranscription } from "./WarningTranscription";
 
 const VERDICT_ICON: Record<FieldVerdict, string> = {
   MATCH: "✓",
@@ -90,14 +93,28 @@ function FieldRow({ row, boldSignal }: { row: VerificationFieldDetail; boldSigna
         <span className="visually-hidden">{VERDICT_STATUS_TEXT[row.verdict]}</span>
         <span className="detail-field__name">{row.fieldLabel}</span>
       </div>
+      {/* TRO-582: the warning row's two columns show the real texts, not
+          placeholders — the transcription with its deviating words marked
+          (display alignment only; the verdict and reason still come from
+          the comparator, standing rule 11), and the statute verbatim so
+          the reviewer compares against the actual requirement instead of
+          a citation they must know by heart. */}
       <div className="detail-field__compare">
         <div className="detail-field__value">
           <span className="detail-field__value-label">{detectedColumnLabel(row.field)}</span>
-          <span className="detail-field__value-text">{displayedLabelValue || "Not found on the label."}</span>
+          <span className="detail-field__value-text">
+            {row.field === "government_warning" && displayedLabelValue ? (
+              <WarningTranscription transcription={displayedLabelValue} />
+            ) : (
+              displayedLabelValue || "Not found on the label."
+            )}
+          </span>
         </div>
         <div className="detail-field__value">
           <span className="detail-field__value-label">{expectedColumnLabel(row.field)}</span>
-          <span className="detail-field__value-text">{row.applicationValue}</span>
+          <span className="detail-field__value-text">
+            {row.field === "government_warning" ? CANONICAL_WARNING_TEXT : row.applicationValue}
+          </span>
         </div>
       </div>
       <p className="detail-field__reason">{row.reason}</p>
@@ -134,29 +151,12 @@ export function DetailView({ detail }: DetailViewProps) {
         </div>
       )}
 
-      <div className="detail-view__layout">
-        {/* PRD §5: "label image side-by-side with extracted vs application
-            values per field". Width/height come from the persisted,
-            EXIF-corrected pixel dimensions, so the browser reserves the
-            right space before the image itself loads. A plain `<img>`, not
-            `next/image`: this route already serves one fixed, pre-sized
-            JPEG per request (`OUTPUT_MEDIA_TYPE`), so there is nothing for
-            Next's optimizer to resize or reformat — routing this compliance
-            photo through it would add a second internal HTTP hop for no
-            real gain (eslint flags this as a Core Web Vitals warning, not
-            an error; accepted deliberately). */}
-        <img
-          className="detail-view__image"
-          src={detail.labelImage.url}
-          width={detail.labelImage.width}
-          height={detail.labelImage.height}
-          // "The label submitted with this application", not "...photo" or
-          // "...image": a screen reader already announces this element as
-          // an image, so restating that in the alt text is redundant
-          // (CodeRabbit finding, TRO-466 review round 1) — describe the
-          // content, not the fact that it is a picture of it.
-          alt="The label submitted with this application"
-        />
+      {/* PRD §5: "label image side-by-side with extracted vs application
+          values per field" — a real grid with a dedicated image box
+          (TRO-582); LabelImageFigure carries the plain-img and persisted-
+          dimensions rationale both surfaces share. */}
+      <div className="detail-layout">
+        <LabelImageFigure image={detail.labelImage} />
 
         <ul className="detail-field-list">
           {detail.fields.map((row) => (

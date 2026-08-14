@@ -30,11 +30,11 @@ confirmed the same behavior against the real committed files:
 1. With the report's hash intact, `pnpm eval:check` printed "no drift detected" and exited 0.
 2. With the report's `manifestContentHash` field temporarily corrupted, the same command printed
    the `MANIFEST DRIFT` warning and still exited 0.
-3. The corrupted file was then restored from the untouched backup copy.
+3. I then restored the corrupted file from the untouched backup copy.
 
 **State at pickup.** Both committed artifacts (`eval-report.json`, `baseline.json`) already carry
 the same hash as the live manifest: `fa3dbcf...`. TRO-561's authorized re-baseline sweep set this
-hash. No drift exists today. This ticket needs no live-eval refresh.
+hash. No drift exists as of August 13, 2026. This ticket needs no live-eval refresh.
 
 **Rollback.** Revert this entry's commit. `check.ts` then compares the two committed files only,
 again. It no longer reads the live manifest file.

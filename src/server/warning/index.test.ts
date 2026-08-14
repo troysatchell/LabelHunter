@@ -20,10 +20,24 @@ import {
   OCR_TIMEOUT_MS,
   runWarningOcr,
   toVlmWarningCandidate,
+  type BoldSignalResult,
   type CompareGovernmentWarningFromImageDeps,
   type RunWarningOcrDeps,
 } from "./index";
 import { CANONICAL_WARNING_TEXT } from "./canonical";
+
+/** A hand-built, well-formed `BoldSignalResult` (TRO-533) — used only to
+ * prove `compareGovernmentWarningFromImage` carries whatever
+ * `deps.measureBoldSignal` returns straight through to `result.boldSignal`,
+ * untouched and separate from `result.comparator`. */
+const FAKE_BOLD_SIGNAL: BoldSignalResult = {
+  signal: "bold",
+  reason: "the prefix's stroke width measures wider than the body's",
+  ratio: 2.1,
+  splitFraction: 0.49,
+  prefixStrokeWidthPx: 5,
+  bodyStrokeWidthPx: 2.4,
+};
 
 function extractedWarning(overrides: Partial<ExtractedGovernmentWarning> = {}): ExtractedGovernmentWarning {
   return {
@@ -68,12 +82,15 @@ describe("compareGovernmentWarningFromImage — defensive handling", () => {
       detectRegion: vi.fn().mockResolvedValue(null),
       crop: vi.fn(),
       ocr: vi.fn().mockResolvedValue(null),
+      measureBoldSignal: vi.fn(),
     };
     const result = await compareGovernmentWarningFromImage(
       { extracted: extractedWarning({ present: false, transcription: null }), originalImage: Buffer.from([]) },
       fakeDeps,
     );
-    expect(result.verdict).toBe("NEEDS_REVIEW");
+    expect(result.comparator.verdict).toBe("NEEDS_REVIEW");
+    // No crop was ever produced — no region, so nothing to measure.
+    expect(result.boldSignal).toBeNull();
   });
 
   it("never rejects when a dependency promise itself rejects — degrades to single-channel instead", async () => {
@@ -81,6 +98,7 @@ describe("compareGovernmentWarningFromImage — defensive handling", () => {
       detectRegion: vi.fn().mockRejectedValue(new Error("sharp blew up on a corrupt buffer")),
       crop: vi.fn(),
       ocr: vi.fn(),
+      measureBoldSignal: vi.fn(),
     };
     // The VLM channel is otherwise a clean, confident exact match — this
     // proves a rejected OCR-side dependency degrades to single-channel
@@ -90,7 +108,7 @@ describe("compareGovernmentWarningFromImage — defensive handling", () => {
       { extracted: extractedWarning({ confidence: 0.95 }), originalImage: Buffer.from([]) },
       fakeDeps,
     );
-    expect(result.verdict).toBe("MATCH");
+    expect(result.comparator.verdict).toBe("MATCH");
   });
 });
 
@@ -102,12 +120,18 @@ describe("compareGovernmentWarningFromImage — wiring, with fast injected fakes
       detectRegion: vi.fn().mockResolvedValue({ region: FAKE_REGION, method: "classical" }),
       crop: vi.fn().mockResolvedValue(Buffer.from([])),
       ocr: vi.fn().mockResolvedValue({ text: CANONICAL_WARNING_TEXT, confidence: 92 }),
+      measureBoldSignal: vi.fn().mockResolvedValue(FAKE_BOLD_SIGNAL),
     };
     const result = await compareGovernmentWarningFromImage(
       { extracted: Promise.resolve(extractedWarning()), originalImage: Buffer.from([]) },
       fakeDeps,
     );
-    expect(result.verdict).toBe("MATCH");
+    expect(result.comparator.verdict).toBe("MATCH");
+    // The bold signal reaches the caller untouched, and it is measured off
+    // the SAME crop `deps.ocr` reads (TRO-533) — never a second crop.
+    expect(result.boldSignal).toEqual(FAKE_BOLD_SIGNAL);
+    const cropBufferSeenByOcr = (fakeDeps.crop as ReturnType<typeof vi.fn>).mock.results[0]?.value;
+    expect(fakeDeps.measureBoldSignal).toHaveBeenCalledWith(await cropBufferSeenByOcr);
   });
 
   it("falls back to single-channel when region detection finds nothing", async () => {
@@ -115,13 +139,16 @@ describe("compareGovernmentWarningFromImage — wiring, with fast injected fakes
       detectRegion: vi.fn().mockResolvedValue(null),
       crop: vi.fn(),
       ocr: vi.fn().mockResolvedValue(null),
+      measureBoldSignal: vi.fn(),
     };
     const result = await compareGovernmentWarningFromImage(
       { extracted: extractedWarning({ confidence: 0.95 }), originalImage: Buffer.from([]) },
       fakeDeps,
     );
-    expect(result.verdict).toBe("MATCH"); // single-channel, VLM exact match, confidence >= 0.90
+    expect(result.comparator.verdict).toBe("MATCH"); // single-channel, VLM exact match, confidence >= 0.90
     expect(fakeDeps.crop).not.toHaveBeenCalled(); // nothing to crop — no region was found
+    expect(fakeDeps.measureBoldSignal).not.toHaveBeenCalled(); // nothing to measure either
+    expect(result.boldSignal).toBeNull();
   });
 });
 
@@ -138,6 +165,7 @@ describe("compareGovernmentWarningFromImage — real concurrency (CP-2 §4.4)", 
       }),
       crop: vi.fn().mockResolvedValue(Buffer.from([])),
       ocr: vi.fn().mockResolvedValue({ text: CANONICAL_WARNING_TEXT, confidence: 92 }),
+      measureBoldSignal: vi.fn().mockResolvedValue(FAKE_BOLD_SIGNAL),
     };
 
     const resultPromise = compareGovernmentWarningFromImage(
@@ -161,7 +189,7 @@ describe("compareGovernmentWarningFromImage — real concurrency (CP-2 §4.4)", 
     vlmDeferred.resolve(extractedWarning());
 
     const result = await resultPromise;
-    expect(result.verdict).toBe("MATCH");
+    expect(result.comparator.verdict).toBe("MATCH");
   });
 });
 
@@ -184,7 +212,13 @@ describe("compareGovernmentWarningFromImage — real image, real OCR, real regio
         extracted: extractedWarning(),
         originalImage,
       });
-      expect(result.verdict).toBe("MATCH");
+      expect(result.comparator.verdict).toBe("MATCH");
+      // TRO-533: the bold signal, measured for real off this real image's
+      // real crop — not a fake. case-01's manifest ground truth
+      // (`governmentWarningPrefixBold: true`) agrees with what
+      // `measureBoldSignal` finds here (observed directly, 2026-08-13).
+      expect(result.boldSignal).not.toBeNull();
+      expect(result.boldSignal?.signal).toBe("bold");
     },
     15_000,
   );
@@ -211,8 +245,8 @@ describe("compareGovernmentWarningFromImage — real image, real OCR, real regio
         originalImage,
       });
 
-      expect(result.verdict).toBe("MISMATCH");
-      expect(result.note).toBe("Government Warning must print in capital letters.");
+      expect(result.comparator.verdict).toBe("MISMATCH");
+      expect(result.comparator.note).toBe("Government Warning must print in capital letters.");
     },
     15_000,
   );
@@ -237,8 +271,8 @@ describe("compareGovernmentWarningFromImage — real image, real OCR, real regio
         originalImage,
       });
 
-      expect(result.verdict).toBe("MISMATCH");
-      expect(result.note).toBe("Government Warning wording differs from the required text.");
+      expect(result.comparator.verdict).toBe("MISMATCH");
+      expect(result.comparator.note).toBe("Government Warning wording differs from the required text.");
     },
     15_000,
   );
@@ -269,6 +303,7 @@ describe("compareGovernmentWarningFromImage — OCR channel timeout (TRO-519)", 
         detectRegion: vi.fn().mockResolvedValue({ region: FAKE_REGION, method: "classical" }),
         crop: vi.fn().mockResolvedValue(Buffer.from([])),
         ocr: (crop) => runWarningOcr(crop, { createWorker: neverResolvingCreateWorker }),
+        measureBoldSignal: vi.fn().mockResolvedValue(null),
       };
 
       // A clean, confident VLM read: once OCR degrades to unavailable, CP-2
@@ -284,7 +319,7 @@ describe("compareGovernmentWarningFromImage — OCR channel timeout (TRO-519)", 
       await vi.advanceTimersByTimeAsync(OCR_TIMEOUT_MS);
       const result = await resultPromise;
 
-      expect(result.verdict).toBe("MATCH");
+      expect(result.comparator.verdict).toBe("MATCH");
     } finally {
       vi.useRealTimers();
     }

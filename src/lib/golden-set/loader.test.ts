@@ -884,12 +884,17 @@ describe("loadGoldenSetManifest", () => {
     // cases CP-2 §9.2 findings 4/5 (docs/checkpoints/cp2-warning-subsystem.md)
     // identified as missing — the near-miss band (case-32) and the
     // Surgeon/General capitalization positions (case-31), numbered after
-    // case-30 since TRO-515 landed on main first; and TRO-529 / LH-024's
-    // five hand-transcribed real-photograph cases (case-35 through case-39
-    // — case-33/case-34 stay reserved for LH-023 / TRO-528, a sibling
-    // ticket not yet landed). 36, not 32 — growth, not drift.
+    // case-30 since TRO-515 landed on main first; TRO-529 / LH-024's five
+    // hand-transcribed real-photograph cases (case-35 through case-39); and
+    // TRO-532 / LH-025's case-33-not-bold-warning-prefix, filling the
+    // case-33 slot this comment used to reserve for LH-023 / TRO-528 —
+    // Troy's own instruction, mid-TRO-532, after noticing every one of the
+    // 30 warning-bearing cases TRO-527 backfilled carries
+    // governmentWarningPrefixBold: true (see bold-detect.test.ts's own
+    // header for the full story). case-34 stays reserved for LH-023 /
+    // TRO-528. 37, not 32 — growth, not drift.
     expect(result.cases.length).toBeGreaterThanOrEqual(20);
-    expect(result.cases.length).toBeLessThanOrEqual(36);
+    expect(result.cases.length).toBeLessThanOrEqual(37);
 
     const ids = result.cases.map((c) => c.caseId);
     expect(new Set(ids).size).toBe(ids.length);

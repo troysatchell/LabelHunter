@@ -4,18 +4,19 @@
  * Purely presentational: it takes the server-shaped item as a prop and
  * renders it, the same division `ResultsChecklist.tsx` uses.
  *
- * Does not show the label image — see `get-item.ts`'s file comment for
- * why (the image-serving route is a sibling ticket's still-open PR, and
- * PRD §5's review-queue line does not ask for one).
+ * Shows the label image beside the per-field comparison (TRO-575) — the
+ * same side-by-side arrangement `DetailView.tsx` uses, so both screens
+ * teach one layout: artwork on one side, field verdicts on the other.
+ * The image was originally omitted because the byte-serving route was a
+ * sibling ticket's then-unmerged work; see `get-item.ts`'s file comment.
  *
  * CSS classes below are prefixed `review-field*`, not `detail-field*`:
- * `src/app/_components/DetailView.tsx` (LH-016/TRO-466, still an open PR)
+ * `src/app/_components/DetailView.tsx` (LH-016/TRO-466, merged since)
  * defines its own `detail-field*` rules for a visually similar per-field
- * comparison. Reusing that exact name here, independently, risked either
- * a merge conflict or two silently-duplicate rules once that PR lands.
- * `checklist-row--*` below IS shared on purpose — those classes are
- * already merged (`ResultsChecklist.tsx`), so reusing them is the real
- * "match existing style" this ticket's brief asked for.
+ * comparison; consolidating the two families is TRO-578's job, not a
+ * drive-by here. `checklist-row--*` below IS shared on purpose — those
+ * classes are already merged (`ResultsChecklist.tsx`), so reusing them is
+ * the real "match existing style" this ticket's brief asked for.
  */
 import type { FieldVerdict, ReviewDisposition } from "../../lib/db/enums";
 import type { ReviewQueueItemDetail } from "../../server/review-queue";
@@ -25,6 +26,16 @@ const VERDICT_ICON: Record<FieldVerdict, string> = {
   MATCH: "✓",
   MISMATCH: "✗",
   NEEDS_REVIEW: "⚠",
+};
+
+/** Spoken verdict for screen readers — the icon above is aria-hidden and
+ * the row's state is otherwise only a border color. Same words as
+ * `DetailView.tsx`'s own `VERDICT_STATUS_TEXT` (one meaning, one
+ * phrasing, both screens). */
+const VERDICT_STATUS_TEXT: Record<FieldVerdict, string> = {
+  MATCH: "Match.",
+  MISMATCH: "Does not match.",
+  NEEDS_REVIEW: "Needs review.",
 };
 
 const VERDICT_ROW_CLASS: Record<FieldVerdict, string> = {
@@ -74,29 +85,46 @@ export function ReviewItemDetail({ item }: ReviewItemDetailProps) {
         </div>
       )}
 
-      <ul className="review-field-list">
-        {item.fields.map((row) => (
-          <li key={row.field} className={`review-field ${VERDICT_ROW_CLASS[row.verdict]}`} data-testid={`review-field-${row.field}`}>
-            <div className="review-field__header">
-              <span className="review-field__icon" aria-hidden="true">
-                {VERDICT_ICON[row.verdict]}
-              </span>
-              <span className="review-field__name">{row.fieldLabel}</span>
-            </div>
-            <div className="review-field__compare">
-              <div className="review-field__value">
-                <span className="review-field__value-label">On the label</span>
-                <span className="review-field__value-text">{row.evidence ? row.evidence : "Not found on the label."}</span>
+      <div className="review-item__layout">
+        {/* The artwork is the object the reviewer is ruling on (TH-R1:
+            "looks at the label artwork, and checks"). It sits beside the
+            field comparison, the arrangement DetailView.tsx already uses.
+            The plain-`<img>` decision carries over from DetailView — see
+            its comment at the img. The persisted width/height let the
+            browser reserve space before the bytes arrive. */}
+        <img
+          className="review-item__image"
+          src={item.labelImage.url}
+          width={item.labelImage.width}
+          height={item.labelImage.height}
+          alt="The label submitted with this application"
+        />
+
+        <ul className="review-field-list">
+          {item.fields.map((row) => (
+            <li key={row.field} className={`review-field ${VERDICT_ROW_CLASS[row.verdict]}`} data-testid={`review-field-${row.field}`}>
+              <div className="review-field__header">
+                <span className="review-field__icon" aria-hidden="true">
+                  {VERDICT_ICON[row.verdict]}
+                </span>
+                <span className="visually-hidden">{VERDICT_STATUS_TEXT[row.verdict]}</span>
+                <span className="review-field__name">{row.fieldLabel}</span>
               </div>
-              <div className="review-field__value">
-                <span className="review-field__value-label">On the application</span>
-                <span className="review-field__value-text">{row.applicationValue}</span>
+              <div className="review-field__compare">
+                <div className="review-field__value">
+                  <span className="review-field__value-label">On the label</span>
+                  <span className="review-field__value-text">{row.evidence ? row.evidence : "Not found on the label."}</span>
+                </div>
+                <div className="review-field__value">
+                  <span className="review-field__value-label">On the application</span>
+                  <span className="review-field__value-text">{row.applicationValue}</span>
+                </div>
               </div>
-            </div>
-            <p className="review-field__reason">{row.reason}</p>
-          </li>
-        ))}
-      </ul>
+              <p className="review-field__reason">{row.reason}</p>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }

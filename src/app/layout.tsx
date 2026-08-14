@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { SiteHeader } from "./_components/SiteHeader";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -17,7 +18,19 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {/* First stop for a keyboard, before the header's own links
+            (Troy's direct request, 2026-08-13). `tabIndex={-1}` on the
+            target below is what makes the jump actually move focus, not
+            just scroll — a plain <div> is not focusable on its own. */}
+        <a className="skip-link" href="#main-content">
+          Skip to the main content
+        </a>
+        <SiteHeader />
+        <div id="main-content" tabIndex={-1}>
+          {children}
+        </div>
+      </body>
     </html>
   );
 }

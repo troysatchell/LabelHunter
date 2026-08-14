@@ -101,7 +101,7 @@ export function AccessCodeFormView({ submit = submitAccessCode, onSuccess }: Acc
 
   return (
     <>
-      <form className="access-code-form" onSubmit={handleSubmit}>
+      <form className="access-code-form" onSubmit={handleSubmit} aria-busy={isLoading}>
         <div className="field">
           <label className="field__label" htmlFor="access-code-input">
             Access code
@@ -122,9 +122,25 @@ export function AccessCodeFormView({ submit = submitAccessCode, onSuccess }: Acc
           />
         </div>
         <button type="submit" className="primary-button" disabled={isLoading || code.length === 0}>
-          {isLoading ? "Checking the code…" : "Continue"}
+          {isLoading ? (
+            <>
+              <span className="busy-spinner" aria-hidden="true" />
+              Checking the code…
+            </>
+          ) : (
+            "Continue"
+          )}
         </button>
       </form>
+      {/* One persistent polite line, present from first render, so the
+          in-flight state reaches assistive tech too — before this, the
+          only signal was the button's own label swap, which a screen
+          reader has no reason to re-read (same WAI-ARIA reasoning as
+          VerifyForm's results region). Visually hidden: sighted users
+          already see the button. */}
+      <p className="visually-hidden" role="status">
+        {isLoading ? "Checking the code…" : ""}
+      </p>
       {status === "error" && (
         <div className="error-panel" role="alert">
           <p className="error-panel__title">That code did not work</p>

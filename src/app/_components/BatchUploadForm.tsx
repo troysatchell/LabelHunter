@@ -25,6 +25,7 @@ import { useRef, useState, type FormEvent } from "react";
 import { BatchClientError, startBatch, submitBatchPreview } from "../_lib/batch-client";
 import type { BatchPreviewSuccessResponse } from "../api/batch/preview/types";
 import type { BatchStartSuccessResponse } from "../api/batch/start/types";
+import { FileDropField } from "./FileDropField";
 
 interface ErrorInfo {
   kind: string;
@@ -139,7 +140,14 @@ function BatchPreviewResult({ result, starting, startError, onStart }: BatchPrev
       {result.readyCount > 0 ? (
         <>
           <button type="button" className="primary-button" disabled={starting} onClick={onStart}>
-            {starting ? "Starting the batch…" : `Start batch (${result.readyCount})`}
+            {starting ? (
+              <>
+                <span className="busy-spinner" aria-hidden="true" />
+                Starting the batch…
+              </>
+            ) : (
+              `Start batch (${result.readyCount})`
+            )}
           </button>
           {startError && (
             <div className="error-panel" role="alert">
@@ -236,115 +244,179 @@ export function BatchUploadForm({ submitPreview = submitBatchPreview, submitStar
     setPhase((current) => (current.status === "idle" ? current : { status: "idle" }));
   }
 
-  if (phase.status === "started") {
-    const { result } = phase;
-    return (
-      <div className="batch-started" data-testid="batch-started">
-        <p className="status-banner">
-          {result.queuedCount} {result.queuedCount === 1 ? "label is" : "labels are"} now processing.
-        </p>
-        {result.skippedImages.length > 0 && (
-          <div className="batch-notice" data-testid="batch-skipped-images">
-            <p className="batch-notice__title">
-              {result.skippedImages.length} image{result.skippedImages.length === 1 ? "" : "s"} could not be read. LabelHunter did not
-              include {result.skippedImages.length === 1 ? "it" : "them"}:
-            </p>
-            <ul>
-              {result.skippedImages.map((skipped) => (
-                <li key={skipped.filename}>
-                  {skipped.filename}: {skipped.reason}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        <button type="button" className="primary-button" onClick={() => onStarted(result.batchJobId)}>
-          View batch progress
-        </button>
-      </div>
-    );
-  }
-
   const isBusy = phase.status === "previewing" || (phase.status === "preview" && phase.starting);
+
+  /* The one persistent polite line's text, derived straight from `phase`:
+     in-flight words while a request runs, then the settled outcome — the
+     preview summary and the started confirmation otherwise mount as
+     ordinary silent content (the anti-pattern VerifyForm's results-region
+     comment documents). */
+  const liveStatusText =
+    phase.status === "previewing"
+      ? "Checking the upload…"
+      : phase.status === "preview" && phase.starting
+        ? "Starting the batch…"
+        : phase.status === "preview"
+          ? `Preview ready. ${phase.result.readyCount} of ${phase.result.totalRows} ${rowWord(phase.result.totalRows)} ready to process.`
+          : phase.status === "started"
+            ? `Batch started. ${phase.result.queuedCount} ${phase.result.queuedCount === 1 ? "label is" : "labels are"} now processing.`
+            : "";
 
   return (
     <>
-      <form className="batch-upload-form" onSubmit={handlePreviewSubmit}>
-        <div className="field">
-          <label className="field__label" htmlFor="batch-manifest">
-            CSV manifest
-          </label>
-          <input
-            ref={manifestInputRef}
-            id="batch-manifest"
-            name="manifest"
-            type="file"
-            accept=".csv,text/csv"
-            className="file-input"
-            disabled={isBusy}
-            onChange={handleFileInputChange}
-          />
+      {phase.status === "started" ? (
+        <div className="batch-started" data-testid="batch-started">
+          <p className="status-banner">
+            {phase.result.queuedCount} {phase.result.queuedCount === 1 ? "label is" : "labels are"} now processing.
+          </p>
+          {phase.result.skippedImages.length > 0 && (
+            <div className="batch-notice" data-testid="batch-skipped-images">
+              <p className="batch-notice__title">
+                {phase.result.skippedImages.length} image{phase.result.skippedImages.length === 1 ? "" : "s"} could not be read.
+                LabelHunter did not include {phase.result.skippedImages.length === 1 ? "it" : "them"}:
+              </p>
+              <ul>
+                {phase.result.skippedImages.map((skipped) => (
+                  <li key={skipped.filename}>
+                    {skipped.filename}: {skipped.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <button type="button" className="primary-button" onClick={() => onStarted(phase.result.batchJobId)}>
+            View batch progress
+          </button>
         </div>
+      ) : (
+        <>
+          <form className="batch-upload-form" onSubmit={handlePreviewSubmit} aria-busy={isBusy}>
+            <div className="field">
+              <label className="field__label" htmlFor="batch-manifest">
+                CSV manifest
+              </label>
+              {/* A drop assigns the file to this same input and fires a
+                  real change event, so `handleFileInputChange` — the
+                  stale-preview reset above — runs untouched (see
+                  FileDropField.tsx). */}
+              <FileDropField
+                inputRef={manifestInputRef}
+                disabled={isBusy}
+                hint="Or drop the CSV file here."
+                hintId="batch-manifest-drop-hint"
+                onRejected={() => setFormError("That file is not a CSV file. Drop a .csv manifest, or use the file button.")}
+              >
+                <input
+                  ref={manifestInputRef}
+                  id="batch-manifest"
+                  name="manifest"
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="file-input"
+                  disabled={isBusy}
+                  aria-describedby="batch-manifest-drop-hint"
+                  onChange={handleFileInputChange}
+                />
+              </FileDropField>
+            </div>
 
-        <div className="field">
-          <label className="field__label" htmlFor="batch-images">
-            Label images
-          </label>
-          <span className="field__hint" id="batch-images-hint">
-            Select every image file, or use the zip option below.
-          </span>
-          <input
-            ref={imagesInputRef}
-            id="batch-images"
-            name="images"
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/heic"
-            multiple
-            aria-describedby="batch-images-hint"
-            className="file-input"
-            disabled={isBusy}
-            onChange={handleFileInputChange}
-          />
-        </div>
+            <div className="field">
+              <label className="field__label" htmlFor="batch-images">
+                Label images
+              </label>
+              <span className="field__hint" id="batch-images-hint">
+                Select every image file, or use the zip option below.
+              </span>
+              <FileDropField
+                inputRef={imagesInputRef}
+                disabled={isBusy}
+                hint="Or drop the image files here."
+                hintId="batch-images-drop-hint"
+                onRejected={() => setFormError("Those files are not label images. Drop JPEG, PNG, WebP, or HEIC files.")}
+              >
+                <input
+                  ref={imagesInputRef}
+                  id="batch-images"
+                  name="images"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/heic"
+                  multiple
+                  aria-describedby="batch-images-hint batch-images-drop-hint"
+                  className="file-input"
+                  disabled={isBusy}
+                  onChange={handleFileInputChange}
+                />
+              </FileDropField>
+            </div>
 
-        <div className="field">
-          <label className="field__label" htmlFor="batch-zip">
-            Or a zip file of images
-          </label>
-          <input
-            ref={zipInputRef}
-            id="batch-zip"
-            name="imagesZip"
-            type="file"
-            accept=".zip,application/zip"
-            className="file-input"
-            disabled={isBusy}
-            onChange={handleFileInputChange}
-          />
-        </div>
+            <div className="field">
+              <label className="field__label" htmlFor="batch-zip">
+                Or a zip file of images
+              </label>
+              {/* Deliberately NOT a drop target: a dropped zip and dropped
+                  images are the same gesture, and two competing zones for
+                  one gesture is a coin-flip for the user (TH-R3). */}
+              <input
+                ref={zipInputRef}
+                id="batch-zip"
+                name="imagesZip"
+                type="file"
+                accept=".zip,application/zip"
+                className="file-input"
+                disabled={isBusy}
+                onChange={handleFileInputChange}
+              />
+            </div>
 
-        <button type="submit" className="primary-button" disabled={isBusy}>
-          {phase.status === "previewing" ? "Checking the upload…" : "Preview batch"}
-        </button>
-      </form>
+            <button type="submit" className="primary-button" disabled={isBusy}>
+              {phase.status === "previewing" ? (
+                <>
+                  <span className="busy-spinner" aria-hidden="true" />
+                  Checking the upload…
+                </>
+              ) : (
+                "Preview batch"
+              )}
+            </button>
+          </form>
 
-      {formError && (
-        <div className="error-panel" role="alert">
-          <p className="error-panel__title">Check your upload</p>
-          <p className="error-panel__message">{formError}</p>
-        </div>
+          {formError && (
+            <div className="error-panel" role="alert">
+              <p className="error-panel__title">Check your upload</p>
+              <p className="error-panel__message">{formError}</p>
+            </div>
+          )}
+
+          {phase.status === "preview-error" && (
+            <div className="error-panel" role="alert">
+              <p className="error-panel__title">{PREVIEW_ERROR_TITLE[phase.kind] ?? "Something went wrong"}</p>
+              <p className="error-panel__message">{phase.message}</p>
+            </div>
+          )}
+
+          {/* Reserves the preview summary's space while the server checks
+              the upload, so the result lands without a jump. */}
+          {phase.status === "previewing" && (
+            <div className="skeleton-stack" aria-hidden="true" data-testid="batch-preview-skeleton">
+              <div className="skeleton-block skeleton-block--banner" />
+            </div>
+          )}
+
+          {phase.status === "preview" && (
+            <BatchPreviewResult result={phase.result} starting={phase.starting} startError={phase.startError} onStart={() => void runStart()} />
+          )}
+        </>
       )}
 
-      {phase.status === "preview-error" && (
-        <div className="error-panel" role="alert">
-          <p className="error-panel__title">{PREVIEW_ERROR_TITLE[phase.kind] ?? "Something went wrong"}</p>
-          <p className="error-panel__message">{phase.message}</p>
-        </div>
-      )}
-
-      {phase.status === "preview" && (
-        <BatchPreviewResult result={phase.result} starting={phase.starting} startError={phase.startError} onStart={() => void runStart()} />
-      )}
+      {/* One persistent polite line, present from first render and kept at
+          this same position across every phase — including the switch to
+          the started view above — so preview/start progress and outcomes
+          reach assistive tech (same WAI-ARIA reasoning as VerifyForm's
+          results region). Visually hidden: sighted users see the buttons,
+          the summary, and the started view themselves. */}
+      <p className="visually-hidden" role="status" data-testid="batch-live-status">
+        {liveStatusText}
+      </p>
     </>
   );
 }

@@ -116,4 +116,39 @@ describe("AccessCodeFormView", () => {
 
     expect(onSuccess).not.toHaveBeenCalled();
   });
+
+  it("has its status region in the DOM from first render, before any submit (loading-state pass)", () => {
+    // A live region only reliably announces content ADDED to it after it
+    // already exists in the DOM (WAI-ARIA) — so the region must be here,
+    // empty, before the submit fills it.
+    render(<AccessCodeFormView onSuccess={() => {}} />);
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+  });
+
+  it("announces 'Checking the code…' to assistive tech while the submit is in flight", async () => {
+    const user = userEvent.setup();
+    let resolveSubmit!: (result: { ok: boolean; message: string | null }) => void;
+    const submit = vi.fn().mockImplementation(() => new Promise((resolve) => (resolveSubmit = resolve)));
+    render(<AccessCodeFormView submit={submit} onSuccess={vi.fn()} />);
+
+    await user.type(screen.getByLabelText("Access code"), "some-code");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(screen.getByRole("status")).toHaveTextContent("Checking the code…");
+
+    resolveSubmit({ ok: false, message: "wrong" });
+    await screen.findByRole("alert");
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+  });
+
+  it("marks the form busy while the submit is in flight", async () => {
+    const user = userEvent.setup();
+    const submit = vi.fn().mockImplementation(() => new Promise(() => {}));
+    const { container } = render(<AccessCodeFormView submit={submit} onSuccess={vi.fn()} />);
+
+    await user.type(screen.getByLabelText("Access code"), "some-code");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(container.querySelector("form")).toHaveAttribute("aria-busy", "true");
+  });
 });

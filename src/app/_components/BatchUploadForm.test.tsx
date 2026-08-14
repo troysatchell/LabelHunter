@@ -1,11 +1,16 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { BatchClientError } from "../_lib/batch-client";
+import { installFileDropTestShims } from "../_lib/file-drop-test-shims";
 import { BatchUploadForm } from "./BatchUploadForm";
 import type { BatchPreviewSuccessResponse } from "../api/batch/preview/types";
 import type { BatchStartSuccessResponse } from "../api/batch/start/types";
+
+// jsdom has no DataTransfer and rejects programmatic FileList assignment —
+// the shims give the real file-drop.ts code a working path here.
+installFileDropTestShims();
 
 function csvFile(name = "manifest.csv"): File {
   return new File(["beverage_type,brand_name\nspirits,Old Tom"], name, { type: "text/csv" });
@@ -230,5 +235,108 @@ describe("BatchUploadForm", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("LabelHunter has reached today's limit");
     expect(alert).toHaveTextContent("LabelHunter has used its budget for today. Try again tomorrow.");
+  });
+});
+
+describe("BatchUploadForm — drag-and-drop (drag-drop pass)", () => {
+  /** The manifest zone renders first, the images zone second; the zip
+   * input deliberately has no zone. */
+  function dropZones(container: HTMLElement): Element[] {
+    return Array.from(container.querySelectorAll(".file-drop"));
+  }
+
+  it("renders exactly two drop zones — the zip input is deliberately not a drop target", () => {
+    const { container } = render(<BatchUploadForm submitPreview={vi.fn()} onStarted={vi.fn()} />);
+    expect(dropZones(container)).toHaveLength(2);
+    expect(screen.getByLabelText("Or a zip file of images").closest(".file-drop")).toBeNull();
+  });
+
+  it("a CSV dropped on the manifest zone lands in the same input and resets a stale preview", async () => {
+    const submitPreview = vi.fn(async () => cleanPreview());
+    const { container } = render(<BatchUploadForm submitPreview={submitPreview} onStarted={vi.fn()} />);
+    const [manifestZone] = dropZones(container);
+
+    // Select the manifest BY DROP (a jsdom quirk forbids mixing
+    // userEvent.upload and a later drop on the SAME input: upload shadows
+    // `files` with a get-only property), then the images by picker.
+    fireEvent.drop(manifestZone, { dataTransfer: { types: ["Files"], files: [csvFile("first.csv")] } });
+    await userEvent.upload(screen.getByLabelText("Label images"), [imageFile("a.jpg"), imageFile("b.jpg")]);
+    await userEvent.click(screen.getByRole("button", { name: "Preview batch" }));
+    expect(await screen.findByRole("button", { name: "Start batch (2)" })).toBeInTheDocument();
+
+    // Dropping a DIFFERENT manifest must run the same stale-preview reset
+    // the picker runs — the old preview describes an upload that is no
+    // longer selected.
+    fireEvent.drop(manifestZone, { dataTransfer: { types: ["Files"], files: [csvFile("second.csv")] } });
+
+    expect(screen.queryByRole("button", { name: /Start batch/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Preview batch" })).toBeInTheDocument();
+    const manifestInput = screen.getByLabelText("CSV manifest") as HTMLInputElement;
+    expect(manifestInput.files?.[0]?.name).toBe("second.csv");
+  });
+
+  it("a .csv dropped with an empty MIME type is still accepted — OS drags often omit it", () => {
+    const { container } = render(<BatchUploadForm submitPreview={vi.fn()} onStarted={vi.fn()} />);
+    const [manifestZone] = dropZones(container);
+
+    fireEvent.drop(manifestZone, {
+      dataTransfer: { types: ["Files"], files: [new File(["a,b"], "manifest.csv", { type: "" })] },
+    });
+
+    const manifestInput = screen.getByLabelText("CSV manifest") as HTMLInputElement;
+    expect(manifestInput.files?.[0]?.name).toBe("manifest.csv");
+  });
+
+  it("image files dropped on the images zone ALL land in the input; non-images are filtered out", () => {
+    const { container } = render(<BatchUploadForm submitPreview={vi.fn()} onStarted={vi.fn()} />);
+    const [, imagesZone] = dropZones(container);
+
+    fireEvent.drop(imagesZone, {
+      dataTransfer: { types: ["Files"], files: [imageFile("a.jpg"), csvFile("not-an-image.csv"), imageFile("b.jpg")] },
+    });
+
+    const imagesInput = screen.getByLabelText("Label images") as HTMLInputElement;
+    expect(Array.from(imagesInput.files ?? []).map((file) => file.name)).toEqual(["a.jpg", "b.jpg"]);
+  });
+});
+
+describe("BatchUploadForm — assistive-tech status line (loading-state pass)", () => {
+  it("announces the preview check while it runs, then the preview result", async () => {
+    let resolvePreview!: (result: BatchPreviewSuccessResponse) => void;
+    const submitPreview = vi.fn(() => new Promise<BatchPreviewSuccessResponse>((resolve) => (resolvePreview = resolve)));
+    render(<BatchUploadForm submitPreview={submitPreview} onStarted={vi.fn()} />);
+
+    await selectManifestAndImages();
+    await userEvent.click(screen.getByRole("button", { name: "Preview batch" }));
+
+    expect(screen.getByTestId("batch-live-status")).toHaveTextContent("Checking the upload…");
+
+    resolvePreview(cleanPreview());
+    await screen.findByTestId("batch-preview-summary");
+    expect(screen.getByTestId("batch-live-status")).toHaveTextContent("Preview ready. 2 of 2 rows ready to process.");
+  });
+
+  it("announces the start, then the started batch, through the SAME persistent line", async () => {
+    const submitPreview = vi.fn(async () => cleanPreview());
+    const submitStart = vi.fn(async () => startSuccess());
+    render(<BatchUploadForm submitPreview={submitPreview} submitStart={submitStart} onStarted={vi.fn()} />);
+
+    await selectManifestAndImages();
+    await userEvent.click(screen.getByRole("button", { name: "Preview batch" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start batch (2)" }));
+
+    await screen.findByTestId("batch-started");
+    expect(screen.getByTestId("batch-live-status")).toHaveTextContent("Batch started. 2 labels are now processing.");
+  });
+
+  it("marks the form busy while the preview request is in flight", async () => {
+    const submitPreview = vi.fn(() => new Promise<BatchPreviewSuccessResponse>(() => {}));
+    const { container } = render(<BatchUploadForm submitPreview={submitPreview} onStarted={vi.fn()} />);
+
+    await selectManifestAndImages();
+    await userEvent.click(screen.getByRole("button", { name: "Preview batch" }));
+
+    expect(container.querySelector("form")).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByTestId("batch-preview-skeleton")).toHaveAttribute("aria-hidden", "true");
   });
 });

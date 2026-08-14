@@ -58,6 +58,12 @@ function defaultFetchItems(after?: string): Promise<ReviewQueueListResponse> {
 export function ReviewQueueBrowser({ fetchItems = defaultFetchItems }: ReviewQueueBrowserProps) {
   const [phase, setPhase] = useState<Phase>({ status: "loading" });
   const [requestId, setRequestId] = useState(0);
+  /** The persistent live line's settled text ("The review queue is up to
+   * date.", "Loaded 3 more items."). In-flight text is derived from
+   * `phase` directly; this only holds what to say once a request the
+   * reviewer started has finished. Cleared on failure — the role="alert"
+   * panels announce failures themselves. */
+  const [announcement, setAnnouncement] = useState("");
 
   // `phase` starts as `{ status: "loading" }` (the `useState` initializer
   // above), which covers the first mount. `refresh` below sets it back to
@@ -71,10 +77,17 @@ export function ReviewQueueBrowser({ fetchItems = defaultFetchItems }: ReviewQue
     let cancelled = false;
     fetchItems().then(
       (page) => {
-        if (!cancelled) setPhase({ status: "success", items: page.items, nextCursor: page.nextCursor });
+        if (cancelled) return;
+        setPhase({ status: "success", items: page.items, nextCursor: page.nextCursor });
+        // requestId 0 is the first, automatic load — nothing to announce
+        // there beyond the page itself. Any bump comes from a control the
+        // reviewer pressed (Refresh, Try again), and THAT completion is
+        // otherwise silent to assistive tech.
+        if (requestId > 0) setAnnouncement("The review queue is up to date.");
       },
       (error: unknown) => {
         if (cancelled) return;
+        setAnnouncement("");
         // A failed manual refresh keeps the rows on screen, next to the
         // error, instead of replacing a working list with a bare error
         // panel — the same reason `refresh()` below keeps rows mounted
@@ -137,8 +150,14 @@ export function ReviewQueueBrowser({ fetchItems = defaultFetchItems }: ReviewQue
             ? { status: "success", items: [...latest.items, ...page.items], nextCursor: page.nextCursor }
             : latest,
         );
+        // Announced without the updater's own applied/discarded guard —
+        // an updater must stay a pure function, and in the one race where
+        // a refresh superseded this page, the refresh writes its own
+        // announcement right after anyway.
+        setAnnouncement(page.items.length === 1 ? "Loaded 1 more item." : `Loaded ${page.items.length} more items.`);
       },
       (error: unknown) => {
+        setAnnouncement("");
         setPhase((latest) =>
           latest.status === "loading-more" && latest.nextCursor === cursor
             ? { status: "refresh-error", items: latest.items, nextCursor: cursor, message: messageFor(error), source: "load-more" }
@@ -150,9 +169,26 @@ export function ReviewQueueBrowser({ fetchItems = defaultFetchItems }: ReviewQue
 
   if (phase.status === "loading") {
     return (
-      <p className="status-banner" role="status">
-        Loading the review queue…
-      </p>
+      <>
+        {/* The status line stays OUTSIDE the aria-busy region: aria-busy
+            lets assistive tech withhold changes inside the busy region
+            until it clears (WAI-ARIA), and this line is the one
+            announcement the first load makes. */}
+        <p className="status-banner" role="status">
+          <span className="busy-spinner" aria-hidden="true" />
+          Loading the review queue…
+        </p>
+        <div aria-busy="true">
+          {/* Placeholder rows reserve roughly the space the real list takes,
+              so the loaded rows land without a large layout jump.
+              aria-hidden: the status line above is the announcement. */}
+          <ul className="review-queue-list" aria-hidden="true">
+            <li className="review-queue-row skeleton-row" />
+            <li className="review-queue-row skeleton-row" />
+            <li className="review-queue-row skeleton-row" />
+          </ul>
+        </div>
+      </>
     );
   }
 
@@ -174,32 +210,67 @@ export function ReviewQueueBrowser({ fetchItems = defaultFetchItems }: ReviewQue
 
   return (
     <>
-      <button type="button" className="secondary-button" disabled={isRefreshing || isLoadingMore} onClick={refresh}>
-        {isRefreshing ? "Refreshing…" : "Refresh"}
-      </button>
-      {phase.status === "refresh-error" && (
-        <div className="error-panel" role="alert">
-          <p className="error-panel__title">
-            {phase.source === "load-more" ? "Could not load more items" : "Could not refresh the review queue"}
-          </p>
-          <p className="error-panel__message">{phase.message}</p>
-        </div>
-      )}
-      <ReviewQueueList items={phase.items} />
-      {hasMore && (
-        <div className="review-queue-more">
-          {/* The list on screen is not the whole queue. Say so plainly,
-              next to the control that reads the rest — a reviewer must
-              never have to work out that items are missing (TH-R3: no
-              instructions needed; TH-R20: always show the reason). */}
-          <p className="review-queue-more__notice" role="status">
-            You are seeing the {phase.items.length} oldest items. More items are waiting.
-          </p>
-          <button type="button" className="secondary-button" disabled={isLoadingMore || isRefreshing} onClick={loadMore}>
-            {isLoadingMore ? "Loading more…" : "Load more"}
-          </button>
-        </div>
-      )}
+      {/* One persistent polite line, present from this branch's first
+          render, not a new region mounted per state (a live region only
+          reliably announces content ADDED after it exists in the DOM —
+          the same WAI-ARIA reasoning VerifyForm's results region
+          documents): in-flight text while a request the reviewer started
+          runs, then its settled outcome. OUTSIDE the aria-busy region
+          below — aria-busy lets assistive tech withhold changes inside
+          the busy region until it clears (WAI-ARIA), which would silence
+          exactly the in-flight text this line exists to announce.
+          Visually hidden — the buttons and rows already show all of
+          this. */}
+      <p className="visually-hidden" role="status" data-testid="review-queue-live-status">
+        {isRefreshing ? "Refreshing the review queue…" : isLoadingMore ? "Loading more items…" : announcement}
+      </p>
+      <div aria-busy={isRefreshing || isLoadingMore}>
+        <button type="button" className="secondary-button" disabled={isRefreshing || isLoadingMore} onClick={refresh}>
+          {isRefreshing ? (
+            <>
+              <span className="busy-spinner" aria-hidden="true" />
+              Refreshing…
+            </>
+          ) : (
+            "Refresh"
+          )}
+        </button>
+        {phase.status === "refresh-error" && (
+          <div className="error-panel" role="alert">
+            <p className="error-panel__title">
+              {phase.source === "load-more" ? "Could not load more items" : "Could not refresh the review queue"}
+            </p>
+            <p className="error-panel__message">{phase.message}</p>
+          </div>
+        )}
+        <ReviewQueueList items={phase.items} />
+        {hasMore && (
+          <div className="review-queue-more">
+            {/* The list on screen is not the whole queue. Say so plainly,
+                next to the control that reads the rest — a reviewer must
+                never have to work out that items are missing (TH-R3: no
+                instructions needed; TH-R20: always show the reason). */}
+            {/* No `role="status"`: this line states a standing fact a
+                reviewer reads in place, and the one persistent status
+                line above now owns every announcement. With both live,
+                one "Load more" announced twice at once — the new "Loaded
+                N more items." and this line's own changed count. */}
+            <p className="review-queue-more__notice">
+              You are seeing the {phase.items.length} oldest items. More items are waiting.
+            </p>
+            <button type="button" className="secondary-button" disabled={isLoadingMore || isRefreshing} onClick={loadMore}>
+              {isLoadingMore ? (
+                <>
+                  <span className="busy-spinner" aria-hidden="true" />
+                  Loading more…
+                </>
+              ) : (
+                "Load more"
+              )}
+            </button>
+          </div>
+        )}
+      </div>
     </>
   );
 }

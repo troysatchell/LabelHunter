@@ -23,6 +23,7 @@ import {
   reserveDailyBudget,
   settleBudgetReservation,
 } from "../../../server/budget/daily-budget";
+import { haikuCallCostUsd } from "../../../server/budget/anthropic-usage";
 import { createFixedWindowLimiter } from "../../../server/rate-limit/fixed-window";
 import { checkRateLimitPair } from "../../../server/rate-limit/instances";
 import { defaultDeps, handleVerifyRequest, POST as verifyPOST, type VerifyRouteDeps } from "./route";
@@ -924,9 +925,13 @@ describe("POST /api/verify — real spend recording (TRO-482)", () => {
     const response = await post(await buildFormData(), deps);
     expect(response.status).toBe(502);
     expect(settleBudget).toHaveBeenCalledTimes(1);
-    // Second argument is the REAL settled cost — must be positive, not the
-    // hardcoded 0 a refund-in-full would pass.
-    expect(settleBudget.mock.calls[0][1]).toBeGreaterThan(0);
+    // Second argument is the REAL settled cost, computed by the SAME
+    // pricing function the route itself calls (`haikuCallCostUsd`) — not a
+    // duplicated formula in the test — for the exact usage
+    // (`makeMockMessage`'s own default: 100 input tokens, 50 output
+    // tokens) the fake client reported above. Not the hardcoded 0 a
+    // refund-in-full would pass.
+    expect(settleBudget.mock.calls[0][1]).toBeCloseTo(haikuCallCostUsd(makeMockMessage("").usage), 10);
   });
 });
 

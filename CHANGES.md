@@ -91,6 +91,142 @@ here). Checked for conflicts before starting: the two PRs open at the time (TRO-
 TRO-510) touch only `src/app/api/verify/route.ts` and `scripts/golden/`, neither overlapping
 this ticket's files.
 
+
+## TRO-510 — realistic-corpus pilot-batch hardening (2026-08-13)
+
+**The point.** A real bottle reference and one real Gemini-generated backdrop already exist
+(`spirits-bottle-01`, `compliance-desk`, `steady` — committed before this ticket). No
+manifest case uses `rendered+ai-backdrop` provenance yet. `build.ts`'s compositing step has
+never produced real output. A whole-branch review bundled four findings and six minor fixes.
+This ticket lands them before the first real pilot batch scales up. The tests made no real
+Gemini or Anthropic API calls. They used fakes and fixtures.
+
+**Finding 1 — the label warp aliased.** `compositeBackdrop.ts` minified the renderer's
+1000x800 label onto a typical ~300x500 quad with pure nearest-neighbor sampling: a
+point-sample downsample that can drop or duplicate a thin warning-text stroke.
+`compositeLabelOntoBackdrop` now pre-resizes the label with `sharp`'s lanczos3 kernel to
+approximately the quad's own extent first. Aspect-ratio decision: resize non-uniformly to
+the quad's edge lengths (accept the stretch), not letterboxed. The warp is already a general
+affine map driven by the quad's shape; letterboxing first would only add blank padding bars
+that the same warp would then stretch into the photo.
+
+**Finding 2 — a wrong caseId failed with a bare file-not-found error.** A hand-authored
+manifest entry must reuse the sidecar's exact generated `caseId`. Getting it wrong failed
+`pnpm golden:build` with a bare Node ENOENT — no case name, no hint. `build.ts` now wraps
+the read in a try/catch that names the case and the expected path. `golden-set/README.md`'s
+fold-in recipe now states the `caseId`-matching rule explicitly.
+
+**Finding 3 — already fixed.** The finding claimed `generateWithGemini` hardcodes
+`mimeType: "image/jpeg"` (`imagen.ts:98`). Current code (`imagen.ts:221-246`) already derives
+the reference photo's MIME type from its real content (`detectImageMimeType`), landed by an
+earlier commit on this same file. No change needed — line numbers in the finding were stale
+against `main`.
+
+**Finding 4 — the pilot gate had no tooling affordance.** The design's hard gate (one bottle,
+6 images, 5 pass criteria, before generating the full corpus) was undocumented.
+`golden-set/README.md` now states the gate, its five criteria, and the workaround for running
+only the pilot batch: `pnpm golden:imagen` has no `--bottle`/`--limit` flag by design (not
+required by this ticket), so the pilot run temporarily moves every other bottle reference
+JSON out of `assets/golden/references/`. Paid-spend safety, which the ticket called
+worth fixing regardless of the flag question: `imagen.ts`'s generation loop had no
+per-target error boundary and no skip-existing check, so one transient failure aborted a
+paid batch and a rerun re-paid for every target already generated. The loop is now the
+exported `runGenerationBatch`, with three outcomes per target. It skips one whose backdrop
+and sidecar both already exist (no re-spend). It recovers one whose backdrop exists but
+whose sidecar does not — a prior run's paid call that never reached the sidecar write —
+by rebuilding the sidecar from the existing backdrop, with no new Gemini call.
+Otherwise it generates fresh, and one target's failure no longer stops the rest. `generateOne`
+now writes the backdrop PNG immediately after the paid call returns, before detection or the
+sidecar write, so a later failure in either step still leaves a real, recoverable backdrop on
+disk. If a target still fails after the paid call succeeded, the run's spend total counts it —
+checking for the now-written backdrop on disk — instead of undercounting a real charge.
+
+**Minor fixes, same pass.**
+- `imagen.ts`'s sidecar now writes `labelPlacement` as the 4 corners only, matching the
+  manifest's own `LabelPlacementQuad` shape exactly. Detector bookkeeping (`pixelCount`,
+  `imageWidth`, `imageHeight`) moves to a sibling `detection` key, so it stops accreting into
+  `manifest.json` when a human copies the sidecar's `labelPlacement` field in.
+- `imagenPrompt.test.ts` gained a 3-line test parsing `BLANK_LABEL_COLOR_HEX` and asserting
+  it equals `BLANK_LABEL_COLOR_RGB` — the two were independently authored literals with a
+  comment claiming they cannot drift; nothing enforced that claim before.
+- `build.ts`, `images.test.ts`: swept three stale "LH-005" comments to "a future ticket,"
+  matching `golden-set/README.md`'s own wording for the still-unbuilt `ai-generated` track.
+- `blankRegionDetector.ts`: fixed `MAX_REGION_FRACTION`'s comment. It had its subject and
+  effect backwards against `MIN_REGION_FRACTION`'s own comment right above it.
+- `golden-set/README.md`: added a note under the build step that a composited photographic
+  JPEG is denser than a flat rendered label and should not be expected to land under the
+  same ~500KB target.
+- `imagen.ts`'s missing-`GOOGLE_API_KEY` error names sourcing `.factory-env` or exporting the
+  variable directly. It no longer mentions `.env.local` — confirmed by a direct test that
+  `tsx` does not load it, so that advice did not work.
+- `build.ts`'s backdrop-read catch now checks the caught error's `code`. Only `ENOENT` gets
+  the named "no file exists" message; any other filesystem error (a directory in the way,
+  a permission failure) now passes through unchanged instead of being mislabeled.
+
+**How to run it.** No new command. `pnpm golden:imagen` now skips a completed target,
+recovers one with a missing sidecar, and continues past one target's failure. It also counts
+a failed target's spend when its paid call already succeeded. `pnpm golden:build` now reports
+a case-specific error for a missing backdrop, instead of a bare file-not-found. `pnpm test --
+scripts/golden` runs the new and changed tests.
+
+**Rollback.** Revert the PR. No schema field was removed. A committed sidecar this ticket's
+code wrote (the split `labelPlacement`/`detection` shape) stays valid input for the manual
+fold-in step. A revert restores the old writer, so a fresh `pnpm golden:imagen` run after
+reverting writes the old flat shape again. No manifest entry needs editing either way — no
+`rendered+ai-backdrop` case exists yet.
+
+**Confirmed.** `pnpm typecheck` and `pnpm lint` are clean. This ticket added 12 tests: 3 in
+`compositeBackdrop.test.ts`, 2 in `build.test.ts`, 6 in `imagen.test.ts`, 1 in
+`imagenPrompt.test.ts`. Every new regression test was confirmed to fail for the stated reason
+before its fix and pass after. No API call was made. Every test uses a fake generator or a
+synthetic `sharp` fixture. The full unit suite passes at this commit: 2622 tests across
+196 files. That total includes every sibling ticket merged into this branch since; it will
+read differently after the next merge, by design, not by drift. This entry covers three
+rounds on the same branch — two local review rounds and this PR-review resync — folded into
+one account rather than left as separate, partly-stale write-ups (lessons.md rule 17).
+
+## TRO-580 — verify route now settles real spend on a validation-failed extraction (2026-08-13)
+
+**The gap (TH-R6).** `/api/verify` reserves budget, then calls Haiku, then settles the
+reservation. On a genuine extraction failure, the route settled the reservation with a
+hardcoded 0. The hardcoded 0 refunded the full reservation, every time. A full refund was
+correct for a transport failure — no response at all. A full refund was wrong for a
+`HaikuExtractionError`. The model did respond. `parseExtractionResponse` rejected the
+response's shape. The paid call already happened. Every malformed-response extraction
+under-counted the daily budget. TRO-576 found and fixed the identical gap in `/api/extract`
+first. This ticket mirrors that fix in `/api/verify`.
+
+**The fix.** The fix is in `src/app/api/verify/route.ts`, inside the `Promise.all` catch
+block around the Haiku call. That block now reads `usageCapture.takeLastUsage()` before it
+settles the reservation — the same read the success path already does — instead of passing
+a hardcoded 0. A model response that fails validation still sets this usage before the
+throw: `client.messages.create` resolves first, and `parseExtractionResponse` runs after,
+so only `parseExtractionResponse` can throw. A genuine transport failure never reaches
+`client.messages.create`. `takeLastUsage()` still answers `null` in that case, so the route
+still refunds the reservation in full — the same behavior as before this ticket.
+
+**Confirmed against the post-TRO-566 route.** TRO-566 changed this route's budget calls.
+The old plain `checkBudget`/`recordSpend` pair became an atomic `reserveBudget`/
+`settleBudget` reservation. The gap TRO-580 fixes was still present in the merged code: the
+catch block settled with a hardcoded 0, no matter what usage the wrapped client had already
+captured.
+
+**Confirmed.** New regression test in `src/app/api/verify/route.test.ts`: "settles the REAL
+captured usage when the model responded but its output failed validation (TRO-580)". A fake
+`extractLabel` makes one call through the usage-capture wrapper, then throws
+`HaikuExtractionError`. The test checks that `settleBudget`'s real-cost argument equals
+`haikuCallCostUsd`'s own computed cost for that usage — the SAME pricing function the route
+itself calls, not a second copy of the formula. Red first: before the fix, the test failed
+with `expected 0 to be greater than 0`, confirming the old hardcoded-0 path. Green after the
+fix. Full `route.test.ts` suite: 37 tests, all passing, including the pre-existing
+transport-failure test (`records nothing when the Haiku call itself fails`) — this confirms
+the null-usage-still-settles-0 path did not change. `pnpm typecheck` is clean.
+
+**How to run.** `pnpm vitest run src/app/api/verify/route.test.ts`.
+
+**Rollback.** Revert the PR. The route goes back to refunding every extraction failure in
+full, including a validation failure that followed a real, paid response.
+
 ## TRO-582 — a dedicated image box on a grid, and the warning card shows the real texts (2026-08-13)
 
 **Troy's direction:** "make a dedicated image box, use a grid." Troy also reported earlier

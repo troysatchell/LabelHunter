@@ -8,13 +8,66 @@
  * the backdrop photo itself was generated once and is not reproducible.
  */
 import sharp from "sharp";
-import type { Quad } from "./blankRegionDetector";
+import type { Point, Quad } from "./blankRegionDetector";
 
 interface Matrix2x2 {
   readonly a: number;
   readonly b: number;
   readonly c: number;
   readonly d: number;
+}
+
+function edgeLength(a: Point, b: Point): number {
+  return Math.hypot(b.x - a.x, b.y - a.y);
+}
+
+/**
+ * Target size for the pre-resize below: the quad's top-edge length
+ * (topLeft to topRight) and left-edge length (topLeft to bottomLeft),
+ * rounded to whole pixels. `quad.bottomRight` is not used, the same
+ * omission `solveLinearMap` documents below. A quad's edges are not
+ * always the same length (a real detected quad can be a trapezoid), so
+ * this is an approximation of the destination extent, not an exact
+ * width and height. Clamped to a 1-pixel minimum so a degenerate
+ * (zero-area) quad still reaches `invert`'s own check below instead of
+ * failing inside `sharp.resize` first.
+ */
+export function computePreResizeTarget(quad: Quad): { width: number; height: number } {
+  return {
+    width: Math.max(1, Math.round(edgeLength(quad.topLeft, quad.topRight))),
+    height: Math.max(1, Math.round(edgeLength(quad.topLeft, quad.bottomLeft))),
+  };
+}
+
+/**
+ * Downsamples (or upsamples) `labelImage` to approximately the
+ * destination quad's own extent, ahead of the nearest-neighbor warp in
+ * `compositeLabelOntoBackdrop` below.
+ *
+ * WHY. The renderer's label canvas is a fixed 1000x800
+ * (`render.ts`'s `CANVAS_WIDTH`/`CANVAS_HEIGHT`). A typical detected
+ * quad is much smaller and a different shape — for example roughly
+ * 300x500. Sampling that directly with nearest-neighbor, one destination
+ * pixel at a time, is a point-sample downsample: it skips most of the
+ * source pixels and can lose or duplicate fine detail (a thin warning-text
+ * stroke) unpredictably. Lanczos3 here does the antialiasing a proper
+ * downsample needs; the nearest-neighbor step afterward only has to
+ * sample a source already close to 1:1 with its destination.
+ *
+ * ASPECT-RATIO DECISION: resize non-uniformly (`fit: "fill"`) to the
+ * quad's own edge lengths. Do not letterbox to the label's original
+ * aspect ratio first. The warp that follows is already a general affine
+ * map driven entirely by the quad's geometry — it stretches the label to
+ * fit whatever shape the quad is, independent of any pre-resize choice.
+ * Letterboxing first would only add blank padding bars inside the label
+ * image; that same affine warp would then stretch those bars into the
+ * composited photo as visible padding. Matching the pre-resize to the
+ * warp's own eventual stretch fixes the sampling problem without adding a
+ * second, new distortion.
+ */
+async function preResizeLabelToQuad(labelImage: Buffer, quad: Quad): Promise<Buffer> {
+  const { width, height } = computePreResizeTarget(quad);
+  return sharp(labelImage).resize(width, height, { fit: "fill", kernel: "lanczos3" }).toBuffer();
 }
 
 /**
@@ -57,13 +110,18 @@ function invert(m: Matrix2x2): Matrix2x2 {
  * output canvas and reports no offset back to the caller, making exact
  * placement on the backdrop unreliable to reason about without empirical
  * testing this plan cannot do ahead of running it.
+ *
+ * `labelImage` is pre-resized (`preResizeLabelToQuad`, above) before this
+ * nearest-neighbor step runs — see that function's own comment for why and
+ * for the aspect-ratio decision.
  */
 export async function compositeLabelOntoBackdrop(
   backdropImage: Buffer,
   labelImage: Buffer,
   quad: Quad,
 ): Promise<Buffer> {
-  const labelRaw = await sharp(labelImage).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const resizedLabel = await preResizeLabelToQuad(labelImage, quad);
+  const labelRaw = await sharp(resizedLabel).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const backdropRaw = await sharp(backdropImage).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
 
   const labelWidth = labelRaw.info.width;

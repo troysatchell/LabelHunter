@@ -6,10 +6,12 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
 ## TRO-510 — realistic-corpus pilot-batch hardening (2026-08-13)
 
-**The point.** No real bottle reference photo exists yet. This pipeline has never run for
-real. A whole-branch review bundled four findings and six minor fixes. This ticket lands
-them before the first real pilot batch runs — never Gemini or Anthropic calls, all fixes
-proven with fakes and fixtures.
+**The point.** A real bottle reference and one real Gemini-generated backdrop already exist
+(`spirits-bottle-01`, `compliance-desk`, `steady` — committed before this ticket). No
+manifest case uses `rendered+ai-backdrop` provenance yet. `build.ts`'s compositing step has
+never produced real output. A whole-branch review bundled four findings and six minor fixes.
+This ticket lands them before the first real pilot batch scales up. The tests made no real
+Gemini or Anthropic API calls. They used fakes and fixtures.
 
 **Finding 1 — the label warp aliased.** `compositeBackdrop.ts` minified the renderer's
 1000x800 label onto a typical ~300x500 quad with pure nearest-neighbor sampling: a
@@ -73,21 +75,27 @@ checking for the now-written backdrop on disk — instead of undercounting a rea
   the named "no file exists" message; any other filesystem error (a directory in the way,
   a permission failure) now passes through unchanged instead of being mislabeled.
 
-**How to run it.** No new command. `pnpm golden:build` and `pnpm golden:imagen` behave the
-same as before, with the fixes above. `pnpm test -- scripts/golden` runs the new and changed
-tests.
+**How to run it.** No new command. `pnpm golden:imagen` now skips a completed target,
+recovers one with a missing sidecar, and continues past one target's failure. It also counts
+a failed target's spend when its paid call already succeeded. `pnpm golden:build` now reports
+a case-specific error for a missing backdrop, instead of a bare file-not-found. `pnpm test --
+scripts/golden` runs the new and changed tests.
 
-**Rollback.** Revert the PR. Every change is additive or a narrow guard; no schema field was
-removed, and no existing manifest entry needs editing (no `rendered+ai-backdrop` case exists
-yet).
+**Rollback.** Revert the PR. No schema field was removed. A committed sidecar this ticket's
+code wrote (the split `labelPlacement`/`detection` shape) stays valid input for the manual
+fold-in step. A revert restores the old writer, so a fresh `pnpm golden:imagen` run after
+reverting writes the old flat shape again. No manifest entry needs editing either way — no
+`rendered+ai-backdrop` case exists yet.
 
-**Confirmed.** `pnpm typecheck` and `pnpm lint` are clean. The full unit suite passes: 2425
-tests across 190 files. 12 tests are new: 3 in `compositeBackdrop.test.ts` (8 total), 2 in
-`build.test.ts` (4 total), 6 in `imagen.test.ts` (26 total), 1 in `imagenPrompt.test.ts`
-(6 total). Every new regression test was confirmed to fail for the stated reason before its
-fix and pass after. No API call was made — every test uses a fake generator or a synthetic
-`sharp` fixture. This entry covers two review rounds on the same branch, folded into one
-account rather than left as two separate, partly-stale write-ups (lessons.md rule 17).
+**Confirmed.** `pnpm typecheck` and `pnpm lint` are clean. This ticket added 12 tests: 3 in
+`compositeBackdrop.test.ts`, 2 in `build.test.ts`, 6 in `imagen.test.ts`, 1 in
+`imagenPrompt.test.ts`. Every new regression test was confirmed to fail for the stated reason
+before its fix and pass after. No API call was made. Every test uses a fake generator or a
+synthetic `sharp` fixture. The full unit suite passes at this commit: 2622 tests across
+196 files. That total includes every sibling ticket merged into this branch since; it will
+read differently after the next merge, by design, not by drift. This entry covers three
+rounds on the same branch — two local review rounds and this PR-review resync — folded into
+one account rather than left as separate, partly-stale write-ups (lessons.md rule 17).
 
 ## TRO-581 — a deterministic single-channel warning violation fails outright (2026-08-13)
 

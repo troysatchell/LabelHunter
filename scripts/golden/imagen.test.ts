@@ -188,6 +188,9 @@ describe("generateOne", () => {
       expect(meta.detection.pixelCount).toBe(result.detectedQuad?.pixelCount);
       expect(meta.detection.imageWidth).toBe(result.detectedQuad?.imageWidth);
       expect(meta.detection.imageHeight).toBe(result.detectedQuad?.imageHeight);
+      // A fresh generateOne call's metadata IS real provenance -- the flag
+      // must be false, not just absent (TRO-510 review).
+      expect(meta.generationMetadata.reconstructedFromExistingBackdrop).toBe(false);
     } finally {
       rmSync(outDir, { recursive: true, force: true });
     }
@@ -284,6 +287,11 @@ describe("runGenerationBatch", () => {
       const meta = JSON.parse(readFileSync(path.join(outDir, `${caseId}.meta.json`), "utf8"));
       expect(meta.caseId).toBe(caseId);
       expect(meta.labelPlacement).not.toBeNull();
+      // A recovered sidecar's model/resolution/promptVersion/generatedAt
+      // describe THIS run, not whatever run actually produced the existing
+      // PNG -- they must not be mistaken for real provenance. The flag
+      // marks that distinction explicitly (TRO-510 review).
+      expect(meta.generationMetadata.reconstructedFromExistingBackdrop).toBe(true);
     } finally {
       rmSync(outDir, { recursive: true, force: true });
     }

@@ -610,7 +610,12 @@ function resolveWithinDir(dir: string, filename: string, what: string): string {
  * `rebuildSidecarFromExistingBackdrop` (no new call, an already-written
  * backdrop) so the two write exactly the same shape.
  */
-function sidecarJson(caseId: string, target: GenerationTarget, quad: DetectedQuad | null): string {
+function sidecarJson(
+  caseId: string,
+  target: GenerationTarget,
+  quad: DetectedQuad | null,
+  options: { readonly reconstructed?: boolean } = {},
+): string {
   return JSON.stringify(
     {
       caseId,
@@ -641,6 +646,16 @@ function sidecarJson(caseId: string, target: GenerationTarget, quad: DetectedQua
         resolution: RESOLUTION,
         promptVersion: PROMPT_VERSION,
         generatedAt: new Date().toISOString(),
+        // True only when this call rebuilt the sidecar from an already-
+        // written backdrop (rebuildSidecarFromExistingBackdrop, below) — no
+        // Gemini call happened this time. The four fields above then
+        // describe THIS run's constants and clock, not what actually
+        // produced the PNG bytes on disk: an earlier run may have used a
+        // different model, resolution, or prompt version, at an earlier
+        // time. A human folding this into manifest.json must not read
+        // those four fields as the real provenance of the image when this
+        // flag is true.
+        reconstructedFromExistingBackdrop: options.reconstructed === true,
       },
     },
     null,
@@ -702,7 +717,7 @@ async function rebuildSidecarFromExistingBackdrop(
   const metaPath = resolveWithinDir(outDir, `${caseId}.meta.json`, "meta path");
   const image = readFileSync(backdropPath);
   const quad = await detectBlankRegionQuad(image, BLANK_LABEL_COLOR_RGB, DETECTION_TOLERANCE);
-  writeFileSync(metaPath, sidecarJson(caseId, target, quad));
+  writeFileSync(metaPath, sidecarJson(caseId, target, quad, { reconstructed: true }));
   return { caseId, backdropPath, metaPath, detectedQuad: quad };
 }
 

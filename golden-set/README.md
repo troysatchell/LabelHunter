@@ -62,17 +62,22 @@ transcription risk that an `ai-generated` case carries.
 The tooling exists now. Synthetic fixtures test the tooling:
 `scripts/golden/{imagenPrompt,blankRegionDetector,compositeBackdrop,imagen}.ts`.
 
-`assets/golden/references/` now holds real bottle photos (TRO-529 / LH-024's five
-`photographed` cases use five of them directly). No case in this manifest has provenance
+`assets/golden/references/` now holds real bottle photos: TRO-529 / LH-024's five
+`photographed` cases use five of them directly. A sixth, `spirits-bottle-01.jpg`, is a
+realistic-corpus bottle reference. One real Gemini-generated backdrop already exists for it
+(`golden-set/backdrops/case-ai-backdrop-spirits-bottle-01-compliance-desk-steady.png`,
+committed before this ticket). No case in this manifest has provenance
 `"rendered+ai-backdrop"` yet, so no case here composites onto a backdrop from this directory.
 
-A future ticket adds the first one, once real bottle photos exist.
+A future ticket configures the first one — either adopting this existing backdrop or
+generating a new one.
 
-**Pilot gate — clear this before generating the full corpus (design doc §5).** No bottle
-reference photo exists in this repo yet, so this pipeline has never run for real. The first
-run must be a pilot batch: one bottle, 2 scenes, 3 camera conditions — 6 images. This is a
-hard gate. Do not generate the rest of the corpus until the pilot batch demonstrates all
-five of:
+**Pilot gate — clear this before generating the full corpus (design doc §5).** One real
+bottle reference and one real backdrop already exist (above). No manifest case uses
+`rendered+ai-backdrop` provenance yet. `build.ts`'s compositing step has never produced real
+output. The pilot batch needs 6 images total: one bottle, 2 scenes, 3 camera conditions.
+This is a hard gate. Do not generate the rest of the corpus until the pilot batch
+demonstrates all five of:
 
 1. The blank region is actually produced in every pilot image.
 2. It stays geometrically aligned with the bottle, not floating free of the label area.
@@ -104,7 +109,11 @@ Follow these steps for each bottle reference, pilot or full corpus alike:
    (`pixelCount`, `imageWidth`, `imageHeight`) lives under its own `detection` key, not inside
    `labelPlacement` — fold in `labelPlacement` and `generationMetadata` only, not `detection`.
    Reruns already on disk are skipped (no re-spend); one target's failure is logged and does
-   not stop the rest of the batch. The tooling never edits `manifest.json`.
+   not stop the rest of the batch. The tooling never edits `manifest.json`. If a run recovers
+   a sidecar from an existing backdrop (no new Gemini call), `generationMetadata` carries
+   `reconstructedFromExistingBackdrop: true`. Its `model`/`resolution`/`promptVersion`/
+   `generatedAt` then describe the recovery run, not what produced the image. Fold in the
+   flag as-is; do not read those four fields as real provenance when it is `true`.
 3. Check the sidecar's `labelPlacement` value. If automatic detection fails, the sidecar
    shows `labelPlacement: null` for that case. `pnpm golden:imagen` also prints "needs
    manual placement" as a reminder. When this happens, measure a valid label-placement

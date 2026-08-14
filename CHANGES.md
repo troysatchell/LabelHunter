@@ -6,9 +6,9 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
 ## TRO-582 — a dedicated image box on a grid, and the warning card shows the real texts (2026-08-13)
 
-**Troy's direction:** "make a dedicated image box, use a grid" — plus the earlier report
-that the warning row's "On the application: the statutory warning text (27 CFR part 16)"
-read like missing application data.
+**Troy's direction:** "make a dedicated image box, use a grid." Troy also reported earlier
+that the warning row's application-side placeholder ("the statutory warning text, 27 CFR
+part 16") read like missing application data.
 
 **The layout.** Both detail surfaces (`DetailView`, `ReviewItemDetail`) now share one CSS
 Grid (`.detail-layout`, 2fr/3fr `minmax` columns). The single-column collapse below 48rem is
@@ -17,8 +17,8 @@ quiet well on the alt background. `object-fit: contain` with a capped height mea
 label never pushes the fields below the fold and is never cropped. The persisted original
 filename renders as a functional caption. The box is sticky in its column on desktop, so the
 artwork stays in view while the reviewer scrolls the field rows they check against it.
-Design read per the design-taste discipline: trust-first product UI; grid over flex-math;
-zero decoration.
+The design read follows the design-taste discipline: this is trust-first product UI, so the
+layout uses a plain grid and adds no decoration.
 
 **The warning card.** The warning row now shows the real texts on all three surfaces
 (`ResultsChecklist`, `DetailView`, `ReviewItemDetail`). The transcription renders with its
@@ -27,9 +27,9 @@ the comparator's own `CANONICAL_WARNING_TEXT`, never a second copy. The marks co
 `diffWords` (`src/app/_lib/word-diff.ts`), an LCS word alignment. The alignment is
 display-only: the verdict and reason still come from the comparator (standing rule 11).
 Marks use background tint plus weight — never color alone. Required words the label drops
-with no replacement surface as an explicit `[missing: …]` indicator at the spot where they
-belong; a substitution gets no double marker, because the replacement's own mark carries the
-signal (review round 1's catch — an omitted clause was previously invisible). Casing
+with no replacement surface as an explicit `[missing: …]` indicator where they belong. A
+substitution gets no second marker: the replacement's own mark carries the signal. Review
+round 1 caught this class — an omitted clause was previously invisible. Casing
 deviations are deliberately NOT marked by the diff. The caps check's reason line already
 carries them, and marking every token of a title-case warning would bury the wording
 signal.
@@ -37,14 +37,15 @@ signal.
 **Rollback.** Revert the PR. The surfaces return to the flex layout, the bare image, and
 the placeholder citation.
 
-**Confirmed.** 12 new tests: `word-diff` (7 — the case-10 paraphrase marks exactly
-"pregnant, consume, due, to"; verbatim marks nothing; title-case marks nothing),
-`WarningTranscription` (3), `LabelImageFigure` (2). One superseded DetailView assertion
-updated: the placeholder citation is replaced by the statute itself, with the standing-rule-11
-boundary restated in the test. All 386 app tests pass, including the TRO-578 token gate and
-the contrast test. Verified live: one real verify call against the local app with the
-case-10 image rendered the grid, the sticky image box, and the marked paraphrase
-(screenshot in the PR). `pnpm typecheck` and `pnpm lint` are clean.
+**Confirmed.** The branch adds 15 tests. `word-diff` has 10: the case-10 paraphrase marks
+exactly "pregnant, consume, due, to"; a verbatim warning marks nothing; a title-case warning
+marks nothing; the three omission scenarios pass. `WarningTranscription` has 3 and
+`LabelImageFigure` has 2. I updated one superseded DetailView assertion: the statute itself
+replaces the placeholder citation, and the test restates the standing-rule-11 boundary. All
+389 app tests pass, including the TRO-578 token gate and the contrast test. I verified the
+change live: one real verify call against the local app with the case-10 image rendered the
+grid, the sticky image box, and the marked paraphrase. The PR carries the screenshot.
+`pnpm typecheck` and `pnpm lint` are clean.
 
 ## TRO-578 — design tokens and one visual hierarchy (2026-08-13)
 

@@ -52,7 +52,7 @@ import { MAX_DESKEW_ANGLE_DEG } from "./constants";
  * enough to run fast) — that constant is module-private there by design,
  * so this is a deliberate, named copy, not a shared binding.
  */
-const ANALYSIS_WIDTH_PX = 500;
+const ANALYSIS_WIDTH_PX = 350;
 
 /**
  * A pixel counts as "ink" when it is darker than this fixed grey value.
@@ -71,7 +71,7 @@ const DARK_PIXEL_THRESHOLD = 180;
  * 2-degree tolerance the acceptance evidence sets, at half the `sharp`
  * calls a 0.5-degree step would need.
  */
-const ANGLE_STEP_DEG = 1;
+const ANGLE_STEP_DEG = 2;
 
 /**
  * A candidate peak's variance must clear this floor before it counts as

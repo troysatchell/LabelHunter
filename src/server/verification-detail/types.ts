@@ -5,6 +5,7 @@
  * `src/app/api/verify/types.ts` documents for its own shapes.
  */
 import type { FieldVerdict, LabelVerdict, RouterFieldKey } from "../router";
+import type { BoldSignal } from "../warning";
 
 /**
  * Human-readable label for one of the router's five fields. A short,
@@ -99,6 +100,31 @@ export interface VerificationDetail {
   resolverNote: string | null;
   labelImage: VerificationImageDetail;
   fields: VerificationFieldDetail[];
+  /**
+   * LH-025/LH-026 (TRO-532/TRO-533), CP-2 §7.2/§7.3, TH-R9. The pixel-
+   * measured bold advisory signal for this verification's government
+   * warning — `null` when it was never measured (no warning-region crop
+   * existed for this label; `schema.ts`'s own `verifications.boldSignal`
+   * comment names this the same distinct state). ADVISORY ONLY: this
+   * value plays no part in `labelVerdict` or any `VerificationFieldDetail`
+   * above — `getVerificationDetail` reads it straight off the persisted
+   * row, after `routeLabel` already decided the verdict.
+   */
+  boldSignal: VerificationBoldSignalDetail | null;
+}
+
+/**
+ * The Detail view's own narrow read of `BoldSignalResult`
+ * (`src/server/warning/bold-detect.ts`) — `signal` and `reason` only.
+ * `ratio`/`splitFraction`/`prefixStrokeWidthPx`/`bodyStrokeWidthPx` stay
+ * out of this UI-facing type on purpose: standing rule 12 says the UI
+ * shows a reason, never a bare number, and `reason` (ASD-STE100 prose,
+ * `bold-detect.ts`'s own header comment) already carries what those
+ * numbers would only restate less clearly.
+ */
+export interface VerificationBoldSignalDetail {
+  signal: BoldSignal;
+  reason: string;
 }
 
 /** `getVerificationDetail`'s result: a discriminated union, not a nullable

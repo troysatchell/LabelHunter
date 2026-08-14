@@ -15,7 +15,7 @@ import { getTodaySpendUsd, HAIKU_CALL_RESERVE_ESTIMATE_USD, reserveDailyBudget, 
 import { getDefaultExtractorClient, HaikuExtractionError } from "../extractor";
 import { makeMockMessage, WELL_FORMED_EXTRACTION_BODY } from "../extractor/test-support";
 import type { WarningComparatorResult } from "../router";
-import type { CompareGovernmentWarningFromImageInput } from "../warning";
+import type { BoldSignalResult, CompareGovernmentWarningFromImageInput, CompareGovernmentWarningFromImageResult } from "../warning";
 import { readLabelImage } from "../storage/db-image-storage";
 import { claimNextBatchQueueItem } from "./claim";
 import { BUDGET_EXHAUSTED_RETRY_DELAY_MS, DEFAULT_BACKOFF_CONFIG } from "./backoff";
@@ -81,8 +81,20 @@ function clientThrowing(error: unknown): Anthropic {
  * block below overrides `compareGovernmentWarning` explicitly to exercise
  * the real MATCH/MISMATCH/failure behavior.
  */
-async function warningNeedsReviewStub(): Promise<WarningComparatorResult> {
-  return { verdict: "NEEDS_REVIEW", reviewReason: "WARNING_MISMATCH" };
+/** TRO-533 — every fake `compareGovernmentWarning` in this file returns
+ * `{ comparator, boldSignal }` now, mirroring
+ * `src/app/api/verify/route.test.ts`'s own `warningOutcome` helper
+ * exactly. `boldSignal` defaults to `null` — fine for every test that is
+ * not itself testing the bold-signal wiring. */
+function warningOutcome(
+  comparator: WarningComparatorResult,
+  boldSignal: BoldSignalResult | null = null,
+): CompareGovernmentWarningFromImageResult {
+  return { comparator, boldSignal };
+}
+
+async function warningNeedsReviewStub(): Promise<CompareGovernmentWarningFromImageResult> {
+  return warningOutcome({ verdict: "NEEDS_REVIEW", reviewReason: "WARNING_MISMATCH" });
 }
 
 /**
@@ -136,7 +148,7 @@ describe("processExtractClaim — PASS", () => {
       // this fake just needs a clean MATCH so this test's PASS verdict
       // isolates the claim/completion-guard mechanics it actually means to
       // exercise.
-      compareGovernmentWarning: async () => ({ verdict: "MATCH" }),
+      compareGovernmentWarning: async () => warningOutcome({ verdict: "MATCH" }),
     });
 
     const outcome = await processExtractClaim(claimed, deps);
@@ -179,7 +191,7 @@ describe("processExtractClaim — FAIL", () => {
     });
     const deps = makeDeps({
       anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
-      compareGovernmentWarning: async () => ({ verdict: "MATCH" }),
+      compareGovernmentWarning: async () => warningOutcome({ verdict: "MATCH" }),
     });
 
     const outcome = await processExtractClaim(claimed, deps);
@@ -368,12 +380,12 @@ describe("processExtractClaim — lost-lease race (CP-3 §3.2)", () => {
     // item first.
     await db.update(batchQueueItems).set({ leaseExpiresAt: await dbPastTimestamp(db, 1) }).where(eq(batchQueueItems.id, claimed.id));
     const secondClaim = await claimNextBatchQueueItem(db, "EXTRACT", "worker-2", 60, { scopeToBatchJobId: batchJobId });
-    const secondDeps = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY), compareGovernmentWarning: async () => ({ verdict: "MATCH" }) });
+    const secondDeps = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY), compareGovernmentWarning: async () => warningOutcome({ verdict: "MATCH" }) });
     const secondOutcome = await processExtractClaim(secondClaim!, secondDeps);
     expect(secondOutcome.kind).toBe("done");
 
     // The FIRST (stale) worker's own, now-late result must be discarded.
-    const staleDeps = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY), compareGovernmentWarning: async () => ({ verdict: "MATCH" }) });
+    const staleDeps = makeDeps({ anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY), compareGovernmentWarning: async () => warningOutcome({ verdict: "MATCH" }) });
     const staleOutcome = await processExtractClaim(claimed, staleDeps);
     expect(staleOutcome.kind).toBe("stale");
 
@@ -442,7 +454,7 @@ describe("processExtractClaim — government warning wiring (TRO-517, TH-R9)", (
       // `warningCalled` promise never settling.
       expect(callOrder).not.toContain("extractLabel:resolved");
       markWarningCalled();
-      return { verdict: "MATCH" };
+      return warningOutcome({ verdict: "MATCH" });
     };
 
     const deps = makeDeps({ anthropicClient, compareGovernmentWarning });
@@ -474,7 +486,7 @@ describe("processExtractClaim — government warning wiring (TRO-517, TH-R9)", (
     const claimed = await claimedFixture(batchJobId, "warning-match.jpg", { brandName: "Old Tom Distillery", classType: "Straight Bourbon Whiskey" });
     const deps = makeDeps({
       anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
-      compareGovernmentWarning: async () => ({ verdict: "MATCH", note: "Government Warning matches the required text." }),
+      compareGovernmentWarning: async () => warningOutcome({ verdict: "MATCH", note: "Government Warning matches the required text." }),
     });
 
     const outcome = await processExtractClaim(claimed, deps);
@@ -493,7 +505,7 @@ describe("processExtractClaim — government warning wiring (TRO-517, TH-R9)", (
     const claimed = await claimedFixture(batchJobId, "warning-mismatch.jpg", { brandName: "Old Tom Distillery", classType: "Straight Bourbon Whiskey" });
     const deps = makeDeps({
       anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
-      compareGovernmentWarning: async () => ({ verdict: "MISMATCH", note: "Government Warning wording differs from the required text." }),
+      compareGovernmentWarning: async () => warningOutcome({ verdict: "MISMATCH", note: "Government Warning wording differs from the required text." }),
     });
 
     const outcome = await processExtractClaim(claimed, deps);
@@ -504,6 +516,35 @@ describe("processExtractClaim — government warning wiring (TRO-517, TH-R9)", (
     const persistedFields = await db.select().from(fieldResults).where(eq(fieldResults.verificationId, outcome.verificationId));
     const warningRow = persistedFields.find((row) => row.fieldName === "GOVERNMENT_WARNING");
     expect(warningRow?.verdict).toBe("MISMATCH");
+  });
+
+  it("persists the bold advisory signal for a batch verification too, and it never changes the verdict (TRO-533)", async () => {
+    const batchJobId = await trackBatch({ totalCount: 1 });
+    const claimed = await claimedFixture(batchJobId, "warning-bold-signal.jpg", { brandName: "Old Tom Distillery", classType: "Straight Bourbon Whiskey" });
+    const boldSignal: BoldSignalResult = {
+      signal: "not-bold",
+      reason: "the prefix's stroke width does not measure wider than the body's",
+      ratio: 0.9,
+      splitFraction: 0.49,
+      prefixStrokeWidthPx: 2,
+      bodyStrokeWidthPx: 2.2,
+    };
+    const deps = makeDeps({
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      // A "not-bold" signal, deliberately alongside a compliant MATCH —
+      // proves the signal is persisted AND that it cannot downgrade a
+      // clean PASS, the same boundary route.test.ts proves for the
+      // single-label path.
+      compareGovernmentWarning: async () => warningOutcome({ verdict: "MATCH" }, boldSignal),
+    });
+
+    const outcome = await processExtractClaim(claimed, deps);
+    expect(outcome.kind).toBe("done");
+    if (outcome.kind !== "done") throw new Error("unreachable");
+    expect(outcome.verdict).toBe("PASS");
+
+    const [row] = await db.select().from(verifications).where(eq(verifications.id, outcome.verificationId));
+    expect(row.boldSignal).toEqual(boldSignal);
   });
 
   it("a warning-comparator promise rejection degrades that field to NEEDS_REVIEW instead of failing the item (CP-2 §4.4 rule 3)", async () => {
@@ -573,7 +614,7 @@ describe("processExtractClaim — government warning wiring (TRO-517, TH-R9)", (
       anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
       compareGovernmentWarning: async (input: CompareGovernmentWarningFromImageInput) => {
         capturedOriginalImage = input.originalImage;
-        return { verdict: "MATCH" };
+        return warningOutcome({ verdict: "MATCH" });
       },
     });
 
@@ -685,7 +726,7 @@ describe("processExtractClaim — daily budget (TRO-566)", () => {
     const deps = makeDeps({
       // makeMockMessage's own usage: 100 input tokens, 50 output tokens.
       anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
-      compareGovernmentWarning: async () => ({ verdict: "MATCH" }),
+      compareGovernmentWarning: async () => warningOutcome({ verdict: "MATCH" }),
       reserveBudget: (estimatedUsd) => reserveDailyBudget(estimatedUsd, db, BUDGET_NOW),
       settleBudget: (reservedUsd, realUsd) => settleBudgetReservation(reservedUsd, realUsd, db, BUDGET_NOW),
     });
@@ -755,7 +796,7 @@ describe("processExtractClaim — daily budget (TRO-566)", () => {
         db,
         comparators: productionComparators,
         readLabelImage,
-        compareGovernmentWarning: async () => ({ verdict: "MATCH" }),
+        compareGovernmentWarning: async () => warningOutcome({ verdict: "MATCH" }),
         backoffConfig: DEFAULT_BACKOFF_CONFIG,
         // anthropicClient/reserveBudget/settleBudget ALL deliberately
         // omitted — the real production shape.

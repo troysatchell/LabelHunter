@@ -4,6 +4,47 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## TRO-580 — verify route now settles real spend on a validation-failed extraction (2026-08-13)
+
+**The gap (TH-R6).** `/api/verify` reserves budget, then calls Haiku, then settles the
+reservation. On a genuine extraction failure, the route settled the reservation with a
+hardcoded 0. This refunded the full reservation, every time. That was correct for a
+transport failure — no response at all. It was wrong for a `HaikuExtractionError`. The
+model did respond. `parseExtractionResponse` rejected the response's shape. The paid call
+already happened. Every malformed-response extraction under-counted the daily budget.
+TRO-576 found and fixed the identical gap in `/api/extract` first. This ticket mirrors that
+fix in `/api/verify`.
+
+**The fix.** The fix is in `src/app/api/verify/route.ts`, inside the `Promise.all` catch
+block around the Haiku call. That block now reads `usageCapture.takeLastUsage()` before it
+settles the reservation — the same read the success path already does — instead of passing
+a hardcoded 0. A model response that fails validation still sets this usage before the
+throw: `client.messages.create` resolves first, and `parseExtractionResponse` runs after,
+so only it can throw. A genuine transport failure never reaches that call. `takeLastUsage()`
+still answers `null` in that case, so the route still refunds the reservation in full — the
+same behavior as before this ticket.
+
+**Confirmed against the post-TRO-566 route.** TRO-566 changed this route's budget calls.
+The old plain `checkBudget`/`recordSpend` pair became an atomic `reserveBudget`/
+`settleBudget` reservation. The gap TRO-580 fixes was still present in the merged code: the
+catch block settled with a hardcoded 0, no matter what usage the wrapped client had already
+captured.
+
+**Confirmed.** New regression test in `src/app/api/verify/route.test.ts`: "settles the REAL
+captured usage when the model responded but its output failed validation (TRO-580)". A fake
+`extractLabel` makes one real call through the usage-capture wrapper, then throws
+`HaikuExtractionError`. The test checks that `settleBudget`'s real-cost argument is greater
+than 0. Red first: before the fix, the test failed with `expected 0 to be greater than 0`,
+confirming the old hardcoded-0 path. Green after the fix. Full `route.test.ts` suite: 37
+tests, all passing, including the pre-existing transport-failure test (`records nothing
+when the Haiku call itself fails`) — this confirms the null-usage-still-settles-0 path did
+not change. `pnpm typecheck` is clean.
+
+**How to run.** `pnpm vitest run src/app/api/verify/route.test.ts`.
+
+**Rollback.** Revert the PR. The route goes back to refunding every extraction failure in
+full, including a validation failure that followed a real, paid response.
+
 ## TRO-563 — case-22 corpus decision: strengthen the pixels, keep REVIEW/LOW_IMAGE_QUALITY (2026-08-13)
 
 **The gap.** TRO-546 fixed a real bug. Region detection could not find case-22's warning

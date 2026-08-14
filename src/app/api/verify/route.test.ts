@@ -5,7 +5,7 @@ import sharp from "sharp";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { db } from "../../../lib/db";
 import { applications, dailySpend, fieldResults, labelImages, reviewQueue, verifications } from "../../../lib/db/schema";
-import { extractLabel, getDefaultExtractorClient } from "../../../server/extractor";
+import { extractLabel, getDefaultExtractorClient, HaikuExtractionError } from "../../../server/extractor";
 import { makeMockMessage, WELL_FORMED_EXTRACTION_BODY } from "../../../server/extractor/test-support";
 import { MAX_UPLOAD_BYTES, preprocessImage } from "../../../server/preprocessing";
 import { productionComparators } from "../../../server/comparators";
@@ -891,6 +891,42 @@ describe("POST /api/verify — real spend recording (TRO-482)", () => {
 
     const spent = await getTodaySpendUsd(db, ISOLATED_NOW);
     expect(spent).toBe(0);
+  });
+
+  it("settles the REAL captured usage when the model responded but its output failed validation (TRO-580)", async () => {
+    // The paid API call happened; a HaikuExtractionError only means the
+    // RESPONSE failed `parseExtractionResponse`. `usageCapture` already
+    // captured its usage the moment the wrapped client answered, before
+    // `extractLabel` threw — the reservation must settle for that REAL
+    // cost, not refund to 0. Same gap, same fix shape as the extract
+    // route's own regression test (TRO-576, `../extract/route.test.ts`):
+    // the fake `extractLabel` makes one real call through the usage-
+    // capture wrapper, registering usage the way a real call would, then
+    // throws the validation error.
+    const settleBudget = vi.fn(async (_reservedUsd: number, _realUsd: number) => {});
+    const fakeUnderlyingClient = {
+      messages: {
+        create: async () => ({
+          content: [{ type: "text", text: "not the schema at all" }],
+          usage: { input_tokens: 100, output_tokens: 50 },
+        }),
+      },
+    };
+    const deps = makeDeps({
+      anthropicClient: fakeUnderlyingClient as never,
+      settleBudget,
+      extractLabel: vi.fn(async (_image, options) => {
+        await options?.client?.messages.create({} as never);
+        throw new HaikuExtractionError(["model returned malformed JSON"]);
+      }),
+    });
+
+    const response = await post(await buildFormData(), deps);
+    expect(response.status).toBe(502);
+    expect(settleBudget).toHaveBeenCalledTimes(1);
+    // Second argument is the REAL settled cost — must be positive, not the
+    // hardcoded 0 a refund-in-full would pass.
+    expect(settleBudget.mock.calls[0][1]).toBeGreaterThan(0);
   });
 });
 

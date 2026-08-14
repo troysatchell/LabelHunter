@@ -466,9 +466,25 @@ export async function handleVerifyRequest(request: Request, deps: VerifyRouteDep
     // lost the race to the warning promise's own rejection path, which
     // resolveWarningOrDegrade already prevents by catching its own
     // errors — this branch is reached only by a genuine extraction
-    // failure). No real cost was incurred; refund the reservation in
-    // full.
-    await settleReservationBestEffort(deps.settleBudget, budgetReservation.reservedUsd, 0);
+    // failure).
+    //
+    // TRO-580 — a genuine extraction failure is not always a genuine
+    // ZERO cost. A model response that fails validation
+    // (`HaikuExtractionError`, thrown by `parseExtractionResponse` inside
+    // `extractLabel`) still came from a real, paid API call:
+    // `usageCapture` already captured its usage the moment the wrapped
+    // client answered, before that throw happened. Read it here, the same
+    // way the success path below reads it, instead of assuming no cost
+    // was incurred. A genuine transport failure (network down, no
+    // response at all — `extractLabel` never reaches its own
+    // `client.messages.create` call, or that call itself rejects) never
+    // sets `usageCapture`'s captured usage, so `takeLastUsage()` still
+    // answers `null` there and this still settles 0 — the same
+    // refund-in-full behavior this route already had for that case.
+    // Mirrors the extract route's own fix for the identical gap (TRO-576,
+    // `../extract/route.ts`).
+    const haikuUsage = usageCapture.takeLastUsage();
+    await settleReservationBestEffort(deps.settleBudget, budgetReservation.reservedUsd, haikuUsage ? haikuCallCostUsd(haikuUsage) : 0);
     if (cause instanceof HaikuExtractionError) {
       return errorResponse(502, "EXTRACTION", "LabelHunter could not read this label. Take a clearer photo and try again.");
     }

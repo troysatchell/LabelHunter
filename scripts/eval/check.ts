@@ -368,13 +368,24 @@ function runCheap(): void {
   // corpus rebuild that leaves both frozen files stale together is
   // invisible to them. This one extra read closes that gap: a fast local
   // file hash, not a live API call, so it stays in cheap mode. Warns, never
-  // fails (manifest-drift.ts's own module comment says why).
-  const liveManifestHash = hashManifestFile(DEFAULT_MANIFEST_PATH);
-  const drift = checkManifestDrift(report.manifestContentHash, liveManifestHash);
-  if (drift.drifted) {
-    console.warn(`check.ts: WARNING — ${drift.message}`);
-  } else {
-    console.log(`check.ts: ${drift.message}`);
+  // fails (manifest-drift.ts's own module comment says why) — including
+  // when the read itself fails. A missing or unreadable manifest file is
+  // exactly the kind of environment problem this warning-not-fail design
+  // exists to survive; letting hashManifestFile's own exception propagate
+  // would crash cheap mode entirely and fail every ticket's gate for an
+  // unrelated reason (CodeRabbit finding, TRO-556 post-merge review).
+  try {
+    const liveManifestHash = hashManifestFile(DEFAULT_MANIFEST_PATH);
+    const drift = checkManifestDrift(report.manifestContentHash, liveManifestHash);
+    if (drift.drifted) {
+      console.warn(`check.ts: WARNING — ${drift.message}`);
+    } else {
+      console.log(`check.ts: ${drift.message}`);
+    }
+  } catch (error) {
+    console.warn(
+      `check.ts: WARNING — could not read the live manifest to check for drift (${error instanceof Error ? error.message : String(error)}). Skipping the drift check; every other cheap-mode check still ran.`,
+    );
   }
 
   if (report.failures.length > 0) {

@@ -3,12 +3,13 @@ import { checkManifestDrift } from "./manifest-drift";
 
 // Acceptance evidence for TRO-556: the committed eval report's
 // manifestContentHash can drift out of sync with the LIVE
-// golden-set/manifest.json after a corpus rebuild, and cheap mode
-// (check.ts's runCheap) never reads the live file today — it only compares
+// golden-set/manifest.json after a corpus rebuild. Before this ticket, cheap
+// mode (check.ts's runCheap) never read the live file — it only compared
 // two already-frozen committed files to each other (baseline-compare.ts's
 // "stale-baseline" class). checkManifestDrift is the piece that closes that
 // gap: it takes the report's committed hash and a freshly-computed live
-// hash, and decides whether to warn.
+// hash, and returns a message describing whether they agree; check.ts's own
+// caller decides whether to print that message as a warning.
 describe("checkManifestDrift", () => {
   it("stays silent (drifted: false) when the report's hash matches the live manifest hash", () => {
     const result = checkManifestDrift("same-hash", "same-hash");
@@ -17,7 +18,7 @@ describe("checkManifestDrift", () => {
     expect(result.message).not.toMatch(/MANIFEST DRIFT/);
   });
 
-  it("fires a loud, named WARNING (drifted: true) on a synthetic hash mismatch", () => {
+  it("returns a loud, named MANIFEST DRIFT message (drifted: true) on a synthetic hash mismatch", () => {
     const result = checkManifestDrift("frozen-report-hash", "live-manifest-hash-right-now");
     expect(result.drifted).toBe(true);
     expect(result.message).toMatch(/MANIFEST DRIFT/);

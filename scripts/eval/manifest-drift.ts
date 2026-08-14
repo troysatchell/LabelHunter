@@ -10,9 +10,9 @@
  * file and the real `golden-set/manifest.json` on disk right now. A corpus
  * rebuild (a golden-set PR that regenerates images or edits cases) can
  * silently leave both frozen files pointing at a manifest that no longer
- * exists, and cheap mode — which never reads the live manifest file — has
- * no way to notice: it passes while the accuracy evidence describes images
- * that no longer exist.
+ * exists. Before this ticket, cheap mode never read the live manifest file
+ * and had no way to notice: it passed while the accuracy evidence described
+ * images that no longer existed.
  *
  * `checkManifestDrift` closes that gap by taking the report's committed
  * hash and a hash computed fresh, right now, from the live manifest file

@@ -120,6 +120,15 @@ Rules 1–9 are inherited from the ship factory's production run. Rules 10+ are 
     Union-keep-both stays correct for `factory/scorecard.jsonl` and
     `factory/review-findings.jsonl` — line-oriented, no structure to corrupt.
     (Second factory session, 2026-08-13, bitten twice.)
+
+    **Verify the rebuild mechanically before any push — reporter and orchestrator both.**
+    A resolution that SHRINKS `CHANGES.md` is corrupt: check the merged file's `grep -c
+    '^## '` count equals origin/main's count plus your own new entries, and the tail from
+    origin/main's first heading is byte-identical (`diff` exit 0). An agent claimed a
+    correct 26b rebuild, shipped a 315-line file (12,300 lines of history lost), G7 passed
+    it (structure was valid, just empty), CI passed it, and the orchestrator pushed it
+    unverified. Caught two merges later by a sibling branch. (TRO-583 merge / PR #103,
+    2026-08-14; repaired direct on main at bfa0574.)
 27. **After merging `origin/main` into a ticket branch, run `pnpm install` and `pnpm
     db:migrate`, even when `package.json`/`pnpm-lock.yaml` auto-merge with no conflict
     markers.** A clean auto-merge still doesn't touch `node_modules` on disk — a dependency

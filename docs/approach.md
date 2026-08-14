@@ -262,18 +262,19 @@ read to the front of every request — the same mistake `audit/requirements/gaps
 entry exists to name, and this document avoids repeating it. `scripts/latency/measure.ts`'s
 `--url` mode could not even authenticate against the gate at first; TRO-568 added the
 `x-access-code` header it needed. With that fix merged, the same 20-round-trip measurement
-read **p50 3618 ms** — and then went stale the same way, as later merges changed the
-measured path again (among them TRO-540's deskew, TRO-583's OCR retry, a spend-settling
-fix, and the bold-signal routing work). The figure that stands was taken at the submission
-commit (`159ff96`), against the live deployed instance, past the access-code gate, on
-2026-08-13: **p50 5616 ms, p95 6160 ms** (mean 5739 ms, 20 of 20 runs succeeded, all PASS
-verdicts). **That is outside the brief's ~5-second bar.** The stage timings say where the
-time went: preprocessing grew from p50 129 ms to 1881 ms, and the OCR channel grew about
-250 ms (consistent with TRO-583's single retry). The preprocessing growth points at
-TRO-540's deskew: an angle sweep that rotates and scores the analysis image, run serially
-on every upload inside that stage. It merged between the two measurements, and a local
-component timing puts deskew at roughly 70% of the local preprocess stage. No deployed A/B
-isolates it, so the attribution is derived, not proven. The measurement is still the
+read **p50 3618 ms** — and went stale the same way, as later merges changed the measured
+path again. The re-measurement at the first submission pin (`159ff96`) read **p50 5616 ms**
+— outside the bar — and the stage table said why: preprocessing grew from p50 129 ms to
+1881 ms when TRO-540's deskew angle sweep started running serially on every upload. An
+isolated-worktree A/B/C experiment against the golden set located and sized the fix
+(TRO-586): a 2° sweep step and a 350 px analysis image halve the sweep's cost, read the one
+tilted golden image at −14° versus stock −15°, and left every live golden verdict unchanged.
+Removing deskew outright was tested too, and rejected: case-19 failed 3 of 3 live runs
+without it. A same-day 38-case live eval under the new constants confirmed both banded
+accuracy rates inside the committed band. The figure that stands was measured at the
+submission commit (`7c4e3fa`), against the live deployed instance, past the access-code
+gate, on 2026-08-13: **p50 4686 ms, p95 4992 ms** (mean 4702 ms, 20 of 20 runs succeeded,
+all PASS verdicts). That is inside the brief's ~5-second bar. The measurement is the
 authorized path — a rejected, unauthenticated request returns before any pipeline stage
 runs and would report no timings at all — so this number describes what a real evaluator's
 request actually experiences, not raw cascade latency with the gate subtracted out.
@@ -307,13 +308,13 @@ resolution the router escalates a minority of labels to costs roughly $0.02 more
 labels only. A three-repeat, 38-case live evaluation run cost $1.2518 total, measured
 2026-08-14.
 
-**Latency.** p50 5616 ms, p95 6160 ms, mean 5739 ms — 20 real HTTP verify round-trips against
-the live deployed instance at the submission commit (`159ff96`), past the access-code gate,
-20 of 20 PASS, measured 2026-08-13. **Outside the brief's ~5-second bar.** The stage
-breakdown attributes the growth over the prior 3618 ms figure to preprocessing (p50 129 ms →
-1881 ms), which points at TRO-540's per-upload deskew sweep — derived from stage location,
-merge timing, and a local component timing; no deployed A/B isolates it. See "Trade-offs and
-limitations" above for this figure's full history and why the current one is quoted.
+**Latency.** p50 4686 ms, p95 4992 ms, mean 4702 ms — 20 real HTTP verify round-trips
+against the live deployed instance at the submission commit (`7c4e3fa`), past the
+access-code gate, 20 of 20 PASS, measured 2026-08-13. Inside the brief's ~5-second bar. An
+earlier same-day measurement read p50 5616 ms; the stage table traced the miss to TRO-540's
+deskew sweep, and TRO-586's A/B-validated constants cut brought the figure back under the
+bar without moving a single golden verdict. See "Trade-offs and limitations" above for this
+figure's full history.
 
 ## What makes this more than the literal ask
 

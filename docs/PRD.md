@@ -42,6 +42,10 @@ exact warning enforcement (TH-R9), and a UI Sarah's mother could use (TH-R3).
   a three-valued advisory signal (bold/not-bold/uncertain) that never changes a verdict, and the
   eval harness scores it against real ground truth. Caps check is deterministic and
   hard-enforced.
+  **Amendment, 2026-08-13 (TRO-569 / INT-005):** "never changes a verdict" is narrowed to "never
+  produces a hard FAIL by itself." A `not-bold` signal alongside an otherwise-matching warning
+  now routes the label to human review instead of a silent PASS — see
+  `docs/checkpoints/cp2-warning-subsystem.md` §7.2's own amendment for the full rule.
 - **Field set:** the 5 example fields + a beverage-type selector (beer/wine/spirits) that
   adjusts rules (e.g., ABV optionality where TTB allows). Bottler address / country of origin
   are OUT — noted in docs as v2.

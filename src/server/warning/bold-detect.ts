@@ -1,73 +1,33 @@
 /**
- * The stroke-width-ratio bold advisory check (LH-025 / TRO-532, CP-2 §7.2,
- * TH-R9). CP-2 §7.2 named a technique and did not try it: "binarize the
- * crop, measure mean stroke width by morphological erosion, and compare
- * the prefix's stroke width to the body's at matched x-height." TRO-532's
- * own investigation (2026-08-12, five real label photographs plus the
- * golden-set corpus) tried it. It works inside a boundary the measurement
- * itself defines — see `BoldSignalResult.reason` and this module's own
- * test file for the specific cases that pass and the specific cases that
- * do not.
+ * The stroke-width-ratio bold advisory check (CP-2 §7.2, TH-R9).
  *
- * BOUNDARY — READ THIS BEFORE WIRING `measureBoldSignal` IN ANYWHERE.
- * This signal is advisory. It must never produce a hard FAIL by itself —
- * CP-2 §7.2's own reasoning still holds: a prototype that turned this
- * signal into a failure would accuse a compliant label of a violation it
- * cannot prove. Stroke width is a relative, photograph-dependent
- * measurement; the label may really be compliant even when this signal
- * reads `not-bold`.
- *
- * **The "never gate a MATCH" half of this rule is superseded by TRO-569 /
- * INT-005 (2026-08-13).** Jenny Park's requirement: the GOVERNMENT
- * WARNING prefix "has to be in all caps and bold" (source-TH.md:33). A
- * `not-bold` signal alongside an otherwise-MATCH comparator result now
- * degrades the `government_warning` field to `NEEDS_REVIEW` —
- * `../router/field-resolution.ts`'s `resolveGovernmentWarningField`, the
- * router's own boundary, not this module. That is routing to a human, not
- * an accusation: CP-2's never-accuse posture survives (the field never
- * becomes a hard FAIL), and INT-005 forbids the alternative — an
- * interpretation may never widen a requirement into something weaker than
- * the brief, which a silent PASS on a non-bold prefix was. `uncertain`,
- * `bold`, and a missing signal still never touch a verdict; `not-bold`
- * still never touches an existing MISMATCH or NEEDS_REVIEW. TRO-532
- * (LH-025, this file) built the measurement; TRO-533 (LH-026) first wired
- * it in as fully advisory; TRO-569 narrowed that to the one edge above.
- *
- * Two matching regimes already coexist in this subsystem on purpose
- * (`caps.ts`'s header: TH-R8 fuzzy wording vs TH-R9 exact capitalization).
- * This is a third, narrower thing — bold-or-not, advisory, three-valued —
- * and it does not reuse or extend either existing regime's logic.
+ * **This signal is advisory. It must never produce a hard FAIL by itself.**
+ * Stroke width is relative and photograph-dependent. A label may be
+ * compliant even when this reads `not-bold`, so a FAIL here would accuse a
+ * compliant label of a violation it cannot prove. The router may degrade an
+ * otherwise-MATCH warning to NEEDS_REVIEW on `not-bold` — a flag for a
+ * human, not an accusation. `bold`, `uncertain`, and a missing signal never
+ * touch a verdict.
  *
  * The measurement, in order:
- * 1. Binarize the crop (`toInkRaster`) — greyscale, contrast-normalize
- *    (rule 4 of the ticket's own "Do" list: case-22 was undetectable
- *    under a global threshold and clean afterward), then Otsu-threshold.
- *    Ink is the minority class by pixel count, not "the dark pixels" —
- *    that reads correctly on light-on-dark print (crown-royal's gold
- *    text on maroon) as well as the usual dark-on-light case.
- * 2. Find the crop's first text line (`findInkRuns`, imported from
- *    `./region-detect` — the same pure row-run grouper LH-020 already
- *    built and tested, reused here as a utility, not as a dependency on
- *    that module's detection behavior). The prefix always starts line 1.
- * 3. Within that line, run a changepoint search for the prefix/body
- *    boundary (rule 2), constrained to `SPLIT_SEARCH_MIN_FRACTION`
- *    through `SPLIT_SEARCH_MAX_FRACTION` of the line's own ink width
- *    (rule 3) — an unconstrained search always finds some ratio above 1
- *    on a degenerate split; see that constant's own comment.
- * 4. At the winning split, measure stroke width as the median horizontal
- *    ink-run length on each side (rule 1), each normalized by that side's
- *    OWN local cap height (rule 1's "matched x-height", CP-2 §7.2) —
- *    computed locally per side, not once for the whole line, because a
- *    title-case body's local cap height varies enough to distort a
- *    single shared divisor (rule 3's case-08/case-09 finding).
- * 5. Classify: below the `STROKE_WIDTH_FLOOR_PX` floor (rule 5), or no
- *    stable split found at all, or the two sides' stroke-width ranges
- *    overlap (no clean separation) — `uncertain`. Otherwise `bold` at or
- *    above `BOLD_RATIO_THRESHOLD`, `not-bold` below it.
+ * 1. Binarize the crop. Greyscale, contrast-normalize, then Otsu-threshold.
+ *    Ink is the minority pixel class, not "the dark pixels" — that reads
+ *    light-on-dark print correctly too.
+ * 2. Find the crop's first text line. The prefix always starts line 1.
+ * 3. Search that line for the prefix/body boundary, constrained to
+ *    `SPLIT_SEARCH_MIN_FRACTION`–`SPLIT_SEARCH_MAX_FRACTION` of its ink
+ *    width. An unconstrained search always finds a ratio above 1 on a
+ *    degenerate split.
+ * 4. At that split, measure stroke width as the median horizontal ink-run
+ *    length per side, each normalized by its own local cap height. A
+ *    title-case body's cap height varies enough to distort one shared
+ *    divisor.
+ * 5. Classify. Below `STROKE_WIDTH_FLOOR_PX`, no stable split, or
+ *    overlapping ranges give `uncertain`. Otherwise `bold` at or above
+ *    `BOLD_RATIO_THRESHOLD`, `not-bold` below.
  *
- * Deliberately NOT used: fill ratio (rule 6 — measured 0.85 for a window
- * and 0.87 for a real label in TRO-532's own investigation; it does not
- * discriminate bold from not-bold).
+ * Fill ratio was measured and rejected: 0.85 for a window and 0.87 for a
+ * real label. It does not discriminate bold from not-bold.
  */
 import sharp from "sharp";
 import { findInkRuns } from "./region-detect";

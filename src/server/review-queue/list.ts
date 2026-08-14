@@ -21,39 +21,32 @@ import type { ReviewQueueListItem, ReviewQueueListPage, ReviewQueueResolverStatu
  * review-queue row pointing at a missing application cannot exist under
  * normal operation, so there is no anomaly here to defend against.
  *
- * The `WHERE` clause matches `review_queue_unresolved_idx` (`schema.ts`) —
- * a partial index on `(createdAt, id)` `WHERE disposition IS NULL` — by
- * design, not by accident. The index carries BOTH keys since migration
- * 0007 (CodeRabbit finding, local review round 6). It carried `createdAt`
- * alone before that, which the keyset predicate below could use only as a
- * leading column.
+ * The `WHERE` clause matches `review_queue_unresolved_idx` on purpose — a
+ * partial index on `(createdAt, id)` where `disposition IS NULL`. It
+ * carries both keys since migration 0007. With `createdAt` alone, the
+ * keyset predicate below could use it only as a leading column.
  *
- * Measured with `EXPLAIN (ANALYZE, BUFFERS)` on this worktree's Postgres,
- * against the real `review_queue` table seeded to 20,000 unresolved rows.
- * Two cases, because the two indexes differ only in one of them:
+ * Measured with `EXPLAIN (ANALYZE, BUFFERS)` against `review_queue` seeded
+ * to 20,000 unresolved rows. The two indexes differ in one case only:
  *
- * 1. Rows with distinct `createdAt` values, cursor in the middle. The
- *    `createdAt`-only index gave `Index Cond: (created_at >= …)`, then
- *    re-checked `ROW(created_at, id) > ROW(…)` as a `Filter`, then ran an
- *    `Incremental Sort`. The two-key index makes the row comparison itself
- *    the `Index Cond` and drops the sort node. Warm execution time over
- *    three runs each: 0.170–0.230 ms before, 0.157–0.260 ms after. The
- *    ranges overlap. At this size the plan improved and the clock did not.
- * 2. All 20,000 rows sharing one `createdAt` — one batch filing many
- *    escalations inside one millisecond. The `createdAt`-only index no
- *    longer helped at all: the planner chose a `Seq Scan`, reported `Rows
- *    Removed by Filter: 10001`, and added a top-N heapsort. Two runs:
- *    10.77 ms and 10.84 ms. The two-key index seeks straight to the cursor
- *    position: 0.188 ms and 0.190 ms, no filter, no sort.
+ * 1. Distinct `createdAt` values, cursor mid-table. The one-key index
+ *    re-checked the row comparison as a `Filter` and added an
+ *    `Incremental Sort`. The two-key index makes that comparison the
+ *    `Index Cond` and drops the sort. Warm time over three runs each:
+ *    0.170–0.230 ms before, 0.157–0.260 ms after — overlapping. The plan
+ *    improved and the clock did not.
+ * 2. All 20,000 rows sharing one `createdAt`, as one batch filing many
+ *    escalations in a millisecond. The one-key index stopped helping: a
+ *    `Seq Scan`, 10,001 rows removed by filter, a top-N heapsort, 10.77
+ *    and 10.84 ms. The two-key index seeks straight to the cursor: 0.188
+ *    and 0.190 ms, no filter, no sort.
  *
- * Case 2 is why the second key is worth a migration. Not measured: this
- * table's real production row count, which this project has never run at.
+ * Case 2 is why the second key earns a migration. Not measured: this
+ * table's real production row count, which the project has never run at.
  *
- * `LIMIT` (CodeRabbit local review round 1): an unbounded read of every
- * unresolved item does not scale as the queue grows. A second `ORDER BY`
- * key (`reviewQueue.id`) makes the order deterministic even when two rows
- * share one `createdAt` — Postgres gives no ordering guarantee among rows
- * that tie on the only sort key it is given.
+ * `LIMIT` bounds a read that would otherwise grow with the queue. The
+ * second `ORDER BY` key makes the order deterministic when two rows tie on
+ * `createdAt` — Postgres guarantees no ordering among such ties.
  */
 const DEFAULT_LIST_LIMIT = 100;
 

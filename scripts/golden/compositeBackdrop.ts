@@ -1,7 +1,7 @@
 /**
  * Warps the renderer's exact-text label into a backdrop photo's detected
  * blank region and composites it there (design doc §5,
- * docs/superpowers/specs/2026-08-11-realistic-corpus-gemini-design.md).
+ * docs/design/2026-08-11-realistic-corpus-gemini-design.md).
  * `build.ts` calls this on every rebuild, using a case's committed
  * `labelPlacement` quad — no network, no re-detection, matching the
  * existing `rendered`/`rendered+degraded` determinism contract even though

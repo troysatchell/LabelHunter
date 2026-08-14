@@ -1,55 +1,26 @@
 /**
- * Processes one claimed `EXTRACT` `batch_queue_items` row (LH-041 /
- * TRO-474, CP-3 §2.4, §7.1, §8): reads the stored image, runs the Haiku
- * extractor and the deterministic router — exactly the cascade
- * `src/app/api/verify/route.ts` already runs for a single label — then
- * persists the result, mirroring that route's own transaction shape
- * (§2.4's table) for `verifications`/`field_results`, plus a new `RESOLVE`
- * queue item when the router escalates (§8 step 5).
+ * Processes one claimed `EXTRACT` queue row (CP-3 §2.4, §7.1, §8). It
+ * reads the stored image, runs the same Haiku-plus-router cascade
+ * `api/verify/route.ts` runs for a single label, persists the result in
+ * that route's transaction shape, and enqueues a `RESOLVE` item when the
+ * router escalates.
  *
- * **Government warning (TRO-517).** This worker calls LH-020's real
- * comparator on every claimed item: `deps.compareGovernmentWarning`
- * (default `compareGovernmentWarningFromImage`, `../warning`) reaches
- * `routeLabel` as a real `WarningComparatorResult`, not a hardcoded
- * `null`. TH-R9's word-for-word check is live for the batch path — the
- * same wiring TRO-514 built for `verify/route.ts`.
+ * The warning rules match that route's, for the same reasons (CP-2 §4.4):
  *
- * CP-2 §4.4 sets two rules for the call, both about latency:
+ * 1. **The warning check runs beside Haiku, not after it.** It takes the
+ *    extraction as a pending promise, never an awaited value.
+ * 2. **A warning failure degrades one field, never the item.** The item
+ *    still completes DONE and escalates like any other REVIEW verdict.
+ * 3. **It reads the full-resolution buffer**, never the resized Haiku
+ *    variant, which falls below usable OCR resolution at the statute's
+ *    1 mm minimum print size (CP-2 §8.3).
  *
- * 1. **Concurrent, not serial.** `deps.compareGovernmentWarning` starts
- *    before the Haiku call resolves. It receives the extraction as a
- *    still-pending `Promise` (`extractionPromise.then(...)`, never an
- *    `await`ed value) — so region detection and OCR run alongside Haiku,
- *    not after it.
- * 2. **A thrown error degrades one field. It never fails the item.**
- *    `resolveWarningOrDegrade` (below) catches it — a rejected promise or
- *    a synchronous throw, either one — and passes `null` for
- *    `warningResult`: the same "uncertain beats wrong" behavior
- *    `verify/route.ts` uses. `resolveGovernmentWarningField`
- *    (`../router/field-resolution.ts`) already routes a `null` result to
- *    `NEEDS_REVIEW`, never a fabricated match — the item still completes
- *    and is marked `DONE`, escalated to a `RESOLVE` item like any other
- *    REVIEW verdict, never `retry`/`failed`.
- *
- * The comparator reads `original` — the full-resolution buffer
- * `readLabelImage` returns — never the resized `haikuVariant`. CP-2 §8.3:
- * the resized variant falls below the OCR engine's usable resolution at
- * the statute's legal minimum print size (1 mm).
- *
- * **Daily budget (TRO-566 finding 1).** Before this ticket, this worker
- * never checked or recorded the daily spend budget at all — a batch
- * admitted under budget (`/api/batch/start`'s own gate) could run past the
- * daily cap once in flight. This module now reserves
- * `HAIKU_CALL_RESERVE_ESTIMATE_USD` of today's budget BEFORE every Haiku
- * call, atomically (`../budget/daily-budget.ts`'s `reserveDailyBudget` —
- * closes the check-then-act race finding 2 also named), and settles the
- * reservation to the call's REAL, measured cost right after (or refunds it
- * in full if the call never actually happened). A refused reservation
- * throws `BudgetExhaustedError`, caught by this function's own outer catch
- * below and classified by `backoff.ts`'s `classifyModelCallError` exactly
- * like any other retryable condition — see that error class's own doc
- * comment for the full design rationale (why "fail the remaining items,
- * not pause the batch").
+ * **Daily budget.** A batch admitted under budget could otherwise run past
+ * the daily cap once in flight. This worker reserves
+ * `HAIKU_CALL_RESERVE_ESTIMATE_USD` atomically before every Haiku call,
+ * then settles the reservation to the measured cost — or refunds it if the
+ * call never happened. A refused reservation throws `BudgetExhaustedError`,
+ * which the outer catch classifies like any other retryable condition.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { sql } from "drizzle-orm";

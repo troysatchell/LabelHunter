@@ -11,8 +11,8 @@ function getPool(): Pool {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error(
-      "DATABASE_URL is not set. See .env.local.example (or source " +
-        ".factory-env in a factory worktree).",
+      "DATABASE_URL is not set. See .env.local.example for the shape, and " +
+        "the README's Setup section for the local Postgres container.",
     );
   }
   // Reuse the pool across Next.js dev-server hot reloads so we don't leak

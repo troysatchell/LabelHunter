@@ -1,68 +1,31 @@
 /**
- * An in-memory, fixed-window rate limiter (TRO-482 / LH-061, PRD §8).
+ * An in-memory, fixed-window rate limiter (PRD §8).
  *
- * **In-memory is a deliberate, documented, scope-appropriate choice, not an
- * oversight (TH-R19: appropriate technical choices for the scope, defended
- * in docs).** This app runs as one Render `starter`-plan web service
- * instance (`render.yaml`; PRD §8 names no horizontal scaling for this
- * prototype). A single process's own `Map` is a complete, correct rate
- * limiter for that topology — there is only ever one counter to keep
- * consistent. It stops being correct the moment a second instance joins
- * (each process would keep its own counters, so the REAL combined limit
- * would be `limit * instanceCount`, silently). If this deployment ever
- * scales horizontally, this limiter needs to move to a shared store
- * (Redis, or Postgres like the daily budget guard already does) — flagged
- * here, not built speculatively for a scale this project does not have.
+ * **In-memory is a scope decision, not an oversight.** The app runs as one
+ * Render web service instance, so one process's `Map` is a complete rate
+ * limiter. Add a second instance and the real limit silently becomes
+ * `limit * instanceCount`. Scaling horizontally means moving this to a
+ * shared store — flagged here, not built for a scale this project lacks.
  *
- * A process restart resets every counter to zero — the SAME limitation the
- * daily budget guard (`../budget/daily-budget.ts`) exists specifically to
- * avoid for spend, but is fine here: a rate limit's job is to smooth out a
- * burst within a short window (60s, this file's own production instances),
- * not to hold a durable fact across restarts. Losing a minute of counting
- * on a redeploy is a non-event, not a security gap.
+ * A restart resets every counter. A rate limit smooths a burst inside a
+ * 60-second window; it holds no durable fact. Losing a minute of counting
+ * on a redeploy is a non-event.
  *
- * **Fixed window, not a token bucket or sliding log.** A fixed window can
- * admit up to `2 * limit` requests across a window BOUNDARY (a burst just
- * before the window resets, plus a fresh burst just after) — a known,
- * accepted imprecision for a prototype's abuse-smoothing goal, not a
- * precise SLA. PRD §8 explicitly allows "a fixed-window or token-bucket
- * counter... is sufficient" — this repo picks the simpler of the two
- * sufficient options.
+ * **Fixed window, not a token bucket.** A fixed window can admit `2 *
+ * limit` requests across a boundary — a burst before the reset plus one
+ * after. PRD §8 allows either; this is the simpler one.
  *
- * **Bounded key count (TRO-565 finding 3).** The lazy reset above frees a
- * key's MEMORY only the next time that exact key is checked again — a key
- * nobody ever revisits stays in `state` forever. `../../proxy.ts`'s gate
- * sits in front of every route this limiter protects, so an unauthenticated
- * caller cannot reach `/api/verify` or `/api/batch/start` at all; the
- * realistic source of many distinct keys is `/api/access-code` itself
- * (exempt from the gate, by necessity — see `./instances.ts`'s own header
- * comment) plus finding 2's own fix landing: even with `getClientIp` now
- * keying on a hop a caller cannot forge, a long-lived process still accrues
- * one entry per distinct real caller over its lifetime. `maxEntries` (below)
- * bounds that growth with a plain LRU: `state` is a `Map`, whose iteration
- * order tracks INSERTION order; every `check()` call re-inserts its key (via
- * `delete` then `set`), which moves it to the end, so the front of the map
- * is always the least-recently-checked key. Exceeding the cap evicts
- * exactly that one key before admitting the new one.
+ * **Bounded key count.** A lazy reset frees a key only when that key is
+ * checked again, so a key nobody revisits would live forever. `maxEntries`
+ * bounds it with a plain LRU: every `check()` re-inserts its key, so the
+ * front of the `Map` is always the least-recently-checked one.
  *
- * **Clock regression (TRO-567 finding 3).** `now` is injectable — real
- * production code always uses `Date.now`, but a test can fake it. Vitest's
- * `vi.setSystemTime` fakes the WHOLE process clock, including any call this
- * limiter's production singletons (`./instances.ts`) make while a caller
- * elsewhere in the suite has moved the clock far into the future to isolate
- * a date-keyed database row (`../../app/api/verify/route.test.ts`'s own
- * 2099 tests, TRO-482 merge review). That stores a window-start timestamp
- * far in the future. Once the fake clock is torn down, real time is
- * BEHIND that stored timestamp — `at - windowStartMs` is a large NEGATIVE
- * number, which the plain `>= windowMs` check below would never treat as
- * "expired," pinning that key's stale window for the rest of the process.
- * `check()` also resets whenever `at` is earlier than the stored
- * `windowStartMs`: real wall-clock time never runs backward, so a `now()`
- * that goes backward relative to what this limiter last recorded is, by
- * construction, either a test's fake clock unwinding or an actual system
- * clock correction — in both cases the old window has no meaningful
- * relationship to the new `at`, and starting fresh is the only reading that
- * makes sense.
+ * **Clock regression.** `now` is injectable, and a test's fake clock can
+ * store a window start far in the future. Real time is then behind it, and
+ * `at - windowStartMs` goes negative, which a plain `>= windowMs` check
+ * never treats as expired. So `check()` also resets when `at` predates the
+ * stored start: wall-clock time never runs backward, so the old window has
+ * no relationship to the new one.
  */
 
 /** Default cap on distinct keys one limiter tracks at once (TRO-565 finding

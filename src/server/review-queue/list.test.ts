@@ -1,6 +1,6 @@
 /**
- * `listUnresolvedReviewQueue` against a real Postgres database — this
- * worktree's own, via `.factory-env` (DATABASE_URL). Same no-mocking
+ * `listUnresolvedReviewQueue` against a real Postgres database — your
+ * own local one, via `.env.local` (DATABASE_URL). Same no-mocking
  * rationale as `src/server/resolver/queue.test.ts`: the point is to prove
  * the real query (and the partial index it is written to use,
  * `review_queue_unresolved_idx`) actually returns what a human reviewer

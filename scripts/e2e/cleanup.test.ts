@@ -1,6 +1,6 @@
 /**
  * The E2E suite's own cleanup (TRO-524), against a real Postgres database
- * — this worktree's own, via `.factory-env`. A mocked database would prove
+ * — your own local one, via `.env.local`. A mocked database would prove
  * only that a `DELETE` was composed, not that the cascade actually removes
  * the `review_queue` row this ticket exists to stop accumulating.
  *

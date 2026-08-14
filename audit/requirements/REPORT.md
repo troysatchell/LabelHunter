@@ -1,146 +1,175 @@
 # Requirements Audit — LabelHunter
 
-**Commit:** 8f14c17fbf5878 · **Date:** 2026-08-13T21:26:17.000Z · **Docs:** TH (source-TH.md) · **Mode:** compare, label `2026-08-13-postreskin`
+**Commit:** ea9a6d01cb6ebe · **Date:** 2026-08-14T01:58:00Z · **Docs:** TH (source-TH.md) · **Mode:** compare, label `2026-08-13-final`
+
+> **Note on citations (2026-08-14).** The build-process records left the published repo at
+> submission. They stay on the author's machine. Citations below to `CHANGES.md`, `factory/`,
+> `scripts/factory/`, and `docs/handoffs/` name those repo-local files, marked *(repo-local)*
+> where they carry a verdict. Every other citation points at a file this repo tracks.
 
 ## Summary
 
-- **VERIFIED:** 22
-- **PARTIAL:** 1
+- **VERIFIED:** 21
+- **PARTIAL:** 2
 - **IMPLEMENTED-UNVERIFIED:** 0
 - **MISSING:** 0
 
-**One row remains open: TH-R9**, the government warning's bold rule. It is captured and typed
-but never checked downstream — a correctly capitalized, correctly worded, non-bold `GOVERNMENT
-WARNING:` prefix still passes today, a real gap against a statutory requirement. TRO-569 tracks
-it Urgent; TRO-532 moved from Todo to In Progress since the prior sweep, but no code has landed
-yet. **TH-R7 closed during this sweep**: TRO-574 (PR #81) merged while this sweep was in
-progress, moving the outbound-dependency degradation table from an internal working document
-directly into `docs/approach.md` and `README.md` — re-checked against the merged content before
-this sweep finished, not reported at its pre-merge state. Three commits landed since the prior
-sweep (TRO-573's full visual reskin, TRO-562's CI hardening, and TRO-574's TH-R7 fix); this
-sweep independently re-verified none of the previously-VERIFIED rows regressed.
+**Two rows are open at the final sweep, and one of them is new.** TH-R2 (the ~5-second
+latency bar) drops from VERIFIED to PARTIAL: the measurement that supported it (p50 3618ms,
+20/20 PASS, measured 19:43Z) now predates four merged changes to the measured path — the
+stroke-width bold measurement (TRO-533), the single-channel reconcile change (TRO-581), the
+verify route's spend settling (TRO-580), and tonight's OCR retry (TRO-583, whose own header
+names TH-R2). `docs/approach.md` still quotes the stale figure as current. One
+`pnpm latency:check -- --url` run at the submission commit closes this; nothing else does.
+TH-R9 (the government warning's bold rule) remains PARTIAL but materially narrowed: bold is
+now measured from the image's pixels, persisted, displayed as an advisory, and documented
+honestly in both graded deliverables — yet it still changes no verdict. The consequence
+(route measured not-bold to NEEDS_REVIEW) is TRO-569+528, implementation complete on its
+branch per the owning factory session, live re-baseline running, **no PR open yet** per an
+independent peer check. Everything else re-verified green at this commit: 2650/2650 unit
+tests, 12/12 e2e, typecheck/lint/build clean, eval bands in range, a fresh clone from GitHub
+that installs, migrates, and builds, and the deployed instance proven reachable, gated, and
+openable with the README-published access code.
 
 ## Coverage and limitations
 
-- **Ticket population was not re-pulled from scratch.** This sweep reuses the prior sweep's
-  complete 108-issue pull and separately pulled every issue updated in the last 24 hours (65
-  issues) to catch what changed. Enough to confirm no TH-R-relevant ticket flipped state
-  unexpectedly, not a fresh full-population orphan check — the same limitation the prior sweep
-  already carried, extended rather than newly introduced.
-- **TH-R2 and TH-R16's latency figures were not re-measured live this sweep**, for the same
-  reason as the prior sweep: both rest on the already-fresh `scripts/latency/results/single-
-  label-verify-url-mode.json` (measuredAt 2026-08-13T19:43:22Z), and this sweep independently
-  re-confirmed no commit between that measurement and the current commit touches the measured
-  path.
-- **No live model run.** `pnpm eval:check` ran in cheap mode against the same committed
-  `eval-report.json` the prior sweep used — confirmed unchanged and still current, since nothing
-  under `src/server/extractor`, `router`, `warning`, or `comparators` changed since 06dceb1.
-- **TH-R14's fresh-clone check was not re-run.** The prior sweep performed a literal fresh
-  clone/install/migrate/build; this sweep judged that proportionate re-verification given the
-  intervening commits (CSS reskin, CI hardening, a docs-only TH-R7 fix) touch none of README.md's
-  setup instructions. A reader who wants that check re-run at submission time should re-run it
-  once more, close to the actual submission commit.
-- **Database writes:** all database-touching verify commands ran in the isolated
-  `labelhunter_wt_tro_486` database, re-provisioned fresh for this sweep, never the shared
-  `labelhunter_dev`. One process note, disclosed rather than omitted: this sweep's first
-  `worktree.sh` invocation used the `TRO-486` slug before this session realized TRO-486 is a
-  peer session's own ticket, resetting that worktree's database. The peer confirmed directly it
-  held nothing live at the time (its own sweep had already completed and the worktree had been
-  torn down) — no work was lost.
-- **Live-deploy probes were read-only GETs** (`/`, `/api/health`, `/api/review-queue`). No
-  `/api/verify` or `/api/batch/*` call was made against the deployed instance, so no API spend
-  was incurred by this sweep. The deployed instance had not yet redeployed either the reskin or
-  the TH-R7 fix as of this sweep's own probe — Render auto-deploys from `main` on merge, expected
-  to catch up shortly; this does not affect TH-R16's reachability claim.
-- **0 rows are statically traced only this sweep.**
+- **The tree moved twice during this sweep.** The sweep began at 04c86bb; TRO-583 (PR #103)
+  merged mid-sweep and a peer fast-forwarded the primary checkout. The full suite was re-run
+  at ea9a6d0 and every citation re-anchored there — nothing in this report describes 04c86bb
+  except where explicitly stated (the fresh-clone check). TRO-569's merge is expected after
+  this report; its landing is deliberately NOT in scope — re-verify behaviorally then.
+- **A first `pnpm test` run at 04c86bb failed 153 tests — that was this sweep's own error,
+  not the repo's.** worktree.sh migrated the database before the worktree was advanced past
+  three new migrations. Re-migrating produced 2638/2638 green at 04c86bb and 2650/2650 at
+  ea9a6d0. Disclosed so the red run is not mistaken for a repo failure.
+- **No live model spend this sweep.** eval:check ran in cheap mode; the latency harness and
+  the live eval re-baseline were deliberately NOT RUN (the latter is already running,
+  authorized, in the TRO-569 session — a second run would double-spend for the same
+  evidence). E2E used the fake Anthropic server.
+- **The committed eval artifact carries two recorded caveats:** manifest drift (it predates
+  the case-33 corpus rebase by ~2 minutes — check.ts flags this loudly) and it predates
+  TRO-581/583's verdict-semantics changes. TH-R10 rests on tests that run the real code at
+  HEAD, not on that artifact; TRO-569's in-flight re-baseline refreshes it.
+- **TH-R3's human/axe evidence predates five merged UI tickets** (575/576/577/578/582). The
+  automated guards those passes installed (contrast test, token gate, one-button test, e2e)
+  are all green at this commit; no fresh human or axe pass ran. Named as a judgment call
+  below.
+- **Database writes:** suite commands ran only in the isolated `labelhunter_wt_tro_486`
+  database (ownership stolen from the completed prior audit session per TRO-557's protocol,
+  reset on provision); the fresh-clone check used a scratch `labelhunter_fresh_audit`
+  database created for it and dropped after. No shared database was touched.
+- **Live-deploy probes were read-only GETs**, including one with the README-published access
+  code (200 — the credential works). No /api/verify or /api/batch call; no spend. The
+  deployed commit is not externally observable; tonight's merges were still rolling out.
+- **0 rows are statically traced only.**
 
 ## Matrix
 
 | ID | Requirement (short) | Ticket(s) | Evidence | Verdict |
 |---|---|---|---|---|
-| TH-R1 | Core loop: application data + label image -> AI reads the label -> per-field match/mismatch | TRO-461, TRO-462, TRO-463, TRO-465 | `src/app/api/verify/route.ts:313` | **VERIFIED** |
-| TH-R2 | Single-label verify completes in ~5s wall-clock | TRO-471, TRO-539, TRO-568 | `scripts/latency/results/single-label-verify-url-mode.json:33` | **VERIFIED** |
-| TH-R3 | UI usable by a 73-year-old first-time user with no instructions | TRO-480, TRO-570, TRO-573, TRO-465 | `CHANGES.md:246`, `src/app/globals-contrast.test.ts:1` | **VERIFIED** |
-| TH-R4 | Batch upload of N labels -> N per-item verdicts with progress/summary | TRO-473, TRO-474, TRO-475, TRO-483, TRO-571 | `src/app/_components/BatchUploadForm.tsx:296` | **VERIFIED** |
+| TH-R1 | Core loop: application + label image -> per-field match/mismatch | TRO-461, 462, 463, 465 | `src/app/api/verify/route.ts:355` | **VERIFIED** |
+| TH-R2 | Single-label verify completes in ~5s wall-clock | TRO-471, 539, 568, 519, 583 | `scripts/latency/results/single-label-verify-url-mode.json:3` (stale vs. HEAD) | **PARTIAL** |
+| TH-R3 | UI usable by a 73-year-old first-time user, no instructions | TRO-480, 570, 573, 465, 575, 576, 577, 578, 582 | `src/app/globals-contrast.test.ts:1`; `docs/handoffs/2026-08-13-ux-reskin-audit-session.md:42` *(repo-local)* | **VERIFIED** |
+| TH-R4 | Batch upload -> N per-item verdicts with progress/summary | TRO-473, 474, 475, 483, 571, 544 | `src/app/_components/BatchUploadForm.tsx:296` | **VERIFIED** |
 | TH-R5 | Standalone; no COLA/registry integration | — | `src/server/router/required-fields.ts:21` | **VERIFIED** |
-| TH-R6 | No PII persisted; sane baseline security; documented posture | TRO-457, TRO-482, TRO-484, TRO-565, TRO-567, TRO-566 | `README.md:151`, `src/lib/db/schema.ts:61` | **VERIFIED** |
-| TH-R7 | Docs name every outbound dependency and its degradation behavior | TRO-478, TRO-485, TRO-574 | `docs/approach.md:53` (full table, reproduced not linked) | **VERIFIED** |
-| TH-R8 | Fuzzy/judgment field matching, not strict string equality | TRO-463, TRO-536 | `src/server/comparators/brand.ts:25` | **VERIFIED** |
-| TH-R9 | Government warning: exact word-for-word, all-caps, bold | TRO-468, TRO-469, TRO-527, TRO-532, TRO-533, TRO-528, TRO-569 | `src/server/warning/index.test.ts:202`; bold still uncaptured downstream | **PARTIAL** |
-| TH-R10 | Imperfect images: correct extraction or explicit low-confidence outcome | TRO-477, TRO-497, TRO-542, TRO-543 | `src/server/router/golden-image-quality.test.ts:1` | **VERIFIED** |
-| TH-R11 | All five example fields extract and verify end-to-end | TRO-461, TRO-458 | `src/server/router/types.ts:35` | **VERIFIED** |
-| TH-R12 | Test-label image set present and exercised | TRO-458, TRO-497, TRO-498, TRO-499, TRO-529 | `golden-set/README.md:3` | **VERIFIED** |
-| TH-R13 | Public/shareable, buildable-from-clone repo | TRO-456, TRO-562 | `.github/workflows/ci.yml:51`; GitHub API `visibility: public` | **VERIFIED** |
-| TH-R14 | README with setup and run instructions | TRO-484 | `README.md:1` (197 lines) | **VERIFIED** |
-| TH-R15 | Brief doc of approach, tools, assumptions | TRO-485 | `docs/approach.md:1` (274 lines) | **VERIFIED** |
-| TH-R16 | Deployed URL reachable; core flow works there | TRO-481, TRO-482, TRO-483, TRO-568 | `scripts/latency/results/single-label-verify-url-mode.json:30` | **VERIFIED** |
-| TH-R17 | Core requirements correct and complete | TRO-459, TRO-470 | all 6 verify commands green | **VERIFIED** |
-| TH-R18 | Code quality and organization | TRO-456, TRO-508, TRO-548, TRO-573 | `eslint.config.mjs:13`, `src/lib/utils/contrast.ts:1` | **VERIFIED** |
-| TH-R19 | Technical choices appropriate for scope, defended in docs | TRO-459, TRO-470, TRO-485 | `docs/approach.md:16`, `docs/approach.md:99` | **VERIFIED** |
-| TH-R20 | UX and error handling: every failure mode has a designed state | TRO-478, TRO-479, TRO-570 | `docs/error-states.md:39`; `CHANGES.md:355` | **VERIFIED** |
-| TH-R21 | Attention to requirements: buried interview asks visibly addressed | TRO-486, TRO-569, TRO-533 | `docs/approach.md:258` (judgment call) | **VERIFIED** |
-| TH-R22 | Creative problem-solving beyond the literal ask | TRO-464, TRO-476, TRO-470 | `docs/approach.md:243` | **VERIFIED** |
-| TH-R23 | Working core prioritized; trade-offs documented | TRO-485, TRO-487, TRO-531 | `docs/approach.md:138` | **VERIFIED** |
+| TH-R6 | No PII persisted; sane baseline security; documented | TRO-457, 482, 484, 565, 567, 566, 580 | `README.md:167`, `src/lib/db/schema.ts:61` | **VERIFIED** |
+| TH-R7 | Docs name every outbound dependency + degradation | TRO-478, 485, 574 | `docs/approach.md:53` | **VERIFIED** |
+| TH-R8 | Judgment field matching, not strict equality | TRO-463, 536 | `src/server/comparators/brand.ts:25` | **VERIFIED** |
+| TH-R9 | Government warning: word-for-word, all-caps, bold | TRO-468, 469, 527, 528, 532, 533, 537, 569, 579, 581, 582, 583 | `src/server/warning/index.ts:323` (bold display-only) | **PARTIAL** |
+| TH-R10 | Imperfect images: correct or explicit low-confidence, never confidently wrong | TRO-477, 497, 542, 543, 540, 563, 561 | `src/server/router/golden-image-quality.test.ts:1` | **VERIFIED** |
+| TH-R11 | All five example fields verify end-to-end | TRO-461, 458 | `src/server/router/types.ts:35` | **VERIFIED** |
+| TH-R12 | Test-label image set present and exercised | TRO-458, 497, 498, 499, 529, 510, 530 | `golden-set/README.md:3` | **VERIFIED** |
+| TH-R13 | Public, buildable-from-clone repo | TRO-456, 562 | `.github/workflows/ci.yml:51`; GitHub API public; CI green on ea9a6d0 | **VERIFIED** |
+| TH-R14 | README with setup and run instructions | TRO-484 | `README.md:1` + fresh clone/install/migrate/build THIS sweep | **VERIFIED** |
+| TH-R15 | Brief doc of approach, tools, assumptions | TRO-485 | `docs/approach.md:6/:131/:143` | **VERIFIED** |
+| TH-R16 | Deployed URL reachable; core flow works there | TRO-481, 482, 483, 568, 571 | `README.md:17-18`; live probes incl. published-code 200 | **VERIFIED** |
+| TH-R17 | Core requirements correct and complete | TRO-459, 470, 561 | all six verify commands green | **VERIFIED** |
+| TH-R18 | Code quality and organization | TRO-456, 508, 548, 573, 578 | `eslint.config.mjs:13`, `src/lib/utils/contrast.ts:1` | **VERIFIED** |
+| TH-R19 | Technical choices appropriate for scope | TRO-459, 470, 485 | `docs/approach.md:16` | **VERIFIED** |
+| TH-R20 | UX + error handling: every failure mode designed | TRO-478, 479, 570, 575, 582 | `docs/error-states.md:41`, `e2e/verify-fake-only.spec.ts:32` | **VERIFIED** |
+| TH-R21 | Attention to requirements | TRO-486, 569, 533 | `docs/approach.md:258/:302` (judgment call) | **VERIFIED** |
+| TH-R22 | Creative problem-solving beyond the ask | TRO-464, 476, 470, 576, 582 | `docs/approach.md:287` | **VERIFIED** |
+| TH-R23 | Working core prioritized; trade-offs documented | TRO-485, 487, 531 | `docs/approach.md:170`, `README.md:141` | **VERIFIED** |
 
 ## Gaps
 
 ### TH-R9 — PARTIAL
-- **Missing part:** The bold requirement is extracted, typed, and validated, but no router or
-  comparator code reads it — a correctly capitalized, correctly worded, non-bold `GOVERNMENT
-  WARNING:` prefix still passes.
-- **Suggested scope:** TRO-532 (now In Progress) or TRO-533 — either closes the gap. TRO-528
-  (bold-isolating golden cases) supports the eventual eval coverage. TRO-569 (Urgent) tracks the
-  gap itself. This is now the **only** open row in the whole inventory.
+- **Missing part:** The measured bold signal changes no verdict. A correctly worded,
+  correctly capitalized, non-bold `GOVERNMENT WARNING:` prefix still passes silently —
+  the signal is measured, persisted, and displayed, and nothing may fold it back into a
+  verdict (`src/server/warning/index.ts:323`).
+- **Suggested scope:** TRO-569+528 (branch `feat/tro-569-528-bold-review-routing`) — routes
+  warning MATCH + measured not-bold to NEEDS_REVIEW with a named reason, respecting CP-2
+  §7.2's never-hard-FAIL boundary. Owner session reports implementation complete, live
+  re-baseline running, merge expected ahead of TRO-487; independent peer check confirms
+  active recent commits but no PR yet. Re-verify against main on merge.
+
+### TH-R2 — PARTIAL (new this sweep)
+- **Missing part:** A latency measurement of the pipeline as it now ships. The committed
+  measurement is green (p50 3618ms) but predates TRO-533/580/581/583's changes to the
+  measured path (INT-002: a stale artifact never supports VERIFIED). `docs/approach.md:253`
+  quotes the stale figure as current.
+- **Suggested scope:** One `pnpm latency:check -- --url` run (~20 Haiku calls) at the
+  submission commit, once Render shows it live; write a dated artifact per TRO-559. No open
+  ticket tracks this — fold it into TRO-487's checklist.
 
 ## Orphan tickets
 
-Not attempted this sweep — see Coverage and limitations.
+First full orphan pass since 2026-08-12 (fresh 113-issue population). Eight tickets map to
+no TH requirement; all eight are **factory process tooling** — gate mechanics, worktree
+provisioning, review-capture trust, changelog style (TRO-508, 523, 548, 553, 554, 557, 560,
+572). This is deliberate meta-work that serves the build process, not scope drift; none
+represents product work the brief never asked for. No genuinely unrelated ticket exists in
+the population.
 
 ## Blocked / assumed
 
-No BLOCKED rows. No ASSUMED rows. No new ambiguities crossed the flood cap.
+No BLOCKED rows. No ASSUMED rows. No new ambiguity crossed the flood cap.
 
-**TH-R21 carries forward the same flagged judgment call** the prior sweep recorded (see that
-matrix entry, unchanged, for the full reasoning) — worth a reviewer's attention, reversible
-under a stricter reading, not newly re-litigated this sweep.
-
-**TH-R3 carries a small judgment call from this sweep:** TRO-573 removed dark mode entirely.
-Treated as a scope reduction of a previously-fixed feature, not a regression of anything TH-R3's
-own acceptance requires — the brief asks whether a first-time user can operate the *shipped*
-app, and the shipped app is light-only by a deliberate, Troy-approved design decision. Named for
-the record, not hidden in a routine "no delta" line.
+**Three named judgment calls, all reversible:**
+1. **TH-R3:** five UI tickets postdate the last human walkthrough and axe scan; kept
+   VERIFIED on the postreskin sweep's precedent (automated re-verification suffices for
+   post-walkthrough changes) because every automated guard is green at HEAD. A stricter
+   INT-006 reading makes this PARTIAL. Recommend one axe pass + a human skim of the
+   autofill flow inside TRO-487.
+2. **TH-R21:** the same whole-inventory judgment call as the prior two sweeps, carried with
+   its condition re-checked — noting honestly that TH-R2 is now a second PARTIAL row and,
+   unlike TH-R9, has no tracking ticket.
+3. **TH-R10:** kept VERIFIED on fresh test evidence at HEAD while the committed eval
+   artifact carries a manifest-drift warning and predates two verdict-semantics changes;
+   TRO-569's authorized re-baseline refreshes it.
 
 ## Delta (compare mode only)
 
 | ID | baseline verdict | now | evidence change |
 |---|---|---|---|
-| TH-R3 | VERIFIED | VERIFIED (re-verified, not carried forward blind) | TRO-573's full Notion-style reskin landed since the prior sweep. Re-ran axe-core live against all 8 real screens post-reskin (0 violations, matching the pre-reskin baseline) and the reskin's own new permanent contrast-regression test (8/8 pass). `CHANGES.md` citations re-pointed to their new line numbers. |
-| TH-R7 | PARTIAL | **VERIFIED** | TRO-574 (PR #81) merged mid-sweep: the outbound-dependency table and its "if blocked or unreachable" column now live directly in `docs/approach.md` (new "Outbound dependencies and degradation" section), and README.md points to that reproduced content instead of the internal `docs/error-states.md` working document. INT-004 is now fully met. |
-| TH-R13 | VERIFIED | VERIFIED (evidence corrected) | TRO-562 (CI action/image SHA-pinning, credential-persistence fix) merged between the prior sweep's commit and this one. This sweep's first citation attempt was checked directly and found stale after TRO-562's diff shifted the line; corrected. |
-| TH-R18 | VERIFIED | VERIFIED (evidence strengthened) | TRO-573 added a small, independently-unit-tested utility (`src/lib/utils/contrast.ts`) — cited as a positive example of this row's own bar, not a verdict change. |
+| TH-R2 | VERIFIED | **PARTIAL** | The latency artifact went stale under INT-002: TRO-533 (bold measurement in the warning channel), TRO-581 (reconcile change), TRO-580 (route spend settling), and TRO-583 (OCR retry — its own header names TH-R2) all merged after the 19:43Z measurement. Regression risk judged low (the Haiku stage dominates at p50 3317.8ms of 3618ms; OCR work is deadline-bounded) — but judged is not measured. |
+| TH-R9 | PARTIAL | PARTIAL (gap materially narrowed) | Bold went from captured-and-discarded to measured-from-pixels (TRO-532), persisted + displayed (TRO-533), honestly documented in both graded deliverables, with a real not-bold ground-truth case (TRO-579) and 83.3% measured signal accuracy. TRO-581 makes deterministic single-channel violations FAIL outright (Troy's CP-2 ruling); TRO-582 adds the statute-text word diff; TRO-583 adds OCR retry-once. Remaining: no verdict consequence — TRO-569 in flight. |
+| TH-R14 | VERIFIED (carried forward) | VERIFIED (freshly re-run) | The deferred fresh-clone check ran this sweep: clone from GitHub, install, migrate against a throwaway DB, build — all exit 0. |
+| TH-R16 | VERIFIED | VERIFIED (evidence strengthened) | Prior sweeps proved the gate rejects; this sweep also proved the README-published access code admits (200 on a gated route) — the evaluator's actual path, end-to-end. |
+| TH-R3 | VERIFIED | VERIFIED (evidence re-based) | At the swept commit, CHANGES.md held only 4 entries — later diagnosed as a silent truncation by PR #103's merge, NOT a deliberate change (this report's first draft mis-read it as intentional; corrected). Main repaired at bfa0574 (full 136-entry history restored). The walkthrough/axe citations were re-based to `docs/handoffs/2026-08-13-ux-reskin-audit-session.md:42-44`, which remains the more durable anchor either way. Judgment call re post-walkthrough UI tickets named above. |
+| TH-R6 | VERIFIED | VERIFIED (strengthened) | TRO-566 (the row's one open follow-up last sweep) closed Done; TRO-580 closed a real budget under-count. |
 
-All other rows (TH-R1, TH-R2, TH-R4, TH-R5, TH-R6, TH-R8, TH-R9, TH-R10, TH-R11, TH-R12, TH-R14,
-TH-R15, TH-R16, TH-R17, TH-R19, TH-R20, TH-R21, TH-R22, TH-R23) hold their prior verdict,
-re-confirmed by re-running the verify suite and, for TH-R9, a fresh grep — not assumed
-unchanged.
+All other rows hold their prior verdict, re-verified by re-running the full suite at
+ea9a6d0 — including re-anchoring every citation whose line drifted (route.ts 313->355,
+warning index.test 202->401, README 151->167, approach.md 138->170 / 243->287 / new :258).
 
 ## Verification performed
 
 | Command | Result | Bears on |
 |---|---|---|
 | `pnpm typecheck` | exit 0 — clean | TH-R17, TH-R18 |
-| `pnpm lint` | exit 0 — 1 problem (0 errors, 1 warning) | TH-R17, TH-R18 |
-| `pnpm build` | exit 0 — production build succeeded | TH-R17, TH-R18 |
-| `pnpm test` | 184 files, 2287 tests, all passed (20–22s across two runs) | TH-R1, TH-R6, TH-R8, TH-R9, TH-R11, TH-R12, TH-R17, TH-R18, TH-R20 |
-| `pnpm test:e2e` | 12 passed (20.7s) | TH-R1, TH-R3, TH-R4, TH-R11, TH-R17, TH-R20, TH-R22 |
-| `pnpm eval:check` | PASS — extraction 87.2% within 87.2–87.8% band; cascade 80.6% within 80.6–83.3% band (K=3) | TH-R10, TH-R17, TH-R19, TH-R22 |
-| `pnpm exec vitest run src/app/globals-contrast.test.ts` | 8 passed | TH-R3 |
-| `git log 4b004bb..HEAD -- <measured-latency-path>` | 0 commits | TH-R2, TH-R16 |
-| `curl` GET `/`, `/api/health`, `/api/review-queue` against the live deploy | 307; 200; 401 without credential | TH-R6, TH-R16 |
-| `grep -rn "COLA" src/` | 1 hit — a regulatory citation, not a client | TH-R5 |
-| `grep` for `formatting.bold`/`isBold`/`boldCheck` in router + DetailView | 0 hits | TH-R9 |
-| GitHub API repo lookup + `gh run list` on the swept commit | public repo; CI completed/success | TH-R13 |
-| `gh pr list` (checking for a TRO-574 PR) | initially none open; PR #81 opened and merged mid-sweep, caught before finishing | TH-R7 |
-| `grep` for the dependency table/firewall scenario in docs/approach.md and README.md | 6 hits + 3 hits, content reproduced not linked | TH-R7 |
-| `pnpm eval:check -- --live --full` | NOT RUN — costs real API money; artifact confirmed current instead | TH-R17 |
-| `pnpm latency:check -- --url=<deployed>` | NOT RUN — would bill a real Anthropic call; already-fresh artifact used instead | TH-R2 |
+| `pnpm lint` | 0 errors, 1 warning (no-img-element, deliberate) | TH-R17, TH-R18 |
+| `pnpm build` | exit 0 | TH-R17, TH-R18 |
+| `pnpm test` | 200 files / 2650 tests, all passed (44.6s); one earlier red run was this sweep's own migration-ordering error, disclosed above | TH-R1, R3, R6, R8, R9, R11, R12, R17, R18, R20 |
+| `pnpm test:e2e` | 12 passed (15.7s), fake model server | TH-R1, R3, R4, R11, R17, R20, R22 |
+| `pnpm eval:check` | PASS (87.6% / 81.1% in band) + loud manifest-drift warning | TH-R10, R17, R19, R22 |
+| Fresh clone + install + migrate (scratch DB) + build | all exit 0 | TH-R13, TH-R14 |
+| Live probes: `/`, `/api/health`, `/api/review-queue` ± access code | 307; 200; 401 without / **200 with** published code | TH-R6, TH-R16 |
+| `grep COLA src/` | 1 regulatory-citation comment, no client | TH-R5 |
+| GitHub API + `gh run list` | public; CI success on ea9a6d0 | TH-R13 |
+| Linear full pull (project LabelHunter) | 113 issues, complete | TH-R21, orphans |
+| Peer-session query re TRO-569 | two attributed accounts; not accepted as merged-behavior evidence | TH-R9 |
+| `pnpm latency:check -- --url` | **NOT RUN** — bills ~20 Haiku calls; deployed commit unconfirmable mid-rollout. The one command between TH-R2 and VERIFIED | TH-R2 |
+| `pnpm eval:variance --establish-baseline` (live) | **NOT RUN** — already running, authorized, in the TRO-569 session; a second run double-spends | TH-R10, TH-R17 |
+| axe-core scan of post-575/576/577/578/582 screens | **NOT RUN** — no in-repo tooling; recommended into TRO-487 | TH-R3 |

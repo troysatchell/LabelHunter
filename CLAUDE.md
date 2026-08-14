@@ -1,8 +1,6 @@
 # CLAUDE.md
 
 This file provides guidance to Claude Code (or any coding agent) working in this repository.
-It applies to every session — the interactive one and every factory sub-agent dispatched by
-`.claude/skills/labelhunter-factory/`.
 
 ## What this repo is
 
@@ -16,14 +14,24 @@ Troy must be able to personally explain every decision.
   implement them, don't redesign them.
 - `audit/requirements/inventory.md` — TH-R1..R23, the graded requirements. Every ticket cites
   the TH-R IDs it advances; every acceptance-evidence line is a target, not a suggestion.
-- `factory/config.yaml` — detected facts and policy decisions for this repo, each dated and
-  marked as measured-fact or human-decision.
+
+## How this repo was built
+
+An autonomous ticket factory worked this repo: each ticket ran in its own git worktree, passed
+an evidence gate, and landed through a reviewed pull request. That machinery is build tooling,
+not the deliverable, so it does not ship in this repo. It stays on the author's machine.
+
+Some code comments cite records that live there and not here — `CHANGES.md` (the per-ticket
+changelog), `factory/`, `scripts/factory/`, `docs/handoffs/`, and `docs/diagnostics/`. Each
+such comment also names its `TRO-` ticket ID, which is the durable anchor. Git history holds
+the same records. `audit/requirements/` is the one process artifact that does ship, because it
+traces each graded requirement to the code that satisfies it.
 
 ## Writing style — ASD-STE100 discipline, Zinsser's four principles
 
 Every sentence Claude writes in this repo — code comments, commit messages, PR bodies,
-`CHANGES.md` entries, README, `docs/approach.md`, error messages, and UI copy — follows two
-stacked disciplines. They are not in tension: one gives structure, the other gives voice.
+README, `docs/approach.md`, error messages, and UI copy — follows two stacked disciplines.
+They are not in tension: one gives structure, the other gives voice.
 
 **This is not a stylistic preference.** TH-R3 requires a UI a 73-year-old first-time user can
 operate with no instructions, and TH-R9 requires the government warning to be checked by
@@ -73,28 +81,10 @@ not in reintroducing ambiguity.
 restructuring code to be "simple" for its own sake — see the general engineering guidelines
 below for that line.
 
-## The factory
-
-This repo is worked by an autonomous ticket factory, not just ad hoc sessions.
-
-- **Orchestrator skill:** `.claude/skills/labelhunter-factory/SKILL.md` — the full run loop,
-  invoked with "run the factory". Read it before dispatching or gating anything.
-- **Source of truth for tickets:** `factory/tickets.md`, mirrored to Linear team
-  `Troysatchell`, **project `LabelHunter` only** — that workspace holds other unrelated
-  projects; never dispatch outside this one.
-- **Evidence gate:** `scripts/factory/gate.sh`. A ticket is done when the gate passes, CI is
-  green, and the review is triaged — never on an agent's self-report.
-- **Three human checkpoints** (CP-1 cascade router/prompts, CP-2 warning subsystem, CP-3
-  batch queue) each require prepared walkthrough and "defend it" Q&A material before their
-  wave dispatches — Troy must be able to defend every decision live. Dispatch no longer waits
-  for live acknowledgment (Troy's call, 2026-08-11) — see `references/escalation.md`. Final
-  submission wording and the submit decision are always Troy's.
-
 ## Non-negotiables
 
-- **DATABASE_URL discipline.** Every worktree gets its own database via
-  `scripts/factory/worktree.sh`. Never run tests with `DATABASE_URL` unset or pointing
-  anywhere but your worktree's own database — the schema is reset on every provision.
+- **DATABASE_URL discipline.** Never run tests with `DATABASE_URL` unset or pointing at a
+  database you do not own. The schema is reset on every provision.
 - **No secrets in the repo.** The Anthropic API key lives in Render env config and local
   `.env.local` (gitignored) only. `.env.local.example` documents the shape, never real values.
 - **Never fabricate a number.** Latency, accuracy, and cost figures come from a real measured
@@ -104,23 +94,25 @@ This repo is worked by an autonomous ticket factory, not just ad hoc sessions.
 - **The cascade is the architecture, not an optimization** (TH-R19). Haiku extracts every
   label; Sonnet sees only escalations routed by an explicit `ReviewReason`. Never wire Sonnet
   into the per-label happy path.
-- **Never weaken a test, or widen `factory/quarantine.json`, to get a gate green.** Only
-  removing a quarantine entry because a test is genuinely fixed is legitimate.
+- **Never weaken a test to get a check green.**
 - **Schema changes go in numbered migrations**, never a direct edit to an existing table's
   initial-setup SQL.
 
 ## Commands
 
-Populated by the scaffold ticket (TRO-456); see `factory/config.yaml` → `detected.commands`
-for the measured, verified set once it lands. Planned shape:
-
 ```bash
 pnpm install
-pnpm dev              # Next.js app + worker, DATABASE_URL from .env.local
+pnpm dev              # Next.js app, DATABASE_URL from .env.local
+pnpm worker           # batch queue worker
 pnpm typecheck
 pnpm lint
 pnpm build
-pnpm test             # vitest, JSON reporter for the gate
-pnpm test:e2e         # playwright
+pnpm test             # vitest
+pnpm test:e2e         # playwright, against a fake Anthropic server
 pnpm db:migrate
+pnpm golden:verify    # golden-set manifest and image checks
+pnpm eval:check       # compares the committed eval report to the baseline band
 ```
+
+Two commands make real, billed Anthropic API calls and are never part of a default run:
+`pnpm eval:check -- --live` and `pnpm latency:check`.

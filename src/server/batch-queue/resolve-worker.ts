@@ -1,46 +1,24 @@
 /**
- * Processes one claimed `RESOLVE` `batch_queue_items` row (LH-041 /
- * TRO-474, CP-3 §2.3, §3.3, §6, §7.1, §8 step 6): rebuilds `ResolverInput`
- * from the `EXTRACT` worker's own snapshot, reserves this batch's Sonnet
- * call budget, calls `resolveEscalatedLabel` (LH-014, already merged —
- * this module calls it, never re-implements its pre-check or its
- * `review_queue` insert), and persists the outcome.
+ * Processes one claimed `RESOLVE` queue row (CP-3 §2.3, §3.3, §6, §8 step
+ * 6). It rebuilds `ResolverInput` from the `EXTRACT` worker's snapshot,
+ * reserves the batch's Sonnet budget, calls `resolveEscalatedLabel`, and
+ * persists the outcome. It never re-implements that resolver.
  *
- * **The completion guard runs in a SEPARATE transaction from the
- * `review_queue` write, deliberately.** `resolveEscalatedLabel` (and this
- * module's own `insertSkippedReviewQueueEntry` call for a cap-skip) commit
- * their own `review_queue` insert independently — that write is not, and
- * cannot cleanly be, wrapped inside this module's own completion
- * transaction: `resolveEscalatedLabel` is a black box this ticket calls,
- * not restructures (CP-3 §2.4), and threading a live network call inside
- * an open database transaction is worse practice than the two-step shape
- * here. CP-3 §8 step 6's own worked example describes exactly this
- * ordering: the resolver call happens, THEN "the worker... runs §3.2's
- * completion guard against its RESOLVE row... in the same transaction it
- * updates verifications.resolutionPath... and marks the RESOLVE item
- * DONE" — the guard transaction comes after, not around, the call.
+ * **The completion guard runs in its own transaction, after the resolver
+ * call, not around it.** The resolver commits its own `review_queue`
+ * insert independently. Holding a transaction open across a live network
+ * call is worse than the two-step shape here, and CP-3 §8 step 6 describes
+ * this same ordering.
  *
- * **Daily budget (TRO-566 finding 1).** Before this ticket, this worker
- * never checked or recorded the daily spend budget either — the same gap
- * `extract-worker.ts` had. This module now reserves
- * `SONNET_CALL_RESERVE_ESTIMATE_USD` of today's budget AFTER the
- * escalation-cap reservation above succeeds but BEFORE calling
- * `resolveEscalatedLabel`, and settles it to the call's REAL, measured
- * cost afterward (or refunds it in full when this caller's own call
- * reused another caller's already-finished result instead of touching
- * Sonnet at all — `resolveEscalatedLabel`'s own TRO-506 reservation, see
- * this file's header comment above). **Ordering tradeoff, accepted and
- * documented:** placing the dollar-budget check AFTER the escalation-cap
- * reservation means a budget-blocked attempt still counts as one
- * escalation-cap attempt (`sonnet_call_count` still increments) even
- * though no real Sonnet call happens. Reordering to check dollars FIRST
- * would avoid that, but only by adding a give-back path to
- * `escalation-cap.ts` for this rare case — more surface for a marginal
- * correctness gain (the escalation cap only bounds a cost HEURISTIC, PRD
- * §3.7). A refused reservation throws `BudgetExhaustedError`, caught by
- * this function's own existing catch and classified by `backoff.ts`'s
- * `classifyModelCallError` exactly like any other retryable condition —
- * see that error class's own doc comment for the full design rationale.
+ * **Daily budget.** It reserves `SONNET_CALL_RESERVE_ESTIMATE_USD` after
+ * the escalation-cap reservation succeeds and before the resolver call,
+ * then settles to the measured cost — or refunds in full when the call
+ * reused another caller's finished result.
+ *
+ * That order has an accepted cost: a budget-blocked attempt still counts
+ * against the escalation cap. Checking dollars first would need a give-back
+ * path in `escalation-cap.ts`, which is more surface for a marginal gain —
+ * the cap bounds a cost heuristic, not a hard limit (PRD §3.7).
  */
 import { sql } from "drizzle-orm";
 import { db as defaultDb } from "../../lib/db";

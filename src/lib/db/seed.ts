@@ -50,8 +50,8 @@ async function main() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error(
-      "DATABASE_URL is not set. Source .factory-env (factory worktree) or " +
-        "set it from .env.local.example before running db:seed.",
+      "DATABASE_URL is not set. Set it in .env.local — see " +
+        ".env.local.example — before running db:seed.",
     );
   }
 

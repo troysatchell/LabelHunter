@@ -8,24 +8,21 @@ setupFiles: ["./vitest.setup.ts"],
     // renderer and degrader — the ticket requires these tests in "the unit
     // vitest run", not a separate suite, so this glob widens to match.
     include: ["src/**/*.test.ts", "src/**/*.test.tsx", "scripts/**/*.test.ts"],
-    // NOTE: the gate invokes `pnpm test -- --reporter=json --outputFile=<abs path>`.
+    // NOTE: a caller may invoke `pnpm test -- --reporter=json --outputFile=<abs path>`.
     // Vitest resolves a relative --outputFile against this config's root (the repo
-    // root, since this file lives there) — the gate always passes an absolute path,
-    // so that resolution rule doesn't matter in practice, but keep root implicit
-    // (no `root:` override below) so it stays true if that ever changes.
+    // root, since this file lives there). Keep root implicit (no `root:` override
+    // below) so that stays true.
     //
     // TRO-513: bounds how many forked processes one `pnpm test` run opens at
     // once. Vitest's default pool ("forks") isolates each test file into its
     // own process, and `src/lib/db/index.ts`'s `globalThis` pool guard only
     // dedupes a Postgres pool WITHIN one process — it cannot dedupe across
     // them. Measured on this repo: an unbounded run opens 17 separate pools
-    // (one per forked process) against the worktree's own database. Every
-    // worktree shares one Postgres server, so those 17 pools compete for
+    // (one per forked process) against the checkout's own database. Two
+    // checkouts share one Postgres server, so those 17 pools compete for
     // the SAME server-wide `max_connections` (100 by default) as every
-    // other worktree's own test run — `factory/config.yaml`'s own
-    // `knownLimits` flagged concurrent cross-worktree gate runs as untested
-    // and, from the sibling "ship" factory's own experience, exactly where
-    // load-sensitive flakes cluster. Reproduced directly: with enough
+    // other checkout's test run. Concurrent cross-checkout runs are exactly
+    // where load-sensitive flakes cluster. Reproduced directly: with enough
     // concurrent connection pressure, some pool's connection attempt is
     // refused with Postgres's own "sorry, too many clients already" —
     // surfacing as an unrelated test failure that clears on a standalone

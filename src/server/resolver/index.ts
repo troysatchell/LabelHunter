@@ -126,7 +126,7 @@ export interface ResolveEscalatedLabelOptions {
    * `messages.create` in tests; the unit suite never calls the real API. */
   client?: Anthropic;
   /** Drizzle database handle to use. Defaults to the shared `db` singleton.
-   * Inject a test database (this worktree's own, via `.factory-env`) or a
+   * Inject a test database (your own local one, via `.env.local`) or a
    * mock in tests. */
   db?: ResolverDb;
   /** How long to wait for another caller's in-flight resolution before

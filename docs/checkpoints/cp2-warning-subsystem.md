@@ -583,8 +583,8 @@ a wrong PASS delays a catch, a wrong FAIL accuses a compliant producer of a fede
 > cost-of-choosing-wrong reasoning (too low inflates the suspect rate with garbage disagreement)
 > is why this document does not pick the lowest defensible number either. See
 > `src/server/warning/reconcile.ts:62-68` for the same reasoning carried in code, and
-> `docs/diagnostics/2026-08-12-verdict-miss-triage.md` §3B / `docs/diagnostics/2026-08-12-fix-tickets.md`
-> S2 for the diagnosis this measurement answers.
+> `docs/diagnostics/2026-08-12-verdict-miss-triage.md` §3B for the diagnosis this
+> measurement answers.
 
 > **Amendment, 2026-08-13 (TRO-558).** The golden set changed twice since the amendment above was
 > written. TRO-527 (`51f0d93`, 2026-08-13) rebuilt every image to add the renderer's bold prefix.

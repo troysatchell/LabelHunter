@@ -53,7 +53,7 @@ this one case. So the 5 candidates stage in `golden-set/wild-labels/` until Troy
 in — that directory's README documents the exact, small fold-in steps.
 
 **Still not done — the realistic-corpus track.** A newer design doc supersedes the rest of the
-original §5 scope: `docs/superpowers/specs/2026-08-11-realistic-corpus-gemini-design.md`.
+original §5 scope: `docs/design/2026-08-11-realistic-corpus-gemini-design.md`.
 
 Under this design, Gemini generates a realistic bottle photograph from a real reference photo.
 Each photo shows one camera condition: steady, motion-blur, or camera-shake. `build.ts`

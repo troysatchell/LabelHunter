@@ -8,9 +8,9 @@ import { getVerificationDetail } from "./get-verification-detail";
 // Real worktree Postgres, matching src/app/api/verify/route.test.ts's own
 // convention — this module's whole job is shaping already-persisted rows,
 // so a fake DB client would just be re-asserting this file's own mock.
-// Run this file only with DATABASE_URL pointed at the worktree's own
-// database (source .factory-env first): it inserts and deletes real
-// rows, and provisioning resets that database's schema.
+// Run this file only with DATABASE_URL pointed at your own local
+// database (see .env.local): it inserts and deletes real rows, and
+// provisioning resets that database's schema.
 //
 // The fixture brand is "TRO-466 Test Fixture" (this module's own origin
 // ticket), not "Old Tom Distillery" (TRO-513) — this suite inserts

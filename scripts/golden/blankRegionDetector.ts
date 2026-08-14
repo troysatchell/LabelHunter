@@ -1,7 +1,7 @@
 /**
  * Finds the blank label region in a Gemini-generated backdrop photo
  * (design doc §5,
- * docs/superpowers/specs/2026-08-11-realistic-corpus-gemini-design.md).
+ * docs/design/2026-08-11-realistic-corpus-gemini-design.md).
  * `imagenPrompt.ts` asks Gemini to paint that region one known, distinct
  * color; this file scans the generated photo for the largest connected
  * region near that color and returns its 4 extreme corners — the same

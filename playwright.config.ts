@@ -5,12 +5,12 @@ import { config as loadEnv } from "dotenv";
 // Playwright's config runs as its own Node process — it does not get
 // Next.js's automatic .env.local loading — so without this, a plain
 // checkout's configured PORT was silently ignored in favor of the "3000"
-// fallback below. A no-op in a factory worktree: .factory-env already
-// exports APP_PORT, and dotenv never overrides an already-set variable.
+// fallback below. A no-op when APP_PORT is already exported: dotenv never
+// overrides an already-set variable.
 loadEnv({ path: ".env.local" });
 
-// APP_PORT is the factory-assigned port for this worktree (.factory-env);
-// PORT is the equivalent for a plain local checkout (.env.local). Falls back
+// APP_PORT names the app's port when a caller assigns one; PORT is the
+// equivalent for a plain local checkout (.env.local). Falls back
 // to 3000 so `pnpm test:e2e` still works with neither set.
 const PORT = process.env.APP_PORT ?? process.env.PORT ?? "3000";
 const baseURL = `http://localhost:${PORT}`;
@@ -40,11 +40,10 @@ const baseURL = `http://localhost:${PORT}`;
  */
 const E2E_LIVE = process.env.E2E_LIVE === "1";
 
-// Deliberately derived from PORT, not a fixed literal: two ticket
-// worktrees can run `pnpm test:e2e` at the same time
-// (scripts/factory/worktree.sh gives each its own APP_PORT), and deriving
-// this port the same way keeps their fake model servers out of each
-// other's way too.
+// Deliberately derived from PORT, not a fixed literal: two checkouts can
+// run `pnpm test:e2e` at the same time when each sets its own APP_PORT, and
+// deriving this port the same way keeps their fake model servers out of
+// each other's way too.
 const FAKE_MODEL_PORT = String(Number(PORT) + 1000);
 const FAKE_MODEL_BASE_URL = `http://localhost:${FAKE_MODEL_PORT}`;
 

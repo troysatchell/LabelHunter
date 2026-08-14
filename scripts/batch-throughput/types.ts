@@ -28,8 +28,8 @@ export interface BatchThroughputWorkerConcurrency {
    * "environment override": every value came from a variable set in this
    * script's own environment. That is an observation of this process
    * only. The worker is assumed to have seen the same variables. The
-   * assumption holds only when both terminals sourced the same
-   * environment configuration (.factory-env, or .env.local).
+   * assumption holds only when both terminals read the same
+   * environment configuration (.env.local).
    *
    * "scripts/batch-worker/run.ts defaults": no variable was set. Every
    * value is that file's own documented fallback (5, 2, 1). This is a

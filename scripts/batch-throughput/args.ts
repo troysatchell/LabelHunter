@@ -31,8 +31,8 @@ export const DEFAULT_FIXTURE_DIR = "var/batch-fixture";
 export const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 function defaultBaseUrl(): string {
-  // APP_PORT is the factory-assigned port for this worktree (.factory-env);
-  // PORT is the equivalent for a plain local checkout — same fallback order
+  // APP_PORT names the app's port when a caller assigns one; PORT is the
+  // equivalent for a plain local checkout — same fallback order
   // playwright.config.ts already established for the same two variables.
   const port = process.env.APP_PORT ?? process.env.PORT ?? "3000";
   return `http://localhost:${port}`;

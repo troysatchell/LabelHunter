@@ -182,72 +182,37 @@ function toActualFieldOutcome(f: FullVerifyFieldResult): ActualFieldOutcome {
 }
 
 /**
- * Merges a resolver resolution into the router's own field rows, producing
- * the cascade's END STATE verdict (TRO-538 / LH-033). A resolved field
- * OVERRIDES its router row; a router row the resolver did NOT flag carries
- * through unchanged — `buildFlaggedFieldsForEscalatedLabel` flags a
- * per-field subset for a field-specific reason, or every field for a
- * label-level blocker (that function's own doc comment), so either shape is
- * a normal input here, not a special case this function has to detect.
+ * Merges a resolver resolution into the router's field rows to produce the
+ * cascade's end-state verdict. A resolved field overrides its router row; a
+ * field the resolver never flagged carries through unchanged.
  *
- * Reuses `resolver-rollup.ts`'s own per-disposition mapping
- * (`rollUpOneField` — judged fields: the resolver's disposition IS the
- * verdict, TH-R8; correction fields: the resolver's reading re-runs the
- * SAME deterministic comparator, CP-1 §6.5) and the router's own
- * `rollupLabelVerdict`/`pickHeadlineReason`, so this arm's rollup rule
- * cannot drift from either the Sonnet-only arm's or the router's own.
+ * It reuses `resolver-rollup.ts`'s per-disposition mapping and the router's
+ * own rollup, so this arm's rule cannot drift from either.
  *
- * OPEN DESIGN QUESTION, decided here, flagged for Troy to confirm (see the
- * TRO-538 PR body's "Open design question" section): this function ALWAYS
- * rolls up with `labelLevelBlocker: false` — it never reads
- * `routerResult.labelVerdict` or `.headlineReason` at all, only `.fields`.
- * The router's own LOW_IMAGE_QUALITY/CONFLICTING_EXTRACTION blocker
- * therefore never survives into the cascade end state. Rationale: a
- * label-level blocker's whole justification is "the fields under it are
- * not trustworthy" — and `buildFlaggedFieldsForEscalatedLabel` already
- * guarantees that whenever the blocker fired with no field individually
- * carrying its own reason (the common shape), EVERY field gets sent to
- * Sonnet, so the distrust the blocker asserted has been independently
- * checked, not merely repeated. This is the same choice
- * `resolver-rollup.ts`'s Sonnet-only arm already makes (there: because that
- * arm has no router pass to take a blocker FROM at all).
+ * **It always rolls up with `labelLevelBlocker: false.`** The router's
+ * label-level blocker never survives into the end state. A blocker's whole
+ * justification is that the fields under it are untrustworthy, and when it
+ * fires with no field carrying its own reason, every field goes to Sonnet —
+ * so that distrust was independently checked, not merely repeated.
  *
- * HONEST LIMIT: `buildFlaggedFieldsForEscalatedLabel` flags a PARTIAL field
- * set whenever at least one field already carries its OWN reviewReason —
- * reachable even alongside a label-level blocker (e.g. one field's own
- * override rejection sets CONFLICTING_EXTRACTION on that field AND the
- * label, while an unrelated field's clean MATCH never gets a second Sonnet
- * look). On that path, "blocker dropped" does not mean "every field was
- * independently re-verified" — only that every FLAGGED field was; an
- * un-flagged field still carries the router's own, blocker-era verdict into
- * this merged result. This is a real, unresolved gap in the evidence, not a
- * design choice — see the PR body.
+ * **Honest limit.** When at least one field already carries its own reason,
+ * only a partial set is flagged. On that path "blocker dropped" means every
+ * FLAGGED field was re-verified, not every field. An un-flagged field
+ * carries the router's blocker-era verdict through. That is an unresolved
+ * gap in the evidence, not a design choice.
  *
- * A SECOND HONEST LIMIT, specific to `government_warning`: `rollUpOneField`
- * dispatches a resolved warning through `rollUpGovernmentWarning`, which —
- * exactly like the Sonnet-only arm — has no OCR channel to corroborate a
- * deviation with, so it can only ever return MATCH or NEEDS_REVIEW, never
- * MISMATCH (`resolver-rollup.ts`'s own doc comment). A router-level warning
- * MISMATCH that gets swept into a label-level "flag all five" resolver call
- * therefore cannot survive into the cascade end state as a MISMATCH — it
- * downgrades to NEEDS_REVIEW / WARNING_MISMATCH, an honest reason in place
- * of a suppressed one, not the router's original, dual-channel-corroborated
- * verdict. See this file's own test suite (`cascade-runner.test.ts`) for a
- * worked example.
+ * **Second honest limit**, for `government_warning`: a resolved warning has
+ * no OCR channel to corroborate a deviation, so it can only return MATCH or
+ * NEEDS_REVIEW, never MISMATCH. A router-level warning MISMATCH swept into
+ * a label-level resolver call therefore downgrades to NEEDS_REVIEW — an
+ * honest reason in place of a suppressed one, but not the router's original
+ * dual-channel verdict.
  *
- * `routerWarningChannel` (TRO-535 / TRO-538 merge-integration fix, found
- * resolving the two tickets' overlapping diffs — neither ticket's own test
- * suite could have caught this alone, since the gap only exists once both
- * land together): the router's own channel provenance for
- * `government_warning` (`extractWarningChannel`'s return value at the real
- * call site). Threaded through to the merged `ActualVerdict.warningChannel`
- * ONLY when `government_warning` was NOT itself a resolved field — a
- * resolved warning has no channel of its own (the second honest limit
- * above), so the merge reports `null` there rather than the stale,
- * misleading router-stage value. Without this parameter, EVERY cascade
- * end-state verdict would silently report `warningChannel: null`, even on
- * the common case where an unrelated field escalated and government_warning
- * simply passed through the router unchanged with a perfectly good known
+ * `routerWarningChannel` carries the router's channel provenance through,
+ * but only when the warning was not itself resolved — a resolved warning
+ * has no channel, so the merge reports `null` rather than a stale value.
+ * Without it, every end-state verdict would report `null`, even when an
+ * unrelated field escalated and the warning passed through with a good
  * channel.
  */
 export function mergeResolutionIntoActualVerdict(

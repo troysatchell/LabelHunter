@@ -25,12 +25,11 @@
  * listener that stops a dropped idle connection from crashing the process)
  * rather than opening a second one — this is a long-running process, the
  * shape that pool was built for, unlike a one-shot script that opens and
- * closes its own (lessons.md #22).
+ * closes its own.
  *
  * What this does NOT do: wire a Render `render.yaml` worker service to
- * this command — that is LH-060's job (`factory/config.yaml`:
- * "deploy: render via render.yaml — PLANNED, lands with LH-060"), not
- * this ticket's. It also does not run CP-1 §7.3's warm-up request or flip
+ * this command — that is LH-060's job, not this ticket's. It also does
+ * not run CP-1 §7.3's warm-up request or flip
  * a batch to `RUNNING` — `lifecycle.ts`'s `startBatchJob` is the hook a
  * future batch-creation caller (LH-040/LH-042) uses for that; this process
  * only ever claims from batches already `RUNNING` (for the two batch

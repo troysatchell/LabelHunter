@@ -1,40 +1,25 @@
 /**
- * A small RFC 4180 CSV tokenizer (TRO-473 / LH-040, PRD §3.5).
+ * A small RFC 4180 CSV tokenizer (PRD §3.5). It turns CSV text into rows
+ * of raw string cells, or says exactly where the text stopped being valid
+ * CSV. `manifest.ts` gives those cells meaning.
  *
- * This module knows nothing about manifests, application fields, or
- * images — it turns CSV text into rows of raw string cells, or reports
- * exactly where the text stopped being valid CSV. `manifest.ts` is the
- * layer that gives those cells meaning.
+ * It handles comma-delimited fields, quoted fields containing a comma or a
+ * newline, a doubled quote as an escaped literal, CRLF and bare LF, a
+ * leading UTF-8 BOM, and blank lines. A quoted empty field is a real
+ * one-cell record, not a blank line.
  *
- * Handles: comma-delimited fields; double-quoted fields, including a
- * comma or a newline inside one; a doubled quote (`""`) as an escaped
- * literal quote inside a quoted field; both CRLF and bare LF line
- * endings; a leading UTF-8 BOM (common in a spreadsheet program's CSV
- * export); and blank lines, which are skipped rather than turned into a
- * spurious one-cell row (also common at end of file). A quoted empty
- * field (`""`) is a real one-cell record, not a blank line, even though
- * both can otherwise look identical once parsed (review finding).
+ * **Quote placement is strict.** A quote may only open a field as its
+ * first character, and only a delimiter, a record end, or EOF may follow
+ * the closing quote. `a"b"` and `"a"b` are syntax errors, not silently
+ * absorbed as `ab` — a misplaced quote carries the same "the columns may
+ * have shifted" risk this module treats as fatal elsewhere.
  *
- * Quote placement is strict, matching RFC 4180: a quote may only open a
- * field as that field's very first character, and once a quoted field's
- * closing quote appears, only a delimiter, a record end, or EOF may
- * follow it. `a"b"` and `"a"b` are both syntax errors, not silently
- * absorbed as `ab` — a quote appearing somewhere a real CSV tool would
- * never put one is the same "columns may have shifted" risk this module
- * already treats as fatal elsewhere, not a value worth guessing at
- * (review finding).
+ * **A bare carriage return is a syntax error**, quoted or not. Dropping it
+ * would merge two lines into one cell with no separator between them. That
+ * is data corruption, not a cosmetic choice. A real CRLF is unaffected.
  *
- * A bare carriage return — a `\r` not immediately followed by `\n` — is
- * also a syntax error, in both a quoted and an unquoted field, rather
- * than silently dropped or silently kept as literal content (review
- * finding). Silently dropping it would merge two lines into one cell
- * with no separator between them: real data corruption, not a cosmetic
- * choice. A genuine CRLF pair is unaffected, quoted or not.
- *
- * Every cell is normalized to Unicode NFC (standing rule 20) — two CSV
- * files that look identical on screen must compare equal downstream,
- * whichever export tool produced the accented characters in a brand name
- * or a filename.
+ * Every cell is normalized to Unicode NFC, so two files that look
+ * identical on screen compare equal downstream.
  */
 
 export interface CsvSyntaxError {

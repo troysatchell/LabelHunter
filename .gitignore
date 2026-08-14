@@ -1,17 +1,6 @@
-
-
-#Ignore vscode AI rules
-.github/instructions/codacy.instructions.md
-
-# Factory worktree-local state (never committed)
-.factory/
-.factory-env
-.factory-owner
+# Secrets — never committed. .env.local.example documents the shape.
 .env.local
-
-# Uploaded label images (TRO-465, src/server/storage/local-file-storage.ts) —
-# local-disk stand-in storage; never committed.
-var/uploads/
+*.pem
 
 # Node
 node_modules/
@@ -28,11 +17,48 @@ playwright-report/
 test-results/
 *.tsbuildinfo
 
-# Misc
+# Uploaded label images (TRO-465, src/server/storage/local-file-storage.ts) —
+# local-disk stand-in storage; never committed.
+var/
+
+# Build tooling and process material. These files stay on the working machine.
+# They are how LabelHunter was built, not what LabelHunter is. The deliverable is
+# the application, the README, and docs/approach.md.
+CHANGES.md
+.claude/
+.factory/
+.factory-env
+.factory-owner
+factory/
+scripts/factory/
+docs/handoffs/
+docs/superpowers/
+docs/prd-brainstorm-questions.md
+# The ticket-writing worksheet, not a diagnosis. Its sibling triage document
+# ships, because shipped code cites it.
+docs/diagnostics/2026-08-12-fix-tickets.md
+
+# Requirements-audit tooling. The audit OUTPUT stays tracked under
+# audit/requirements/; only the tool's own config and its superseded sweep
+# snapshots are ignored.
+audit/requirements.config.yaml
+audit/requirements/REPORT-*.md
+audit/requirements/gaps-*.md
+audit/requirements/matrix.after-2026-08-11-pm.json
+audit/requirements/matrix.after-2026-08-12-bold.json
+audit/requirements/matrix.after-2026-08-13-postmerge.json
+audit/requirements/matrix.after-2026-08-13-postreskin.json
+audit/requirements/matrix.after-2026-08-13-th-full.json
+audit/requirements/matrix.after-2026-08-13-tro486.json
+audit/requirements/matrix.after-2026-08-13.json
+audit/requirements/matrix.after-status-2026-08-11.json
+audit/requirements/matrix.baseline.json
+
+# Editor and third-party tool state
 .DS_Store
-*.pem
-npm-debug.log*
-pnpm-debug.log*
 .gstack/
 .codacy/
-var/
+.superpowers/
+.github/instructions/codacy.instructions.md
+npm-debug.log*
+pnpm-debug.log*

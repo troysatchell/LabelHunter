@@ -24,10 +24,9 @@
  * headroom above that legitimate use while bounding the worst case of a
  * discovered, unauthenticated-looking script hammering the endpoint to a
  * small, acceptable daily dollar figure — well inside this project's own
- * stakes. This is a distinct pool from `factory/config.yaml`'s
- * `policy.spendCap.projectedBuildEvalUsd` ($25): that number tracks
- * FACTORY BUILD+EVAL spend during development (and Troy explicitly removed
- * its pause-on-cross, escalation.md item 3) — this number is the ongoing
+ * stakes. This is a distinct pool from the project's own build-and-eval
+ * spend cap ($25), which tracks development spend and does not pause on
+ * cross — this number is the ongoing
  * RUNTIME budget for the deployed public instance, a different pool serving
  * a different purpose, not derived from it.
  *

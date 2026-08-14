@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BatchClientError } from "../_lib/batch-client";
-import { BatchProgressBrowser } from "./BatchProgressBrowser";
+import { BatchProgressBrowser, isSameProgress } from "./BatchProgressBrowser";
 import type { BatchProgressResponse } from "../api/batch/[batchJobId]/types";
 
 function progress(overrides: Partial<BatchProgressResponse> = {}): BatchProgressResponse {
@@ -136,5 +136,56 @@ describe("BatchProgressBrowser", () => {
     // The screen still shows the LAST successful data, not an error page.
     expect(screen.getByTestId("batch-status-banner")).toHaveTextContent("1 of 2");
     expect(screen.getByTestId("batch-poll-error")).toHaveTextContent("LabelHunter could not reach the server.");
+  });
+
+  it("clears the poll-error note on the next successful poll even when the data itself is unchanged (TRO-577)", async () => {
+    // The skip-if-unchanged guard must never skip PAST clearing a stale
+    // error banner: identical data after a failed poll is still a visible
+    // change (the note goes away).
+    const fetchProgress = vi
+      .fn<(batchJobId: number) => Promise<BatchProgressResponse>>()
+      .mockResolvedValueOnce(progress({ processedCount: 1 }))
+      .mockRejectedValueOnce(new BatchClientError("SERVICE", "LabelHunter could not reach the server."))
+      .mockResolvedValue(progress({ processedCount: 1 }));
+
+    render(<BatchProgressBrowser batchJobId={7} fetchProgress={fetchProgress} pollIntervalMs={FAST_POLL_MS} />);
+
+    await screen.findByTestId("batch-poll-error");
+    await waitFor(() => expect(screen.queryByTestId("batch-poll-error")).not.toBeInTheDocument(), { timeout: 2000 });
+    expect(screen.getByTestId("batch-status-banner")).toHaveTextContent("1 of 2");
+  });
+
+  it("still applies a REAL change arriving after identical no-op polls (TRO-577)", async () => {
+    // Guards the skip-if-unchanged wiring in the other direction: skipping
+    // identical payloads must not wedge the poll loop — the first payload
+    // that differs still updates the screen.
+    const fetchProgress = vi
+      .fn<(batchJobId: number) => Promise<BatchProgressResponse>>()
+      .mockResolvedValueOnce(progress({ processedCount: 1 }))
+      .mockResolvedValueOnce(progress({ processedCount: 1 }))
+      .mockResolvedValueOnce(progress({ processedCount: 1 }))
+      .mockResolvedValue(progress({ processedCount: 2, status: "COMPLETED" }));
+
+    render(<BatchProgressBrowser batchJobId={7} fetchProgress={fetchProgress} pollIntervalMs={FAST_POLL_MS} />);
+
+    await screen.findByTestId("batch-status-banner");
+    await waitFor(() => expect(screen.getByTestId("batch-status-banner")).toHaveTextContent("2 of 2"), {
+      timeout: 2000,
+    });
+  });
+});
+
+describe("isSameProgress", () => {
+  it("is true for deep-equal payloads that are different objects", () => {
+    expect(isSameProgress(progress(), progress())).toBe(true);
+  });
+
+  it.each([
+    ["processedCount", progress({ processedCount: 2 })],
+    ["status", progress({ status: "COMPLETED" })],
+    ["failedCount", progress({ failedCount: 1 })],
+    ["rateLimitBackoff", progress({ rateLimitBackoff: { active: true, itemCount: 3 } })],
+  ])("is false when %s differs", (_label, changed) => {
+    expect(isSameProgress(progress(), changed)).toBe(false);
   });
 });

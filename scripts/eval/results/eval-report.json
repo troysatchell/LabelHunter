@@ -1,11 +1,11 @@
 {
   "ticket": "TRO-470 / LH-030",
-  "measuredAt": "2026-08-13T15:57:01.899Z",
+  "measuredAt": "2026-08-13T22:40:24.815Z",
   "mode": "live",
   "haikuModel": "claude-haiku-4-5",
   "sonnetModel": "claude-sonnet-5",
   "manifestVersion": "1.0.0",
-  "manifestContentHash": "fa3dbcfb60a6ecbd6c2de4ec837c54c72b87e909865ee9429946ac79cc5e0784",
+  "manifestContentHash": "7b1c3bb1326077be2b4b7471d4539a4e1a34e84ce50a9111e061df6fd79ff49e",
   "caseIds": [
     "case-01-clean-match-spirits",
     "case-02-clean-match-beer-no-abv",
@@ -38,6 +38,7 @@
     "case-30-clean-match-net-contents-alt-format",
     "case-31-title-case-warning-surgeon-general-lowercase",
     "case-32-reworded-warning-near-miss-missing-comma",
+    "case-33-not-bold-warning-prefix",
     "case-35-clean-match-real-photo-flat-scan",
     "case-36-rotation-real-photo-gentle-curve",
     "case-37-rotation-real-photo-severe-curve-partial-crop",
@@ -47,67 +48,67 @@
   "requestedFull": true,
   "summary": {
     "extractionAccuracy": {
-      "total": 180,
-      "correct": 157,
-      "rate": 0.8722222222222222
+      "total": 185,
+      "correct": 162,
+      "rate": 0.8756756756756757
     },
     "extractionAccuracyByField": {
       "brandName": {
-        "total": 36,
-        "correct": 29,
-        "rate": 0.8055555555555556
+        "total": 37,
+        "correct": 30,
+        "rate": 0.8108108108108109
       },
       "classType": {
-        "total": 36,
-        "correct": 30,
-        "rate": 0.8333333333333334
+        "total": 37,
+        "correct": 31,
+        "rate": 0.8378378378378378
       },
       "abv": {
-        "total": 36,
-        "correct": 34,
-        "rate": 0.9444444444444444
+        "total": 37,
+        "correct": 35,
+        "rate": 0.9459459459459459
       },
       "netContents": {
-        "total": 36,
-        "correct": 33,
-        "rate": 0.9166666666666666
+        "total": 37,
+        "correct": 34,
+        "rate": 0.918918918918919
       },
       "governmentWarning": {
-        "total": 36,
-        "correct": 31,
-        "rate": 0.8611111111111112
+        "total": 37,
+        "correct": 32,
+        "rate": 0.8648648648648649
       }
     },
     "routerVerdictAccuracy": {
-      "total": 36,
-      "correct": 31,
-      "rate": 0.8611111111111112
+      "total": 37,
+      "correct": 32,
+      "rate": 0.8648648648648649
     },
     "fieldVerdictAccuracyByField": {
       "brand_name": {
-        "total": 36,
-        "correct": 33,
-        "rate": 0.9166666666666666
+        "total": 37,
+        "correct": 34,
+        "rate": 0.918918918918919
       },
       "class_type": {
-        "total": 36,
-        "correct": 34,
-        "rate": 0.9444444444444444
+        "total": 37,
+        "correct": 35,
+        "rate": 0.9459459459459459
       },
       "alcohol_content": {
-        "total": 36,
-        "correct": 35,
-        "rate": 0.9722222222222222
+        "total": 37,
+        "correct": 36,
+        "rate": 0.972972972972973
       },
       "net_contents": {
-        "total": 36,
-        "correct": 36,
+        "total": 37,
+        "correct": 37,
         "rate": 1
       },
       "government_warning": {
-        "total": 36,
-        "correct": 32,
-        "rate": 0.8888888888888888
+        "total": 37,
+        "correct": 33,
+        "rate": 0.8918918918918919
       }
     },
     "reviewReasonAccuracy": {
@@ -116,32 +117,32 @@
       "rate": 0.5625
     },
     "warningSegmentation": {
-      "total": 36,
+      "total": 37,
       "clean": {
-        "count": 21,
-        "rate": 0.5833333333333334
+        "count": 22,
+        "rate": 0.5945945945945946
       },
       "trueMismatch": {
         "count": 5,
-        "rate": 0.1388888888888889
+        "rate": 0.13513513513513514
       },
       "resolutionSuspect": {
         "count": 8,
-        "rate": 0.2222222222222222
+        "rate": 0.21621621621621623
       },
       "notFound": {
         "count": 2,
-        "rate": 0.05555555555555555
+        "rate": 0.05405405405405406
       },
       "singleChannelPass": {
         "count": 1,
-        "rate": 0.027777777777777776
+        "rate": 0.02702702702702703
       }
     },
     "cascadeVerdictAccuracy": {
-      "total": 36,
-      "correct": 29,
-      "rate": 0.8055555555555556
+      "total": 37,
+      "correct": 30,
+      "rate": 0.8108108108108109
     },
     "extractionReliabilityDiagram": [
       {
@@ -200,9 +201,9 @@
       },
       {
         "decile": 9,
-        "n": 154,
-        "correct": 152,
-        "rate": 0.987012987012987
+        "n": 159,
+        "correct": 157,
+        "rate": 0.9874213836477987
       }
     ]
   },
@@ -367,10 +368,10 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2754,
-        "outputTokens": 412,
+        "outputTokens": 373,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.004814000000000001
+        "usd": 0.004619
       },
       "resolverCost": null,
       "resolverOutcome": null,
@@ -1467,14 +1468,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3558,
-        "outputTokens": 750,
+        "outputTokens": 464,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.014616
+        "usd": 0.011755999999999999
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 9872,
+      "resolverDurationMs": 7618,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -2384,20 +2385,20 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3342,
-        "outputTokens": 129,
+        "outputTokens": 138,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.007974
+        "usd": 0.008064
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 4215,
+      "resolverDurationMs": 4029,
       "imageQuality": {
         "legible": "yes",
         "issues": [
           "none"
         ],
-        "confidence": 0.99
+        "confidence": 0.95
       },
       "beverageType": {
         "value": "spirits",
@@ -2573,14 +2574,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3302,
-        "outputTokens": 137,
+        "outputTokens": 133,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.007974
+        "usd": 0.007934
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 4173,
+      "resolverDurationMs": 4460,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -3126,14 +3127,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3552,
-        "outputTokens": 362,
+        "outputTokens": 176,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.010724000000000001
+        "usd": 0.008864
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 7014,
+      "resolverDurationMs": 3850,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -3315,14 +3316,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3540,
-        "outputTokens": 270,
+        "outputTokens": 319,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.00978
+        "usd": 0.01027
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 5751,
+      "resolverDurationMs": 5707,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -3496,22 +3497,22 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2754,
-        "outputTokens": 404,
+        "outputTokens": 365,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.0047740000000000005
+        "usd": 0.004579
       },
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3485,
-        "outputTokens": 295,
+        "outputTokens": 296,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.00992
+        "usd": 0.00993
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 4451,
+      "resolverDurationMs": 4298,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -3693,14 +3694,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 4042,
-        "outputTokens": 391,
+        "outputTokens": 238,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.011994
+        "usd": 0.010464
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 5995,
+      "resolverDurationMs": 4694,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -3882,14 +3883,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3753,
-        "outputTokens": 426,
+        "outputTokens": 480,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.011766
+        "usd": 0.012306000000000001
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 5916,
+      "resolverDurationMs": 8284,
       "imageQuality": {
         "legible": "no",
         "issues": [
@@ -4434,14 +4435,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3479,
-        "outputTokens": 303,
+        "outputTokens": 304,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.009988
+        "usd": 0.009998
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 4520,
+      "resolverDurationMs": 5186,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -5161,22 +5162,22 @@
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2754,
-        "outputTokens": 421,
+        "outputTokens": 382,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.0048590000000000005
+        "usd": 0.004664
       },
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3531,
-        "outputTokens": 172,
+        "outputTokens": 242,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.008782
+        "usd": 0.009482
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 3923,
+      "resolverDurationMs": 4766,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -5358,14 +5359,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3550,
-        "outputTokens": 278,
+        "outputTokens": 165,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.00988
+        "usd": 0.008749999999999999
       },
       "resolverOutcome": "resolved",
       "resolverError": null,
-      "resolverDurationMs": 4569,
+      "resolverDurationMs": 4172,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -5756,7 +5757,7 @@
             "expected": "Larkspur Hollow Brewing",
             "actual": "Larkspur Hollow Brewing",
             "detail": "Haiku read the brand name correctly.",
-            "confidence": 0.99
+            "confidence": 1
           },
           {
             "field": "classType",
@@ -5764,7 +5765,7 @@
             "expected": "Amber Ale",
             "actual": "Amber Ale",
             "detail": "Haiku read the class/type correctly.",
-            "confidence": 0.99
+            "confidence": 1
           },
           {
             "field": "abv",
@@ -5772,7 +5773,7 @@
             "expected": "5.8%",
             "actual": "5.8%",
             "detail": "Haiku read the correct ABV.",
-            "confidence": 0.99
+            "confidence": 1
           },
           {
             "field": "netContents",
@@ -5780,7 +5781,7 @@
             "expected": "12 fl oz",
             "actual": "12 fl oz",
             "detail": "Haiku read the correct net contents.",
-            "confidence": 0.99
+            "confidence": 1
           },
           {
             "field": "governmentWarning",
@@ -5800,6 +5801,195 @@
         "labelVerdictCorrect": true,
         "expectedReviewReason": "WARNING_MISMATCH",
         "actualReviewReason": "WARNING_MISMATCH",
+        "reviewReasonCorrect": true,
+        "warningChannel": "dual",
+        "lowImageQualityTrigger": null,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 1,
+            "actualReviewReason": null
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 1,
+            "actualReviewReason": null
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 1,
+            "actualReviewReason": null
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 1,
+            "actualReviewReason": null
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": "WARNING_MISMATCH"
+          }
+        ]
+      },
+      "cascadeVerdict": {
+        "caseId": "case-32-reworded-warning-near-miss-missing-comma",
+        "category": "reworded-warning",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": "WARNING_MISMATCH",
+        "actualReviewReason": "WARNING_MISMATCH",
+        "reviewReasonCorrect": true,
+        "warningChannel": null,
+        "lowImageQualityTrigger": null,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 1,
+            "actualReviewReason": null
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 1,
+            "actualReviewReason": null
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 1,
+            "actualReviewReason": null
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 1,
+            "actualReviewReason": null
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": "WARNING_MISMATCH"
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 2754,
+        "outputTokens": 401,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004759
+      },
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3523,
+        "outputTokens": 310,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.010145999999999999
+      },
+      "resolverOutcome": "resolved",
+      "resolverError": null,
+      "resolverDurationMs": 4904,
+      "imageQuality": {
+        "legible": "yes",
+        "issues": [
+          "none"
+        ],
+        "confidence": 0.99
+      },
+      "beverageType": {
+        "value": "beer",
+        "evidence": "Amber Ale",
+        "confidence": 1
+      }
+    },
+    {
+      "caseId": "case-33-not-bold-warning-prefix",
+      "category": "clean-match",
+      "extraction": {
+        "caseId": "case-33-not-bold-warning-prefix",
+        "category": "clean-match",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Cinder Hollow Winery",
+            "actual": "Cinder Hollow Winery",
+            "detail": "Haiku read the brand name correctly.",
+            "confidence": 0.99
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Chardonnay",
+            "actual": "Chardonnay",
+            "detail": "Haiku read the class/type correctly.",
+            "confidence": 0.99
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "13%",
+            "actual": "13%",
+            "detail": "Haiku read the correct ABV.",
+            "confidence": 0.99
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents.",
+            "confidence": 0.99
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly.",
+            "confidence": 0.99
+          }
+        ]
+      },
+      "routerVerdict": {
+        "caseId": "case-33-not-bold-warning-prefix",
+        "category": "clean-match",
+        "expectedLabelVerdict": "PASS",
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
+        "actualReviewReason": null,
         "reviewReasonCorrect": true,
         "warningChannel": "dual",
         "lowImageQualityTrigger": null,
@@ -5838,24 +6028,24 @@
           },
           {
             "field": "government_warning",
-            "expectedVerdict": "NEEDS_REVIEW",
-            "actualVerdict": "NEEDS_REVIEW",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
             "correct": true,
             "confidence": 0.99,
-            "actualReviewReason": "WARNING_MISMATCH"
+            "actualReviewReason": null
           }
         ]
       },
       "cascadeVerdict": {
-        "caseId": "case-32-reworded-warning-near-miss-missing-comma",
-        "category": "reworded-warning",
-        "expectedLabelVerdict": "REVIEW",
-        "actualLabelVerdict": "REVIEW",
+        "caseId": "case-33-not-bold-warning-prefix",
+        "category": "clean-match",
+        "expectedLabelVerdict": "PASS",
+        "actualLabelVerdict": "PASS",
         "labelVerdictCorrect": true,
-        "expectedReviewReason": "WARNING_MISMATCH",
-        "actualReviewReason": "WARNING_MISMATCH",
+        "expectedReviewReason": null,
+        "actualReviewReason": null,
         "reviewReasonCorrect": true,
-        "warningChannel": null,
+        "warningChannel": "dual",
         "lowImageQualityTrigger": null,
         "fields": [
           {
@@ -5892,33 +6082,26 @@
           },
           {
             "field": "government_warning",
-            "expectedVerdict": "NEEDS_REVIEW",
-            "actualVerdict": "NEEDS_REVIEW",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
             "correct": true,
             "confidence": 0.99,
-            "actualReviewReason": "WARNING_MISMATCH"
+            "actualReviewReason": null
           }
         ]
       },
       "haikuCost": {
         "model": "claude-haiku-4-5",
         "inputTokens": 2754,
-        "outputTokens": 401,
+        "outputTokens": 400,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.004759
+        "usd": 0.0047539999999999995
       },
-      "resolverCost": {
-        "model": "claude-sonnet-5",
-        "inputTokens": 3533,
-        "outputTokens": 319,
-        "cacheCreationInputTokens": 0,
-        "cacheReadInputTokens": 0,
-        "usd": 0.010256
-      },
-      "resolverOutcome": "resolved",
+      "resolverCost": null,
+      "resolverOutcome": null,
       "resolverError": null,
-      "resolverDurationMs": 5152,
+      "resolverDurationMs": null,
       "imageQuality": {
         "legible": "yes",
         "issues": [
@@ -5927,8 +6110,8 @@
         "confidence": 0.99
       },
       "beverageType": {
-        "value": "beer",
-        "evidence": "Amber Ale",
+        "value": "wine",
+        "evidence": "Chardonnay",
         "confidence": 0.99
       }
     },
@@ -6100,14 +6283,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 4072,
-        "outputTokens": 915,
+        "outputTokens": 912,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.017294
+        "usd": 0.017264
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 8730,
+      "resolverDurationMs": 8827,
       "imageQuality": {
         "legible": "partial",
         "issues": [
@@ -6289,14 +6472,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3877,
-        "outputTokens": 1142,
+        "outputTokens": 934,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.019174
+        "usd": 0.017094
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 10653,
+      "resolverDurationMs": 8816,
       "imageQuality": {
         "legible": "partial",
         "issues": [
@@ -6479,14 +6662,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 3130,
-        "outputTokens": 1257,
+        "outputTokens": 1735,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.01883
+        "usd": 0.02361
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 15099,
+      "resolverDurationMs": 19359,
       "imageQuality": {
         "legible": "partial",
         "issues": [
@@ -6669,15 +6852,15 @@
       },
       "resolverCost": {
         "model": "claude-sonnet-5",
-        "inputTokens": 3907,
-        "outputTokens": 941,
+        "inputTokens": 3904,
+        "outputTokens": 872,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.017224
+        "usd": 0.016528
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 9282,
+      "resolverDurationMs": 8886,
       "imageQuality": {
         "legible": "partial",
         "issues": [
@@ -6861,14 +7044,14 @@
       "resolverCost": {
         "model": "claude-sonnet-5",
         "inputTokens": 5479,
-        "outputTokens": 2057,
+        "outputTokens": 1301,
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "usd": 0.031528
+        "usd": 0.023968
       },
       "resolverOutcome": "needs-human",
       "resolverError": null,
-      "resolverDurationMs": 20108,
+      "resolverDurationMs": 12315,
       "imageQuality": {
         "legible": "partial",
         "issues": [
@@ -6885,6 +7068,6 @@
       }
     }
   ],
-  "totalCostUsd": 0.3961470000000001,
+  "totalCostUsd": 0.38904,
   "failures": []
 }

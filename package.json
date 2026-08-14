@@ -27,6 +27,7 @@
     "eval:benchmark": "tsx scripts/eval/benchmark.ts",
     "eval:variance": "tsx scripts/eval/variance.ts",
     "eval:ocr-floor-sweep": "tsx scripts/eval/ocr-floor-sweep.ts",
+    "eval:bold-signal-sweep": "tsx scripts/eval/bold-signal-sweep.ts",
     "eval:tro-546-case22-check": "tsx scripts/eval/tro-546-case22-ocr-region-check.ts",
     "worker": "tsx scripts/batch-worker/run.ts",
     "e2e:fake-model": "tsx scripts/e2e/fake-anthropic-server.ts",

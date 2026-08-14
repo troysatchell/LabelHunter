@@ -499,7 +499,7 @@ describe("processExtractClaim — government warning wiring (TRO-517, TH-R9)", (
     expect(warningRow?.verdict).toBe("MISMATCH");
   });
 
-  it("persists the bold advisory signal for a batch verification too, and it never changes the verdict (TRO-533)", async () => {
+  it("TRO-569 / INT-005: persists the bold advisory signal for a batch verification too, and a 'not-bold' signal now routes an otherwise-MATCH warning to REVIEW — same rule as verify/route.ts, never a silent PASS", async () => {
     const batchJobId = await trackBatch({ totalCount: 1 });
     const claimed = await claimedFixture(batchJobId, "warning-bold-signal.jpg", { brandName: "Old Tom Distillery", classType: "Straight Bourbon Whiskey" });
     const boldSignal: BoldSignalResult = {
@@ -512,20 +512,57 @@ describe("processExtractClaim — government warning wiring (TRO-517, TH-R9)", (
     };
     const deps = makeDeps({
       anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
-      // A "not-bold" signal, deliberately alongside a compliant MATCH —
-      // proves the signal is persisted AND that it cannot downgrade a
-      // clean PASS, the same boundary route.test.ts proves for the
-      // single-label path.
+      // A "not-bold" signal alongside a compliant MATCH — proves the
+      // signal is persisted AND that it degrades this field to review
+      // (TRO-569), the same boundary route.test.ts proves for the
+      // single-label path. Before TRO-569 this signal never changed a
+      // verdict (TRO-533's original rule); TRO-569 supersedes that for
+      // exactly this edge — see field-resolution.test.ts's own describe
+      // block for the full set of untouched edges (bold, uncertain,
+      // existing MISMATCH, never a hard FAIL).
       compareGovernmentWarning: async () => warningOutcome({ verdict: "MATCH" }, boldSignal),
     });
 
     const outcome = await processExtractClaim(claimed, deps);
     expect(outcome.kind).toBe("done");
     if (outcome.kind !== "done") throw new Error("unreachable");
-    expect(outcome.verdict).toBe("PASS");
+    expect(outcome.verdict).toBe("REVIEW");
+    expect(outcome.escalated).toBe(true);
 
     const [row] = await db.select().from(verifications).where(eq(verifications.id, outcome.verificationId));
     expect(row.boldSignal).toEqual(boldSignal);
+
+    const persistedFields = await db.select().from(fieldResults).where(eq(fieldResults.verificationId, outcome.verificationId));
+    const warningRow = persistedFields.find((row) => row.fieldName === "GOVERNMENT_WARNING");
+    expect(warningRow?.verdict).toBe("NEEDS_REVIEW");
+    expect(warningRow?.reason).toBe("'GOVERNMENT WARNING' must print in bold type; the measured prefix is not bold.");
+  });
+
+  it("a 'not-bold' signal never touches an existing MISMATCH warning in the batch path either", async () => {
+    const batchJobId = await trackBatch({ totalCount: 1 });
+    const claimed = await claimedFixture(batchJobId, "warning-mismatch-not-bold.jpg", { brandName: "Old Tom Distillery", classType: "Straight Bourbon Whiskey" });
+    const boldSignal: BoldSignalResult = {
+      signal: "not-bold",
+      reason: "the prefix's stroke width does not measure wider than the body's",
+      ratio: 0.9,
+      splitFraction: 0.49,
+      prefixStrokeWidthPx: 2,
+      bodyStrokeWidthPx: 2.2,
+    };
+    const deps = makeDeps({
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      compareGovernmentWarning: async () =>
+        warningOutcome({ verdict: "MISMATCH", note: "Government Warning wording differs from the required text." }, boldSignal),
+    });
+
+    const outcome = await processExtractClaim(claimed, deps);
+    expect(outcome.kind).toBe("done");
+    if (outcome.kind !== "done") throw new Error("unreachable");
+    expect(outcome.verdict).toBe("FAIL");
+
+    const persistedFields = await db.select().from(fieldResults).where(eq(fieldResults.verificationId, outcome.verificationId));
+    const warningRow = persistedFields.find((row) => row.fieldName === "GOVERNMENT_WARNING");
+    expect(warningRow?.verdict).toBe("MISMATCH");
   });
 
   it("a warning-comparator promise rejection degrades that field to NEEDS_REVIEW instead of failing the item (CP-2 §4.4 rule 3)", async () => {

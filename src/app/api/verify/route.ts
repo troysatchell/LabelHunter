@@ -163,9 +163,12 @@ export interface VerifyRouteDeps {
    * every other dependency here. Called with the extraction as a still-
    * pending `Promise` (see this file's header comment); a fake that wants
    * to prove the concurrency requirement can hold that promise open.
-   * Returns `{ comparator, boldSignal }` (TRO-533) — `comparator` is the
-   * ONLY piece that ever reaches `routeLabel`, below; `boldSignal` is
-   * persisted separately and never folded into the router's input. */
+   * Returns `{ comparator, boldSignal }` (TRO-533). `comparator` reaches
+   * `routeLabel` as `warningResult`; `boldSignal` reaches it too (TRO-569),
+   * but only as its `.signal` discriminant, passed as a separate,
+   * dedicated parameter — never folded into `comparator`/`warningResult`
+   * itself. `boldSignal` is also persisted in full, independent of what
+   * `routeLabel` does with `.signal`. */
   compareGovernmentWarning: (input: CompareGovernmentWarningFromImageInput) => Promise<CompareGovernmentWarningFromImageResult>;
   saveLabelImage: (bytes: Buffer, originalFilename: string) => Promise<SavedLabelImage>;
   comparators: FieldComparators;
@@ -415,9 +418,12 @@ export async function handleVerifyRequest(request: Request, deps: VerifyRouteDep
   // TRO-533 — `warningOutcome` carries the router-facing comparator result
   // AND the bold advisory signal, kept apart on purpose (see
   // `CompareGovernmentWarningFromImageResult`'s own doc comment,
-  // `../../../server/warning`). `warningResult` is the ONLY one of the two
-  // that reaches `routeLabel`, below — `boldSignalResult` is persisted
-  // separately (the transaction below) and never touches the router.
+  // `../../../server/warning`). `warningResult` reaches `routeLabel` below
+  // as its `warningResult` argument. `boldSignalResult` is ALSO persisted
+  // in full (the transaction below) AND reaches `routeLabel` — but only as
+  // its `.signal` discriminant, passed as a separate argument (TRO-569 /
+  // INT-005: a `not-bold` signal degrades an otherwise-MATCH warning to
+  // REVIEW; see `field-resolution.ts`'s own header comment for the rule).
   const warningResult: WarningComparatorResult | null = warningOutcome?.comparator ?? null;
   const boldSignalResult = warningOutcome?.boldSignal ?? null;
 
@@ -455,10 +461,21 @@ export async function handleVerifyRequest(request: Request, deps: VerifyRouteDep
   );
 
   const routerStart = performance.now();
-  const result = routeLabel(extraction, application, deps.comparators, warningResult, {
-    rejected: false,
-    longEdgePx: Math.max(haikuDims.width, haikuDims.height),
-  });
+  const result = routeLabel(
+    extraction,
+    application,
+    deps.comparators,
+    warningResult,
+    {
+      rejected: false,
+      longEdgePx: Math.max(haikuDims.width, haikuDims.height),
+    },
+    // TRO-569 — the ONLY place `boldSignalResult` reaches the router:
+    // just the `signal` discriminant, never the full result (ratio,
+    // reason, etc. stay UI/persistence-only). See field-resolution.ts's
+    // own header comment for the degrade rule this enables.
+    boldSignalResult?.signal ?? null,
+  );
   stageTimingsMs.router = performance.now() - routerStart;
 
   // Defensive: `routeLabel`'s own contract guarantees a REVIEW verdict
@@ -524,9 +541,12 @@ export async function handleVerifyRequest(request: Request, deps: VerifyRouteDep
           // review_queue row below.
           resolutionPath: "EXTRACTOR_ONLY",
           // TRO-533 — persisted for EVERY verification, escalated or not
-          // (`schema.ts`'s own comment on this column). Advisory only:
-          // `result.labelVerdict` above was already decided by `routeLabel`
-          // without ever seeing `boldSignalResult`.
+          // (`schema.ts`'s own comment on this column), independent of
+          // what `routeLabel` did with it. TRO-569: `result.labelVerdict`
+          // above WAS computed with `boldSignalResult.signal` in view (the
+          // MATCH -> REVIEW degrade rule) — this column still stores the
+          // full result (ratio, reason, both stroke widths), not only the
+          // one field the router reads.
           boldSignal: boldSignalResult,
         })
         .returning();

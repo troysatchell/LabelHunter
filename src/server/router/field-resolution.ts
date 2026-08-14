@@ -25,6 +25,12 @@ import {
   type ParsedNetContents,
 } from "../comparators/net-contents";
 import type { ExtractedField } from "../extractor/types";
+// `BoldSignal` only — a type-only import, so this stays the same
+// dependency direction `../warning/index.ts` already documents (that
+// module imports `WarningComparatorResult` from `./types`, type-only, the
+// other way). `bold-detect.ts` itself imports nothing from `./router`, so
+// this creates no cycle.
+import type { BoldSignal } from "../warning/bold-detect";
 import { MISMATCH_ESCALATION_CEILING, shouldEscalateField } from "./confidence";
 import type {
   ApplicationRecord,
@@ -34,6 +40,16 @@ import type {
   ReviewReason,
   WarningComparatorResult,
 } from "./types";
+
+/**
+ * TRO-569 / INT-005: the exact reason text a reviewer sees when a
+ * `not-bold` signal degrades an otherwise-MATCH warning. Names the exact
+ * check (standing rule 26) — not a generic "needs a closer look". A
+ * `const` (not inline) so `resolveGovernmentWarningField` and its test
+ * assert the identical string.
+ */
+export const WARNING_NOT_BOLD_REASON =
+  "'GOVERNMENT WARNING' must print in bold type; the measured prefix is not bold.";
 
 /**
  * `tolerance[beverageType]` for the label-vs-application ABV check (CP-1
@@ -262,6 +278,16 @@ export interface WarningFieldResolutionInput {
   /** The LH-020 warning comparator's result — `null` only when the field is
    * absent or override-rejected, in which case it is never consulted. */
   warningResult: WarningComparatorResult | null;
+  /**
+   * LH-025's pixel-measured bold advisory signal (TRO-532/TRO-533), for
+   * the SAME image region `warningResult` was compared against. `null`
+   * when no crop was ever produced (region detection found nothing) — the
+   * caller nulls this the same way it nulls `warningResult` above.
+   * Optional so every pre-TRO-569 call site keeps compiling unchanged; an
+   * omitted value behaves exactly like `null` (this function only acts on
+   * `"not-bold"` — see the TRO-569 rule below).
+   */
+  boldSignal?: BoldSignal | null;
 }
 
 /**
@@ -269,6 +295,21 @@ export interface WarningFieldResolutionInput {
  * has no `FieldComparator` of its own — CP-1 §5.3 `WARNING_MISMATCH` is a
  * contract this ticket routes on, not logic this ticket builds (that is
  * LH-020, gated by CP-2, not yet cleared).
+ *
+ * **TRO-569 / INT-005: the bold-signal degrade rule.** Jenny Park's
+ * requirement: the GOVERNMENT WARNING prefix "has to be in all caps and
+ * bold" (source-TH.md:33). Before this ticket, `boldSignal` was measured
+ * and persisted but never reached this function — a non-bold prefix
+ * passed silently. That silent PASS widened the requirement into
+ * something weaker than the brief, which INT-005 forbids. The fix touches
+ * exactly one edge: when the comparator already reached `MATCH` AND the
+ * same image's bold signal reads `"not-bold"`, this function degrades the
+ * field to `NEEDS_REVIEW` with a reason naming the exact check (standing
+ * rule 26). `"uncertain"`, `"bold"`, and a missing signal leave a MATCH
+ * untouched — never accuse on uncertainty (standing rule 12). A
+ * `"not-bold"` signal never touches an existing MISMATCH or NEEDS_REVIEW,
+ * and never produces a hard FAIL by itself — `bold-detect.ts`'s own
+ * boundary comment still holds for that half of the old rule.
  */
 export function resolveGovernmentWarningField(input: WarningFieldResolutionInput): FieldResolution {
   if (input.overrideRejected) {
@@ -293,6 +334,9 @@ export function resolveGovernmentWarningField(input: WarningFieldResolutionInput
   // TypeScript narrows the discriminated union itself in each branch.
   const result = input.warningResult;
   if (result.verdict !== "NEEDS_REVIEW") {
+    if (result.verdict === "MATCH" && input.boldSignal === "not-bold") {
+      return { verdict: "NEEDS_REVIEW", reviewReason: "WARNING_MISMATCH", comparatorNote: WARNING_NOT_BOLD_REASON };
+    }
     return { verdict: result.verdict, reviewReason: null, comparatorNote: result.note };
   }
   // `reviewReason` is required on this branch of `WarningComparatorResult` —

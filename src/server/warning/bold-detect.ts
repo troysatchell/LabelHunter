@@ -10,13 +10,28 @@
  * do not.
  *
  * BOUNDARY — READ THIS BEFORE WIRING `measureBoldSignal` IN ANYWHERE.
- * This signal is advisory. It must never produce a hard FAIL by itself,
- * and it must never gate a MATCH. CP-2 §7.2's own reasoning still holds: a
- * prototype that turned this signal into a failure would accuse a
- * compliant label of a violation it cannot prove. Nothing in this repo
- * calls `measureBoldSignal` yet (TRO-532's own scope). TRO-533 wires it
- * in, deliberately sequenced after this ticket, and must keep it advisory
- * only — standing rule 10 and CP-2 §7.2 both say so.
+ * This signal is advisory. It must never produce a hard FAIL by itself —
+ * CP-2 §7.2's own reasoning still holds: a prototype that turned this
+ * signal into a failure would accuse a compliant label of a violation it
+ * cannot prove. Stroke width is a relative, photograph-dependent
+ * measurement; the label may really be compliant even when this signal
+ * reads `not-bold`.
+ *
+ * **The "never gate a MATCH" half of this rule is superseded by TRO-569 /
+ * INT-005 (2026-08-13).** Jenny Park's requirement: the GOVERNMENT
+ * WARNING prefix "has to be in all caps and bold" (source-TH.md:33). A
+ * `not-bold` signal alongside an otherwise-MATCH comparator result now
+ * degrades the `government_warning` field to `NEEDS_REVIEW` —
+ * `../router/field-resolution.ts`'s `resolveGovernmentWarningField`, the
+ * router's own boundary, not this module. That is routing to a human, not
+ * an accusation: CP-2's never-accuse posture survives (the field never
+ * becomes a hard FAIL), and INT-005 forbids the alternative — an
+ * interpretation may never widen a requirement into something weaker than
+ * the brief, which a silent PASS on a non-bold prefix was. `uncertain`,
+ * `bold`, and a missing signal still never touch a verdict; `not-bold`
+ * still never touches an existing MISMATCH or NEEDS_REVIEW. TRO-532
+ * (LH-025, this file) built the measurement; TRO-533 (LH-026) first wired
+ * it in as fully advisory; TRO-569 narrowed that to the one edge above.
  *
  * Two matching regimes already coexist in this subsystem on purpose
  * (`caps.ts`'s header: TH-R8 fuzzy wording vs TH-R9 exact capitalization).

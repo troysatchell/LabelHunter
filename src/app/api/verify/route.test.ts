@@ -668,8 +668,18 @@ describe("POST /api/verify — government warning wiring (TRO-514, TH-R9)", () =
     expect(row.boldSignal).toEqual(boldSignal);
   });
 
-  it("the bold signal NEVER changes the label verdict, in either direction (TRO-533, the single most important rule in this ticket)", async () => {
-    const wronglyBold: BoldSignalResult = {
+  it("TRO-569 / INT-005: a 'not-bold' signal routes an otherwise-MATCH warning to REVIEW; 'bold'/'uncertain' never touch a MATCH; 'not-bold' never touches a MISMATCH and never produces a hard FAIL", async () => {
+    // This test used to be titled "the bold signal NEVER changes the label
+    // verdict, in either direction (TRO-533)". TRO-569 (Urgent, Troy-ruled)
+    // supersedes that rule for exactly one edge: a compliant-wording MATCH
+    // whose prefix measures "not-bold" now degrades to REVIEW instead of a
+    // silent PASS. Jenny Park's requirement: the prefix "has to be in all
+    // caps and bold." INT-005: an interpretation may never widen a
+    // requirement into something weaker than the brief — the old silent
+    // PASS did exactly that. Every other edge this test proved before
+    // still holds: never a hard FAIL, never a change to an existing
+    // MISMATCH, never an accusation on "bold" or "uncertain".
+    const bold: BoldSignalResult = {
       signal: "bold",
       reason: "the prefix's stroke width measures wider than the body's",
       ratio: 2.1,
@@ -677,7 +687,7 @@ describe("POST /api/verify — government warning wiring (TRO-514, TH-R9)", () =
       prefixStrokeWidthPx: 5,
       bodyStrokeWidthPx: 2.4,
     };
-    const wronglyNotBold: BoldSignalResult = {
+    const notBold: BoldSignalResult = {
       signal: "not-bold",
       reason: "the prefix's stroke width does not measure wider than the body's",
       ratio: 0.9,
@@ -685,33 +695,76 @@ describe("POST /api/verify — government warning wiring (TRO-514, TH-R9)", () =
       prefixStrokeWidthPx: 2,
       bodyStrokeWidthPx: 2.2,
     };
+    const uncertain: BoldSignalResult = {
+      signal: "uncertain",
+      reason: "prefix and body stroke-width ranges overlap; no clean separation",
+      ratio: null,
+      splitFraction: null,
+      prefixStrokeWidthPx: null,
+      bodyStrokeWidthPx: null,
+    };
 
-    // A comparator MISMATCH stays FAIL even when the bold signal reports
-    // the statute's OTHER requirement as fully compliant ("bold") — a
+    // A comparator MISMATCH stays FAIL regardless of the bold signal — a
     // gating implementation would be tempted to let a compliant bold
-    // prefix soften a wording failure. It must not.
-    const failDeps = makeDeps({
+    // prefix soften a wording failure, or let a not-bold prefix worsen
+    // one. Neither is correct: bold-detect.ts's own header comment says
+    // this signal must never produce a hard FAIL by itself, and TRO-569
+    // only touches the MATCH -> REVIEW edge.
+    const failWithBoldDeps = makeDeps({
       anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
       compareGovernmentWarning: async () =>
-        warningOutcome({ verdict: "MISMATCH", note: "Government Warning wording differs from the required text." }, wronglyBold),
+        warningOutcome({ verdict: "MISMATCH", note: "Government Warning wording differs from the required text." }, bold),
     });
-    const failResponse = await post(await buildFormData(), failDeps);
-    const failBody = (await failResponse.json()) as VerifySuccessResponse;
-    createdApplicationIds.push(failBody.applicationId);
-    expect(failBody.labelVerdict).toBe("FAIL");
+    const failWithBoldResponse = await post(await buildFormData(), failWithBoldDeps);
+    const failWithBoldBody = (await failWithBoldResponse.json()) as VerifySuccessResponse;
+    createdApplicationIds.push(failWithBoldBody.applicationId);
+    expect(failWithBoldBody.labelVerdict).toBe("FAIL");
 
-    // A comparator MATCH stays PASS even when the bold signal reports
-    // "not-bold" — a gating implementation would be tempted to downgrade a
-    // wording-compliant label because the prefix does not measure bold.
-    // It must not: CP-2 §7.2/§7.3, bold-detect.ts's own header comment.
-    const passDeps = makeDeps({
+    const failWithNotBoldDeps = makeDeps({
       anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
-      compareGovernmentWarning: async () => warningOutcome({ verdict: "MATCH" }, wronglyNotBold),
+      compareGovernmentWarning: async () =>
+        warningOutcome({ verdict: "MISMATCH", note: "Government Warning wording differs from the required text." }, notBold),
     });
-    const passResponse = await post(await buildFormData(), passDeps);
-    const passBody = (await passResponse.json()) as VerifySuccessResponse;
-    createdApplicationIds.push(passBody.applicationId);
-    expect(passBody.labelVerdict).toBe("PASS");
+    const failWithNotBoldResponse = await post(await buildFormData(), failWithNotBoldDeps);
+    const failWithNotBoldBody = (await failWithNotBoldResponse.json()) as VerifySuccessResponse;
+    createdApplicationIds.push(failWithNotBoldBody.applicationId);
+    expect(failWithNotBoldBody.labelVerdict).toBe("FAIL");
+
+    // TRO-569: a MATCH with a "not-bold" prefix signal degrades to REVIEW,
+    // with a reason naming the exact check (standing rule 26) — never a
+    // silent PASS.
+    const notBoldDeps = makeDeps({
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      compareGovernmentWarning: async () => warningOutcome({ verdict: "MATCH" }, notBold),
+    });
+    const notBoldResponse = await post(await buildFormData(), notBoldDeps);
+    const notBoldBody = (await notBoldResponse.json()) as VerifySuccessResponse;
+    createdApplicationIds.push(notBoldBody.applicationId);
+    expect(notBoldBody.labelVerdict).toBe("REVIEW");
+    const notBoldWarningRow = notBoldBody.fields.find((row) => row.field === "government_warning");
+    expect(notBoldWarningRow?.verdict).toBe("NEEDS_REVIEW");
+    expect(notBoldWarningRow?.reviewReason).toBe("WARNING_MISMATCH");
+    expect(notBoldWarningRow?.reason).toBe("'GOVERNMENT WARNING' must print in bold type; the measured prefix is not bold.");
+
+    // "bold" and "uncertain" leave a MATCH clean — never accuse on
+    // uncertainty (standing rule 12), and never accuse a compliant prefix.
+    const passWithBoldDeps = makeDeps({
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      compareGovernmentWarning: async () => warningOutcome({ verdict: "MATCH" }, bold),
+    });
+    const passWithBoldResponse = await post(await buildFormData(), passWithBoldDeps);
+    const passWithBoldBody = (await passWithBoldResponse.json()) as VerifySuccessResponse;
+    createdApplicationIds.push(passWithBoldBody.applicationId);
+    expect(passWithBoldBody.labelVerdict).toBe("PASS");
+
+    const passWithUncertainDeps = makeDeps({
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      compareGovernmentWarning: async () => warningOutcome({ verdict: "MATCH" }, uncertain),
+    });
+    const passWithUncertainResponse = await post(await buildFormData(), passWithUncertainDeps);
+    const passWithUncertainBody = (await passWithUncertainResponse.json()) as VerifySuccessResponse;
+    createdApplicationIds.push(passWithUncertainBody.applicationId);
+    expect(passWithUncertainBody.labelVerdict).toBe("PASS");
   });
 });
 

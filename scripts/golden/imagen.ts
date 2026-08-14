@@ -13,7 +13,7 @@
  * money — run manually with `pnpm golden:imagen`, never from CI (design
  * doc §8's "CI never calls an image API").
  */
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { GoogleGenAI } from "@google/genai";
@@ -304,7 +304,25 @@ export async function generateOne(
         referenceBottle: target.bottleId,
         scene: target.scene.sceneId,
         cameraCondition: target.cameraCondition,
-        labelPlacement: quad,
+        // Only the 4 corners here, matching the manifest schema's own
+        // LabelPlacementQuad shape exactly (src/lib/golden-set/types.ts) —
+        // a human copies this field straight into a manifest entry
+        // (golden-set/README.md's fold-in recipe, step 4). Detector
+        // bookkeeping (pixelCount, imageWidth, imageHeight) is not part of
+        // that schema and does not belong accreting into manifest.json; it
+        // lives under the sibling "detection" key below instead, for
+        // debugging this sidecar on its own.
+        labelPlacement: quad
+          ? {
+              topLeft: quad.topLeft,
+              topRight: quad.topRight,
+              bottomLeft: quad.bottomLeft,
+              bottomRight: quad.bottomRight,
+            }
+          : null,
+        detection: quad
+          ? { pixelCount: quad.pixelCount, imageWidth: quad.imageWidth, imageHeight: quad.imageHeight }
+          : null,
         generationMetadata: {
           model: MODEL,
           resolution: RESOLUTION,
@@ -319,10 +337,83 @@ export async function generateOne(
   return { caseId, backdropPath, metaPath, detectedQuad: quad };
 }
 
+/**
+ * True when a target's backdrop PNG and sidecar JSON already both exist in
+ * `outDir`. `runGenerationBatch` checks this before ever calling `generate`
+ * — regenerating an already-generated target would spend real money for no
+ * reason, most likely after a rerun following an earlier transient failure
+ * partway through a batch.
+ */
+function caseAlreadyGenerated(caseId: string, outDir: string): boolean {
+  const backdropPath = resolveWithinDir(outDir, `${caseId}.png`, "backdrop path");
+  const metaPath = resolveWithinDir(outDir, `${caseId}.meta.json`, "meta path");
+  return existsSync(backdropPath) && existsSync(metaPath);
+}
+
+export interface GenerationBatchSummary {
+  readonly generated: readonly string[];
+  readonly skipped: readonly string[];
+  readonly failed: readonly string[];
+  readonly detectionFailures: readonly string[];
+  readonly spentUsd: number;
+}
+
+/**
+ * Runs every target in order: skip a target already on disk (no re-spend),
+ * otherwise generate it. One target's failure is logged and does not stop
+ * the rest of the batch — a single transient error must not abort a paid
+ * run that already succeeded on every target before it. `log` defaults to
+ * `console.log`/`console.error`; tests inject a no-op or a spy instead.
+ */
+export async function runGenerationBatch(
+  targets: readonly GenerationTarget[],
+  generate: ImageGenerator,
+  outDir: string = BACKDROPS_DIR,
+  log: (line: string) => void = console.log,
+): Promise<GenerationBatchSummary> {
+  const generated: string[] = [];
+  const skipped: string[] = [];
+  const failed: string[] = [];
+  const detectionFailures: string[] = [];
+  let spentUsd = 0;
+
+  for (const target of targets) {
+    const caseId = targetCaseId(target);
+    if (caseAlreadyGenerated(caseId, outDir)) {
+      skipped.push(caseId);
+      log(`${caseId}: SKIPPED — backdrop and sidecar already exist on disk (no re-spend).`);
+      continue;
+    }
+    try {
+      const result = await generateOne(target, generate, outDir);
+      spentUsd += ESTIMATED_COST_PER_IMAGE_USD;
+      generated.push(result.caseId);
+      if (result.detectedQuad === null) {
+        detectionFailures.push(result.caseId);
+        log(`${result.caseId}: DETECTION FAILED — needs manual placement. (est. spend so far: $${spentUsd.toFixed(2)})`);
+      } else {
+        log(`${result.caseId}: OK. (est. spend so far: $${spentUsd.toFixed(2)})`);
+      }
+    } catch (err) {
+      failed.push(caseId);
+      const message = err instanceof Error ? err.message : String(err);
+      log(
+        `${caseId}: FAILED — ${message}. Continuing with the remaining targets ` +
+          `(est. spend so far: $${spentUsd.toFixed(2)}).`,
+      );
+    }
+  }
+
+  return { generated, skipped, failed, detectionFailures, spentUsd };
+}
+
 export async function main(): Promise<void> {
   const apiKey = process.env.GOOGLE_API_KEY;
   if (!apiKey) {
-    throw new Error("imagen: GOOGLE_API_KEY is not set (see .env.local.example)");
+    throw new Error(
+      "imagen: GOOGLE_API_KEY is not set. source .factory-env in a factory worktree, or set it in " +
+        ".env.local before running pnpm golden:imagen (tsx does not load .env.local on its own).",
+    );
   }
   const targets = enumerateTargets();
   if (targets.length === 0) {
@@ -331,23 +422,20 @@ export async function main(): Promise<void> {
   }
 
   const generate = await generateWithGemini(apiKey);
-  let spentUsd = 0;
-  let detectionFailures = 0;
-
-  for (const target of targets) {
-    const result = await generateOne(target, generate);
-    spentUsd += ESTIMATED_COST_PER_IMAGE_USD;
-    if (result.detectedQuad === null) {
-      detectionFailures++;
-      console.log(`${result.caseId}: DETECTION FAILED — needs manual placement. (est. spend so far: $${spentUsd.toFixed(2)})`);
-    } else {
-      console.log(`${result.caseId}: OK. (est. spend so far: $${spentUsd.toFixed(2)})`);
-    }
-  }
+  const summary = await runGenerationBatch(targets, generate);
 
   console.log(
-    `\nDone. ${targets.length} generated, ${detectionFailures} need manual placement, ~$${spentUsd.toFixed(2)} estimated spend.`,
+    `\nDone. ${targets.length} target(s): ${summary.generated.length} generated, ` +
+      `${summary.skipped.length} skipped (already on disk), ${summary.failed.length} failed, ` +
+      `${summary.detectionFailures.length} need manual placement, ~$${summary.spentUsd.toFixed(2)} estimated spend.`,
   );
+  if (summary.failed.length > 0) {
+    console.log(
+      `Failed target(s): ${summary.failed.join(", ")}. Rerun pnpm golden:imagen — the skip-existing ` +
+        `check above means an already-generated target will not be paid for again.`,
+    );
+    process.exitCode = 1;
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

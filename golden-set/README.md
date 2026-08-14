@@ -91,8 +91,12 @@ Follow these steps for each bottle reference, pilot or full corpus alike:
    schema is `src/lib/golden-set/bottleReference.ts`.
 2. Run `pnpm golden:imagen`. For every `(scene, cameraCondition)` combination, the tooling
    writes a backdrop PNG and a `.meta.json` sidecar to `golden-set/backdrops/`. The sidecar
-   records the detected `labelPlacement` and `generationMetadata`. The tooling never edits
-   `manifest.json`.
+   records the detected `labelPlacement` (the 4 corners only — the same shape the manifest's
+   `LabelPlacementQuad` expects) and `generationMetadata`. Detector bookkeeping
+   (`pixelCount`, `imageWidth`, `imageHeight`) lives under its own `detection` key, not inside
+   `labelPlacement` — fold in `labelPlacement` and `generationMetadata` only, not `detection`.
+   Reruns already on disk are skipped (no re-spend); one target's failure is logged and does
+   not stop the rest of the batch. The tooling never edits `manifest.json`.
 3. Check the sidecar's `labelPlacement` value. If automatic detection fails, the sidecar
    shows `labelPlacement: null` for that case. `pnpm golden:imagen` also prints "needs
    manual placement" as a reminder. When this happens, measure a valid label-placement

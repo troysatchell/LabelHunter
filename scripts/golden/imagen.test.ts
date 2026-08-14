@@ -8,7 +8,9 @@ import {
   ensurePngBytes,
   enumerateTargets,
   generateOne,
+  runGenerationBatch,
   targetCaseId,
+  type GenerationTarget,
   type ImageGenerator,
 } from "./imagen";
 
@@ -164,6 +166,94 @@ describe("generateOne", () => {
       expect(result.detectedQuad).toBeNull();
       const meta = JSON.parse(readFileSync(result.metaPath, "utf8"));
       expect(meta.labelPlacement).toBeNull();
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+
+  it("writes only the 4 corners under labelPlacement, detector bookkeeping under a sibling 'detection' key (TRO-510)", async () => {
+    // labelPlacement must match the manifest's own LabelPlacementQuad
+    // schema exactly (src/lib/golden-set/types.ts) -- a human copies this
+    // field straight into a manifest entry. pixelCount/imageWidth/
+    // imageHeight are detector bookkeeping, not part of that schema, and
+    // must not accrete into manifest.json alongside it.
+    const outDir = mkdtempSync(path.join(tmpdir(), "imagen-test-out-"));
+    try {
+      const result = await generateOne(STEADY_TARGET, fakeGeneratorWithBlankRegion, outDir);
+      const meta = JSON.parse(readFileSync(result.metaPath, "utf8"));
+
+      expect(Object.keys(meta.labelPlacement).sort()).toEqual(
+        ["bottomLeft", "bottomRight", "topLeft", "topRight"].sort(),
+      );
+      expect(meta.detection.pixelCount).toBe(result.detectedQuad?.pixelCount);
+      expect(meta.detection.imageWidth).toBe(result.detectedQuad?.imageWidth);
+      expect(meta.detection.imageHeight).toBe(result.detectedQuad?.imageHeight);
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+});
+
+const OTHER_TARGET: GenerationTarget = {
+  bottleId: "amber-whiskey-01",
+  referencePhotoPath: "/fake.jpg",
+  scene: { sceneId: "shelf", setting: "a store shelf", lighting: "cool light" },
+  cameraCondition: "steady",
+};
+
+describe("runGenerationBatch", () => {
+  it("skips a target whose backdrop and sidecar already exist, without calling generate (no re-spend)", async () => {
+    const outDir = mkdtempSync(path.join(tmpdir(), "imagen-test-batch-"));
+    try {
+      // Pre-populate the target's output files, simulating a prior run.
+      await generateOne(STEADY_TARGET, fakeGeneratorWithBlankRegion, outDir);
+
+      let generateCallCount = 0;
+      const spyGenerate: ImageGenerator = async () => {
+        generateCallCount++;
+        return fakeGeneratorWithBlankRegion();
+      };
+
+      const summary = await runGenerationBatch([STEADY_TARGET], spyGenerate, outDir, () => {});
+
+      expect(generateCallCount).toBe(0);
+      expect(summary.skipped).toEqual([targetCaseId(STEADY_TARGET)]);
+      expect(summary.generated).toEqual([]);
+      expect(summary.spentUsd).toBe(0);
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+
+  it("logs one target's failure and continues generating the rest of the batch", async () => {
+    const outDir = mkdtempSync(path.join(tmpdir(), "imagen-test-batch-fail-"));
+    const failingGenerate: ImageGenerator = async () => {
+      throw new Error("simulated transient Gemini failure");
+    };
+    try {
+      const summary = await runGenerationBatch([STEADY_TARGET, OTHER_TARGET], failingGenerate, outDir, () => {});
+
+      expect(summary.failed).toEqual([targetCaseId(STEADY_TARGET), targetCaseId(OTHER_TARGET)]);
+      expect(summary.generated).toEqual([]);
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not let the first target's failure stop the second target from generating", async () => {
+    const outDir = mkdtempSync(path.join(tmpdir(), "imagen-test-batch-partial-"));
+    let calls = 0;
+    const flakyGenerate: ImageGenerator = async () => {
+      calls++;
+      if (calls === 1) throw new Error("simulated transient Gemini failure");
+      return fakeGeneratorWithBlankRegion();
+    };
+    try {
+      const summary = await runGenerationBatch([STEADY_TARGET, OTHER_TARGET], flakyGenerate, outDir, () => {});
+
+      expect(summary.failed).toEqual([targetCaseId(STEADY_TARGET)]);
+      expect(summary.generated).toEqual([targetCaseId(OTHER_TARGET)]);
+      expect(summary.spentUsd).toBeGreaterThan(0);
     } finally {
       rmSync(outDir, { recursive: true, force: true });
     }

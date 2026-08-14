@@ -1,0 +1,943 @@
+{
+  "ticket": "TRO-530 / LH-027",
+  "measuredAt": "2026-08-13T22:56:37.099Z",
+  "note": "Standalone real scoring of the wild-label candidates in candidates.json -- these cases are NOT part of the committed eval baseline (scripts/eval/baseline.json) and this report never feeds it.",
+  "cases": [
+    {
+      "caseId": "case-40-reworded-warning-wild-duplicated-word",
+      "category": "reworded-warning",
+      "extraction": {
+        "caseId": "case-40-reworded-warning-wild-duplicated-word",
+        "category": "reworded-warning",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Hollow Creek Distillers",
+            "actual": "Hollow Creek Distillers",
+            "detail": "Haiku read the brand name correctly.",
+            "confidence": 0.99
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Straight Rye Whiskey",
+            "actual": "Straight Rye Whiskey",
+            "detail": "Haiku read the class/type correctly.",
+            "confidence": 0.99
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "47%",
+            "actual": "47%",
+            "detail": "Haiku read the correct ABV.",
+            "confidence": 0.99
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents.",
+            "confidence": 0.99
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic holic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic holic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly.",
+            "confidence": 0.95
+          }
+        ]
+      },
+      "routerVerdict": {
+        "caseId": "case-40-reworded-warning-wild-duplicated-word",
+        "category": "reworded-warning",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": "WARNING_MISMATCH",
+        "actualReviewReason": "WARNING_MISMATCH",
+        "reviewReasonCorrect": true,
+        "warningChannel": "dual",
+        "lowImageQualityTrigger": null,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true,
+            "confidence": 0.95,
+            "actualReviewReason": "WARNING_MISMATCH"
+          }
+        ]
+      },
+      "cascadeVerdict": {
+        "caseId": "case-40-reworded-warning-wild-duplicated-word",
+        "category": "reworded-warning",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": "WARNING_MISMATCH",
+        "actualReviewReason": "LOW_MODEL_CONFIDENCE",
+        "reviewReasonCorrect": false,
+        "warningChannel": null,
+        "lowImageQualityTrigger": null,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true,
+            "confidence": 0.95,
+            "actualReviewReason": "LOW_MODEL_CONFIDENCE"
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 3138,
+        "outputTokens": 429,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.0052829999999999995
+      },
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3937,
+        "outputTokens": 421,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.012084
+      },
+      "resolverOutcome": "needs-human",
+      "resolverError": null,
+      "resolverDurationMs": 5957,
+      "imageQuality": {
+        "legible": "yes",
+        "issues": [
+          "none"
+        ],
+        "confidence": 0.99
+      },
+      "beverageType": {
+        "value": "spirits",
+        "evidence": "STRAIGHT RYE WHISKEY",
+        "confidence": 0.99
+      }
+    },
+    {
+      "caseId": "case-41-tiny-warning-text-wild-craft-ipa",
+      "category": "tiny-warning-text",
+      "extraction": {
+        "caseId": "case-41-tiny-warning-text-wild-craft-ipa",
+        "category": "tiny-warning-text",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Foghorn Brewing Co.",
+            "actual": "Foghorn Brewing Co.",
+            "detail": "Haiku read the brand name correctly.",
+            "confidence": 0.99
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "India Pale Ale",
+            "actual": "India Pale Ale",
+            "detail": "Haiku read the class/type correctly.",
+            "confidence": 0.99
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "6.8%",
+            "actual": "6.8%",
+            "detail": "Haiku read the correct ABV.",
+            "confidence": 0.99
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "12 fl oz",
+            "actual": "12 fl oz",
+            "detail": "Haiku read the correct net contents.",
+            "confidence": 0.99
+          },
+          {
+            "field": "governmentWarning",
+            "correct": false,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages alctilus during pregnancy becaucy becuse of the risk of birth defects. (2) Consumption of alcoholic beverages alcoholic beverages impars ailty to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku's transcription differs from what the label prints.",
+            "confidence": 0.92
+          }
+        ]
+      },
+      "routerVerdict": {
+        "caseId": "case-41-tiny-warning-text-wild-craft-ipa",
+        "category": "tiny-warning-text",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": "WARNING_MISMATCH",
+        "actualReviewReason": "WARNING_MISMATCH",
+        "reviewReasonCorrect": true,
+        "warningChannel": "single",
+        "lowImageQualityTrigger": null,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true,
+            "confidence": 0.92,
+            "actualReviewReason": "WARNING_MISMATCH"
+          }
+        ]
+      },
+      "cascadeVerdict": {
+        "caseId": "case-41-tiny-warning-text-wild-craft-ipa",
+        "category": "tiny-warning-text",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": "WARNING_MISMATCH",
+        "actualReviewReason": "WARNING_MISMATCH",
+        "reviewReasonCorrect": true,
+        "warningChannel": null,
+        "lowImageQualityTrigger": null,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true,
+            "confidence": 0.92,
+            "actualReviewReason": "WARNING_MISMATCH"
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 3086,
+        "outputTokens": 394,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.005056
+      },
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3834,
+        "outputTokens": 2171,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.029378
+      },
+      "resolverOutcome": "resolved",
+      "resolverError": null,
+      "resolverDurationMs": 22690,
+      "imageQuality": {
+        "legible": "yes",
+        "issues": [
+          "none"
+        ],
+        "confidence": 0.95
+      },
+      "beverageType": {
+        "value": "beer",
+        "evidence": "India Pale Ale",
+        "confidence": 0.99
+      }
+    },
+    {
+      "caseId": "case-42-odd-typography-wild-script-wine",
+      "category": "odd-typography",
+      "extraction": {
+        "caseId": "case-42-odd-typography-wild-script-wine",
+        "category": "odd-typography",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Amberfield Cellars",
+            "actual": "Amberfield Cellars",
+            "detail": "Haiku read the brand name correctly.",
+            "confidence": 0.99
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Pinot Noir",
+            "actual": "Pinot Noir",
+            "detail": "Haiku read the class/type correctly.",
+            "confidence": 0.99
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "13.5%",
+            "actual": "13.5%",
+            "detail": "Haiku read the correct ABV.",
+            "confidence": 0.99
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents.",
+            "confidence": 0.99
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly.",
+            "confidence": 0.98
+          }
+        ]
+      },
+      "routerVerdict": {
+        "caseId": "case-42-odd-typography-wild-script-wine",
+        "category": "odd-typography",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": "WARNING_MISMATCH",
+        "actualReviewReason": "WARNING_MISMATCH",
+        "reviewReasonCorrect": true,
+        "warningChannel": "dual",
+        "lowImageQualityTrigger": null,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true,
+            "confidence": 0.98,
+            "actualReviewReason": "WARNING_MISMATCH"
+          }
+        ]
+      },
+      "cascadeVerdict": {
+        "caseId": "case-42-odd-typography-wild-script-wine",
+        "category": "odd-typography",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": false,
+        "expectedReviewReason": "WARNING_MISMATCH",
+        "actualReviewReason": null,
+        "reviewReasonCorrect": false,
+        "warningChannel": null,
+        "lowImageQualityTrigger": null,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "MATCH",
+            "correct": false,
+            "confidence": 0.98,
+            "actualReviewReason": null
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 3138,
+        "outputTokens": 363,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.004953
+      },
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3875,
+        "outputTokens": 300,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.01075
+      },
+      "resolverOutcome": "resolved",
+      "resolverError": null,
+      "resolverDurationMs": 5680,
+      "imageQuality": {
+        "legible": "yes",
+        "issues": [
+          "none"
+        ],
+        "confidence": 0.98
+      },
+      "beverageType": {
+        "value": "wine",
+        "evidence": "Pinot Noir",
+        "confidence": 0.99
+      }
+    },
+    {
+      "caseId": "case-43-odd-typography-wild-highcontrast-gin",
+      "category": "odd-typography",
+      "extraction": {
+        "caseId": "case-43-odd-typography-wild-highcontrast-gin",
+        "category": "odd-typography",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Vaultline Gin Co.",
+            "actual": "Vaultline Gin Co.",
+            "detail": "Haiku read the brand name correctly.",
+            "confidence": 0.98
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "London Dry Gin",
+            "actual": "London Dry Gin",
+            "detail": "Haiku read the class/type correctly.",
+            "confidence": 0.99
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "42%",
+            "actual": "42%",
+            "detail": "Haiku read the correct ABV.",
+            "confidence": 0.99
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "750 mL",
+            "actual": "750 ml",
+            "detail": "Haiku read the correct net contents.",
+            "confidence": 0.99
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly.",
+            "confidence": 0.98
+          }
+        ]
+      },
+      "routerVerdict": {
+        "caseId": "case-43-odd-typography-wild-highcontrast-gin",
+        "category": "odd-typography",
+        "expectedLabelVerdict": "PASS",
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
+        "actualReviewReason": null,
+        "reviewReasonCorrect": true,
+        "warningChannel": "single",
+        "lowImageQualityTrigger": null,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.98,
+            "actualReviewReason": null
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.98,
+            "actualReviewReason": null
+          }
+        ]
+      },
+      "cascadeVerdict": {
+        "caseId": "case-43-odd-typography-wild-highcontrast-gin",
+        "category": "odd-typography",
+        "expectedLabelVerdict": "PASS",
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": null,
+        "actualReviewReason": null,
+        "reviewReasonCorrect": true,
+        "warningChannel": "single",
+        "lowImageQualityTrigger": null,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.98,
+            "actualReviewReason": null
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.98,
+            "actualReviewReason": null
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 3138,
+        "outputTokens": 408,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.005178
+      },
+      "resolverCost": null,
+      "resolverOutcome": null,
+      "resolverError": null,
+      "resolverDurationMs": null,
+      "imageQuality": {
+        "legible": "yes",
+        "issues": [],
+        "confidence": 0.95
+      },
+      "beverageType": {
+        "value": "spirits",
+        "evidence": "London Dry Gin",
+        "confidence": 0.99
+      }
+    },
+    {
+      "caseId": "case-44-odd-typography-wild-woodcut-stout",
+      "category": "odd-typography",
+      "extraction": {
+        "caseId": "case-44-odd-typography-wild-woodcut-stout",
+        "category": "odd-typography",
+        "fields": [
+          {
+            "field": "brandName",
+            "correct": true,
+            "expected": "Millrace Stout Works",
+            "actual": "Millrace Stout Works",
+            "detail": "Haiku read the brand name correctly.",
+            "confidence": 0.99
+          },
+          {
+            "field": "classType",
+            "correct": true,
+            "expected": "Oatmeal Stout",
+            "actual": "Oatmeal Stout",
+            "detail": "Haiku read the class/type correctly.",
+            "confidence": 0.99
+          },
+          {
+            "field": "abv",
+            "correct": true,
+            "expected": "5.4%",
+            "actual": "5.4%",
+            "detail": "Haiku read the correct ABV.",
+            "confidence": 0.99
+          },
+          {
+            "field": "netContents",
+            "correct": true,
+            "expected": "16 fl oz",
+            "actual": "16 fl oz",
+            "detail": "Haiku read the correct net contents.",
+            "confidence": 0.99
+          },
+          {
+            "field": "governmentWarning",
+            "correct": true,
+            "expected": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "actual": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+            "detail": "Haiku transcribed the government warning correctly.",
+            "confidence": 0.98
+          }
+        ]
+      },
+      "routerVerdict": {
+        "caseId": "case-44-odd-typography-wild-woodcut-stout",
+        "category": "odd-typography",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "REVIEW",
+        "labelVerdictCorrect": true,
+        "expectedReviewReason": "WARNING_MISMATCH",
+        "actualReviewReason": "WARNING_MISMATCH",
+        "reviewReasonCorrect": true,
+        "warningChannel": "dual",
+        "lowImageQualityTrigger": null,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "NEEDS_REVIEW",
+            "correct": true,
+            "confidence": 0.98,
+            "actualReviewReason": "WARNING_MISMATCH"
+          }
+        ]
+      },
+      "cascadeVerdict": {
+        "caseId": "case-44-odd-typography-wild-woodcut-stout",
+        "category": "odd-typography",
+        "expectedLabelVerdict": "REVIEW",
+        "actualLabelVerdict": "PASS",
+        "labelVerdictCorrect": false,
+        "expectedReviewReason": "WARNING_MISMATCH",
+        "actualReviewReason": null,
+        "reviewReasonCorrect": false,
+        "warningChannel": null,
+        "lowImageQualityTrigger": null,
+        "fields": [
+          {
+            "field": "brand_name",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "class_type",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "alcohol_content",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "net_contents",
+            "expectedVerdict": "MATCH",
+            "actualVerdict": "MATCH",
+            "correct": true,
+            "confidence": 0.99,
+            "actualReviewReason": null
+          },
+          {
+            "field": "government_warning",
+            "expectedVerdict": "NEEDS_REVIEW",
+            "actualVerdict": "MATCH",
+            "correct": false,
+            "confidence": 0.98,
+            "actualReviewReason": null
+          }
+        ]
+      },
+      "haikuCost": {
+        "model": "claude-haiku-4-5",
+        "inputTokens": 3138,
+        "outputTokens": 404,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.005157999999999999
+      },
+      "resolverCost": {
+        "model": "claude-sonnet-5",
+        "inputTokens": 3881,
+        "outputTokens": 297,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 0,
+        "usd": 0.010732
+      },
+      "resolverOutcome": "resolved",
+      "resolverError": null,
+      "resolverDurationMs": 4697,
+      "imageQuality": {
+        "legible": "yes",
+        "issues": [],
+        "confidence": 0.95
+      },
+      "beverageType": {
+        "value": "beer",
+        "evidence": "Stout",
+        "confidence": 0.99
+      }
+    }
+  ],
+  "failures": [],
+  "totalCostUsd": 0.088572
+}

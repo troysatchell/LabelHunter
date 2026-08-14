@@ -53,7 +53,7 @@ interface RgbColor {
 export const DETECTION_WIDTH = 240;
 /** A matched region smaller than this fraction of the frame is noise (a cap glint, a highlight), not the label. */
 const MIN_REGION_FRACTION = 0.02;
-/** A matched region larger than this fraction prevents a silently-wrong oversized match from blown highlights or loose tolerance. */
+/** A matched region larger than this fraction is a false match too — blown highlights or too-loose a tolerance color-matching most of the frame — not the label. */
 const MAX_REGION_FRACTION = 0.85;
 
 function colorDistance(a: RgbColor, b: RgbColor): number {

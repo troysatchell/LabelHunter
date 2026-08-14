@@ -20,6 +20,15 @@ export interface DiffToken {
   /** True when this token of the actual text does not align with the
    * required text — a changed or inserted word. */
   differs: boolean;
+  /** True for a synthesized token holding required words the actual text
+   * OMITS with no replacement (`text` carries the missing words). An
+   * omission is a violation a reviewer cannot see in the actual text
+   * alone — without this, a warning that silently drops a clause would
+   * show zero marks (CodeRabbit finding, TRO-582 review round 1).
+   * Substitutions do NOT produce one: the inserted word's own mark
+   * already points at the spot, and doubling it with a missing-words
+   * indicator would bury the signal in noise. */
+  omitted?: boolean;
 }
 
 /** Case- and trailing-punctuation-insensitive token equality: "General,"
@@ -57,23 +66,51 @@ export function diffWords(required: string, actual: string): DiffToken[] {
   }
 
   const result: DiffToken[] = [];
+  // Required words dropped since the last emitted token. Whether they
+  // surface as an omission marker depends on what comes next: an aligned
+  // word (pure deletion — emit the marker) or an inserted word
+  // (substitution — the insertion's own mark carries the signal).
+  let pendingOmission: string[] = [];
+
+  function flushOmissionBefore(nextDiffers: boolean) {
+    // Emitted only before an ALIGNED word (or at the end): a pure
+    // deletion. Before an inserted word the run is a substitution, and
+    // the insertion's own mark carries the signal — the run is dropped.
+    if (pendingOmission.length > 0 && !nextDiffers) {
+      result.push({ text: pendingOmission.join(" "), differs: true, omitted: true });
+    }
+    pendingOmission = [];
+  }
+
   let i = 0;
   let j = 0;
   while (i < m && j < n) {
     if (tokensEqual(requiredTokens[i], actualTokens[j])) {
+      flushOmissionBefore(false);
       result.push({ text: actualTokens[j], differs: false });
       i++;
       j++;
     } else if (lcs[i + 1][j] >= lcs[i][j + 1]) {
-      i++; // a required word the actual text dropped — nothing to mark here
+      pendingOmission.push(requiredTokens[i]);
+      i++;
     } else {
+      flushOmissionBefore(true);
       result.push({ text: actualTokens[j], differs: true });
       j++;
     }
   }
   while (j < n) {
+    flushOmissionBefore(true);
     result.push({ text: actualTokens[j], differs: true });
     j++;
   }
+  while (i < m) {
+    pendingOmission.push(requiredTokens[i]);
+    i++;
+  }
+  // A trailing omission has no following insertion to represent it — a
+  // truncated warning (the common real case: a dropped final clause)
+  // must surface.
+  flushOmissionBefore(false);
   return result;
 }

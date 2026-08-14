@@ -52,3 +52,36 @@ describe("diffWords", () => {
     expect(tokens.map((t) => t.text)).toEqual(["a", "b", "c"]);
   });
 });
+
+describe("diffWords — omissions (TRO-582 review round 1)", () => {
+  it("surfaces required words dropped with no replacement as an omitted token at the right spot", () => {
+    const tokens = diffWords(
+      "impairs your ability to drive a car or operate machinery, and may cause health problems.",
+      "impairs your ability to drive a car and may cause health problems.",
+    );
+    const omitted = tokens.filter((t) => t.omitted);
+    expect(omitted).toHaveLength(1);
+    expect(omitted[0].text).toBe("or operate machinery,");
+    // Positioned where the words should be: after "car", before "and".
+    const index = tokens.findIndex((t) => t.omitted);
+    expect(tokens[index - 1].text).toBe("car");
+    expect(tokens[index + 1].text).toBe("and");
+  });
+
+  it("surfaces a truncated warning's dropped tail — the common real omission", () => {
+    const tokens = diffWords("drive a car or operate machinery, and may cause health problems.", "drive a car");
+    const last = tokens[tokens.length - 1];
+    expect(last.omitted).toBe(true);
+    expect(last.text).toBe("or operate machinery, and may cause health problems.");
+  });
+
+  it("does NOT emit an omission marker for a substitution — the replacement's own mark carries the signal", () => {
+    // case-10's clause (1): dropped words are all adjacent to insertions.
+    const tokens = diffWords(
+      "women should not drink alcoholic beverages during pregnancy because of the risk",
+      "pregnant women should not consume alcoholic beverages due to the risk",
+    );
+    expect(tokens.some((t) => t.omitted)).toBe(false);
+    expect(tokens.filter((t) => t.differs).map((t) => t.text)).toEqual(["pregnant", "consume", "due", "to"]);
+  });
+});

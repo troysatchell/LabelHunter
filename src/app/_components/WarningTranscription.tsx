@@ -23,7 +23,17 @@ export function WarningTranscription({ transcription }: WarningTranscriptionProp
         // props and never reorders in place.
         <span key={index}>
           {index > 0 ? " " : ""}
-          {token.differs ? <mark className="warning-diff-mark">{token.text}</mark> : token.text}
+          {token.omitted ? (
+            // Required words the label DROPS with no replacement — an
+            // omission is a violation the reviewer cannot see in the
+            // transcription alone, so it gets an explicit, readable
+            // indicator at the spot where the words should be.
+            <mark className="warning-diff-mark">[missing: {token.text}]</mark>
+          ) : token.differs ? (
+            <mark className="warning-diff-mark">{token.text}</mark>
+          ) : (
+            token.text
+          )}
         </span>
       ))}
     </>

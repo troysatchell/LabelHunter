@@ -584,6 +584,68 @@ describe("processExtractClaim — government warning wiring (TRO-517, TH-R9)", (
     expect(warningRow?.verdict).toBe("MISMATCH");
   });
 
+  // The remaining cells the orchestrator's self-review round asked for: a
+  // `bold` or `uncertain` signal alongside a MATCH still persists the full
+  // signal but never touches the verdict — the degrade rule only fires on
+  // `not-bold`. These pass immediately against the already-shipped code;
+  // new coverage, not a red-first regression test.
+
+  it("a 'bold' signal is persisted alongside a MATCH but never changes the verdict", async () => {
+    const batchJobId = await trackBatch({ totalCount: 1 });
+    const claimed = await claimedFixture(batchJobId, "warning-match-bold.jpg", { brandName: "Old Tom Distillery", classType: "Straight Bourbon Whiskey" });
+    const boldSignal: BoldSignalResult = {
+      signal: "bold",
+      reason: "the prefix's stroke width measures wider than the body's",
+      ratio: 2.1,
+      splitFraction: 0.49,
+      prefixStrokeWidthPx: 5,
+      bodyStrokeWidthPx: 2.4,
+    };
+    const deps = makeDeps({
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      compareGovernmentWarning: async () => warningOutcome({ verdict: "MATCH" }, boldSignal),
+    });
+
+    const outcome = await processExtractClaim(claimed, deps);
+    expect(outcome.kind).toBe("done");
+    if (outcome.kind !== "done") throw new Error("unreachable");
+    expect(outcome.verdict).toBe("PASS");
+
+    const [row] = await db.select().from(verifications).where(eq(verifications.id, outcome.verificationId));
+    expect(row.boldSignal).toEqual(boldSignal);
+    const persistedFields = await db.select().from(fieldResults).where(eq(fieldResults.verificationId, outcome.verificationId));
+    const warningRow = persistedFields.find((row) => row.fieldName === "GOVERNMENT_WARNING");
+    expect(warningRow?.verdict).toBe("MATCH");
+  });
+
+  it("an 'uncertain' signal is persisted alongside a MATCH but never changes the verdict — never accuse on uncertainty", async () => {
+    const batchJobId = await trackBatch({ totalCount: 1 });
+    const claimed = await claimedFixture(batchJobId, "warning-match-uncertain.jpg", { brandName: "Old Tom Distillery", classType: "Straight Bourbon Whiskey" });
+    const boldSignal: BoldSignalResult = {
+      signal: "uncertain",
+      reason: "prefix and body stroke-width ranges overlap; no clean separation",
+      ratio: null,
+      splitFraction: null,
+      prefixStrokeWidthPx: null,
+      bodyStrokeWidthPx: null,
+    };
+    const deps = makeDeps({
+      anthropicClient: clientReturning(WELL_FORMED_EXTRACTION_BODY),
+      compareGovernmentWarning: async () => warningOutcome({ verdict: "MATCH" }, boldSignal),
+    });
+
+    const outcome = await processExtractClaim(claimed, deps);
+    expect(outcome.kind).toBe("done");
+    if (outcome.kind !== "done") throw new Error("unreachable");
+    expect(outcome.verdict).toBe("PASS");
+
+    const [row] = await db.select().from(verifications).where(eq(verifications.id, outcome.verificationId));
+    expect(row.boldSignal).toEqual(boldSignal);
+    const persistedFields = await db.select().from(fieldResults).where(eq(fieldResults.verificationId, outcome.verificationId));
+    const warningRow = persistedFields.find((row) => row.fieldName === "GOVERNMENT_WARNING");
+    expect(warningRow?.verdict).toBe("MATCH");
+  });
+
   it("a warning-comparator promise rejection degrades that field to NEEDS_REVIEW instead of failing the item (CP-2 §4.4 rule 3)", async () => {
     const batchJobId = await trackBatch({ totalCount: 1 });
     const claimed = await claimedFixture(batchJobId, "warning-reject.jpg");

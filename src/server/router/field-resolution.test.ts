@@ -407,4 +407,52 @@ describe("resolveGovernmentWarningField — TRO-569 / INT-005: the bold-signal d
     });
     expect(resolution.verdict).not.toBe("MISMATCH");
   });
+
+  // The remaining cells the orchestrator's self-review round asked for
+  // explicitly: a `bold`/`uncertain` signal never touches an existing
+  // NEEDS_REVIEW or MISMATCH result either — the degrade rule only ever
+  // fires on the MATCH -> REVIEW edge, so every OTHER (verdict, signal)
+  // pair is a no-op by construction. These pass immediately against the
+  // already-shipped code; they are new coverage, not a red-first
+  // regression test — stated plainly rather than staged as a fake red.
+
+  it("a 'bold' signal never overrides an existing NEEDS_REVIEW result", () => {
+    const resolution = resolveGovernmentWarningField({
+      required: true,
+      overrideRejected: false,
+      absent: false,
+      lowImageQuality: false,
+      warningResult: { verdict: "NEEDS_REVIEW", reviewReason: "LOW_IMAGE_QUALITY" },
+      boldSignal: "bold",
+    });
+    expect(resolution.verdict).toBe("NEEDS_REVIEW");
+    expect(resolution.reviewReason).toBe("LOW_IMAGE_QUALITY");
+  });
+
+  it("an 'uncertain' signal never overrides an existing NEEDS_REVIEW result", () => {
+    const resolution = resolveGovernmentWarningField({
+      required: true,
+      overrideRejected: false,
+      absent: false,
+      lowImageQuality: false,
+      warningResult: { verdict: "NEEDS_REVIEW", reviewReason: "LOW_IMAGE_QUALITY" },
+      boldSignal: "uncertain",
+    });
+    expect(resolution.verdict).toBe("NEEDS_REVIEW");
+    expect(resolution.reviewReason).toBe("LOW_IMAGE_QUALITY");
+  });
+
+  it("an 'uncertain' signal never touches an existing MISMATCH", () => {
+    const resolution = resolveGovernmentWarningField({
+      required: true,
+      overrideRejected: false,
+      absent: false,
+      lowImageQuality: false,
+      warningResult: { verdict: "MISMATCH", note: "Government Warning wording differs from the required text." },
+      boldSignal: "uncertain",
+    });
+    expect(resolution.verdict).toBe("MISMATCH");
+    expect(resolution.reviewReason).toBeNull();
+    expect(resolution.comparatorNote).toBe("Government Warning wording differs from the required text.");
+  });
 });

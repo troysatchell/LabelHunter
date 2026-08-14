@@ -70,18 +70,23 @@ default `null`); `case-33`'s `expected` reverts to `PASS`/`MATCH`; `case-34` and
 can stay committed (not itself a rollback risk — nothing reads `governmentWarningBodyBold`)
 or be removed with it.
 
-**Confirmed.** `src/server/router/field-resolution.test.ts` (new describe block, 7 assertions,
-each confirmed to fail for the right reason against the pre-TRO-569 code before the fix
-landed), `src/app/api/verify/route.test.ts`'s inverted government-warning-wiring test, and
-`src/server/batch-queue/extract-worker.test.ts`'s inverted + new MISMATCH-untouched test all
-pass. Full targeted run (`field-resolution`, `router/index`, `route.test.ts`,
-`extract-worker.test.ts`, `golden-set`, `warning`, `scripts/golden`,
-`warning-golden-cases.test.ts`): 396+ tests, 0 failures. `pnpm golden:verify`: 38 cases, PASS.
-`pnpm eval:bold-signal-sweep`: 27/32, 84.4%, measured 2026-08-13, no API call — observed, not
-derived. Full `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `scripts/factory/gate.sh --fast`
-are reported in this PR's own thread once run; the eval baseline/stale-baseline check is
-EXPECTED to fail at this stage — the golden set changed, and the live re-baseline is
-Phase 2's job (standing rule 32), not run here.
+**Confirmed.** `src/server/router/field-resolution.test.ts` (10 assertions covering the full
+(verdict, signal) grid, the original 7 each confirmed to fail for the right reason against the
+pre-TRO-569 code before the fix landed), `src/app/api/verify/route.test.ts`'s inverted
+government-warning-wiring test, and `src/server/batch-queue/extract-worker.test.ts`'s inverted
+plus 4 new cells all pass. Full `pnpm typecheck`, `pnpm lint`, and `pnpm test`: green (2659/2659
+after the final merge). `pnpm golden:verify`: 38 cases, PASS. `pnpm eval:bold-signal-sweep`
+(re-run on the clean committed tree after adding its own `assertPathTreeClean` guard, matching
+`ocr-floor-sweep.ts`'s precedent): 27/32, 84.4%, measured 2026-08-14, no API call — observed,
+not derived. The authorized live re-baseline (rule 32) ran and passed: `pnpm eval:variance --
+--live --full --repeats=3 --establish-baseline`, 38 cases x 3 repeats, 0 failures, $1.2518 —
+extraction accuracy 88.9%–88.9%, cascade-verdict accuracy 86.8%–89.5% (K=3). `pnpm eval:check`
+(cheap mode, no live call): manifest hash matches, no drift, both bands pass. Full
+`scripts/factory/gate.sh`: every check `[ok]` except a `[warn]` on `review` — the local
+CodeRabbit capture timed out 3 times running (rc=124 each), most likely because this branch's
+diff against `main` is unusually large (it also repairs upstream's own truncated `CHANGES.md`,
+a separate finding reported to the orchestrator, not part of this ticket's own change). Gate
+verdict: `pass`.
 ## TRO-583 — retry the OCR channel once before it degrades to single-channel (2026-08-13)
 
 **The problem.** The OCR channel can fail three ways. Tesseract can time

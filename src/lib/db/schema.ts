@@ -358,13 +358,21 @@ export const verifications = pgTable(
     // same "validate at the boundary" rule `reviewQueue.resolverOutput`
     // already follows for an untyped jsonb column.
     //
-    // ADVISORY ONLY. This column is written after `routeLabel` has already
-    // decided `verdict`, from the SAME `WarningComparatorResult`-adjacent
-    // pipeline call but a SEPARATE return value that never reaches
-    // `routeLabel` (`src/server/warning/index.ts`'s
-    // `CompareGovernmentWarningFromImageResult`). Nothing reads this column
-    // to decide a verdict, and nothing may ever be added that does
-    // (`bold-detect.ts`'s own header comment; standing rule 10).
+    // ADVISORY, NEVER A HARD FAIL BY ITSELF — but TRO-569 / INT-005 DOES
+    // route the underlying signal into `verdict`. This COLUMN is written
+    // after `routeLabel` has already decided `verdict`, from the SAME
+    // `WarningComparatorResult`-adjacent pipeline call
+    // (`src/server/warning/index.ts`'s `CompareGovernmentWarningFromImageResult`)
+    // but a SEPARATE return value — the caller (`verify/route.ts`,
+    // `extract-worker.ts`) reads that value TWICE: once live, in memory,
+    // as `routeLabel`'s optional sixth parameter (where a `not-bold`
+    // signal degrades an otherwise-MATCH `government_warning` row to
+    // `NEEDS_REVIEW`), and again here, to persist the full measurement for
+    // display. This COLUMN itself is write-only for that purpose: nothing
+    // reads the PERSISTED value back to decide a verdict, and nothing may
+    // ever be added that does (`bold-detect.ts`'s own header comment;
+    // standing rule 10) — the routing input is always the fresh,
+    // just-measured signal, never a stored one.
     boldSignal: jsonb("bold_signal"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

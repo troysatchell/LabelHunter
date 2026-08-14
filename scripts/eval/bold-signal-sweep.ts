@@ -45,7 +45,7 @@ import { preprocessImage } from "../../src/server/preprocessing";
 import { cropForOcr, detectWarningRegion, measureBoldSignal, runWarningOcr, type BoldSignal } from "../../src/server/warning";
 import { parseArtifactGuardArgs, writeGuardedJsonArtifact } from "./artifact-guard";
 import { REPO_ROOT } from "./cascade-runner";
-import { lastCommitTouchingPath } from "./git-provenance";
+import { assertPathTreeClean, lastCommitTouchingPath } from "./git-provenance";
 import { hashManifestFile } from "./manifest-hash";
 
 /** The expected `BoldSignal` for a scoreable case's ground truth — `null`
@@ -132,6 +132,13 @@ async function main(): Promise<void> {
     console.error("This script only accepts --out=<path> and --force.");
     process.exit(2);
   }
+  // TRO-564's own guard, the same pattern ocr-floor-sweep.ts already uses
+  // (that file's own comment): fail before doing any measurement work when
+  // golden-set/ has an uncommitted change — otherwise the artifact's
+  // goldenSetCommitSha below would cite the last clean commit while
+  // actually having measured different (uncommitted) images.
+  assertPathTreeClean(REPO_ROOT, "golden-set");
+
   const manifest = loadGoldenSetManifest();
   console.log(`bold-signal-sweep.ts: sweeping ${manifest.cases.length} golden-set case(s), bold signal only, no API call.`);
 

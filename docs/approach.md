@@ -46,7 +46,7 @@ it stood on 2026-08-12. It compares the cascade against a Sonnet-only pipeline. 
 Sonnet-only arm resolves every field of every label with the expensive model, no router
 involved. The cascade won on both axes measured that day. Label-verdict accuracy: 71.9% (23 of
 32) against the Sonnet-only arm's 37.5% (12 of 32). Total cost: $0.28 against $0.47, for the
-same 32 cases. This is a separate, earlier measurement from the K=3, 36-case accuracy band in
+same 32 cases. This is a separate, earlier measurement from the K=3, 38-case accuracy band in
 "Measured results" below. That band scores the cascade alone, on the current larger golden set.
 It is not a like-for-like comparison against a Sonnet-only arm.
 
@@ -199,8 +199,9 @@ reliability at the cost of the core path.
 `docs/checkpoints/cp2-warning-subsystem.md` §7.2 names the technique
 (`src/server/warning/bold-detect.ts`) and the measured accuracy behind this paragraph:
 `scripts/eval/results/bold-signal-sweep.json` (`pnpm eval:bold-signal-sweep`) scored 27 of 32
-scoreable golden-set cases correctly, 84.4%, measured 2026-08-13 (re-measured after TRO-569 /
-TRO-528 added `case-34-bold-body-warning-violation` — the 30-case, 83.3% figure predates it).
+scoreable golden-set cases correctly, 84.4%, measured 2026-08-14 against the clean committed
+tree (re-measured after TRO-569 / TRO-528 added `case-34-bold-body-warning-violation` — the
+30-case, 83.3% figure predates it).
 
 **A separate, narrower gap remains: the extractor's own self-reported `formatting.bold` field is
 still unused.** This is a different field from the one the paragraph above describes — Haiku's
@@ -269,13 +270,13 @@ actually experiences, not raw cascade latency with the gate subtracted out.
 
 ## Measured results
 
-**Accuracy.** Measured over the full 36-case golden set, three repeated live runs (`K=3`), to
-report a real range instead of one lucky run:
+**Accuracy.** Measured over the full 38-case golden set, three repeated live runs (`K=3`,
+measured 2026-08-14, TRO-569's re-baseline), to report a real range instead of one lucky run:
 
 | Metric | Band |
 |---|---|
-| Field extraction accuracy | 87.2%–87.8% |
-| Cascade-verdict accuracy (end-to-end, after Sonnet resolution) | 80.6%–83.3% |
+| Field extraction accuracy | 88.9%–88.9% |
+| Cascade-verdict accuracy (end-to-end, after Sonnet resolution) | 86.8%–89.5% |
 
 Extraction is solid. Verdict accuracy is lower — this prototype's clearest open problem. Most
 of the gap traces to one repeated pattern: a deliberately degraded or ambiguous image reads
@@ -284,12 +285,17 @@ confidently on a single channel, masking a case that should have landed on "need
 concrete next steps.
 
 Earlier in this project a single accuracy run measured 65.6%. Three things drove the
-improvement to the current band: the warning subsystem's dual-channel check, better router
-rules, and a larger, harder golden set. No single lucky change explains it.
+improvement to this band: the warning subsystem's dual-channel check, better router rules, and
+a larger, harder golden set. No single lucky change explains it. The band moved again between
+the 36-case and 38-case corpus (87.2%–87.8% / 80.6%–83.3% before, above now) — TRO-569's own
+two new cases (`case-33`, `case-34`) and TRO-581's single-channel-certainty amendment both
+landed between the two measurements; `scripts/eval/baseline-archive/` keeps every prior band,
+dated, for anyone checking which corpus a past figure described.
 
 **Cost.** The Haiku extraction every label gets costs roughly $0.005 per label. The Sonnet
 resolution the router escalates a minority of labels to costs roughly $0.02 more, on those
-labels only. A three-repeat, 36-case live evaluation run cost about $1.20 total.
+labels only. A three-repeat, 38-case live evaluation run cost $1.2518 total, measured
+2026-08-14.
 
 **Latency.** p50 3618 ms, p95 4197 ms, mean 3738 ms — 20 real HTTP verify round-trips against
 the live deployed instance, past the access-code gate, 20 of 20 PASS. Inside the brief's
@@ -326,7 +332,9 @@ Cascade-verdict accuracy, covered above under "Imperfect images" and "Measured r
 degraded-image cases still return a confident wrong verdict. Bold type on the government
 warning, covered above under "The government warning gets a stricter check" and "Trade-offs and
 limitations": 16.22(a)(2) states two bold rules, and only the first (the prefix must be bold) is
-measured and shown, advisory only — never enforced as a hard check, by design. The second (the
-remainder must not print bold) is not checked at all. See `audit/requirements/gaps.md` for the
+measured and shown — advisory, and by design never a hard, automatic FAIL, though a not-bold
+reading now routes an otherwise-matching label to human review instead of a silent pass
+(TRO-569). The second (the remainder must not print bold) is not checked at all. See
+`audit/requirements/gaps.md` for the
 current, complete list, with the concrete next step
 named for each row.

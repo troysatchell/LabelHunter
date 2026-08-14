@@ -1,9 +1,9 @@
 {
   "ticket": "TRO-533 / LH-026",
-  "measuredAt": "2026-08-14T00:51:03.071Z",
+  "measuredAt": "2026-08-14T02:16:06.374Z",
   "manifestVersion": "1.0.0",
-  "goldenSetCommitSha": "9787ff95c2f8975e96048d0e47c1de68d252db0d",
-  "manifestContentHash": "10a2a5dbcbdddc418de4f24310132812abe769f0df17aabbc5e94da032e062f7",
+  "goldenSetCommitSha": "fdf700c0af102f32d797b0c65ef5fdf90eac4fe3",
+  "manifestContentHash": "e19a48c1f2c54a92d1f4fc207df472cf87ff048ea5d4c33c6d7258b820c552e3",
   "method": "Read-only replay of the bold-signal pipeline (preprocessImage -> detectWarningRegion -> cropForOcr -> measureBoldSignal) against every committed golden-set image, in the same order the verify route's default dependencies call them. Scored against golden-set/manifest.json's label.governmentWarningPrefixBold ground truth (TRO-527 / LH-022). No Anthropic API call. No database write. The only file this script writes is this one.",
   "caseCount": 38,
   "scoreableCaseCount": 32,
@@ -12,8 +12,8 @@
   "signalDistribution": {
     "bold": 26,
     "not-bold": 1,
-    "uncertain": 6,
-    "not-measured": 5
+    "uncertain": 5,
+    "not-measured": 6
   },
   "results": [
     {
@@ -336,12 +336,17 @@
       "governmentWarningPresent": true,
       "groundTruthPrefixBold": true,
       "expectedSignal": "bold",
-      "measuredSignal": null,
-      "measuredReason": null,
-      "measuredRatio": null,
-      "region": null,
-      "detectionMethod": null,
-      "correct": false
+      "measuredSignal": "bold",
+      "measuredReason": "the prefix's stroke width measures wider than the body's",
+      "measuredRatio": 2.1052631578947367,
+      "region": {
+        "x": 258,
+        "y": 776,
+        "width": 882,
+        "height": 134
+      },
+      "detectionMethod": "classical",
+      "correct": true
     },
     {
       "caseId": "case-20-rotation-severe-upside-down",
@@ -380,17 +385,12 @@
       "governmentWarningPresent": true,
       "groundTruthPrefixBold": true,
       "expectedSignal": "bold",
-      "measuredSignal": "bold",
-      "measuredReason": "the prefix's stroke width measures wider than the body's",
-      "measuredRatio": 1.7037037037037037,
-      "region": {
-        "x": 58,
-        "y": 526,
-        "width": 882,
-        "height": 136
-      },
-      "detectionMethod": "classical",
-      "correct": true
+      "measuredSignal": null,
+      "measuredReason": null,
+      "measuredRatio": null,
+      "region": null,
+      "detectionMethod": null,
+      "correct": false
     },
     {
       "caseId": "case-23-tiny-warning-text-standard-bottle",
@@ -663,16 +663,11 @@
       "governmentWarningPresent": true,
       "groundTruthPrefixBold": "unknown",
       "expectedSignal": null,
-      "measuredSignal": "uncertain",
-      "measuredReason": "the detected line spans too much of the crop; the paragraph's lines likely merged into one",
+      "measuredSignal": null,
+      "measuredReason": null,
       "measuredRatio": null,
-      "region": {
-        "x": 0,
-        "y": 0,
-        "width": 1920,
-        "height": 945
-      },
-      "detectionMethod": "classical",
+      "region": null,
+      "detectionMethod": null,
       "correct": null
     }
   ]

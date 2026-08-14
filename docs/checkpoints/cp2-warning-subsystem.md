@@ -590,8 +590,10 @@ a wrong PASS delays a catch, a wrong FAIL accuses a compliant producer of a fede
 > written. TRO-527 (`51f0d93`, 2026-08-13) rebuilt every image to add the renderer's bold prefix.
 > TRO-516 C5 (`add9138`) merged case-24 into case-23. TRO-529 added five real-photograph cases,
 > case-35 through case-39. The 32-case corpus the 2026-08-12 amendment measured no longer exists.
-> The current golden set has 36 cases (`golden-set/manifest.json`, commit
-> `0e6e3e1432f63609ad49febf5445fb866cadaf91`).
+> At commit `0e6e3e1432f63609ad49febf5445fb866cadaf91` (`golden-set/manifest.json`), when this
+> re-sweep ran, the golden set had 36 cases — TRO-569 / TRO-528 later grew it to 38 (case-33's
+> `expected` flip, plus new case-34); this amendment's own 36-case figure and the sweep below
+> describe that earlier commit, not the corpus as it stands now.
 >
 > The re-sweep used the same script and the same method: read-only, no API call. The artifact is
 > `scripts/eval/results/ocr-floor-sweep.json`, re-measured against the commit above. 31 of the 36
@@ -984,8 +986,9 @@ them. A crop below the measurement's own reliability floor, or with no clean pre
 reports `uncertain` rather than guessing — `bold-detect.ts`'s own header comment names the exact
 rules. `scripts/eval/results/bold-signal-sweep.json` (`pnpm eval:bold-signal-sweep`) is the
 measured record of where this signal agrees with ground truth and where it does not: 27 of 32
-scoreable golden-set cases, 84.4%, measured 2026-08-13 (re-measured after TRO-569 / TRO-528
-added `case-34-bold-body-warning-violation`; the 30-case, 83.3% figure predates it).
+scoreable golden-set cases, 84.4%, measured 2026-08-14 against the clean committed tree
+(re-measured after TRO-569 / TRO-528 added `case-34-bold-body-warning-violation`; the 30-case,
+83.3% figure predates it).
 
 ### 7.3 The limitation wording — drafted for reuse
 
@@ -1390,8 +1393,8 @@ The technique — stroke-width measurement by morphological erosion on a binariz
 prefix to body at matched x-height — is built and wired in (LH-025/LH-026), not a v2 feature: it
 needed a clean, near-native-resolution crop and a shared typeface, which is exactly why it stays
 advisory rather than a hard check. `scripts/eval/results/bold-signal-sweep.json` has the measured
-accuracy: 27 of 32 scoreable golden-set cases, 84.4% (re-measured 2026-08-13 after TRO-569 /
-TRO-528 added `case-34-bold-body-warning-violation`).
+accuracy: 27 of 32 scoreable golden-set cases, 84.4% (re-measured 2026-08-14, clean committed
+tree, after TRO-569 / TRO-528 added `case-34-bold-body-warning-violation`).
 
 ---
 

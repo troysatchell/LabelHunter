@@ -58,8 +58,11 @@ function expectedColumnLabel(field: VerificationFieldDetail["field"]): string {
  * confidence number (standing rule 12). Paired with `boldSignal.reason`
  * (ASD-STE100 prose already, `bold-detect.ts`'s own header comment) for
  * the supporting detail, and a fixed closing sentence that states the
- * advisory boundary explicitly (TH-R20, this ticket's own acceptance
- * evidence: "Say plainly that it never changes the verdict").
+ * advisory boundary explicitly (TH-R20). TRO-533's original acceptance
+ * evidence read "say plainly that it never changes the verdict" — TRO-569
+ * / INT-005 narrowed that: the closing sentence below now states the
+ * boundary that actually survives (never a hard FAIL by itself) instead
+ * of the wider, now-false claim.
  */
 const BOLD_SIGNAL_HEADLINE: Record<VerificationBoldSignalDetail["signal"], string> = {
   bold: "LabelHunter's pixel measurement finds the prefix bold.",
@@ -74,7 +77,12 @@ function capitalizeSentence(text: string): string {
 function boldSignalAdvisoryText(boldSignal: VerificationBoldSignalDetail): string {
   const headline = BOLD_SIGNAL_HEADLINE[boldSignal.signal];
   const reasonSentence = capitalizeSentence(boldSignal.reason);
-  return `${headline} ${reasonSentence} This is an advisory signal. It never changes the verdict.`;
+  // TRO-569 / INT-005: this signal is still advisory — it never fails a
+  // label by itself. It is no longer true that it "never changes the
+  // verdict": a not-bold reading now sends an otherwise-matching label
+  // for human review instead of a silent pass. State the rule, not the
+  // old, wider claim.
+  return `${headline} ${reasonSentence} This is an advisory signal. It never fails a label by itself. A not-bold reading sends an otherwise-matching label for human review instead of a silent pass.`;
 }
 
 function FieldRow({ row, boldSignal }: { row: VerificationFieldDetail; boldSignal: VerificationBoldSignalDetail | null }) {

@@ -1,0 +1,414 @@
+{
+  "ticket": "TRO-471 / LH-031 (extended by TRO-539 / LH-034: --url mode, Server-Timing breakdown, target provenance)",
+  "measuredAt": "2026-08-14T03:05:34.266Z",
+  "model": "not observed by this script -- the target server (labelhunter-web.onrender.com) makes its own model choice; this repo's own code names claude-haiku-4-5, but --url mode never confirms the target is actually running it",
+  "validationNote": "TH-R2 re-measurement at submission commit 159ff96 (includes TRO-569/528 bold review routing and PR #106). Preconditions observed before this run: CI green on 159ff96; Render CLI showed deploy of exactly 159ff96 live; TRO-569 routing behaviorally confirmed live via case-33 probe (REVIEW/WARNING_MISMATCH). Replaces the 2026-08-13T19:43Z artifact figure that four later merges staled (INT-002).",
+  "goldenSetCase": {
+    "caseId": "case-01-clean-match-spirits",
+    "category": "clean-match",
+    "beverageType": "spirits",
+    "imagePath": "golden-set/images/case-01-clean-match-spirits.jpg"
+  },
+  "pipelineScope": "Preprocess (sharp) -> Haiku extraction (claude-haiku-4-5 in this repo's own code -- whether the target actually made a real API call for it is not something this script observes) concurrently with the government-warning comparator (region detection + tesseract.js OCR on the warning crop, bounded by a 2000ms OCR deadline, TRO-519) -> deterministic Validation Router -> DB writes (TRO-518: label image bytes land in Postgres, not disk). LH-014's Sonnet resolver has merged to main, but route.ts never calls it inline -- every run is the fast path only; Sonnet resolution, when it happens, runs asynchronously off the review queue, never inside this request (TH-R19). Boundary: http -- this run sent a real multipart POST over the network to the target URL recorded in this artifact's own target field, and measured wall-clock from just before that request to the full response body received, including the Next.js HTTP framing layer and the real network path -- but still excludes a real browser's own upload/render time. CAVEAT: the pipeline description above is this repo's OWN claim about what code the target runs -- an http --url target can in principle be any server. This script never independently confirms the target is running this exact commit (same caveat as this artifact's own model field); it is accurate when --url points at a real deployment of this repo, which is this harness's only intended use.",
+  "target": {
+    "boundary": "http",
+    "host": "labelhunter-web.onrender.com",
+    "url": "https://labelhunter-web.onrender.com",
+    "renderPlan": "starter"
+  },
+  "machine": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpuModel": "Apple M4 Pro",
+    "cpuCount": 14,
+    "nodeVersion": "v23.2.0"
+  },
+  "requestedRuns": 20,
+  "successfulRuns": 20,
+  "failedRuns": 0,
+  "verdictCounts": {
+    "PASS": 20
+  },
+  "summaryMs": {
+    "count": 20,
+    "min": 5445,
+    "max": 7021,
+    "mean": 5739,
+    "p50": 5616,
+    "p95": 6160
+  },
+  "stageBreakdownMs": {
+    "preprocess": {
+      "count": 20,
+      "min": 1689.2,
+      "max": 2093.8,
+      "mean": 1882,
+      "p50": 1881.3,
+      "p95": 2085.9
+    },
+    "ocr": {
+      "count": 20,
+      "min": 3513.5,
+      "max": 4284.5,
+      "mean": 3658,
+      "p50": 3563.6,
+      "p95": 3948.7
+    },
+    "haiku": {
+      "count": 20,
+      "min": 3513.5,
+      "max": 4283.8,
+      "mean": 3658,
+      "p50": 3563.6,
+      "p95": 3948.7
+    },
+    "router": {
+      "count": 20,
+      "min": 0.1,
+      "max": 7.1,
+      "mean": 1,
+      "p50": 0.2,
+      "p95": 4.3
+    },
+    "db": {
+      "count": 20,
+      "min": 7.1,
+      "max": 165.8,
+      "mean": 19,
+      "p50": 8.4,
+      "p95": 67.3
+    }
+  },
+  "budget": {
+    "p50TargetMs": 5000,
+    "source": "TH-R2 / PRD §3.8: ~5s p50 wall-clock, single-label verify, realistic image.",
+    "internalFastPathP50TargetMs": 3000,
+    "internalFastPathSource": "PRD §3.8 stage table: 'Fast path total (~85-90% of labels): ~3s p50, <=5s p95' -- the internal engineering sub-target the 5s acceptance bar leaves headroom against, not the TH-R2 acceptance figure itself."
+  },
+  "cleanupFailures": [],
+  "cleanupSkippedReason": "--cleanup-db not passed — this script never infers that DATABASE_URL is the SAME database the --url target itself uses (round 2 of TRO-539's own local review found a loopback hostname alone is not enough proof, since this repo's own factory workflow runs several worktree-scoped databases on one localhost Postgres server). Pass --cleanup-db to opt in once you have confirmed it yourself. 20 application row(s) left uncleaned: 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97.",
+  "scratchDirCleanupError": null,
+  "closePoolError": null,
+  "runs": [
+    {
+      "index": 1,
+      "durationMs": 7021,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 78,
+      "serverTimingMs": {
+        "preprocess": 2085.9,
+        "ocr": 4284.5,
+        "haiku": 4283.8,
+        "router": 7.1,
+        "db": 12.2
+      }
+    },
+    {
+      "index": 2,
+      "durationMs": 5655,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 79,
+      "serverTimingMs": {
+        "preprocess": 1950.6,
+        "ocr": 3558.5,
+        "haiku": 3558.5,
+        "router": 0.5,
+        "db": 11.2
+      }
+    },
+    {
+      "index": 3,
+      "durationMs": 5984,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 80,
+      "serverTimingMs": {
+        "preprocess": 2004,
+        "ocr": 3830,
+        "haiku": 3829.9,
+        "router": 0.4,
+        "db": 8.8
+      }
+    },
+    {
+      "index": 4,
+      "durationMs": 5616,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 81,
+      "serverTimingMs": {
+        "preprocess": 1834.8,
+        "ocr": 3563.6,
+        "haiku": 3563.6,
+        "router": 0.3,
+        "db": 7.8
+      }
+    },
+    {
+      "index": 5,
+      "durationMs": 5566,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 82,
+      "serverTimingMs": {
+        "preprocess": 1796.7,
+        "ocr": 3631.9,
+        "haiku": 3631.9,
+        "router": 0.3,
+        "db": 7.9
+      }
+    },
+    {
+      "index": 6,
+      "durationMs": 5445,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 83,
+      "serverTimingMs": {
+        "preprocess": 1755.4,
+        "ocr": 3546.5,
+        "haiku": 3546.5,
+        "router": 0.2,
+        "db": 8.1
+      }
+    },
+    {
+      "index": 7,
+      "durationMs": 5533,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 84,
+      "serverTimingMs": {
+        "preprocess": 1689.2,
+        "ocr": 3692.1,
+        "haiku": 3692.1,
+        "router": 0.2,
+        "db": 8.7
+      }
+    },
+    {
+      "index": 8,
+      "durationMs": 5536,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 85,
+      "serverTimingMs": {
+        "preprocess": 1762.8,
+        "ocr": 3554.1,
+        "haiku": 3554.1,
+        "router": 4.3,
+        "db": 67.3
+      }
+    },
+    {
+      "index": 9,
+      "durationMs": 5588,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 86,
+      "serverTimingMs": {
+        "preprocess": 1923.8,
+        "ocr": 3528.8,
+        "haiku": 3528.9,
+        "router": 0.3,
+        "db": 9.1
+      }
+    },
+    {
+      "index": 10,
+      "durationMs": 5452,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 87,
+      "serverTimingMs": {
+        "preprocess": 1720.4,
+        "ocr": 3546.8,
+        "haiku": 3546.8,
+        "router": 0.2,
+        "db": 8.6
+      }
+    },
+    {
+      "index": 11,
+      "durationMs": 5828,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 88,
+      "serverTimingMs": {
+        "preprocess": 2093.8,
+        "ocr": 3599.1,
+        "haiku": 3599.1,
+        "router": 0.2,
+        "db": 10.5
+      }
+    },
+    {
+      "index": 12,
+      "durationMs": 5878,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 89,
+      "serverTimingMs": {
+        "preprocess": 1894.3,
+        "ocr": 3747.4,
+        "haiku": 3747.4,
+        "router": 0.1,
+        "db": 7.5
+      }
+    },
+    {
+      "index": 13,
+      "durationMs": 5587,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 90,
+      "serverTimingMs": {
+        "preprocess": 1892.3,
+        "ocr": 3545.9,
+        "haiku": 3545.9,
+        "router": 0.2,
+        "db": 8.4
+      }
+    },
+    {
+      "index": 14,
+      "durationMs": 5549,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 91,
+      "serverTimingMs": {
+        "preprocess": 1881.3,
+        "ocr": 3523.8,
+        "haiku": 3523.8,
+        "router": 0.2,
+        "db": 7.1
+      }
+    },
+    {
+      "index": 15,
+      "durationMs": 6160,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 92,
+      "serverTimingMs": {
+        "preprocess": 1855.7,
+        "ocr": 3948.7,
+        "haiku": 3948.7,
+        "router": 0.1,
+        "db": 165.8
+      }
+    },
+    {
+      "index": 16,
+      "durationMs": 5769,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 93,
+      "serverTimingMs": {
+        "preprocess": 1955.8,
+        "ocr": 3609.8,
+        "haiku": 3609.8,
+        "router": 0.2,
+        "db": 7.9
+      }
+    },
+    {
+      "index": 17,
+      "durationMs": 5488,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 94,
+      "serverTimingMs": {
+        "preprocess": 1799,
+        "ocr": 3528.2,
+        "haiku": 3528.2,
+        "router": 4.2,
+        "db": 7.6
+      }
+    },
+    {
+      "index": 18,
+      "durationMs": 5814,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 95,
+      "serverTimingMs": {
+        "preprocess": 1921.9,
+        "ocr": 3730.1,
+        "haiku": 3730.1,
+        "router": 0.2,
+        "db": 7.6
+      }
+    },
+    {
+      "index": 19,
+      "durationMs": 5663,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 96,
+      "serverTimingMs": {
+        "preprocess": 1979,
+        "ocr": 3513.5,
+        "haiku": 3513.5,
+        "router": 0.1,
+        "db": 7.9
+      }
+    },
+    {
+      "index": 20,
+      "durationMs": 5641,
+      "ok": true,
+      "httpStatus": 200,
+      "labelVerdict": "PASS",
+      "headlineReason": null,
+      "applicationId": 97,
+      "serverTimingMs": {
+        "preprocess": 1837.4,
+        "ocr": 3667.8,
+        "haiku": 3667.8,
+        "router": 0.1,
+        "db": 8.4
+      }
+    }
+  ]
+}

@@ -261,12 +261,23 @@ proven it at that scale yet.
 read to the front of every request — the same mistake `audit/requirements/gaps.md`'s TH-R2
 entry exists to name, and this document avoids repeating it. `scripts/latency/measure.ts`'s
 `--url` mode could not even authenticate against the gate at first; TRO-568 added the
-`x-access-code` header it needed. With that fix merged, 20 real HTTP verify round-trips against
-the live deployed instance, past the access-code gate, measured **p50 3618 ms, p95 4197 ms**
-(mean 3738 ms, 20 of 20 PASS). That is inside the brief's ~5-second bar, and it is the
-authorized path — a rejected, unauthenticated request returns before any pipeline stage runs
-and would report no timings at all, so this number describes what a real evaluator's request
-actually experiences, not raw cascade latency with the gate subtracted out.
+`x-access-code` header it needed. With that fix merged, the same 20-round-trip measurement
+read **p50 3618 ms** — and went stale the same way, as later merges changed the measured
+path again. The re-measurement at the first submission pin (`159ff96`) read **p50 5616 ms**
+— outside the bar — and the stage table said why: preprocessing grew from p50 129 ms to
+1881 ms when TRO-540's deskew angle sweep started running serially on every upload. An
+isolated-worktree A/B/C experiment against the golden set located and sized the fix
+(TRO-586): a 2° sweep step and a 350 px analysis image halve the sweep's cost, read the one
+tilted golden image at −14° versus stock −15°, and left every live golden verdict unchanged.
+Removing deskew outright was tested too, and rejected: case-19 failed 3 of 3 live runs
+without it. A same-day 38-case live eval under the new constants confirmed both banded
+accuracy rates inside the committed band. The figure that stands was measured at the
+submission commit (`7c4e3fa`), against the live deployed instance, past the access-code
+gate, on 2026-08-13: **p50 4686 ms, p95 4992 ms** (mean 4702 ms, 20 of 20 runs succeeded,
+all PASS verdicts). That is inside the brief's ~5-second bar. The measurement is the
+authorized path — a rejected, unauthenticated request returns before any pipeline stage
+runs and would report no timings at all — so this number describes what a real evaluator's
+request actually experiences, not raw cascade latency with the gate subtracted out.
 
 ## Measured results
 
@@ -297,10 +308,13 @@ resolution the router escalates a minority of labels to costs roughly $0.02 more
 labels only. A three-repeat, 38-case live evaluation run cost $1.2518 total, measured
 2026-08-14.
 
-**Latency.** p50 3618 ms, p95 4197 ms, mean 3738 ms — 20 real HTTP verify round-trips against
-the live deployed instance, past the access-code gate, 20 of 20 PASS. Inside the brief's
-~5-second bar. See "Trade-offs and limitations" above for why this figure, not the prior one,
-is the one quoted here.
+**Latency.** p50 4686 ms, p95 4992 ms, mean 4702 ms — 20 real HTTP verify round-trips
+against the live deployed instance at the submission commit (`7c4e3fa`), past the
+access-code gate, 20 of 20 PASS, measured 2026-08-13. Inside the brief's ~5-second bar. An
+earlier same-day measurement read p50 5616 ms; the stage table traced the miss to TRO-540's
+deskew sweep, and TRO-586's A/B-validated constants cut brought the figure back under the
+bar without moving a single golden verdict. See "Trade-offs and limitations" above for this
+figure's full history.
 
 ## What makes this more than the literal ask
 

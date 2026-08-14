@@ -177,7 +177,7 @@ export function BatchUploadForm({ submitPreview = submitBatchPreview, submitStar
     const images = Array.from(imagesInputRef.current?.files ?? []);
     const zip = zipInputRef.current?.files?.[0];
     if (images.length === 0 && (!zip || zip.size === 0)) {
-      setFormError("Add label images before you preview. Choose files one at a time, or upload one zip file.");
+      setFormError("Add label images before you preview. Choose individual files, or upload one zip file.");
       return null;
     }
     setFormError(null);

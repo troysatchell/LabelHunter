@@ -2,7 +2,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { BatchClientError, type BatchClientErrorKind } from "../_lib/batch-client";
+import { BatchClientError } from "../_lib/batch-client";
 import { BatchUploadForm } from "./BatchUploadForm";
 import type { BatchPreviewSuccessResponse } from "../api/batch/preview/types";
 import type { BatchStartSuccessResponse } from "../api/batch/start/types";
@@ -219,11 +219,7 @@ describe("BatchUploadForm", () => {
     // reached the start-error panel.
     const submitPreview = vi.fn(async () => cleanPreview());
     const submitStart = vi.fn(async () => {
-      // "BUDGET_EXHAUSTED" is a real kind the server can send (PRD §8's
-      // key-protection guard) but is not yet part of the narrower
-      // BatchClientErrorKind type union — the same unchecked cast
-      // batch-client.ts's own request handlers already use.
-      throw new BatchClientError("BUDGET_EXHAUSTED" as BatchClientErrorKind, "LabelHunter has used its budget for today. Try again tomorrow.");
+      throw new BatchClientError("BUDGET_EXHAUSTED", "LabelHunter has used its budget for today. Try again tomorrow.");
     });
     render(<BatchUploadForm submitPreview={submitPreview} submitStart={submitStart} onStarted={vi.fn()} />);
 

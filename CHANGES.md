@@ -7,19 +7,19 @@ anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 ## LOCAL-taste1 — a UX polish pass across every screen, audited against design-taste-frontend's applicable rules and TH-R3 (2026-08-13)
 
 **Troy's direction:** apply the `design-taste-frontend` skill's taste "across the entire
-app," keeping the Notion-style look TRO-573/578 already established, and keeping the UI
-clear enough for a 73-year-old first-time user, a 50-year-old, and a 25-year-old alike.
+app." Keep the Notion-style look TRO-573/578 already established. Keep the UI clear enough
+for a 73-year-old first-time user, a 50-year-old, and a 25-year-old alike.
 
 **Scope decision, made explicit before any code changed.** `design-taste-frontend` is
 written for marketing landing pages and portfolios. Its own Section 13 lists dense product
 UI, multi-step forms, and data tables as out of scope — LabelHunter is exactly that. Hero
 sections, bento grids, marquees, and GSAP scroll patterns do not apply here and none of
 that landed. What does transfer to any UI: consistency locks (one accent, one radius
-scale, one token source), button/form contrast checks, content-density discipline for
-lists, full interaction-state coverage, and the AI-tell bans (em-dash, filler verbs). This
-ticket audited all 8 app surfaces against that applicable subset, plus TH-R3, before
-writing any fix — a "redesign-preserve" per the skill's own protocol, not a new visual
-language.
+scale, one token source), button/form contrast checks, and content-density discipline for
+lists. Also transferable: full interaction-state coverage and the AI-tell bans (em-dash,
+filler verbs). This ticket audited all 8 app surfaces against that applicable subset, plus
+TH-R3, before writing any fix. This is a "redesign-preserve" per the skill's own protocol,
+not a new visual language.
 
 **What the audit found already solid, and left untouched:** the token system itself
 (zero hardcoded colors across every surface), the light-only decision, the icon-plus-text

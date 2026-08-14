@@ -170,6 +170,58 @@ describe("VerifyForm — designed error states (TH-R20)", () => {
     expect(submit).not.toHaveBeenCalled();
   });
 
+  // Regression tests: these three fields used to carry the HTML `required`
+  // attribute instead of a check here. A native browser tooltip fires
+  // before `submit` and blocks it outright — on a form with more than one
+  // empty required field, that tooltip preempts whichever field this
+  // component's own designed error panel would otherwise report, so the
+  // one custom message the app invested in (like the photo check above)
+  // never got a chance to render. No native validation exists anymore
+  // (see the file's own comment by the photo input), so a plain
+  // `user.click` on Verify is enough to reach these checks — no
+  // `fireEvent.submit` bypass needed.
+  it("shows a validation error and never calls submit when the brand name is empty", async () => {
+    const submit = vi.fn();
+    render(<VerifyForm submit={submit} extract={inertExtract()} />);
+    const user = userEvent.setup();
+
+    await user.upload(screen.getByLabelText("Label photo"), makeFile());
+    await user.type(screen.getByLabelText("Class/type"), "Straight Bourbon Whiskey");
+    await user.type(screen.getByLabelText("Net contents"), "750");
+    await user.click(screen.getByRole("button", { name: "Verify" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Add a brand name before you verify.");
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("shows a validation error and never calls submit when the class/type is empty", async () => {
+    const submit = vi.fn();
+    render(<VerifyForm submit={submit} extract={inertExtract()} />);
+    const user = userEvent.setup();
+
+    await user.upload(screen.getByLabelText("Label photo"), makeFile());
+    await user.type(screen.getByLabelText("Brand name"), "Old Tom Distillery");
+    await user.type(screen.getByLabelText("Net contents"), "750");
+    await user.click(screen.getByRole("button", { name: "Verify" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Add a class or type before you verify.");
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("shows a validation error and never calls submit when net contents is empty", async () => {
+    const submit = vi.fn();
+    render(<VerifyForm submit={submit} extract={inertExtract()} />);
+    const user = userEvent.setup();
+
+    await user.upload(screen.getByLabelText("Label photo"), makeFile());
+    await user.type(screen.getByLabelText("Brand name"), "Old Tom Distillery");
+    await user.type(screen.getByLabelText("Class/type"), "Straight Bourbon Whiskey");
+    await user.click(screen.getByRole("button", { name: "Verify" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Add net contents before you verify.");
+    expect(submit).not.toHaveBeenCalled();
+  });
+
   it("shows the EXTRACTION error panel on a HaikuExtractionError-classified rejection, and 'Try again' resubmits", async () => {
     const user = userEvent.setup();
     const submit = vi

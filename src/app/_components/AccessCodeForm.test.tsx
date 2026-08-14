@@ -22,6 +22,15 @@ describe("AccessCodeFormView", () => {
     expect(screen.getByRole("button", { name: "Continue" })).toBeInTheDocument();
   });
 
+  it("shows the typed code in plain text, not masked", () => {
+    // ACCESS_CODE is a shared, non-secret string handed out in an
+    // invitation (PRD §8) — masking it only adds typo risk for a
+    // first-time user typing from a printed invite, with no matching
+    // security benefit.
+    render(<AccessCodeFormView onSuccess={() => {}} />);
+    expect(screen.getByLabelText("Access code")).toHaveAttribute("type", "text");
+  });
+
   it("disables Continue until a code is entered", async () => {
     const user = userEvent.setup();
     render(<AccessCodeFormView onSuccess={() => {}} />);

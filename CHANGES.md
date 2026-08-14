@@ -4,6 +4,94 @@ Per-ticket changelog. Every factory PR adds an entry at the top naming its ticke
 what changed, how to run it, how to roll it back. The gate greps for the ticket ID with
 anchored boundaries — `TRO-30` will not match inside `TRO-301`.
 
+## LOCAL-taste1 — a UX polish pass across every screen, audited against design-taste-frontend's applicable rules and TH-R3 (2026-08-13)
+
+**Troy's direction:** apply the `design-taste-frontend` skill's taste "across the entire
+app." Keep the Notion-style look TRO-573/578 already established. Keep the UI clear enough
+for a 73-year-old first-time user, a 50-year-old, and a 25-year-old alike.
+
+**Scope decision, made explicit before any code changed.** `design-taste-frontend` is
+written for marketing landing pages and portfolios. Its own Section 13 lists dense product
+UI, multi-step forms, and data tables as out of scope — LabelHunter is exactly that. Hero
+sections, bento grids, marquees, and GSAP scroll patterns do not apply here and none of
+that landed. What does transfer to any UI: consistency locks (one accent, one radius
+scale, one token source), button/form contrast checks, and content-density discipline for
+lists. Also transferable: full interaction-state coverage and the AI-tell bans (em-dash,
+filler verbs). This ticket audited all 8 app surfaces against that applicable subset, plus
+TH-R3, before writing any fix. This is a "redesign-preserve" per the skill's own protocol,
+not a new visual language.
+
+**What the audit found already solid, and left untouched:** the token system itself
+(zero hardcoded colors across every surface), the light-only decision, the icon-plus-text
+verdict pattern (never color alone), the loading/empty/error state conventions, and
+focus-visible handling.
+
+**Real defects fixed, not just polish:**
+
+- `ReviewItemDetail.tsx`'s per-field verdict colors were silently broken. `VERDICT_ROW_CLASS`
+  pointed at `checklist-row--*`, a class family sharing no selector with `.review-field`'s
+  own later, equal-specificity `border-left` shorthand in `globals.css` — every row on this
+  screen (its own header comment calls it "the differentiator") rendered with a flat neutral
+  border and a plain dark icon regardless of match/mismatch/review. Repointed at the
+  already-defined, already-correct `review-field--*` family.
+- `VerifyForm.tsx` kept native HTML `required` on five controls while the photo field alone
+  used a custom, TH-R3-motivated validation message. A native browser tooltip fires before
+  `submit` and blocks it outright, so on a form with more than one empty field the native
+  tooltip preempted the one custom message the app invested in. Dropped `required`
+  everywhere in this form; one JS validation strategy now covers brand name, class/type, and
+  net contents (beverage type and the units select can never actually be empty — both carry
+  a default).
+- `ReviewQueueBrowser.tsx` showed "Could not refresh the review queue" even when the
+  reviewer had clicked "Load more," not Refresh. The error phase now carries which control
+  failed and the title matches it.
+- `BatchUploadForm.tsx`'s start-error panel showed a generic title regardless of kind, so a
+  `RATE_LIMITED` or `BUDGET_EXHAUSTED` rejection (PRD §8's key-protection guard) lost its
+  specific reason the instant a reviewer pressed "Start batch" instead of "Preview." Now
+  reuses the same `PREVIEW_ERROR_TITLE` lookup the preview-error panel already had.
+
+**Readability and consistency fixes:**
+
+- The batch results table — the app's one real data table, built for 200-300 rows (TH-R4) —
+  carried its per-row verdict text at the smallest size in the type scale and showed only a
+  camera filename, never the brand name, as the row's identity. Raised the table's body text
+  to the standard size (headers stay at the smaller "meta" size) and added the brand name as
+  a visible second line under the filename.
+- A batch that could not start rendered with the exact same neutral banner as an in-progress
+  batch, and the passive `role="status"` every other genuine failure in this app avoids.
+  Added a distinct, `.error-panel`-consistent treatment and switched to `role="alert"`.
+- Approve/Reject gave no in-flight feedback while a decision was submitting — only the
+  shared 65%-opacity disabled style, no label change, no announcement. Both buttons now swap
+  to "Recording…" and add a `role="status"` line, matching the "X-ing…" convention every
+  other submit control in this app already uses.
+- The access-code field — the first screen every user hits — was `type="password"`, even
+  though `ACCESS_CODE` is a shared, non-secret string from an invitation, not a personal
+  password. Unmasked it (`type="text"`, with autocapitalize/autocorrect/spellcheck off so a
+  phone keyboard cannot mangle it).
+- The `⚠` NEEDS_REVIEW icon was a bare codepoint that some platforms render as a full-color
+  emoji, breaking the "one quiet accent color" rule on the one verdict icon most likely to
+  trigger it. Appended the text-presentation variation selector in both files that define it.
+- Added an `error.tsx` boundary for the verify-detail route — the one purely
+  server-rendered read path in the app had a designed 404 but no designed treatment for a
+  thrown exception, which fell through to Next's own default page.
+- Removed the three em-dashes that had reached rendered UI copy (a validation message and
+  two brand/class-type context lines) — code comments were left untouched; the ban is on
+  user-visible text, not internal documentation.
+
+**How to run it.** `pnpm dev`, then walk every screen: `/access-code`, `/`, `/verify/[id]`,
+`/batch`, `/batch/[id]`, `/review-queue`, `/review-queue/[id]`. No new command, no
+migration, no config change.
+
+**Rollback.** Revert the PR. No schema change, no migration.
+
+**Confirmed.** Every fix has a red-first regression test: I verified each one fails for the
+right reason with the fix reverted (`git stash`), then passes restored. The full suite —
+2634 tests across 199 files — passes. `pnpm typecheck` and `pnpm lint` are clean (one
+pre-existing `next/image` warning on `LabelImageFigure.tsx`, from TRO-582, not touched
+here). Checked for conflicts before starting: the two PRs open at the time (TRO-580,
+TRO-510) touch only `src/app/api/verify/route.ts` and `scripts/golden/`, neither overlapping
+this ticket's files.
+
+
 ## TRO-583 — retry the OCR channel once before it degrades to single-channel (2026-08-13)
 
 **The problem.** The OCR channel can fail three ways. Tesseract can time

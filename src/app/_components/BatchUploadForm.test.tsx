@@ -209,4 +209,26 @@ describe("BatchUploadForm", () => {
     // The preview itself, and its Start button, are still on screen.
     expect(screen.getByRole("button", { name: "Start batch (2)" })).toBeInTheDocument();
   });
+
+  it("names the real reason when starting fails on a key-protection rejection (PRD §8), not a generic title", async () => {
+    // Regression test: the start-error title used to be hardcoded
+    // regardless of kind. A reviewer who hit RATE_LIMITED or
+    // BUDGET_EXHAUSTED while starting a batch saw only "Could not start
+    // this batch" — the same specific title the preview-error panel
+    // already shows for these two kinds (see PREVIEW_ERROR_TITLE) never
+    // reached the start-error panel.
+    const submitPreview = vi.fn(async () => cleanPreview());
+    const submitStart = vi.fn(async () => {
+      throw new BatchClientError("BUDGET_EXHAUSTED", "LabelHunter has used its budget for today. Try again tomorrow.");
+    });
+    render(<BatchUploadForm submitPreview={submitPreview} submitStart={submitStart} onStarted={vi.fn()} />);
+
+    await selectManifestAndImages();
+    await userEvent.click(screen.getByRole("button", { name: "Preview batch" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start batch (2)" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("LabelHunter has reached today's limit");
+    expect(alert).toHaveTextContent("LabelHunter has used its budget for today. Try again tomorrow.");
+  });
 });

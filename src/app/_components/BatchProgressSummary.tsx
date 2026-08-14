@@ -66,7 +66,11 @@ export function BatchProgressSummary({ progress }: BatchProgressSummaryProps) {
     <div className="batch-progress-summary">
       <p
         className={`status-banner batch-progress-summary__status batch-progress-summary__status--${status.toLowerCase()}`}
-        role="status"
+        // FAILED is a real failure, the same tier as this app's other
+        // genuine errors (.error-panel) — it gets the assertive live
+        // region those get, not the passive one PENDING/RUNNING/COMPLETED
+        // share.
+        role={status === "FAILED" ? "alert" : "status"}
         data-testid="batch-status-banner"
       >
         {STATUS_TEXT[status]} {processedCount} of {totalCount} {labelWord(totalCount)} processed.

@@ -28,7 +28,16 @@ type Phase =
   | { status: "success"; items: ReviewQueueListItemWire[]; nextCursor: string | null }
   | { status: "loading-more"; items: ReviewQueueListItemWire[]; nextCursor: string }
   | { status: "error"; message: string }
-  | { status: "refresh-error"; items: ReviewQueueListItemWire[]; nextCursor: string | null; message: string };
+  | {
+      status: "refresh-error";
+      items: ReviewQueueListItemWire[];
+      nextCursor: string | null;
+      message: string;
+      /** Which control the reviewer actually pressed — the error title
+       * must name it, not always claim "refresh" (TH-R20: show the real
+       * reason, never a plausible-but-wrong one). */
+      source: "refresh" | "load-more";
+    };
 
 export interface ReviewQueueBrowserProps {
   /** Injected in tests; defaults to the real network call. `after` reads
@@ -73,7 +82,7 @@ export function ReviewQueueBrowser({ fetchItems = defaultFetchItems }: ReviewQue
         // review round 3).
         setPhase((current) =>
           current.status === "refreshing"
-            ? { status: "refresh-error", items: current.items, nextCursor: current.nextCursor, message: messageFor(error) }
+            ? { status: "refresh-error", items: current.items, nextCursor: current.nextCursor, message: messageFor(error), source: "refresh" }
             : { status: "error", message: messageFor(error) },
         );
       },
@@ -132,7 +141,7 @@ export function ReviewQueueBrowser({ fetchItems = defaultFetchItems }: ReviewQue
       (error: unknown) => {
         setPhase((latest) =>
           latest.status === "loading-more" && latest.nextCursor === cursor
-            ? { status: "refresh-error", items: latest.items, nextCursor: cursor, message: messageFor(error) }
+            ? { status: "refresh-error", items: latest.items, nextCursor: cursor, message: messageFor(error), source: "load-more" }
             : latest,
         );
       },
@@ -170,7 +179,9 @@ export function ReviewQueueBrowser({ fetchItems = defaultFetchItems }: ReviewQue
       </button>
       {phase.status === "refresh-error" && (
         <div className="error-panel" role="alert">
-          <p className="error-panel__title">Could not refresh the review queue</p>
+          <p className="error-panel__title">
+            {phase.source === "load-more" ? "Could not load more items" : "Could not refresh the review queue"}
+          </p>
           <p className="error-panel__message">{phase.message}</p>
         </div>
       )}

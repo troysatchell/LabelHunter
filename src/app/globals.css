@@ -1003,6 +1003,16 @@ fieldset.field legend {
   margin-bottom: 1.5rem;
 }
 
+/* A batch that could not start ("Could not start. 0 of 0 labels
+   processed.") is a real failure, the same tier as .error-panel and
+   .batch-notice--partial-failure — it must not share the same neutral
+   banner as PENDING/RUNNING/COMPLETED. Same Notion-callout convention:
+   thin neutral border plus a colored left-edge accent. */
+.batch-progress-summary__status--failed {
+  border-left: 4px solid var(--color-mismatch);
+  background: var(--color-mismatch-bg);
+}
+
 .batch-stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
@@ -1055,7 +1065,12 @@ fieldset.field legend {
 .batch-results-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--font-meta);
+  /* --font-text, not --font-meta: this table carries the per-row verdict
+     text a reviewer must read and act on ("Does not match the
+     application.", failure reasons), not hints or metadata. --font-meta
+     stays reserved for the column headers (thead th, below) and the
+     detail sub-line, which really are secondary. */
+  font-size: var(--font-text);
 }
 
 .batch-results-table th,
@@ -1076,7 +1091,6 @@ fieldset.field legend {
 
 .batch-results-table__label {
   font-weight: 600;
-  white-space: nowrap;
 }
 
 .batch-results-table__row--fail .batch-results-table__status,

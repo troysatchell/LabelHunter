@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
-import { fileAtRef, introducedFindings, preExistingFindings } from "./baseline";
+import { fileAtRef, introducedFindings, isMissingPathFailure, preExistingFindings } from "./baseline";
 import type { Finding } from "./types";
 
 function finding(identity: string): Finding {
@@ -69,5 +69,34 @@ describe("fileAtRef", () => {
 
   it("returns null for a path that does not exist at the ref", () => {
     expect(fileAtRef(repoRoot, "HEAD", "no/such/file.ts")).toBeNull();
+  });
+
+  it("throws when the ref itself does not resolve to a commit, instead of reading it as no baseline", () => {
+    // A bad BASE_REF (typo, deleted branch, force-pushed-away sha) must
+    // surface loudly. Silently returning null here would read exactly like
+    // "this file is new on the branch" for every file in the diff.
+    expect(() => fileAtRef(repoRoot, "not-a-real-ref-tro-554", "package.json")).toThrow(
+      /not-a-real-ref-tro-554/,
+    );
+  });
+});
+
+describe("isMissingPathFailure", () => {
+  it("recognizes git's does-not-exist-at-ref message as a missing path", () => {
+    expect(isMissingPathFailure("fatal: path 'no/such/file.ts' does not exist in 'HEAD'")).toBe(
+      true,
+    );
+  });
+
+  it("recognizes the exists-on-disk-but-not-in-ref variant", () => {
+    expect(
+      isMissingPathFailure("fatal: path 'package.json' exists on disk, but not in '0000000'"),
+    ).toBe(true);
+  });
+
+  it("does not classify an unrelated git failure as a missing path", () => {
+    // A corrupt object, a permissions error, a bad tree — none of these
+    // mean "the branch added this file." They must not read as one.
+    expect(isMissingPathFailure("fatal: unable to read tree object deadbeef")).toBe(false);
   });
 });

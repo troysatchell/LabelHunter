@@ -20,6 +20,8 @@ import {
   getTodaySpendUsd,
   isBudgetExhausted,
   recordSpendUsd,
+  reserveDailyBudget,
+  settleBudgetReservation,
   todayUtcDateString,
 } from "./daily-budget";
 
@@ -190,5 +192,162 @@ describe("BUDGET_EXHAUSTED_MESSAGE — a friendly, specific message, not a raw e
   it("is plain English, not a status code or an exception name", () => {
     expect(BUDGET_EXHAUSTED_MESSAGE).not.toMatch(/error|exception|\d{3}/i);
     expect(BUDGET_EXHAUSTED_MESSAGE.length).toBeGreaterThan(10);
+  });
+});
+
+// TRO-566 finding 2 — the check-then-act race. `checkDailyBudget` reads
+// today's total, the caller makes its model call, `recordSpendUsd` writes
+// the real cost afterward. Concurrent callers all read the SAME total
+// before any of them writes, so they can all pass the check and
+// collectively overshoot — proven directly below, against a real database,
+// before `reserveDailyBudget` ever fixes it.
+describe("the check-then-act race reserveDailyBudget closes — DB-backed, real worktree Postgres", () => {
+  const RACE_DAY = "2099-08-15";
+  const RACE_NOW = new Date(`${RACE_DAY}T00:00:00Z`);
+
+  afterEach(async () => {
+    await db.delete(dailySpend).where(eq(dailySpend.spendDate, RACE_DAY));
+    delete process.env.DAILY_BUDGET_USD;
+  });
+
+  it("checkDailyBudget + recordSpendUsd, called concurrently, overshoots the budget", async () => {
+    // Demonstrates the BUG this ticket fixes, using only the pre-existing
+    // check-then-act primitives (both unchanged by this ticket) — not a
+    // new regression test for new code, but evidence the race described in
+    // finding 2 is real, not hypothetical. 10 concurrent callers, each
+    // spending $0.02 against a $0.05 budget: a correct gate lets at most 2
+    // through (2 * 0.02 = 0.04 <= 0.05, a 3rd would reach 0.06). The
+    // check-then-act pair has no way to stop that — every caller's
+    // `checkDailyBudget` runs against the SAME pre-call total.
+    process.env.DAILY_BUDGET_USD = "0.05";
+    const perCallUsd = 0.02;
+    const callers = Array.from({ length: 10 }, async () => {
+      const status = await checkDailyBudget(db, RACE_NOW);
+      if (status.exhausted) return;
+      await recordSpendUsd(perCallUsd, db, RACE_NOW);
+    });
+    await Promise.all(callers);
+
+    const finalSpend = await getTodaySpendUsd(db, RACE_NOW);
+    // The bug: real network round-trips interleave non-deterministically,
+    // so this does not reliably let ALL 10 callers slip through every run
+    // — but the check-then-act pair has NOTHING stopping at least a few
+    // concurrent callers from reading "not exhausted" off the same
+    // pre-write total and overshooting the $0.05 budget together. A
+    // correct gate (proven by `reserveDailyBudget` below, same inputs)
+    // never exceeds it.
+    expect(finalSpend).toBeGreaterThan(0.05);
+    expect(finalSpend).toBeLessThanOrEqual(0.2);
+  });
+
+  it("reserveDailyBudget, called concurrently for the SAME race, never lets total spend exceed the budget", async () => {
+    process.env.DAILY_BUDGET_USD = "0.05";
+    const perCallUsd = 0.02;
+    const results = await Promise.all(Array.from({ length: 10 }, () => reserveDailyBudget(perCallUsd, db, RACE_NOW)));
+
+    const reservedCount = results.filter((r) => r.reserved).length;
+    // ceil(0.05 / 0.02) - 1 = 2: exactly 2 reservations fit under the cap
+    // (0.04 <= 0.05); a 3rd would land at 0.06, over budget.
+    expect(reservedCount).toBe(2);
+
+    const finalSpend = await getTodaySpendUsd(db, RACE_NOW);
+    expect(finalSpend).toBeCloseTo(0.04, 6);
+    expect(finalSpend).toBeLessThanOrEqual(0.05);
+  });
+});
+
+describe("reserveDailyBudget — DB-backed, real worktree Postgres", () => {
+  const DAY = "2099-08-16";
+  const NOW = new Date(`${DAY}T00:00:00Z`);
+
+  afterEach(async () => {
+    await db.delete(dailySpend).where(eq(dailySpend.spendDate, DAY));
+    delete process.env.DAILY_BUDGET_USD;
+  });
+
+  it("reserves immediately (before any model call) and reports the post-reservation total", async () => {
+    process.env.DAILY_BUDGET_USD = "5";
+    const result = await reserveDailyBudget(0.01, db, NOW);
+    expect(result).toEqual({ reserved: true, reservedUsd: 0.01, spentUsd: 0.01, budgetUsd: 5 });
+    expect(await getTodaySpendUsd(db, NOW)).toBeCloseTo(0.01, 6);
+  });
+
+  it("creates today's row from nothing — no prior spend, no prior row", async () => {
+    process.env.DAILY_BUDGET_USD = "5";
+    expect(await getTodaySpendUsd(db, NOW)).toBe(0);
+    await reserveDailyBudget(0.01, db, NOW);
+    expect(await getTodaySpendUsd(db, NOW)).toBeCloseTo(0.01, 6);
+  });
+
+  it("refuses and writes nothing when the reservation would reach or exceed the budget", async () => {
+    process.env.DAILY_BUDGET_USD = "0.01";
+    await recordSpendUsd(0.01, db, NOW); // already at budget
+    const result = await reserveDailyBudget(0.005, db, NOW);
+    expect(result).toEqual({ reserved: false, reservedUsd: 0, spentUsd: 0.01, budgetUsd: 0.01 });
+    expect(await getTodaySpendUsd(db, NOW)).toBeCloseTo(0.01, 6); // unchanged
+  });
+
+  it("refuses a reservation that would land EXACTLY on the budget — matches isBudgetExhausted's >=, not >", async () => {
+    process.env.DAILY_BUDGET_USD = "0.05";
+    const result = await reserveDailyBudget(0.05, db, NOW); // 0 + 0.05 == budget
+    expect(result.reserved).toBe(false);
+    expect(await getTodaySpendUsd(db, NOW)).toBe(0);
+  });
+
+  it("allows a reservation that lands strictly under the budget", async () => {
+    process.env.DAILY_BUDGET_USD = "0.05";
+    const result = await reserveDailyBudget(0.0499, db, NOW);
+    expect(result.reserved).toBe(true);
+  });
+
+  it("rejects a negative estimate rather than silently reserving it", async () => {
+    await expect(reserveDailyBudget(-0.01, db, NOW)).rejects.toThrow(RangeError);
+  });
+});
+
+describe("settleBudgetReservation — DB-backed, real worktree Postgres", () => {
+  const DAY = "2099-08-17";
+  const NOW = new Date(`${DAY}T00:00:00Z`);
+
+  afterEach(async () => {
+    await db.delete(dailySpend).where(eq(dailySpend.spendDate, DAY));
+  });
+
+  it("corrects a reservation DOWN to the real, smaller cost", async () => {
+    const reservation = await reserveDailyBudget(0.01, db, NOW);
+    expect(reservation.reserved).toBe(true);
+    await settleBudgetReservation(0.01, 0.00035, db, NOW);
+    expect(await getTodaySpendUsd(db, NOW)).toBeCloseTo(0.00035, 6);
+  });
+
+  it("refunds the FULL reservation when the real cost is zero — no model call actually happened", async () => {
+    // The resolve-worker shape (TRO-566 finding 1): a caller that loses
+    // `resolveEscalatedLabel`'s own internal reservation race reuses
+    // another caller's result instead of calling Sonnet itself. Real cost:
+    // $0. The dollar reservation this caller took must come all the way
+    // back out.
+    await reserveDailyBudget(0.04, db, NOW);
+    await settleBudgetReservation(0.04, 0, db, NOW);
+    expect(await getTodaySpendUsd(db, NOW)).toBe(0);
+  });
+
+  it("corrects a reservation UP when the real cost exceeds the estimate", async () => {
+    await reserveDailyBudget(0.01, db, NOW);
+    await settleBudgetReservation(0.01, 0.015, db, NOW);
+    expect(await getTodaySpendUsd(db, NOW)).toBeCloseTo(0.015, 6);
+  });
+
+  it("never leaves the ledger negative even if settled against a smaller existing total than the reservation implies", async () => {
+    // Defensive (standing rule 13): this should not happen in normal
+    // operation (a settle always follows its own matching reserve), but a
+    // caller bug must not corrupt the ledger into a negative number a
+    // human reads on a dashboard.
+    await settleBudgetReservation(0.5, 0, db, NOW); // no prior reservation at all
+    expect(await getTodaySpendUsd(db, NOW)).toBe(0);
+  });
+
+  it("rejects a negative reservedUsd or realUsd rather than silently applying it", async () => {
+    await expect(settleBudgetReservation(-0.01, 0, db, NOW)).rejects.toThrow(RangeError);
+    await expect(settleBudgetReservation(0.01, -0.01, db, NOW)).rejects.toThrow(RangeError);
   });
 });

@@ -21,7 +21,7 @@ import { readFileSync } from "node:fs";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { loadGoldenSetManifest } from "../../lib/golden-set/loader";
-import { cropForOcr, detectWarningRegion } from "./region-detect";
+import { cropForOcr, detectWarningRegion, detectWarningRegionByBandSearch, detectWarningRegionClassical } from "./region-detect";
 import { runWarningOcr } from "./ocr";
 import {
   BOLD_RATIO_THRESHOLD,
@@ -559,13 +559,30 @@ describe("measureBoldSignal — golden-set corpus, degraded cases: each case's O
   );
 
   it(
-    "case-22-low-light-warning-block (TRO-546's own darkened case): still bold — contrast normalization (rule 4) is exactly what recovers this one",
+    "case-22-low-light-warning-block (TRO-563: strengthened past TRO-546's own recovery point): detectWarningRegion finds NO region at all — the case-19/20 pattern, not a bold measurement",
     async () => {
+      // TRO-546's fix recovered the ORIGINAL case-22 pixels (brightnessFactor
+      // 0.3 alone) well enough that contrast normalization (rule 4) still
+      // measured bold here. TRO-563 (2026-08-13, Troy-ruled) strengthened
+      // this case's own pixels further — contrastFactor 0.38, noiseAmplitude
+      // 30, plus a blur — specifically because that easy recovery let both
+      // OCR channels read the warning perfectly and scored this case PASS
+      // against its own REVIEW/LOW_IMAGE_QUALITY expectation
+      // (golden-set/manifest.json's own notes for this case). At the
+      // strengthened degradation, `detectWarningRegion` no longer finds a
+      // block at all (measured: scripts/eval/results/tro-563-case22-ocr-region-check.json)
+      // — the same "no region, not this ticket's function" outcome case-19
+      // and case-20 already document above, not a regression in this
+      // ticket's own bold-detect logic.
+      const image = readFileSync("golden-set/images/case-22-low-light-warning-block.jpg");
       const crop = await detectAndCrop("golden-set/images/case-22-low-light-warning-block.jpg");
-      expect(crop).not.toBeNull();
-      if (!crop) return;
-      const result = await measureBoldSignal(crop);
-      expect(result.signal).toBe("bold");
+      expect(crop).toBeNull();
+      // Named separately, not just implied by `crop === null` above:
+      // `detectWarningRegion` only returns null when BOTH its own methods
+      // do, so this states plainly which real detector failed on this
+      // image, matching region-detect.test.ts's own TRO-563 case-22 test.
+      expect(await detectWarningRegionClassical(image)).toBeNull();
+      expect(await detectWarningRegionByBandSearch(image, async (c) => runWarningOcr(c))).toBeNull();
     },
     15_000,
   );

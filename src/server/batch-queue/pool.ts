@@ -30,6 +30,14 @@ export interface MinimalClaimOutcome {
   kind: string;
   /** Present (and meaningful) only when `kind === "retry"`. */
   isRateLimit?: boolean;
+  /** Present (and meaningful) only when `kind === "retry"` (TRO-566). A
+   * daily-budget refusal is a POOL-WIDE condition — every worker in this
+   * pool reads the SAME ledger — so it engages the SAME whole-pool
+   * cooldown a rate limit does, via this distinct flag. Never conflated
+   * with `isRateLimit`, which stays specifically "a real 429 happened"
+   * (`../budget/daily-budget.ts`'s `BudgetExhaustedError`,
+   * `backoff.ts`'s `classifyModelCallError`). */
+  isBudgetExhausted?: boolean;
   delayMs?: number;
 }
 
@@ -162,7 +170,11 @@ export function startWorkerPool(config: WorkerPoolConfig): WorkerPoolHandle {
         // climbing 1, 2, 3, ... A "retry"/"failed" outcome is a NORMAL
         // per-item result, not a loop-level error — it still resets this.
         consecutiveErrors = 0;
-        if (outcome.kind === "retry" && outcome.isRateLimit) {
+        // TRO-566: a budget-exhausted refusal pauses the whole pool the
+        // same way a rate limit does — see MinimalClaimOutcome's own
+        // comment on isBudgetExhausted for why the two flags stay distinct
+        // rather than one covering both.
+        if (outcome.kind === "retry" && (outcome.isRateLimit || outcome.isBudgetExhausted)) {
           noteRateLimited(cooldown, outcome.delayMs ?? DEFAULT_POOL_COOLDOWN_MS, Date.now());
         }
       } catch (error) {

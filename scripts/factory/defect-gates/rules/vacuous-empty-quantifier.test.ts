@@ -233,4 +233,57 @@ describe("vacuous-empty-quantifier", () => {
     `);
     expect(findings).toEqual([]);
   });
+
+  it("does not treat a preceding guard on a different receiver as proof", () => {
+    // "xs" is a trailing substring of "wxs" — a plain string .includes
+    // check on the guard text would misread "if (wxs.length === 0) return;"
+    // as a guard on xs. It proves nothing about xs.
+    const findings = check(`
+      function gate(xs: X[], wxs: X[]) {
+        if (wxs.length === 0) return;
+        return xs.every(p);
+      }
+    `);
+    expect(findings).toHaveLength(1);
+  });
+
+  it("does not treat a nested function's own shadowed variable as the outer variable reaching a sink", () => {
+    // The outer `ok` is never read again in gate's own scope — a dead
+    // variable decides nothing. helper()'s own `ok` is a different,
+    // shadowed declaration; its own `return ok;` belongs to helper's
+    // decision, not gate's. A scope-blind search over the whole function
+    // body (matching by identifier text alone) would wrongly count that
+    // inner read as the outer variable reaching a sink.
+    const findings = check(`
+      function gate(xs: X[]) {
+        const ok = xs.every(p);
+        const helper = () => {
+          const ok = true;
+          return ok;
+        };
+        return helper();
+      }
+    `);
+    expect(findings).toEqual([]);
+  });
+
+  it("uses vacuous-truth wording for .every()", () => {
+    const findings = check(`
+      function gate(xs: X[]) { return xs.every(p); }
+    `);
+    expect(findings[0].message).toContain("vacuously true");
+  });
+
+  it("uses throw wording, not vacuous-truth wording, for an unseeded .reduce()", () => {
+    // .reduce() without a seed does not return a vacuously-true value on an
+    // empty collection — it throws a TypeError. The finding message must
+    // name the real failure mode, not borrow .every()'s wording.
+    const findings = check(`
+      function total(xs: X[]) {
+        return xs.reduce((n, x) => n + x);
+      }
+    `);
+    expect(findings[0].message).toContain("throws");
+    expect(findings[0].message).not.toContain("vacuously true");
+  });
 });

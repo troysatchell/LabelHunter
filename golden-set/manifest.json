@@ -1329,9 +1329,13 @@
           }
         }
       },
-      "notes": "governmentWarningText records the true printed content (ground truth); the photo defect, not the print, is why it can't be read confidently.",
+      "notes": "governmentWarningText records the true printed content (ground truth); the photo defect, not the print, is why it can't be read confidently. TRO-563 (2026-08-13, Troy-ruled corpus decision, C3 precedent from TRO-516/case-21): the original transform (brightnessFactor 0.3 alone) darkened the warning block without degrading its glyph edges, so TRO-546's region-detection fix let both Tesseract (confidence 95, EXACT_MATCH) and live Haiku (confidence 0.98, exact) read it perfectly, scoring PASS against this case's REVIEW/LOW_IMAGE_QUALITY expectation. Strengthened per case-21's C3 recipe (dynamic-range compression toward mid-gray plus deterministic sensor noise, scripts/golden/degrade.ts applyLowLight, plus a small blur) as a starting reference; measured (read-only, no API call) that C3's own exact values (brightnessFactor 0.6/contrastFactor 0.45/noiseAmplitude 22/blur 1.6) left Tesseract still reading a NEAR_MISS at confidence 94 -- above OCR_CONFIDENCE_FLOOR, so still dual-channel and not this case's target reviewReason. Strengthened further, with a safety margin past the measured threshold, to brightnessFactor 0.5/contrastFactor 0.38/noiseAmplitude 30/blur 2.0: at these values src/server/warning/region-detect.ts's detectWarningRegion (classical AND band-search) both return null on the committed image, so the OCR channel is genuinely unavailable and CP-2 §4.5's single-channel table decides this case, not a fragile below-floor-but-detected reading. expected block is untouched -- this is a pixel fix, not a corpus-expectation edit (evidence and the honest live-check result in CHANGES.md).",
       "degradations": [
-        { "type": "low-light", "params": { "region": "warning", "brightnessFactor": 0.3 } }
+        {
+          "type": "low-light",
+          "params": { "region": "warning", "brightnessFactor": 0.5, "contrastFactor": 0.38, "noiseAmplitude": 30 }
+        },
+        { "type": "blur", "params": { "sigma": 2.0 } }
       ],
       "vectors": [],
       "provenance": "rendered+degraded",

@@ -86,11 +86,20 @@ compliance review. "The model thought it looked right" is not.
 
 Word-for-word text and the all-caps prefix are both verified, including against real
 photographs. The statute's third requirement — the "GOVERNMENT WARNING:" prefix printed in
-bold — is captured but not yet enforced. The extractor reads a bold signal
-(`true`/`false`/`uncertain`) for every label, and the value is validated into the response, but
-no code in the router or the warning comparator reads it. A correctly capitalized, correctly
-worded, but non-bold prefix passes today. Tracked as
-[TRO-569](https://linear.app/troysatchell/issue/TRO-569), filed Urgent.
+bold — gets an advisory check, not a hard one. LabelHunter measures it directly from the
+image's pixels: a stroke-width comparison between the prefix and the body of the warning
+(`measureBoldSignal`, LH-025/LH-026). It reports a three-valued signal — bold, not bold, or
+uncertain — on every verification, shown in the Detail view and scored against real ground
+truth (see "Measured results" below). That signal never changes a verdict; a correctly
+capitalized, correctly worded, non-bold prefix still passes. See "Trade-offs and limitations"
+below for why this stays advisory rather than a hard check, and for the one bold rule this
+signal does not cover.
+
+A separate, older field is a different story and a real, narrower gap: the extractor's own
+self-reported `formatting.bold` (`true`/`false`/`uncertain`, asked for in the Haiku prompt) is
+validated into the response but read by nothing — no router, no comparator, no UI. It is not
+the signal described above; `measureBoldSignal` never reads it. Tracked as
+[TRO-569](https://linear.app/troysatchell/issue/TRO-569).
 
 ### Imperfect images
 
@@ -166,17 +175,29 @@ and all are covered by tests. Bold detection on the warning prefix, described ne
 clearest example: a feature deliberately left as a lower-confidence signal, not pushed to full
 reliability at the cost of the core path.
 
-**Bold detection is captured but not yet enforced — a real gap, not a soft one.** The statute
-requires the "GOVERNMENT WARNING:" prefix to print in bold as well as all caps. All-caps is
-checked exactly. Bold is not checked at all today: the extractor reads a signal (`true`,
-`false`, or `uncertain`) for every label, but no router or comparator code acts on it, so a
-correctly worded, correctly capitalized, non-bold prefix passes. This is more than a
-low-confidence-signal design choice — see "The government warning gets a stricter check" above
-and [TRO-569](https://linear.app/troysatchell/issue/TRO-569) for the specifics. Reliable bold
-detection from a photograph would still need either a specialized vision model or careful
-stroke-width measurement, which this prototype does not yet have at production reliability —
-that part of the original design choice stands. Wiring the captured signal into the router
-does not.
+> **Limitation — bold type on the government warning.** 27 CFR 16.22(a)(2) requires the words
+> "GOVERNMENT WARNING" to print in bold type, and it forbids bold type on the rest of the
+> statement. LabelHunter checks the first rule and reports it as an advisory signal. It does not
+> check the second rule. `measureBoldSignal` measures the prefix's stroke width against the
+> body's, from the image's own pixels — not a vision model's guess. It reports a three-valued
+> signal: bold, not bold, or uncertain. That signal never changes a verdict. Stroke width is a
+> relative measurement. It depends on the typeface, the printed size, the photograph's
+> resolution, and the compression the photograph has already been through. A verdict built on
+> that signal would accuse a compliant label of a violation it cannot prove. LabelHunter does
+> hard-enforce the capitalization rule from the same sentence of the regulation, because
+> capitalization survives a photograph and stroke width does not.
+
+`docs/checkpoints/cp2-warning-subsystem.md` §7.2 names the technique
+(`src/server/warning/bold-detect.ts`) and the measured accuracy behind this paragraph:
+`scripts/eval/results/bold-signal-sweep.json` (`pnpm eval:bold-signal-sweep`) scored 25 of 30
+scoreable golden-set cases correctly, 83.3%, measured 2026-08-13.
+
+**A separate, narrower gap remains: the extractor's own self-reported `formatting.bold` field is
+still unused.** This is a different field from the one the paragraph above describes — Haiku's
+own guess (`true`/`false`/`uncertain`), asked for in the prompt and validated into the response,
+but read by nothing. `measureBoldSignal` never reads it either; the two are independent
+mechanisms answering the same question two different ways. Tracked as
+[TRO-569](https://linear.app/troysatchell/issue/TRO-569).
 
 **Runtime access control is live, confirmed against the deployed instance.** The brief's own
 guidance ("just don't do anything crazy... not storing anything sensitive") sets a light bar
@@ -290,8 +311,10 @@ One remaining gap is a measurement task, not a correctness problem: no batch has
 brief's own 200–300 scale yet, though the code already supports it. Two gaps are real,
 unresolved correctness problems, named plainly rather than described as smaller than they are.
 Cascade-verdict accuracy, covered above under "Imperfect images" and "Measured results": six
-degraded-image cases still return a confident wrong verdict. Bold detection on the government
-warning, covered above under "The government warning gets a stricter check": captured by the
-extractor, never enforced by the router ([TRO-569](https://linear.app/troysatchell/issue/TRO-569)).
-See `audit/requirements/gaps.md` for the current, complete list, with the concrete next step
+degraded-image cases still return a confident wrong verdict. Bold type on the government
+warning, covered above under "The government warning gets a stricter check" and "Trade-offs and
+limitations": 16.22(a)(2) states two bold rules, and only the first (the prefix must be bold) is
+measured and shown, advisory only — never enforced as a hard check, by design. The second (the
+remainder must not print bold) is not checked at all. See `audit/requirements/gaps.md` for the
+current, complete list, with the concrete next step
 named for each row.

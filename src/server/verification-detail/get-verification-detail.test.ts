@@ -36,6 +36,11 @@ interface SeedOverrides {
   alcoholContentRaw?: string | null;
   reviewQueue?: { reason: ReviewReason; resolverOutput?: unknown };
   warningVerdict?: "MATCH" | "MISMATCH" | "NEEDS_REVIEW";
+  /** TRO-533 — an untyped `jsonb` value, matching the column's own real
+   * shape: this test writes whatever a caller passes, so a malformed-shape
+   * test can prove `getVerificationDetail`'s boundary check degrades to
+   * `null` rather than trusting the column just because it is set. */
+  boldSignal?: unknown;
 }
 
 interface Fixture {
@@ -82,6 +87,7 @@ async function seedVerification(overrides: SeedOverrides = {}): Promise<Fixture>
       labelImageId: labelImage.id,
       verdict: overrides.verdict ?? "PASS",
       resolutionPath: overrides.resolutionPath ?? "EXTRACTOR_ONLY",
+      boldSignal: overrides.boldSignal ?? null,
     })
     .returning();
 
@@ -298,5 +304,72 @@ describe("getVerificationDetail — resolved by Sonnet (PRD §5's annotation)", 
     if (!result.found) throw new Error("expected found");
 
     expect(result.detail.resolverNote).toBeNull();
+  });
+});
+
+describe("getVerificationDetail — bold advisory signal (LH-025/LH-026, TRO-532/TRO-533, TH-R9)", () => {
+  it("reads the persisted signal and reason back — the exact shape measureBoldSignal returns", async () => {
+    const fixture = await seedVerification({
+      boldSignal: {
+        signal: "bold",
+        reason: "the prefix's stroke width measures wider than the body's",
+        ratio: 2.1,
+        splitFraction: 0.49,
+        prefixStrokeWidthPx: 5,
+        bodyStrokeWidthPx: 2.4,
+      },
+    });
+    const result = await getVerificationDetail(db, fixture.verificationId);
+    if (!result.found) throw new Error("expected found");
+
+    expect(result.detail.boldSignal).toEqual({
+      signal: "bold",
+      reason: "the prefix's stroke width measures wider than the body's",
+    });
+  });
+
+  it("returns null when no signal was ever measured for this verification (no warning-region crop existed)", async () => {
+    const fixture = await seedVerification({ boldSignal: null });
+    const result = await getVerificationDetail(db, fixture.verificationId);
+    if (!result.found) throw new Error("expected found");
+
+    expect(result.detail.boldSignal).toBeNull();
+  });
+
+  it("degrades to null for a malformed jsonb shape, rather than trusting an untyped column (standing rule 13)", async () => {
+    const fixture = await seedVerification({ boldSignal: { signal: "not-a-real-signal-value", reason: "whatever" } });
+    const result = await getVerificationDetail(db, fixture.verificationId);
+    if (!result.found) throw new Error("expected found");
+
+    expect(result.detail.boldSignal).toBeNull();
+  });
+
+  it("degrades to null when reason is missing, even with a legal signal value", async () => {
+    const fixture = await seedVerification({ boldSignal: { signal: "uncertain" } });
+    const result = await getVerificationDetail(db, fixture.verificationId);
+    if (!result.found) throw new Error("expected found");
+
+    expect(result.detail.boldSignal).toBeNull();
+  });
+
+  it("never surfaces ratio, splitFraction, or stroke-width pixel numbers — the Detail view shows a reason, not a number (standing rule 12)", async () => {
+    const fixture = await seedVerification({
+      boldSignal: {
+        signal: "not-bold",
+        reason: "the prefix's stroke width does not measure wider than the body's",
+        ratio: 0.9,
+        splitFraction: 0.49,
+        prefixStrokeWidthPx: 2,
+        bodyStrokeWidthPx: 2.2,
+      },
+    });
+    const result = await getVerificationDetail(db, fixture.verificationId);
+    if (!result.found) throw new Error("expected found");
+
+    expect(result.detail.boldSignal).toEqual({
+      signal: "not-bold",
+      reason: "the prefix's stroke width does not measure wider than the body's",
+    });
+    expect(JSON.stringify(result.detail.boldSignal)).not.toContain("ratio");
   });
 });

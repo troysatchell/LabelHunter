@@ -29,6 +29,7 @@ import { makeMockMessage as makeExtractorMockMessage, WELL_FORMED_EXTRACTION_BOD
 import { preprocessImage } from "../preprocessing";
 import { productionComparators } from "../comparators";
 import type { WarningComparatorResult } from "../router";
+import type { CompareGovernmentWarningFromImageResult } from "../warning";
 import { readLabelImage, saveLabelImage } from "../storage/db-image-storage";
 import { buildResolverInputSnapshot } from "../batch-queue/resolver-snapshot";
 import { DEFAULT_BACKOFF_CONFIG } from "../batch-queue/backoff";
@@ -79,8 +80,9 @@ describe("processSingleLabelResolveClaim — end to end, off the real verify rou
     async function makeJpeg(): Promise<Buffer> {
       return sharp({ create: { width: 1200, height: 1600, channels: 3, background: { r: 180, g: 180, b: 180 } } }).jpeg().toBuffer();
     }
-    async function warningNeedsReviewStub(): Promise<WarningComparatorResult> {
-      return { verdict: "NEEDS_REVIEW", reviewReason: "WARNING_MISMATCH" };
+    async function warningNeedsReviewStub(): Promise<CompareGovernmentWarningFromImageResult> {
+      const comparator: WarningComparatorResult = { verdict: "NEEDS_REVIEW", reviewReason: "WARNING_MISMATCH" };
+      return { comparator, boldSignal: null };
     }
     const image = new File([(await makeJpeg()) as unknown as BlobPart], "front-label.jpg", { type: "image/jpeg" });
     const fd = new FormData();

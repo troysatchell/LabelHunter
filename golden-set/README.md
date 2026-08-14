@@ -12,8 +12,9 @@ and what the Validation Router should decide. Later tickets use it two ways:
 ## Images: rendered and degraded (LH-004, TRO-497)
 
 `golden-set/images/` holds a real, committed JPEG for every `rendered` and `rendered+degraded`
-case — 31 of the manifest's 36 cases. Total size: about 1.18 MB. Largest file: 47.6 KB. Every
-one of these 31 images stays well under the ~500 KB per-image target. The other 5 cases are
+case — 33 of the manifest's 38 cases. Total size: about 1.29 MB (`pnpm golden:build`, measured
+2026-08-13). Largest file: 48.9 KB. Every one of these 33 images stays well under the ~500 KB
+per-image target. The other 5 cases are
 `photographed` (TRO-529 / LH-024, below) — real camera photographs committed at their own
 paths under `assets/golden/references/`, not `golden-set/images/`, and not subject to the
 500 KB target (a photograph's size is not this repo's to tune).
@@ -90,7 +91,7 @@ image looks right.
 **Rubric-vector coverage (`audit/rubric.md` Appendix A):** every case is tagged with the
 vectors it provides evidence for (`vectors` field). V1 through V9 each have at least one
 covering case today. **V10** is different: it is a property of the manifest as a whole (batch
-of ≥20), not any single case. The manifest's 36 cases satisfy the ≥20 count, but no case
+of ≥20), not any single case. The manifest's 38 cases satisfy the ≥20 count, but no case
 individually claims V10, and none ever should. `loader.test.ts` asserts both halves of this
 explicitly, so neither can silently drift.
 
@@ -212,7 +213,7 @@ photograph's own name rather than renaming it to match `caseId`. Example: case
 
 ## The 12 required test categories (PRD §6)
 
-36 cases across all 12 categories named in the PRD: clean match, ABV mismatch, title-case
+38 cases across all 12 categories named in the PRD: clean match, ABV mismatch, title-case
 warning, reworded warning, missing warning, case-variant brand, glare, rotation, low light,
 tiny warning text, odd typography, and conflicting application-vs-label data. Two cases carry
 the brief's named examples directly:
@@ -222,7 +223,7 @@ the brief's named examples directly:
 - `case-08-title-case-warning-prefix-only` — Jenny Park's exact catch (TH-R9): `Government
   Warning` in title case on the label instead of `GOVERNMENT WARNING`, must FAIL.
 
-Case counts lean toward the categories most likely to need several variants: clean match (6),
+Case counts lean toward the categories most likely to need several variants: clean match (8),
 abv-mismatch (3), case-variant-brand (3), conflicting-application-vs-label (3), title-case
 warning (3), reworded warning (3), and glare (3). Rotation is the biggest group at 5: TRO-529 /
 LH-024's three curved/warped real photographs (`case-36`, `case-37`, `case-39`) join the two
@@ -231,8 +232,9 @@ has 2. Tiny warning text has 1. TRO-516 C5 merged `case-24-tiny-warning-text-min
 into `case-23-tiny-warning-text-standard-bottle` on 2026-08-13 — both printed the warning at
 the same 9px size, on the same canvas. The freed slot goes to a genuinely different sample
 later. Clean match carries every format-variant vector (V1, V6, V7) that needs a
-fully-matching label to isolate cleanly, plus one of TRO-529's real photographs (`case-35`).
-That is why it is the largest group.
+fully-matching label to isolate cleanly, plus one of TRO-529's real photographs (`case-35`),
+plus TRO-532/TRO-528's two bold-type cases (`case-33`, `case-34` — see below). That is why it
+is the largest group.
 
 **TRO-469 / LH-021 added two cases**, closing two gaps `docs/checkpoints/cp2-warning-subsystem.md`
 §9.2 named at CP-2 (both ship with reasoning and no covering case until this ticket, and both
@@ -249,10 +251,21 @@ on `main` first:
   proposed near-miss band (edit distance 1–2), which no case exercised before — the golden
   set's other reworded-warning cases sit at distance 24 and 38, far outside it.
 
-**TRO-529 / LH-024 added five real-photograph cases**, `case-35` through `case-39`.
-`case-33`/`case-34` stay reserved for LH-023 / TRO-528, a sibling ticket not yet landed. Both
-are blocked by the same LH-022 prerequisite. See "Real-photograph cases" above for the
-provenance mechanics. This is the case-by-case list:
+**TRO-532/TRO-569 and TRO-528 fill the two bold-type cases**, `case-33` and `case-34` —
+the opposite ground truth from every other warning-bearing case, which all carry
+`governmentWarningPrefixBold: true`:
+
+- `case-33-not-bold-warning-prefix` — wording and capitalization are exact, but the prefix
+  does not print bold. `expected.labelVerdict` is `REVIEW` (TRO-569 / INT-005): the router
+  now reads the pixel-measured bold signal at exactly the MATCH -> REVIEW edge, so a
+  compliant-except-for-bold-type label routes to a human instead of passing silently.
+- `case-34-bold-body-warning-violation` — the prefix IS bold (compliant), but the warning
+  BODY also prints bold, which 27 CFR 16.22(a)(2) forbids. `expected.labelVerdict` stays
+  `PASS`: nothing in this pipeline measures body bold, so this case documents that limitation
+  with a real rendered image rather than only a comment — see that case's own `notes`.
+
+**TRO-529 / LH-024 added five real-photograph cases**, `case-35` through `case-39`. See
+"Real-photograph cases" above for the provenance mechanics. This is the case-by-case list:
 
 - `case-35-clean-match-real-photo-flat-scan` — a flat, straight-on scan. The only asset in the
   corpus that measurably shows the statute's required bold prefix (stroke-width ratio 2.2).

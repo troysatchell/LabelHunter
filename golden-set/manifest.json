@@ -1876,7 +1876,7 @@
     },
     {
       "caseId": "case-33-not-bold-warning-prefix",
-      "description": "Warning wording and capitalization are exact, but the GOVERNMENT WARNING prefix does not print bold — 27 CFR 16.22(a)(2)'s other bold rule, not checked by the router (TH-R9's advisory-only signal, TRO-532/TRO-533).",
+      "description": "Warning wording and capitalization are exact, but the GOVERNMENT WARNING prefix does not print bold — 27 CFR 16.22(a)(2)'s bold-prefix rule. The pixel-measured signal routes this to human review instead of a silent PASS (TH-R9, TRO-569/INT-005).",
       "category": "clean-match",
       "beverageType": "wine",
       "imagePath": "golden-set/images/case-33-not-bold-warning-prefix.jpg",
@@ -1903,7 +1903,8 @@
         "governmentWarningBodyBold": false
       },
       "expected": {
-        "labelVerdict": "PASS",
+        "labelVerdict": "REVIEW",
+        "reviewReason": "WARNING_MISMATCH",
         "fields": {
           "brandName": {
             "verdict": "MATCH",
@@ -1922,12 +1923,70 @@
             "reason": "Label states 750 mL, matching the application."
           },
           "governmentWarning": {
-            "verdict": "MATCH",
-            "reason": "Warning text matches the statute word for word; prefix is all-caps. The router does not check bold type — TH-R9's advisory-only signal, never a verdict input."
+            "verdict": "NEEDS_REVIEW",
+            "reason": "'GOVERNMENT WARNING' must print in bold type; the measured prefix is not bold."
           }
         }
       },
-      "notes": "TRO-532 / LH-025: Troy's own instruction (2026-08-13 session) after noticing every one of the 30 warning-bearing cases TRO-527 backfilled carries governmentWarningPrefixBold: true — the golden set had no case at all showing the OTHER value. This is that case: the first real, rendered example of a compliant-except-for-bold-type label, not a synthetic SVG fixture. Reserves the case-33 slot TRO-527's own CHANGES.md entry already named for this purpose (\"LH-023's job (case-33, case-34)\") — a real bold-violation router check is still LH-023's, deliberately not built here; this case exists so `measureBoldSignal`'s `not-bold` branch (TRO-532) has one real, rendered, non-synthetic image to prove itself against, alongside the direct `classifyBoldSignal` unit test. `expected` stays PASS/MATCH throughout: nothing in the router reads either bold field yet (TRO-533's own job, still not done), so a bold-type deviation cannot fail a verdict today no matter how this case's ground truth reads — which is itself a real, corpus-backed demonstration of CP-2 §7.2's \"advisory, never a verdict input\" boundary, not just an assertion in a comment.",
+      "notes": "TRO-532 / LH-025: Troy's own instruction (2026-08-13 session) after noticing every one of the 30 warning-bearing cases TRO-527 backfilled carries governmentWarningPrefixBold: true — the golden set had no case at all showing the OTHER value. This is that case: the first real, rendered example of a compliant-except-for-bold-type label, not a synthetic SVG fixture. Reserves the case-33 slot TRO-527's own CHANGES.md entry already named for this purpose (\"LH-023's job (case-33, case-34)\") — a real bold-violation router check is still LH-023's, deliberately not built here; this case exists so `measureBoldSignal`'s `not-bold` branch (TRO-532) has one real, rendered, non-synthetic image to prove itself against, alongside the direct `classifyBoldSignal` unit test. TRO-569 / INT-005 (2026-08-13) updated `expected` from PASS/MATCH to REVIEW/NEEDS_REVIEW: Jenny Park's requirement says the prefix \"has to be in all caps and bold,\" and a silent PASS on a non-bold prefix widened that requirement into something weaker than the brief. The router (`resolveGovernmentWarningField`, `src/server/router/field-resolution.ts`) now reads the pixel-measured signal at exactly this MATCH -> REVIEW edge — this case is the real, rendered, non-synthetic proof of that rule, alongside `field-resolution.test.ts`'s synthetic unit tests. It is still never a hard FAIL: a not-bold reading routes to human review, it does not accuse.",
+      "vectors": [],
+      "provenance": "rendered",
+      "verified": false
+    },
+    {
+      "caseId": "case-34-bold-body-warning-violation",
+      "description": "GOVERNMENT WARNING prefix prints bold as required, but the warning BODY also prints bold — 27 CFR 16.22(a)(2) forbids that. Nothing in the pipeline measures body bold; this case documents that limitation with a real rendered image, it does not catch a violation.",
+      "category": "clean-match",
+      "beverageType": "beer",
+      "imagePath": "golden-set/images/case-34-bold-body-warning-violation.jpg",
+      "application": {
+        "brandName": "Ridgeline Brewing Co.",
+        "classType": "Session Pilsner",
+        "abvPercent": 5.4,
+        "netContentsValue": 16,
+        "netContentsUnit": "fl oz"
+      },
+      "label": {
+        "brandName": "Ridgeline Brewing Co.",
+        "classType": "Session Pilsner",
+        "abvPresent": true,
+        "abvText": "5.4% Alc./Vol.",
+        "abvPercent": 5.4,
+        "netContentsText": "16 FL OZ",
+        "netContentsValue": 16,
+        "netContentsUnit": "fl oz",
+        "governmentWarningPresent": true,
+        "governmentWarningText": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+        "governmentWarningPrefixAllCaps": true,
+        "governmentWarningPrefixBold": true,
+        "governmentWarningBodyBold": true
+      },
+      "expected": {
+        "labelVerdict": "PASS",
+        "fields": {
+          "brandName": {
+            "verdict": "MATCH",
+            "reason": "Label brand matches the application exactly."
+          },
+          "classType": {
+            "verdict": "MATCH",
+            "reason": "Label class/type matches the application exactly."
+          },
+          "abv": {
+            "verdict": "MATCH",
+            "reason": "Label states 5.4% ABV, matching the application."
+          },
+          "netContents": {
+            "verdict": "MATCH",
+            "reason": "Label states 16 FL OZ, matching the application."
+          },
+          "governmentWarning": {
+            "verdict": "MATCH",
+            "reason": "Warning text matches the statute word for word; prefix is all-caps and bold. The router does not check whether the body prints bold — 27 CFR 16.22(a)(2)'s other bold rule, a documented, unmeasured limitation."
+          }
+        }
+      },
+      "notes": "TRO-528 / LH-023: fills the case-34 slot TRO-527's own CHANGES.md entry named (\"LH-023's job (case-33, case-34)\") and TRO-569 / INT-005 fills case-33's own slot for the opposite ground truth. This case is case-33's mirror image: the prefix IS bold (compliant, matching case-01's ground truth), but the BODY also prints bold, which 27 CFR 16.22(a)(2) forbids. Nothing in this pipeline measures body bold — `measureBoldSignal` (`src/server/warning/bold-detect.ts`) only compares the prefix's stroke width against the body's to decide whether the PREFIX is bold; it has no rule of its own for whether the body should not be bold, and nothing routes `governmentWarningBodyBold` anywhere. This case does not catch a violation. It exists to document, with a real rendered image rather than only a comment, exactly which half of 27 CFR 16.22(a)(2) stays unmeasured — the second row of the table in docs/checkpoints/cp2-warning-subsystem.md §7.2 and the 'It does not check the second rule at all' sentence in docs/approach.md's Limitation paragraph. `expected` stays PASS/MATCH throughout: no code path in this repo reads `governmentWarningBodyBold` at all, so this case's ground truth cannot fail a verdict today no matter how it reads.",
       "vectors": [],
       "provenance": "rendered",
       "verified": false

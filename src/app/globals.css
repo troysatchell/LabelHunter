@@ -1247,3 +1247,97 @@ fieldset.field legend {
 .batch-mark--none {
   color: var(--color-text-muted);
 }
+
+/* ---- Site header ------------------------------------------------------
+   One constant way out of every screen (Troy's direct request,
+   2026-08-13). Before this, each page put its only way back at the very
+   bottom, below a full verification checklist. Existing tokens only — no
+   new color values, so `globals-contrast.test.ts`'s measured pairs still
+   describe the whole palette. */
+
+/* Off-screen until a keyboard reaches it, then the first stop on the
+   page. `transform`, not `display: none`, so it stays focusable. */
+.skip-link {
+  position: absolute;
+  top: var(--space-tight);
+  left: var(--space-tight);
+  z-index: 10;
+  padding: 0.65rem 1.2rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-bg);
+  color: var(--color-primary);
+  font-size: var(--font-body);
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(calc(-100% - var(--space-stack)));
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+.site-header {
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+/* Matches .page's own max-width and side padding, so the wordmark lines
+   up with the page title under it. */
+.site-header__inner {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 0.85rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-tight) var(--space-gutter);
+}
+
+/* Weight 600, not 700: `globals-tokens.test.ts` reserves 700 for the page
+   title and the verdict banner (TRO-578). The wordmark is a constant, and
+   a constant should not compete with the one thing that changes per
+   screen. */
+.site-header__brand {
+  font-size: var(--font-body);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.site-header__brand:hover {
+  color: var(--color-primary);
+}
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-gutter);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site-nav__link {
+  font-size: var(--font-meta);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-decoration: none;
+}
+
+.site-nav__link:hover {
+  color: var(--color-primary);
+}
+
+/* The current screen is marked twice over: darker text for everyone, and
+   `aria-current="page"` for a screen reader. Color alone would carry it
+   for neither a color-blind visitor nor assistive tech. */
+.site-nav__link[aria-current="page"] {
+  color: var(--color-text);
+  text-decoration: underline;
+  text-underline-offset: 0.35rem;
+  text-decoration-thickness: 2px;
+}

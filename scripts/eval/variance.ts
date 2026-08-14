@@ -1,85 +1,53 @@
 /**
- * The verdict-variance runner (LH-038 / TRO-543, TH-R10 stretch, TH-R17,
- * TH-R19). `pnpm eval:variance`.
+ * The verdict-variance runner (TH-R10, TH-R17). `pnpm eval:variance`.
  *
- * WHY THIS SCRIPT EXISTS. This ticket's own `CHANGES.md` entry has the full
- * finding: case-17 (glare-front-label) returned three REVIEW and two PASS
- * verdicts across five committed runs of unchanged code against an
- * unchanged image. `temperature: 0` (`src/server/extractor/request.ts:51`)
- * has never guaranteed identical output (CP-1's own words, `cp1:302`) —
- * this is real call-to-call model variance, not a harness bug. This script
- * measures HOW MUCH variance, mechanically and repeatably, instead of
- * relying on hand archaeology through committed report history every time
- * the question comes up.
+ * **Why it exists.** Case-17 returned three REVIEW and two PASS verdicts
+ * across five committed runs of unchanged code against an unchanged image.
+ * `temperature: 0` has never guaranteed identical output (CP-1). That is
+ * real call-to-call model variance, not a harness bug. This script measures
+ * how much, repeatably, instead of hand archaeology through report history.
  *
- * DOES NOT FIX ANYTHING. No retry, no lower temperature, no
- * self-consistency vote — LH-038's brief is explicit that the deliverable
- * is a measured number and a written statement, never a mitigation.
+ * **It fixes nothing.** No retry, no lower temperature, no self-consistency
+ * vote. The deliverable is a measured number and a written statement.
  *
- * REUSES THE REAL CASCADE, NOT A SECOND PATH. Every (case, repeat) pair
- * runs through `runOneCase` (`cascade-runner.ts`) — the SAME function
- * `check.ts` and `benchmark.ts` already trust (TH-R19: the cascade is the
- * architecture; a harness that measured a different path would not be
- * measuring the thing this ticket's finding is about).
+ * **It reuses the real cascade.** Every (case, repeat) pair runs through
+ * `runOneCase`, the same function `check.ts` and `benchmark.ts` use. A
+ * harness measuring a different path would not measure the finding.
  *
- * TWO MODES, the same shape as `check.ts`:
+ * **Two modes**, the same shape as `check.ts`:
  *
- *   - `pnpm eval:variance` (no flags): cheap mode. Reads back the last
- *     committed `scripts/eval/results/variance-report.json`, if one exists,
- *     and prints its headline numbers. No live call, ever. Prints a clear
- *     message and exits 0 if no report has been committed yet — expected
- *     before the first real sweep (TRO-543 Part 2, gated on Troy's
- *     go-ahead: see this ticket's `CHANGES.md` entry for the cost
- *     estimate).
- *   - `pnpm eval:variance -- --live [--full | --case=<id>] [--repeats=<k>]`:
- *     runs `--repeats`'s K real cascade repeats (default `DEFAULT_REPEATS`,
- *     capped at `MAX_REPEATS` — both `args.ts`) over `resolveCaseIds`'s N
- *     cases (default `DEFAULT_SAMPLE_CASE_IDS`, 8 cases; `--full` runs the
- *     whole manifest; `--case=<id>` runs exactly one) — N x K real, paid
- *     cascade runs. Unlike `check.ts`'s own `--case=<id>` (a debug mode
- *     that never touches the committed report), THIS script's
- *     `--case=<id>` still writes `variance-report.json`: the smallest real
- *     invocation (`--case=<id> --repeats=1`) is this script's own proof
- *     that the artifact writer works, and skipping the write would skip
- *     the one thing that invocation exists to prove.
+ *   - `pnpm eval:variance` — cheap. Reads back the committed
+ *     `results/variance-report.json` and prints its headline numbers. Never
+ *     a live call. Exits 0 with a clear message when no report exists yet.
+ *   - `pnpm eval:variance -- --live [--full | --case=<id>] [--repeats=<k>]`
+ *     — N cases by K repeats of real, paid cascade runs. Unlike `check.ts`,
+ *     this script's `--case=<id>` still writes its report: the smallest real
+ *     invocation is this script's own proof that the artifact writer works.
  *
- * COST DISCIPLINE. N x K real calls, at real per-call Haiku/resolver cost
- * (`usage.ts`). `args.ts`'s `MAX_CASES` and `MAX_REPEATS` cap the two axes
- * SEPARATELY, on purpose (LH-038's brief: cases and repeats are different
- * axes; never raise `MAX_CASES` to fit more repeats).
+ * **Cost discipline.** `MAX_CASES` and `MAX_REPEATS` cap the two axes
+ * separately, on purpose. Never raise the case cap to fit more repeats.
  *
- * THE RE-BASELINE PROTOCOL (TRO-561): `--establish-baseline` extends the
- * `--live --full` sweep above — it does not add a second cascade path.
- * Pass it with `--repeats=3` for a real re-baseline:
+ * **The re-baseline protocol.** `--establish-baseline` extends the same
+ * sweep; it adds no second cascade path:
  *
  *   pnpm eval:variance -- --live --full --repeats=3 --establish-baseline
  *
- * On a CLEAN sweep (zero failures) this does two things, both derived from
- * THIS SAME sweep's own data — no second live call:
+ * On a sweep with zero failures it does two things, both from this sweep's
+ * own data:
  *
- *   1. Archives the current `scripts/eval/baseline.json` under
- *      `scripts/eval/baseline-archive/` (never deletes measured history —
- *      TRO-539's own precedent), then writes a new band baseline: K, each
- *      repeat's own extraction and cascade-verdict accuracy, the resulting
- *      `[min, max]` bands, every case's own observed verdict set, the real
- *      measured cost, and the corpus's own identity — `manifestContentHash`
- *      AND the commit that last touched `golden-set/` (`EvalBaseline`,
- *      `types.ts`).
- *   2. Refreshes `scripts/eval/results/eval-report.json` from this sweep's
- *      own repeat 1 (`buildEvalReportFromRepeat`, `baseline-band.ts`) — the
- *      artifact cheap-mode `pnpm eval:check` (and CI's "Eval harness not
- *      regressed" step) reads on every push, with no live call of its own.
+ *   1. Archives the current `baseline.json`, then writes a new band: K,
+ *      each repeat's accuracy, the resulting `[min, max]` bands, every
+ *      case's observed verdict set, the measured cost, and the corpus's
+ *      identity — its content hash and the commit that last touched
+ *      `golden-set/`.
+ *   2. Refreshes `results/eval-report.json` from repeat 1, the artifact
+ *      cheap mode reads on every push.
  *
- * WHO RUNS THIS, AND WHEN. The baseline bands whatever corpus exists AT THE
- * SWEEP — there is no "final" golden set to wait for. Every future ticket
- * that changes `golden-set/` content (adds cases, edits ground truth,
- * merges or removes a case) runs this protocol as part of ITS OWN work and
- * commits the new band, with its own measured SHA, alongside its change.
- * The `"stale-baseline"` problem class (`baseline-compare.ts`) is the
- * routine detector that enforces this: a corpus edit lands with no
- * re-baseline, `manifestContentHash` stops matching, and `pnpm eval:check`
- * says so by name — a loud warning in cheap mode, a hard failure in live
- * mode (`check.ts`'s own module comment).
+ * **Who runs it.** The band describes whatever corpus exists at the sweep;
+ * there is no final golden set to wait for. Any ticket that changes
+ * `golden-set/` runs this protocol and commits the new band alongside its
+ * change. The `stale-baseline` class enforces it: the content hash stops
+ * matching and `pnpm eval:check` says so by name.
  */
 import { mkdtemp, rm } from "node:fs/promises";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";

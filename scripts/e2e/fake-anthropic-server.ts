@@ -1,57 +1,35 @@
 /**
- * A fake stand-in for the Anthropic Messages API (TRO-479, PRD §6's
- * Playwright suite).
+ * A fake stand-in for the Anthropic Messages API (PRD §6's Playwright
+ * suite).
  *
- * **Why this exists.** The E2E specs drive a real, running Next.js server
- * and a real background worker (`playwright.config.ts`) — but pointing
- * either at the real `api.anthropic.com` on every E2E run would spend real
- * money on every run (CLAUDE.md: "never fabricate a number" and the $25
- * spend-cap discipline, PRD §4) for a nondeterministic model response the
- * suite cannot assert against reliably. `getDefaultExtractorClient()`
- * (`src/server/extractor/index.ts`) and the resolver's equivalent
- * (`src/server/resolver/index.ts`) both build their client with no
- * explicit `baseURL`, so both fall back to `process.env.ANTHROPIC_BASE_URL`
- * — the Anthropic SDK's own documented override (confirmed in
- * `node_modules/@anthropic-ai/sdk/client.js`). `playwright.config.ts`
- * points the app's and the worker's `webServer` processes at this server
- * by default. Everything else in the cascade — preprocessing, the
- * deterministic router, the comparators, the warning subsystem,
- * persistence — still runs for real; only the one outbound network call
- * to Anthropic is faked. `E2E_LIVE=1` skips this file entirely and runs
- * the real cascade against the real API instead (see
- * `playwright.config.ts`'s own comment) — the same "cheap by default, an
- * explicit flag pays for the real thing" shape `scripts/eval/check.ts`
- * already established for `--live`.
+ * **Why.** The E2E specs drive a real Next.js server and a real worker.
+ * Pointing them at the real API would spend money on every run for a
+ * nondeterministic response the suite cannot assert against. Both clients
+ * build with no explicit `baseURL`, so both honor
+ * `ANTHROPIC_BASE_URL`, which `playwright.config.ts` points here.
+ * `E2E_LIVE=1` skips this file and runs against the real API.
  *
- * **Two response shapes, chosen without any shared, racy "current
- * scenario" state** (this server is one process shared by every spec file
- * running in parallel, `fullyParallel: true`):
+ * Everything else runs for real — preprocessing, the router, the
+ * comparators, the warning subsystem, persistence. Only the one outbound
+ * call is faked.
  *
- * - The default: a well-formed extraction (Haiku) or resolution (Sonnet).
- *   The extraction body is `WELL_FORMED_EXTRACTION_BODY`
- *   (`src/server/extractor/test-support.ts`) — the SAME fixture the unit
- *   suite already trusts, itself the real, verified ground truth for
- *   `golden-set/images/case-01-clean-match-spirits.jpg`
- *   (`golden-set/manifest.json`'s own case-01 entry, "the TH-R11 reference
- *   example"). Every spec that needs a working extraction uploads that
- *   real, committed image (TH-R12), so the fake response and the real
- *   photo describe the same label.
- * - A simulated service failure (HTTP 500), for the "API failure/timeout"
- *   designed error state (PRD §5, `docs/error-states.md` state 3/4):
- *   returned only for a Haiku request whose image is smaller than
- *   `FAILURE_TRIGGER_MAX_BYTES`. `scripts/e2e/fixtures.ts`'s
- *   `buildFailureTriggerImage` is a deliberately tiny synthetic image, well
- *   under that threshold; no real golden-set photo resized for Haiku comes
- *   anywhere close (case-01 alone is tens of KB — see that file's test).
- *   This lets ONE spec request a failure by choosing which image it
- *   uploads, with no control endpoint and no interference with any other
- *   spec running at the same time.
+ * **Two response shapes, chosen with no shared scenario state**, because
+ * one process serves every spec file running in parallel:
  *
- * The router is never faked (TH-R19) — this server only replaces the
- * network call the extractor/resolver make. Every E2E spec that reaches a
- * PASS/FAIL/REVIEW verdict does so through the real, deterministic router
- * and comparators, run against whatever this server said, exactly like
- * production runs them against whatever Haiku/Sonnet said.
+ * - The default: a well-formed extraction or resolution. The extraction
+ *   body is the same fixture the unit suite trusts, which is the verified
+ *   ground truth for `case-01-clean-match-spirits.jpg`. Every spec that
+ *   needs a working extraction uploads that real image, so the fake
+ *   response and the real photo describe the same label.
+ * - A 500, for the API-failure error state (`docs/error-states.md` 3/4),
+ *   returned only for a Haiku request whose image is under
+ *   `FAILURE_TRIGGER_MAX_BYTES`. `buildFailureTriggerImage` is far under
+ *   it and no real golden-set photo comes close. So one spec requests a
+ *   failure by choosing its image — no control endpoint, no interference.
+ *
+ * The router is never faked (TH-R19). Every verdict an E2E spec sees comes
+ * from the real router and comparators, run against whatever this server
+ * said, exactly as production runs them against whatever Haiku said.
  */
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { HAIKU_EXTRACTOR_MODEL } from "../../src/server/extractor";

@@ -1,95 +1,49 @@
 /**
- * The eval harness's regression gate (LH-030 / TRO-470, TH-R17, TH-R19,
- * PRD §6). `pnpm eval:check` — gate G8 in the evidence gate.
+ * The eval harness's regression gate (PRD §6, TH-R17). `pnpm eval:check`.
  *
- * TWO MODES, and why the bare command is cheap by default.
+ * **Two modes, and the bare command is the cheap one.**
  *
- * `pnpm eval:check` (no flags) never makes a live API call. It reads the
- * committed evidence — `scripts/eval/results/eval-report.json` (the last
- * real `--live` run) and `scripts/eval/baseline.json` (the committed
- * floor) — and checks whether the report still covers the baseline's
- * cases and still meets its accuracy. This is the mode `gate.sh` and CI
- * both call, unconditionally, on every run. A real, per-case pipeline
- * sweep costs real, per-request API money (CLAUDE.md: this ticket "costs
- * real money"); a gate that fires on every push or every ticket's gate run
- * cannot also be the thing that pays for a live sweep, or the per-commit
- * cost is unbounded. `scripts/golden/verify.ts` and
- * `scripts/golden/renderSmoke.ts` (TRO-499) already established the
- * convention this design follows: CI-safe checks make no live/network
- * call. See `CHANGES.md`'s TRO-470 entry for the full CI-wiring reasoning,
- * including the alternative this design rejected.
+ * `pnpm eval:check` makes no live API call. It reads the committed
+ * `results/eval-report.json` and `baseline.json` and checks that the report
+ * still covers the baseline's cases and still meets its accuracy. CI and
+ * the evidence gate both run this on every push. A real per-case sweep
+ * costs real money; a gate that fires on every push cannot also be the
+ * thing that pays for one.
  *
- * CHEAP MODE ALSO CHECKS FOR MANIFEST DRIFT AGAINST THE LIVE FILE (TRO-556).
- * `compareToBaseline`'s `"stale-baseline"` class compares the committed
- * report's `manifestContentHash` against the committed baseline's — two
- * frozen files checked against each other. That misses the case where a
- * corpus rebuild edited `golden-set/manifest.json` and both frozen files
- * went stale TOGETHER, still agreeing with each other while describing
- * images that no longer exist. `runCheap` hashes the live manifest file
- * (a local file read, not a live API call, so this stays cheap) and warns,
- * loudly and by name, on a mismatch — see `manifest-drift.ts`'s own module
- * comment for why this is a warning, never a gate failure.
+ * Cheap mode also hashes the live `golden-set/manifest.json`. Comparing the
+ * two frozen files to each other misses the case where a corpus rebuild
+ * left both stale together, still agreeing while describing images that no
+ * longer exist. A local file read stays cheap.
  *
- * `pnpm eval:check -- --live` runs the real cascade — real Haiku
- * extraction plus, only for cases the router actually escalates, one real
- * Sonnet resolver call (never forced onto a case the cascade would not
- * route to it) — over a case sample, scores it, writes a fresh
- * `eval-report.json`, and THEN runs the same baseline comparison against
- * the fresh numbers. This is the expensive, deliberate, human-or-agent-
- * invoked mode — never automatic, matching `scripts/latency/measure.ts`'s
- * own real-money discipline. `--full` runs the whole golden set instead of
- * the default 8-case sample (`args.ts`); `--case=<id>` runs one named case
- * for debugging and never touches the committed report or baseline.
- * `--update-baseline` no longer writes `baseline.json` here (TRO-561) —
- * see "THE BASELINE IS A BAND, NOT A POINT" below for where that moved.
+ * `pnpm eval:check -- --live` runs the real cascade — Haiku on every case,
+ * Sonnet only where the router escalates — scores it, writes a fresh
+ * report, then compares. This mode spends real money and is never
+ * automatic. `--full` runs the whole golden set instead of the 8-case
+ * sample; `--case=<id>` runs one case and writes nothing.
  *
- * SCOPE: verdict accuracy is scored at the ROUTER level — does
- * `routeLabel`'s real output (via `handleVerifyRequest`, the same
- * in-process pattern `measure.ts` uses, not a real HTTP round-trip) match
- * the golden set's `expected` block? This matches both production
- * (`route.ts` never calls Sonnet inline, TH-R19) and the manifest's own
- * ground truth (`expected.labelVerdict: "REVIEW"` is a correct terminal
- * answer for a case a human still needs to look at, not something this
- * scorer expects the resolver to resolve further — see
- * `verdict-scoring.ts`'s module comment). The resolver still runs for real
- * on every escalated case (`cascade-runner.ts`), because this ticket's
- * brief asks for that and because it is the only way to get real Sonnet
- * cost/latency evidence and to exercise `resolveEscalatedLabel` against
- * real golden-set images end-to-end (as of this ticket, no production code
- * path calls it yet) — but its output is reported, never scored against a
- * fabricated ground truth the manifest does not have.
+ * **Scope.** Verdict accuracy is scored at the router level, matching
+ * production, where the route never calls Sonnet inline (TH-R19). The
+ * manifest's `expected.labelVerdict: "REVIEW"` is a correct terminal
+ * answer, not something the resolver should resolve further. The resolver
+ * still runs for real on every escalated case, to get real cost and latency
+ * evidence, but its output is reported and never scored against ground
+ * truth the manifest does not have.
  *
- * THE BASELINE IS A BAND, NOT A POINT (TRO-561). `scripts/eval/baseline.json`
- * used to pin the floor to one historical run's exact number — TRO-543 / LH-038
- * measured a real 3.2-point call-to-call spread on unchanged code against
- * unchanged images, so a floor pinned to the TOP of that spread failed two
- * of three honest re-runs. The baseline is now a K-repeat band
- * (`EvalBaseline`, `types.ts`) established by the re-baseline protocol —
- * `scripts/eval/variance.ts`'s `--establish-baseline`, which extends the
- * existing `eval:variance` sweep rather than adding a second cascade path.
- * `compareToBaseline` (`baseline-compare.ts`) reports THREE DISTINCT
- * problem classes, never conflated into one undifferentiated list:
- * `"accuracy-below-band"` (a real regression — a headline rate fell below
- * its own measured floor), `"stale-baseline"` (the corpus moved since the
- * band was measured — a staleness question, fixed by re-running the
- * protocol, not by finding a code regression that is not there), and
- * `"coverage-mismatch"` (the current run's case set does not cover the
- * band's own cases — run `--live --full`).
+ * **The baseline is a band, not a point.** A measured 3.2-point call-to-
+ * call spread on unchanged code meant a floor pinned to one run's number
+ * failed two of three honest re-runs. `variance.ts --establish-baseline`
+ * now writes a K-repeat band, and `compareToBaseline` reports three
+ * distinct problem classes: `accuracy-below-band` (a real regression),
+ * `stale-baseline` (the corpus moved), and `coverage-mismatch` (the run
+ * does not cover the band's cases).
  *
- * CHEAP-MODE STALE-BASELINE IS A LOUD WARNING, NOT A BLOCK. Cheap mode runs
- * on EVERY push, on every ticket's gate, regardless of whether that ticket
- * touched `golden-set/`. If a `"stale-baseline"` problem alone (no
- * accuracy-below-band, no coverage-mismatch) blocked cheap mode, then any
- * PR merging after a corpus edit would fail CI for a reason it did not
- * cause, until someone spent real API money re-baselining — the exact
- * "gate cries wolf, gets routed around" failure this whole ticket exists to
- * fix, just relocated onto a new axis. So: a `"stale-baseline"`-only result
- * prints loudly (never silently) and STILL PASSES (exit 0) in cheap mode;
- * `"accuracy-below-band"` or `"coverage-mismatch"`, in either mode, still
- * fails. Live mode fails on `"stale-baseline"` too — an operator who just
- * spent real money on a `--live` sweep should be stopped and pointed at the
- * re-baseline protocol before trusting a comparison against a corpus that
- * has already moved on.
+ * **A stale baseline warns loudly in cheap mode; it does not block.** Cheap
+ * mode runs on every push, whether or not that push touched `golden-set/`.
+ * Blocking there would fail every PR after a corpus edit for a reason it
+ * did not cause — the "gate cries wolf, gets routed around" failure this
+ * harness exists to prevent. Live mode does fail on it: an operator who
+ * just spent real money deserves to be stopped before trusting a
+ * comparison against a corpus that already moved.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

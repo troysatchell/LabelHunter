@@ -1,106 +1,53 @@
 /**
- * Latency harness for the single-label verify flow (TRO-471 / LH-031,
- * extended by TRO-539 / LH-034, TH-R2, PRD §3.8, §6).
+ * Latency harness for the single-label verify flow (TH-R2, PRD §3.8, §6).
  *
  * Run: `pnpm latency:check` (optionally `-- --runs=20 --case=<caseId>`).
- * **This costs real money.** Each run is one real, live `claude-haiku-4-5`
- * extraction call against the Anthropic API — never mocked. TH-R2 exists to
- * produce an honest measured number (CLAUDE.md: "never fabricate a
- * number"); a mocked client would answer a different, useless question.
- * `ANTHROPIC_API_KEY` and `DATABASE_URL` must be set in `.env.local`.
+ * **This costs real money.** Every run makes one live `claude-haiku-4-5`
+ * call, never a mocked one. TH-R2 asks for an honest measured number, and a
+ * mock answers a different question.
  *
- * **What this measures.** `handleVerifyRequest` — the exact function
- * `src/app/api/verify/route.ts`'s `POST` calls — from a fully-formed
- * `Request` to a rendered response body: multipart parsing, preprocessing
- * (sharp), the real Haiku call, the deterministic Validation Router, and
- * the database writes PRD §3.6 names. This is an in-process call, the same
- * pattern `route.test.ts` uses, not a real HTTP round-trip — it excludes a
- * real browser's upload time and the Next.js HTTP framing layer, neither of
- * which PRD §3.8's stage table (preprocess / OCR / Haiku / router) budgets
- * for. Uploaded images are saved through this script's own database
- * connection (TRO-518 — `db-image-storage.ts` stores image bytes in
- * Postgres, not on disk). This script deletes every application row it
- * creates as it goes (cascades to that row's label image — and, since
- * TRO-518, that image's `label_image_blobs` row too — verification, field
- * results, and review-queue row) — the same cleanup `route.test.ts` does.
- * A delete failure is recorded, not silently retried or ignored (see
- * `main`'s `cleanupFailures`) — this is best-effort row cleanup, not a
- * guarantee the database ends up byte-for-byte as it started (sequence
- * counters still advance either way).
+ * **What it measures.** `handleVerifyRequest`, the exact function the route
+ * calls, from a formed `Request` to a rendered body: multipart parsing,
+ * preprocessing, the real Haiku call, the router, and the database writes.
+ * This is an in-process call, so it excludes browser upload time and the
+ * Next.js HTTP layer — neither of which PRD §3.8's stage table budgets for.
+ * It deletes every row it creates as it goes, and records a delete failure
+ * rather than retrying it.
  *
- * **`--url=<origin>` mode (TRO-539).** Passing `--url` switches this
- * script from the in-process call above to a real multipart `fetch` POST
- * to `${url}/api/verify` — a genuine HTTP round-trip, over a real network
- * path, through whatever server is actually listening at `url`. This is
- * how the deployed-instance, Render `starter`-plan measurement TH-R2 also
- * needs will eventually run (blocked on Troy provisioning that
- * environment — see CHANGES.md's TRO-539 entry); it is also how this
- * ticket's own zero-cost validation runs, pointed at a LOCAL app whose
- * `ANTHROPIC_BASE_URL` targets `scripts/e2e/fake-anthropic-server.ts`
- * instead of the real Anthropic API. `ANTHROPIC_API_KEY` is NOT required
- * in this mode — the TARGET server holds its own key, not this script.
- * `DATABASE_URL` becomes OPTIONAL, and cleanup against it needs TWO
- * explicit signals even when it is set: the operator's own `--cleanup-db`
- * flag, AND a LOOPBACK target (`localhost`/`127.0.0.1/8`/`::1` —
- * `isLoopbackHostname`, `target-info.ts`). A real deployed target's own
- * database has no reliable relationship to whatever `DATABASE_URL` happens
- * to be set in the operator's shell, and deleting by `applicationId`
- * against the WRONG database risks a cross-database ID collision — a
- * loopback hostname ALONE is not enough proof of "same database", since
- * this repo's own factory workflow runs several worktree-scoped databases
- * on one localhost Postgres server. Cleanup is skipped whenever either
- * signal is missing, and that fact — and why — is recorded in
- * `cleanupSkippedReason`, never silently dropped. Every real
- * network request in this mode (`runOnceHttp`) is bounded by one shared
- * `HTTP_REQUEST_TIMEOUT_MS` deadline covering both the request and the
- * body read — the same "no request hangs this script forever" discipline
- * TRO-519 already established server-side for the OCR channel. The
- * percentile math, exit-code logic, and artifact shape below are shared
- * between both modes — only how one "run" is produced differs
- * (`runOnceInProcess` vs `runOnceHttp`). See `target-info.ts` for how the
- * artifact's own `pipelineScope` and `target` fields are derived fresh
- * from which mode actually ran, never hard-coded (TRO-539's "provenance
- * trap" fix).
+ * **`--url=<origin>` mode** switches to a real multipart `fetch` POST over
+ * a real network path. It needs no `ANTHROPIC_API_KEY` — the target server
+ * holds its own. `DATABASE_URL` becomes optional, and cleanup then needs
+ * two signals: the operator's `--cleanup-db` flag AND a loopback target. A
+ * deployed target's database has no reliable relationship to whatever
+ * `DATABASE_URL` the shell happens to hold, and deleting by application ID
+ * against the wrong one risks a cross-database collision. Loopback alone is
+ * not proof of "same database" either. A skipped cleanup records why.
  *
- * **What is NOT in this measurement, and why.** The Sonnet resolver
- * (LH-014, `src/server/resolver/`) has merged to `main`, but `route.ts`
- * never calls it — confirmed with `git diff`, not assumed: `route.ts` is
- * byte-identical before and after that merge. `handleVerifyRequest` never
- * calls Sonnet inline, on any run, escalated or not (TH-R19 — the cascade
- * is the architecture). Sonnet resolution, when it happens at all, runs
- * asynchronously off the `review_queue` table, on its own schedule,
- * outside this request and outside this script's timer. Every run below
- * is therefore a "fast path" measurement by construction, not a mix of
- * fast path and Sonnet-resolved escalation.
+ * Both modes share the percentile math, exit codes, and artifact shape.
+ * Only how one run is produced differs. `target-info.ts` derives the
+ * artifact's `pipelineScope` and `target` from the mode that actually ran,
+ * never from a hard-coded value.
  *
- * **What IS in this measurement, since TRO-514.** The warning subsystem
- * (LH-020) is wired into `route.ts`: `compareGovernmentWarningFromImage`
- * runs region detection, OCR, and the exact statutory comparison on every
- * run whose label has a warning, concurrently with the Haiku call, not
- * after it (CP-2 §4.4). A number this script reports after TRO-514
- * includes that work; a number recorded before TRO-514 landed does not —
- * the two are not directly comparable. Since TRO-519, the OCR channel
- * itself is bounded by a 2000ms deadline (`OCR_TIMEOUT_MS`,
- * `src/server/warning/ocr.ts`) — a hung OCR worker degrades to `null`
- * instead of hanging this request (and this script's timer) forever.
+ * **What is not in the number.** The Sonnet resolver never runs inline on
+ * any request, escalated or not (TH-R19). It runs asynchronously off the
+ * review queue, outside this script's timer, so every run here measures the
+ * fast path by construction.
  *
- * **Per-stage breakdown (TRO-539).** Every successful run's response
- * carries a `Server-Timing` header (`src/app/api/verify/server-timing.ts`)
- * with one entry per PRD §3.8 stage. The in-process mode gets this from
- * the same `Response` object `handleVerifyRequest` returns; `--url` mode
- * reads it off the real HTTP response — either way, `route.ts` attaches
- * the header the same way, so both modes' reports carry a `stageBreakdownMs`
- * (`stage-breakdown.ts`, reusing `summarizeLatencies`) whenever at least one
- * run succeeded. Only a SUCCESSFUL run's samples ever count toward it — a
- * failed or malformed-body run's own duration is never a real per-stage
- * sample, whatever a response might otherwise claim.
+ * **What is.** The warning subsystem runs on every label that has a
+ * warning — region detection, OCR, and the statutory comparison —
+ * concurrently with the Haiku call (CP-2 §4.4). A number measured before
+ * that wiring landed is not comparable to one measured after. The OCR
+ * channel is bounded by `OCR_TIMEOUT_MS`, so a hung worker degrades instead
+ * of hanging this script.
  *
- * **Failure handling.** A run that throws, or that the route answers with a
- * non-200 status, is recorded in the raw log with its own duration and
- * error detail, but excluded from the p50/p95 input — a hard failure is
- * neither a verdict nor a flag, so it is not a latency sample for TH-R2's
- * clock. If every run fails, the script still writes an artifact (honest
- * about zero successful samples) and exits non-zero.
+ * **Per-stage breakdown.** Every successful response carries a
+ * `Server-Timing` header, one entry per PRD §3.8 stage, and both modes read
+ * it the same way. Only successful runs contribute samples.
+ *
+ * **Failure handling.** A throw or a non-200 is logged with its duration
+ * and error, then excluded from the p50/p95 input: a hard failure is
+ * neither a verdict nor a flag, so it is not a latency sample. If every run
+ * fails, the script still writes an honest artifact and exits non-zero.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";

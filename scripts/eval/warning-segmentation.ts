@@ -1,61 +1,35 @@
 /**
- * PRD §3.7's warning-check-outcome segmentation (TRO-469 / LH-021, TH-R9).
- * Restated precisely by CP-2 §8.4 (`docs/checkpoints/cp2-warning-subsystem.md`,
- * quoted below) as four mutually exclusive, exhaustive classes — this file
- * implements that restatement, not a remembered paraphrase of PRD §3.7's
- * looser original text.
+ * PRD §3.7's warning-check-outcome segmentation (TH-R9), as CP-2 §8.4
+ * restates it: four mutually exclusive, exhaustive classes.
  *
- * CP-2 §8.4's table, transcribed:
+ *   Clean pass           | both channels agree with the statute, or a
+ *                          single-channel PASS at confidence >= 0.90
+ *   True mismatch (FAIL) | wording deviation at distance >= 3, or a
+ *                          capitalization failure
+ *   Resolution-suspect   | LOW_IMAGE_QUALITY, channels disagree, or the
+ *   (REVIEW)               near-miss band. This rate drives the ladder
+ *   Not found (REVIEW)   | MISSING_REQUIRED_FIELD. Reported beside the
+ *                          rate, never inside it
  *
- *   Clean pass            | both channels agree with the statute; and a
- *                            single-channel PASS at confidence >= 0.90     | no
- *   True mismatch (FAIL)  | wording deviation at distance >= 3;
- *                            capitalization failure                       | No — no matter
- *                                                                            how frequent
- *   Resolution-suspect    | LOW_IMAGE_QUALITY; channels disagree;
- *   (REVIEW)                near-miss band                                | Yes. This rate
- *                                                                            drives the ladder
- *   Not found (REVIEW)    | MISSING_REQUIRED_FIELD                        | No. Report it
- *                                                                            beside the rate,
- *                                                                            never inside it
+ * Every class shares one denominator — the total number of checks run,
+ * never a filtered subset. `total` below is that sum by construction.
  *
- * And its written denominator: "suspect rate = resolution-suspect /
- * (clean pass + true mismatch + resolution-suspect + not found)" — i.e.
- * every class shares ONE denominator, the total number of checks run, not
- * a filtered subset. `total` below IS that sum, by construction.
+ * **One deliberate extension beyond §8.4's table**, recorded because it is
+ * a judgment call. §8.4 enumerates what the comparator can return. But
+ * `resolveGovernmentWarningField` — the router function that decides the
+ * field's final `reviewReason` — has two paths outside the comparator:
  *
- * ONE DELIBERATE EXTENSION BEYOND CP-2 §8.4'S OWN TABLE, documented here
- * because it is a judgment call, not a mechanical transcription.
+ *   1. `overrideRejected` -> `CONFLICTING_EXTRACTION`, an extractor-level
+ *      structural rejection.
+ *   2. A present, un-rejected warning with no comparator result at all ->
+ *      `LOW_MODEL_CONFIDENCE`, defensive.
  *
- * §8.4 builds its table directly from §6.1's table, which enumerates what
- * `WarningComparatorResult` (the LH-020 comparator's own return type) can
- * produce. But `resolveGovernmentWarningField`
- * (`src/server/router/field-resolution.ts`) — the ROUTER function that
- * wraps the comparator and is what actually decides the
- * `government_warning` field's final `reviewReason` — has two more paths
- * §6.1 never covers, because they sit outside the comparator entirely:
- *
- *   1. `input.overrideRejected` -> `CONFLICTING_EXTRACTION` (a pre-
- *      comparator, extractor-level structural rejection).
- *   2. A present, un-rejected warning with no comparator result at all
- *      (defensive; "should not happen") -> `LOW_MODEL_CONFIDENCE`.
- *
- * CP-2 §6.2 already names both reviewReasons as ones the comparator's own
- * union "cannot return" — so their absence from §8.4's table is that same
- * fact, carried forward, not a fresh decision. But both are still real,
- * reachable values on the `government_warning` `FieldResultRow` in a real
- * run, and both mean exactly what CP-2 §8.4 says resolution-suspect means:
- * "the check ran and could not confidently resolve it, one way or the
- * other." Excluding them would leave this function unable to classify a
- * real, valid router output — and would either crash the eval harness on
- * a real gate run (uncertain beats wrong, CLAUDE.md standing rule 12 —
- * applied here to this harness's own code, not just the product) or
- * silently miscount a real resolution-suspect case as something else. So
- * this function's `RESOLUTION_SUSPECT_REASONS` set is `WARNING_MISMATCH`
- * and `LOW_IMAGE_QUALITY` (§8.4's own named rows) PLUS `CONFLICTING_
- * EXTRACTION` and `LOW_MODEL_CONFIDENCE` (real for this field, just via
- * `resolveGovernmentWarningField`'s own two extra branches, not the
- * comparator). Flagged in TRO-469's PR body for Troy's own review.
+ * Both are reachable on a real `government_warning` row, and both mean what
+ * §8.4 says resolution-suspect means: the check ran and could not resolve
+ * it. Excluding them would leave this function unable to classify a valid
+ * router output — so it would crash the harness or silently miscount.
+ * `RESOLUTION_SUSPECT_REASONS` therefore holds §8.4's two rows plus these
+ * two.
  */
 import type { ReviewReason } from "../../src/server/router/types";
 import type { VerdictCaseScore, WarningSegmentationSummary, WarningSegmentCount } from "./types";

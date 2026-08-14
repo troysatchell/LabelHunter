@@ -153,48 +153,31 @@ function terminateInBackground(worker: TesseractWorker): void {
 }
 
 /**
- * Runs OCR on an already-cropped warning-region image and returns its
- * text and confidence. Never throws, and — since TRO-519 — never hangs
- * past `OCR_TIMEOUT_MS` either. Both are the same rule, CP-2 §4.4 rule 3:
- * "An OCR failure degrades the answer; it never fails the request... A
- * crashed OCR worker must not produce a 500 on a label the vision model
- * read fine." TRO-519 extends that rule from thrown errors to hangs — its
- * own gap, not a new rule.
+ * Runs OCR on an already-cropped warning region and returns its text and
+ * confidence. It never throws and never hangs past `OCR_TIMEOUT_MS`. Both
+ * follow CP-2 §4.4 rule 3: an OCR failure degrades the answer, it never
+ * fails the request.
  *
- * Returns `null` in both cases, the SAME degraded shape either way:
- * recognition threw (the original behavior), or it ran out of time
- * (TRO-519). A successful call that simply found no text still returns
- * `{ text: "", confidence }`, not `null` — that distinction lets
- * `reconcile.ts`'s confidence floor do its own job.
+ * A throw and a timeout both return `null`, the same degraded shape. A
+ * successful call that found no text returns `{ text: "", confidence }`,
+ * so the confidence floor can still do its own job.
  *
- * **Cancellation.** Checked against the installed `tesseract.js@7.0.0`'s
- * own type declarations (`node_modules/tesseract.js/src/index.d.ts`) and
- * `createWorker.js`'s source: neither `createWorker` nor
- * `Worker.recognize` takes a `signal`, or any other abort option,
- * anywhere in the public API. There is no real cancellation to prefer, so
- * this function falls back to the bare-timer path the ticket names — one
- * `Promise.race` shared across every await in the chain (lessons.md rule
- * 23), never a fresh timer per step.
+ * **No cancellation exists to use.** Neither `createWorker` nor
+ * `Worker.recognize` takes a signal anywhere in `tesseract.js@7.0.0`'s
+ * public API, checked against its own declarations and source. So one
+ * `Promise.race` is shared across every await in the chain, never a fresh
+ * timer per step.
  *
- * **Termination covers a worker that arrives late, too.** If the deadline
- * fires while `setParameters`/`recognize` is still running — a worker
- * handle already exists — it is terminated immediately, in the
- * background (`terminateInBackground`, above). If the deadline fires
- * DURING `createWorker` itself (the exact shape of the Turbopack
- * `MODULE_NOT_FOUND` failure this ticket investigates) and that worker
- * later resolves anyway, the `timedOut` check below catches it the
- * moment it exists: it is terminated then, and `setParameters`/
- * `recognize` never run against it — no point spending real OCR work on
- * a result nothing will read. The one case nothing can terminate is a
- * `createWorker()` call that never settles AT ALL — there is provably no
- * handle to terminate, ever, in that case. This function still returns
- * within `OCR_TIMEOUT_MS` regardless: that is TRO-519's actual point.
+ * **Termination covers a worker that arrives late.** A deadline that fires
+ * mid-recognition terminates the handle in the background. A deadline that
+ * fires during `createWorker` terminates the worker as soon as it exists,
+ * and recognition never runs against it. Nothing can terminate a
+ * `createWorker` that never settles at all — but this function still
+ * returns within `OCR_TIMEOUT_MS`, which is the point.
  *
- * Creates and terminates one worker per call. A pooled/reused worker
- * would shave the ~100-200ms creation cost this ticket measured, but
- * pooling is a batch-throughput concern (PRD §3.5's worker pool, CP-3) —
- * out of scope here, and named as a follow-up rather than built
- * speculatively.
+ * It creates and terminates one worker per call. Pooling would save the
+ * measured ~100–200 ms creation cost, but pooling is a batch-throughput
+ * concern (PRD §3.5) and open work here.
  */
 export async function runWarningOcr(
   cropImage: Buffer,

@@ -20,7 +20,10 @@
  */
 import type { FieldVerdict, ReviewDisposition } from "../../lib/db/enums";
 import type { ReviewQueueItemDetail } from "../../server/review-queue";
+import { CANONICAL_WARNING_TEXT } from "../../server/warning/canonical";
 import { formatTimestampUTC } from "../_lib/format-timestamp";
+import { LabelImageFigure } from "./LabelImageFigure";
+import { WarningTranscription } from "./WarningTranscription";
 
 const VERDICT_ICON: Record<FieldVerdict, string> = {
   MATCH: "✓",
@@ -85,20 +88,11 @@ export function ReviewItemDetail({ item }: ReviewItemDetailProps) {
         </div>
       )}
 
-      <div className="review-item__layout">
-        {/* The artwork is the object the reviewer is ruling on (TH-R1:
-            "looks at the label artwork, and checks"). It sits beside the
-            field comparison, the arrangement DetailView.tsx already uses.
-            The plain-`<img>` decision carries over from DetailView — see
-            its comment at the img. The persisted width/height let the
-            browser reserve space before the bytes arrive. */}
-        <img
-          className="review-item__image"
-          src={item.labelImage.url}
-          width={item.labelImage.width}
-          height={item.labelImage.height}
-          alt="The label submitted with this application"
-        />
+      {/* The artwork is the object the reviewer is ruling on (TH-R1:
+          "looks at the label artwork, and checks") — a real grid with a
+          dedicated, sticky image box (TRO-582), shared with DetailView. */}
+      <div className="detail-layout">
+        <LabelImageFigure image={item.labelImage} />
 
         <ul className="review-field-list">
           {item.fields.map((row) => (
@@ -110,14 +104,34 @@ export function ReviewItemDetail({ item }: ReviewItemDetailProps) {
                 <span className="visually-hidden">{VERDICT_STATUS_TEXT[row.verdict]}</span>
                 <span className="review-field__name">{row.fieldLabel}</span>
               </div>
+              {/* TRO-582: the warning row shows the real texts — its
+                  transcription with deviating words marked (display
+                  alignment only; the verdict and reason still come from
+                  the comparator) against the statute verbatim, under the
+                  same column wording DetailView uses. Every other field
+                  keeps the generic label/application pair. The old
+                  application-side placeholder ("the statutory warning
+                  text (27 CFR part 16)") read as missing data. */}
               <div className="review-field__compare">
                 <div className="review-field__value">
-                  <span className="review-field__value-label">On the label</span>
-                  <span className="review-field__value-text">{row.evidence ? row.evidence : "Not found on the label."}</span>
+                  <span className="review-field__value-label">
+                    {row.field === "GOVERNMENT_WARNING" ? "Detected on the label" : "On the label"}
+                  </span>
+                  <span className="review-field__value-text">
+                    {row.field === "GOVERNMENT_WARNING" && row.evidence ? (
+                      <WarningTranscription transcription={row.evidence} />
+                    ) : (
+                      row.evidence || "Not found on the label."
+                    )}
+                  </span>
                 </div>
                 <div className="review-field__value">
-                  <span className="review-field__value-label">On the application</span>
-                  <span className="review-field__value-text">{row.applicationValue}</span>
+                  <span className="review-field__value-label">
+                    {row.field === "GOVERNMENT_WARNING" ? "What TTB requires" : "On the application"}
+                  </span>
+                  <span className="review-field__value-text">
+                    {row.field === "GOVERNMENT_WARNING" ? CANONICAL_WARNING_TEXT : row.applicationValue}
+                  </span>
                 </div>
               </div>
               <p className="review-field__reason">{row.reason}</p>

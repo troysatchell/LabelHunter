@@ -81,14 +81,20 @@ describe("DetailView", () => {
     expect(row.textContent).not.toMatch(/\d+(\.\d+)?%/);
   });
 
-  it("labels the government warning row's columns as detected-vs-required, not extracted-vs-application", () => {
+  it("labels the government warning row's columns as detected-vs-required and shows the statute verbatim", () => {
+    // TRO-582 superseded the placeholder citation ("the statutory warning
+    // required by 27 CFR part 16") with the statute's own text, sourced
+    // from the comparator's canonical string — the reviewer compares
+    // against the requirement itself, not a citation to memorize. The
+    // word-level marks are display alignment only; the verdict and reason
+    // still come from the comparator (standing rule 11 holds).
     render(<DetailView detail={PASS_DETAIL} />);
     const row = screen.getByTestId("detail-field-government_warning");
     expect(row).toHaveTextContent("Detected on the label");
-    expect(row).toHaveTextContent("the statutory warning required by 27 CFR part 16");
-    // The warning row must never render a fabricated character-level diff
-    // against a canonical text this ticket does not source (standing rule
-    // 11) — only the already-computed verdict and reason.
+    expect(row).toHaveTextContent("What TTB requires");
+    expect(row).toHaveTextContent(
+      "According to the Surgeon General, women should not drink alcoholic beverages during pregnancy",
+    );
     expect(row).not.toHaveTextContent("On the application");
   });
 

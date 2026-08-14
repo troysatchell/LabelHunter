@@ -75,6 +75,34 @@ describe("buildAiBackdropCase", () => {
     );
   });
 
+  it("names the case and the expected path when the backdrop file is missing (TRO-510)", async () => {
+    // A mismatched caseId (the manifest entry does not exactly reuse the
+    // sidecar's generated case ID) is the documented way to hit this: the
+    // backdrop lookup builds its path from caseSpec.caseId, so the wrong
+    // caseId means "file not found," not "case not found." Before the fix,
+    // this rejects with a bare Node fs ENOENT message that never names the
+    // case at all.
+    const emptyBackdropsDir = mkdtempSync(path.join(tmpdir(), "build-test-missing-backdrop-"));
+    const caseSpec = aiBackdropCase({
+      caseId: "case-ai-backdrop-wrong-id",
+      labelPlacement: {
+        topLeft: { x: 0, y: 0 },
+        topRight: { x: 1000, y: 0 },
+        bottomLeft: { x: 0, y: 800 },
+        bottomRight: { x: 1000, y: 800 },
+      },
+    });
+    const renderer = await createLabelRenderer();
+    try {
+      await expect(buildAiBackdropCase(caseSpec, renderer, emptyBackdropsDir)).rejects.toThrow(
+        /case "case-ai-backdrop-wrong-id" expects a backdrop photo/,
+      );
+    } finally {
+      await renderer.close();
+      rmSync(emptyBackdropsDir, { recursive: true, force: true });
+    }
+  });
+
   it("composites the rendered label onto the committed backdrop", async () => {
     const backdropsDir = mkdtempSync(path.join(tmpdir(), "build-test-backdrops-"));
     const backdrop = await sharp({

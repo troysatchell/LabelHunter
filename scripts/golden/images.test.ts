@@ -1,8 +1,8 @@
 /**
  * Golden-set end-state assertions (TRO-497 / LH-004): every `rendered` /
  * `rendered+degraded` case's `imagePath` now resolves to a real committed
- * file, scoped so a future `ai-generated` case (LH-005, none exist yet)
- * never fails this check, and every degraded case records the exact
+ * file, scoped so a future `ai-generated` case (a future ticket's job, none
+ * exist yet) never fails this check, and every degraded case records the exact
  * `degradations` entry this ticket specified. These metadata assertions pin
  * the manifest values against hardcoded literals in this file; they never
  * read the committed image bytes and never call `degrade.ts`, so they do
@@ -58,9 +58,9 @@ describe("golden-set committed images", () => {
   });
 
   it("keeps every ai-generated case's verified flag consistent with whether its image exists", () => {
-    // No ai-generated case exists in the manifest yet (LH-005's job) — this
-    // loop is a no-op today. It still runs both directions of the check so
-    // it starts failing loudly, not silently, the moment LH-005 adds one:
+    // No ai-generated case exists in the manifest yet (a future ticket's
+    // job) — this loop is a no-op today. It still runs both directions of
+    // the check so it starts failing loudly, not silently, the moment one is added:
     // a verified case must have a real image, and an imageless case must
     // not be verified. Per the loader (src/lib/golden-set/loader.ts), the
     // eval harness may only use a verified ai-generated case.

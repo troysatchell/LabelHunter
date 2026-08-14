@@ -99,28 +99,52 @@ export function ReviewActions({ reviewQueueId, submit = submitDisposition, onRes
   const approvePending = phase.status === "pending" && phase.disposition === "APPROVED";
   const rejectPending = phase.status === "pending" && phase.disposition === "REJECTED";
 
+  /* The one persistent status line's text, derived straight from `phase`.
+     Empty in the idle and error states — the error has its own
+     role="alert" panel below. */
+  const statusText =
+    phase.status === "pending" ? "Recording…" : phase.status === "success" ? `Recorded: ${DISPOSITION_VERB[phase.disposition]}.` : "";
+
   return (
     <div className="review-actions">
-      <div className="review-actions__buttons">
+      {/* aria-busy on the buttons group only, never on a wrapper that
+          contains the role="status" line below: aria-busy lets assistive
+          tech withhold changes inside the busy region until it clears
+          (WAI-ARIA), which would silence "Recording…" — the one line that
+          exists to announce the in-flight decision. */}
+      <div className="review-actions__buttons" aria-busy={phase.status === "pending"}>
         <button type="button" className="primary-button" disabled={isDisabled} onClick={() => void act("APPROVED")}>
-          {approvePending ? "Recording…" : "Approve"}
+          {approvePending ? (
+            <>
+              <span className="busy-spinner" aria-hidden="true" />
+              Recording…
+            </>
+          ) : (
+            "Approve"
+          )}
         </button>
         <button type="button" className="reject-button" disabled={isDisabled} onClick={() => void act("REJECTED")}>
-          {rejectPending ? "Recording…" : "Reject"}
+          {rejectPending ? (
+            <>
+              <span className="busy-spinner" aria-hidden="true" />
+              Recording…
+            </>
+          ) : (
+            "Reject"
+          )}
         </button>
       </div>
 
-      {phase.status === "pending" && (
-        <p className="status-banner" role="status">
-          Recording…
-        </p>
-      )}
-
-      {phase.status === "success" && (
-        <p className="status-banner" role="status">
-          Recorded: {DISPOSITION_VERB[phase.disposition]}.
-        </p>
-      )}
+      {/* One persistent polite region, present from first render, not a
+          new one mounted per phase — a live region only reliably announces
+          content ADDED to it after it already exists in the DOM
+          (WAI-ARIA; the same reasoning VerifyForm's results region
+          documents). The element stays mounted through every phase; only
+          its class swaps, so it is invisible while it has nothing to say. */}
+      <p className={statusText === "" ? "visually-hidden" : "status-banner"} role="status">
+        {phase.status === "pending" && <span className="busy-spinner" aria-hidden="true" />}
+        {statusText}
+      </p>
 
       {phase.status === "error" && (
         <div className="error-panel" role="alert">

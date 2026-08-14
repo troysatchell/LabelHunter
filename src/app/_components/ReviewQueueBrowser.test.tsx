@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ReviewQueueBrowser } from "./ReviewQueueBrowser";
@@ -233,5 +233,55 @@ describe("ReviewQueueBrowser", () => {
 
     resolveRetry(page([ITEM]));
     expect(await screen.findByRole("button", { name: "Refresh" })).toBeEnabled();
+  });
+
+  it("marks the region busy and shows placeholder rows during the first load (loading-state pass)", () => {
+    const fetchItems = vi.fn(() => new Promise<ReviewQueueListResponse>(() => {}));
+    const { container } = render(<ReviewQueueBrowser fetchItems={fetchItems} />);
+
+    expect(screen.getByText(/Loading the review queue/)).toBeInTheDocument();
+    expect(container.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+    // The placeholder list reserves space but says nothing — the status
+    // line above it is the announcement.
+    expect(container.querySelector('ul[aria-hidden="true"]')).toBeInTheDocument();
+  });
+
+  it("announces a manual refresh, and its completion, through the persistent live line", async () => {
+    let resolveRefetch!: (page: ReviewQueueListResponse) => void;
+    const fetchItems = vi
+      .fn()
+      .mockResolvedValueOnce(page([ITEM]))
+      .mockImplementationOnce(() => new Promise<ReviewQueueListResponse>((resolve) => (resolveRefetch = resolve)));
+    const user = userEvent.setup();
+    const { container } = render(<ReviewQueueBrowser fetchItems={fetchItems} />);
+
+    await screen.findByTestId("review-queue-row-42");
+    // The live line exists BEFORE the refresh, empty — a live region only
+    // reliably announces content added after it is already in the DOM.
+    expect(screen.getByTestId("review-queue-live-status")).toBeEmptyDOMElement();
+
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(screen.getByTestId("review-queue-live-status")).toHaveTextContent("Refreshing the review queue…");
+    expect(container.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+
+    resolveRefetch(page([ITEM]));
+    await waitFor(() => expect(screen.getByTestId("review-queue-live-status")).toHaveTextContent("The review queue is up to date."));
+    expect(container.querySelector('[aria-busy="true"]')).toBeNull();
+  });
+
+  it("announces appended rows after Load more", async () => {
+    const user = userEvent.setup();
+    const second: ReviewQueueListItemWire = { ...ITEM, id: 43, brandName: "Second Winery" };
+    const fetchItems = vi
+      .fn()
+      .mockResolvedValueOnce(page([ITEM], "cursor-for-page-two"))
+      .mockResolvedValueOnce(page([second]));
+    render(<ReviewQueueBrowser fetchItems={fetchItems} />);
+
+    await screen.findByTestId("review-queue-row-42");
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+
+    await screen.findByTestId("review-queue-row-43");
+    expect(screen.getByTestId("review-queue-live-status")).toHaveTextContent("Loaded 1 more item.");
   });
 });

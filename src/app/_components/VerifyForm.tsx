@@ -36,6 +36,7 @@ import { submitVerification, VerifyClientError, type VerifyFormValues } from "..
 import type { ExtractSuccessResponse } from "../api/extract/types";
 import { BEVERAGE_TYPE_OPTIONS, NET_CONTENTS_UNIT_OPTIONS, type VerifyErrorKind, type VerifySuccessResponse } from "../api/verify/types";
 import { ErrorPanel } from "./ErrorPanel";
+import { FileDropField } from "./FileDropField";
 import { ResultsChecklist } from "./ResultsChecklist";
 
 type Phase =
@@ -303,7 +304,14 @@ export function VerifyForm({ submit = submitVerification, extract = requestExtra
 
   return (
     <>
-      <form ref={formRef} className="verify-form" onSubmit={handleSubmit}>
+      {/* aria-busy while the assist reads a photo: the assist is about to
+          rewrite fields across the whole form, so the form itself is the
+          region that is busy — not any one field. The assist's live
+          announcer sits OUTSIDE this form (below), because aria-busy lets
+          assistive tech withhold every change inside the busy region until
+          it clears (WAI-ARIA) — a live region inside would risk announcing
+          "Reading the label…" never, or only after it is gone. */}
+      <form ref={formRef} className="verify-form" onSubmit={handleSubmit} aria-busy={assist.status === "reading"}>
         <div className="field">
           <label className="field__label" htmlFor="verify-image">
             Label photo
@@ -317,23 +325,38 @@ export function VerifyForm({ submit = submitVerification, extract = requestExtra
               by browser and fires before `submit`, so it could silently
               preempt whichever of these checks would otherwise report
               first. One validation strategy for the whole form. */}
-          <input
-            ref={fileInputRef}
-            id="verify-image"
-            name="image"
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/heic"
-            className="file-input"
-            disabled={isLoading}
-            onChange={handleFileSelected}
-          />
-          {/* The assist's one status line — present from first render so
-              the live region reliably announces changes (same WAI-ARIA
-              reasoning as the results region below). */}
-          <span className="verify-form__assist" aria-live="polite" data-testid="verify-assist">
-            {assist.status === "reading" && "Reading the label…"}
-            {assist.status === "note" && assist.message}
-          </span>
+          {/* A drop assigns the file to this same input and fires a real
+              change event, so `handleFileSelected` — autofill, stale-
+              prefill clearing, the seq and phase guards — runs untouched
+              (see FileDropField.tsx). Disabled with the input: a verify
+              in flight must not gain a new photo by drop either. */}
+          <FileDropField inputRef={fileInputRef} disabled={isLoading} hint="Or drop the photo here." hintId="verify-image-drop-hint">
+            <input
+              ref={fileInputRef}
+              id="verify-image"
+              name="image"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/heic"
+              className="file-input"
+              disabled={isLoading}
+              aria-describedby="verify-image-drop-hint"
+              onChange={handleFileSelected}
+            />
+            {/* The assist's one VISIBLE status line. Deliberately not a
+                live region: it sits inside the aria-busy form, where an
+                announcement could be withheld until busy clears (WAI-ARIA).
+                The hidden twin after the form does the announcing. The
+                spinner is aria-hidden: the text carries the meaning. */}
+            <span className="verify-form__assist" data-testid="verify-assist">
+              {assist.status === "reading" && (
+                <>
+                  <span className="busy-spinner" aria-hidden="true" />
+                  Reading the label…
+                </>
+              )}
+              {assist.status === "note" && assist.message}
+            </span>
+          </FileDropField>
         </div>
 
         <fieldset className="field">
@@ -449,9 +472,26 @@ export function VerifyForm({ submit = submitVerification, extract = requestExtra
         </div>
 
         <button type="submit" className="primary-button" disabled={isLoading}>
-          {isLoading ? "Checking the label…" : "Verify"}
+          {isLoading ? (
+            <>
+              <span className="busy-spinner" aria-hidden="true" />
+              Checking the label…
+            </>
+          ) : (
+            "Verify"
+          )}
         </button>
       </form>
+
+      {/* The assist's announcer: a persistent polite line OUTSIDE the
+          aria-busy form, mirroring the visible assist text above (the
+          AccessCodeForm pattern). Inside the form, aria-busy could hold
+          the announcement back until the reading is over — the one moment
+          it matters (WAI-ARIA). Visually hidden: sighted users see the
+          in-form line. */}
+      <p className="visually-hidden" role="status">
+        {assist.status === "reading" ? "Reading the label…" : assist.status === "note" ? assist.message : ""}
+      </p>
 
       {/* One persistent aria-live region, present from this component's
           first render, not a new one mounted per phase — a live region only
@@ -460,9 +500,29 @@ export function VerifyForm({ submit = submitVerification, extract = requestExtra
           both render inside this same div rather than each other mounting
           their own. `ErrorPanel` does not need this: `role="alert"` is its
           own live-region equivalent, specified to announce correctly even
-          when the whole element is inserted at once. */}
+          when the whole element is inserted at once. No aria-busy here,
+          ever: this region IS the announcer for the multi-second Haiku
+          call, and aria-busy lets assistive tech withhold changes inside a
+          busy region until it clears (WAI-ARIA) — it would suppress the
+          exact in-flight line it wraps. The aria-hidden skeleton reserves
+          the checklist's space so the results land without a layout jump. */}
       <div aria-live="polite">
-        {isLoading && <p className="status-banner">Checking the label…</p>}
+        {isLoading && (
+          <>
+            <p className="status-banner">
+              <span className="busy-spinner" aria-hidden="true" />
+              Checking the label…
+            </p>
+            <div className="skeleton-stack" aria-hidden="true" data-testid="verify-results-skeleton">
+              <div className="skeleton-block skeleton-block--banner" />
+              <div className="skeleton-block skeleton-block--row" />
+              <div className="skeleton-block skeleton-block--row" />
+              <div className="skeleton-block skeleton-block--row" />
+              <div className="skeleton-block skeleton-block--row" />
+              <div className="skeleton-block skeleton-block--row" />
+            </div>
+          </>
+        )}
         {phase.status === "success" && <ResultsChecklist result={phase.result} />}
       </div>
 

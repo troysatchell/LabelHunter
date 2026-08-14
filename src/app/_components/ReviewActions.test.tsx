@@ -36,6 +36,32 @@ describe("ReviewActions — TH-R3, two large obvious buttons, no hidden actions"
     expect(screen.getByRole("button", { name: "Reject" })).toBeEnabled();
   });
 
+  it("has its status region in the DOM from first render, before any click (loading-state pass)", () => {
+    // A live region only reliably announces content ADDED to it after it
+    // already exists in the DOM (WAI-ARIA) — the per-phase mounted
+    // banners this replaces carried their content in with them.
+    render(<ReviewActions reviewQueueId={42} submit={vi.fn()} onResolved={vi.fn()} />);
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+  });
+
+  it("marks the buttons group busy while a decision is in flight, never the status line's wrapper", async () => {
+    const user = userEvent.setup();
+    const { promise, resolve } = deferred<RecordDispositionResponse>();
+    const submit = vi.fn().mockReturnValue(promise);
+    const { container } = render(<ReviewActions reviewQueueId={42} submit={submit} onResolved={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+    expect(container.querySelector(".review-actions__buttons")).toHaveAttribute("aria-busy", "true");
+    // aria-busy on an ancestor of the role="status" line would let
+    // assistive tech withhold "Recording…" until the request is over
+    // (WAI-ARIA) — the status line must not sit inside the busy region.
+    expect(screen.getByRole("status").closest('[aria-busy="true"]')).toBeNull();
+
+    resolve(RECORDED);
+    await screen.findByText(/Recorded/);
+    expect(container.querySelector(".review-actions__buttons")).toHaveAttribute("aria-busy", "false");
+  });
+
   it("clicking Approve calls submit with APPROVED, disables both buttons while pending, then calls onResolved", async () => {
     const user = userEvent.setup();
     const { promise, resolve } = deferred<RecordDispositionResponse>();

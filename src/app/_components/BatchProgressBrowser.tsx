@@ -149,9 +149,27 @@ export function BatchProgressBrowser({ batchJobId, fetchProgress = fetchBatchPro
 
   if (phase.status === "loading") {
     return (
-      <p className="status-banner" role="status">
-        Loading batch progress…
-      </p>
+      <>
+        {/* The status line stays OUTSIDE the aria-busy region: aria-busy
+            lets assistive tech withhold changes inside the busy region
+            until it clears (WAI-ARIA), and this line is the one
+            announcement the first load makes. */}
+        <p className="status-banner" role="status">
+          <span className="busy-spinner" aria-hidden="true" />
+          Loading batch progress…
+        </p>
+        {/* Placeholder tiles in the REAL stat grid reserve the summary's
+            space, so the loaded numbers land without a large layout jump.
+            aria-hidden: the status line above is the announcement. */}
+        <div className="batch-progress-summary" aria-busy="true" aria-hidden="true">
+          <div className="skeleton-block skeleton-block--banner" />
+          <div className="batch-stat-grid">
+            {Array.from({ length: 8 }, (_, index) => (
+              <div key={index} className="batch-stat skeleton-stat" />
+            ))}
+          </div>
+        </div>
+      </>
     );
   }
 
@@ -170,11 +188,19 @@ export function BatchProgressBrowser({ batchJobId, fetchProgress = fetchBatchPro
   return (
     <>
       <BatchProgressSummary progress={phase.progress} />
-      {phase.pollErrorMessage && (
-        <p className="status-banner" role="status" data-testid="batch-poll-error">
-          {phase.pollErrorMessage} LabelHunter will keep trying.
-        </p>
-      )}
+      {/* The poll-error banner's PERSISTENT slot: the live region exists
+          from the first successful load (content added to it later is
+          what announces reliably — WAI-ARIA, the same reasoning
+          VerifyForm's results region documents), and the reserved height
+          keeps the banner's appearing and clearing from shifting the
+          results table below. */}
+      <div className="poll-error-slot" aria-live="polite">
+        {phase.pollErrorMessage && (
+          <p className="status-banner" data-testid="batch-poll-error">
+            {phase.pollErrorMessage} LabelHunter will keep trying.
+          </p>
+        )}
+      </div>
       <h2 className="batch-results-heading">Results</h2>
       <BatchResultsTable results={phase.progress.results} />
     </>

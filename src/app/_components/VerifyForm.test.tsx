@@ -3,9 +3,14 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ASSIST_FAILED_MESSAGE, ASSIST_NOTHING_READ_MESSAGE, VerifyForm } from "./VerifyForm";
+import { installFileDropTestShims } from "../_lib/file-drop-test-shims";
 import { VerifyClientError } from "../_lib/verify-client";
 import type { ExtractSuccessResponse } from "../api/extract/types";
 import type { VerifySuccessResponse } from "../api/verify/types";
+
+// jsdom has no DataTransfer and rejects programmatic FileList assignment —
+// the shims give the real file-drop.ts code a working path here.
+installFileDropTestShims();
 
 function makeFile(name = "label.jpg"): File {
   return new File([new Uint8Array([1, 2, 3])], name, { type: "image/jpeg" });
@@ -483,5 +488,99 @@ describe("VerifyForm — a new photo never inherits the old photo's values (TRO-
     await waitFor(() => expect(extract).toHaveBeenCalledTimes(2));
 
     expect(screen.getByLabelText("Brand name")).toHaveValue("My Own Entry");
+  });
+});
+
+describe("VerifyForm — drag-and-drop photo (drag-drop pass)", () => {
+  function photoDropZone(container: HTMLElement): Element {
+    const zone = container.querySelector(".file-drop");
+    if (!zone) throw new Error("expected a .file-drop element");
+    return zone;
+  }
+
+  it("a dropped photo lands in the same input and runs the same autofill path as the picker", async () => {
+    const extract = vi.fn(async () => fullPrefill());
+    const { container } = render(<VerifyForm submit={vi.fn()} extract={extract} />);
+
+    fireEvent.drop(photoDropZone(container), {
+      dataTransfer: { types: ["Files"], files: [makeFile("dropped.jpg")] },
+    });
+
+    await waitFor(() => expect(screen.getByTestId("verify-assist")).toHaveTextContent(/filled 5 fields/));
+    expect(extract).toHaveBeenCalledTimes(1);
+    const input = screen.getByLabelText("Label photo") as HTMLInputElement;
+    expect(input.files?.[0]?.name).toBe("dropped.jpg");
+    expect(screen.getByLabelText("Brand name")).toHaveValue("Old Tom Distillery");
+  });
+
+  it("a dropped non-image file changes nothing — no assignment, no extract call", async () => {
+    const extract = inertExtract();
+    const { container } = render(<VerifyForm submit={vi.fn()} extract={extract} />);
+
+    fireEvent.drop(photoDropZone(container), {
+      dataTransfer: { types: ["Files"], files: [new File(["x"], "notes.txt", { type: "text/plain" })] },
+    });
+
+    const input = screen.getByLabelText("Label photo") as HTMLInputElement;
+    expect(input.files?.length ?? 0).toBe(0);
+    expect(extract).not.toHaveBeenCalled();
+  });
+
+  it("highlights the drop zone during an eligible drag, and clears afterward", () => {
+    const { container } = render(<VerifyForm submit={vi.fn()} extract={inertExtract()} />);
+    const zone = photoDropZone(container);
+
+    fireEvent.dragOver(zone, { dataTransfer: { types: ["Files"], files: [] } });
+    expect(zone).toHaveClass("file-drop--active");
+
+    fireEvent.dragLeave(zone);
+    expect(zone).not.toHaveClass("file-drop--active");
+  });
+});
+
+describe("VerifyForm — busy states (loading-state pass)", () => {
+  it("marks the form busy while the assist reads a photo, and idle after", async () => {
+    const user = userEvent.setup();
+    const { promise, resolve } = deferred<ExtractSuccessResponse>();
+    const extract = vi.fn().mockReturnValue(promise);
+    const { container } = render(<VerifyForm submit={vi.fn()} extract={extract} />);
+    const form = container.querySelector("form");
+
+    await user.upload(screen.getByLabelText("Label photo"), makeFile());
+    expect(form).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByTestId("verify-assist")).toHaveTextContent("Reading the label…");
+    // The announcer sits OUTSIDE the busy form: aria-busy lets assistive
+    // tech withhold live changes inside the busy region until it clears
+    // (WAI-ARIA), so the in-form assist line is display only.
+    const announcer = screen.getByRole("status");
+    expect(announcer).toHaveTextContent("Reading the label…");
+    expect(announcer.closest("form")).toBeNull();
+
+    resolve(fullPrefill());
+    await waitFor(() => expect(form).toHaveAttribute("aria-busy", "false"));
+  });
+
+  it("announces the verify in flight from a results region that is never aria-busy, with a space-reserving skeleton", async () => {
+    const user = userEvent.setup();
+    const { promise, resolve } = deferred<VerifySuccessResponse>();
+    const submit = vi.fn().mockReturnValue(promise);
+    const { container } = render(<VerifyForm submit={submit} extract={inertExtract()} />);
+
+    await fillRequiredFields(user);
+    await user.click(screen.getByRole("button", { name: "Verify" }));
+
+    // aria-busy on (or above) a live region lets assistive tech withhold
+    // its changes until busy clears (WAI-ARIA) — by then "Checking the
+    // label…" is already gone. The region that announces the in-flight
+    // state must never be the busy one.
+    const resultsRegion = container.querySelector('div[aria-live="polite"]');
+    expect(resultsRegion).not.toHaveAttribute("aria-busy");
+    expect(resultsRegion).toHaveTextContent("Checking the label…");
+    expect(screen.getByTestId("verify-results-skeleton")).toHaveAttribute("aria-hidden", "true");
+
+    resolve(SUCCESS_RESULT);
+    await screen.findByTestId("label-verdict-banner");
+    expect(resultsRegion).not.toHaveAttribute("aria-busy");
+    expect(screen.queryByTestId("verify-results-skeleton")).not.toBeInTheDocument();
   });
 });

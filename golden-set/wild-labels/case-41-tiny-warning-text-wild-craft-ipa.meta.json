@@ -1,0 +1,16 @@
+{
+  "caseId": "case-41-tiny-warning-text-wild-craft-ipa",
+  "prompt": "Create a flat, front-facing product label graphic for a fictional bottled or canned beer beverage, as if scanned straight-on with no bottle, no can, no shadow, and no background scene -- just the printed label artwork on a plain neutral background, like a print proof.\n\nBrand name printed prominently: \"Foghorn Brewing Co.\"\nClass/type line: \"India Pale Ale\"\nAlcohol content line: \"6.8% Alc./Vol.\"\nNet contents line: \"12 fl oz\"\n\nGovernment warning statement, printed somewhere on the label:\n\"GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.\"\n\nDesign direction: a modern minimalist can-front design, bold geometric sans-serif typeface for the brand name, a bright teal-and-orange color-block palette, a simple line-art foghorn icon. Place the government warning as very small print running vertically along the right edge of the label, rotated 90 degrees.\n\nThis is a fictional brand created for software testing only. Do not depict, reference, or imitate any real, existing brand, distillery, brewery, winery, or trademark.",
+  "usage": {
+    "promptTokenCount": 274,
+    "imageOutputTokenCount": 1120,
+    "otherOutputTokenCount": 321
+  },
+  "costUsd": 0.0683,
+  "generationMetadata": {
+    "model": "gemini-3.1-flash-image",
+    "resolution": "1K",
+    "promptVersion": "v1",
+    "generatedAt": "2026-08-13T22:42:58.808Z"
+  }
+}

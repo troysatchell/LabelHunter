@@ -1,0 +1,16 @@
+{
+  "caseId": "case-44-odd-typography-wild-woodcut-stout",
+  "prompt": "Create a flat, front-facing product label graphic for a fictional bottled or canned beer beverage, as if scanned straight-on with no bottle, no can, no shadow, and no background scene -- just the printed label artwork on a plain neutral background, like a print proof.\n\nBrand name printed prominently: \"Millrace Stout Works\"\nClass/type line: \"Oatmeal Stout\"\nAlcohol content line: \"5.4% Alc./Vol.\"\nNet contents line: \"16 fl oz\"\n\nGovernment warning statement, printed somewhere on the label:\n\"GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.\"\n\nDesign direction: a rustic hand-drawn woodcut illustration style, a warm earthy palette of deep brown and cream, a distressed hand-lettered display font for the brand name, a small woodcut-style illustration of a millwheel. Place the government warning directly beneath the class/type line, in regular (not boxed) small print, the same general style as the rest of the label's body text.\n\nThis is a fictional brand created for software testing only. Do not depict, reference, or imitate any real, existing brand, distillery, brewery, winery, or trademark.",
+  "usage": {
+    "promptTokenCount": 292,
+    "imageOutputTokenCount": 1120,
+    "otherOutputTokenCount": 314
+  },
+  "costUsd": 0.06828799999999999,
+  "generationMetadata": {
+    "model": "gemini-3.1-flash-image",
+    "resolution": "1K",
+    "promptVersion": "v1",
+    "generatedAt": "2026-08-13T22:43:17.916Z"
+  }
+}

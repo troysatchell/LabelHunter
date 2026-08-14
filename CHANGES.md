@@ -37,6 +37,142 @@ invalid flag combination instead of throwing.
 
 
 
+
+
+## TRO-530 — LH-027 · wild AI-generated labels, staged pending Troy's review (2026-08-13)
+
+Advances TH-R12. Design doc §5, job 2: about 5 labels Gemini draws whole, no bottle, no
+backdrop, no compositing. Real COLA artwork varies in layout, color, ornament, typeface, and
+warning placement. The renderer's own labels do not. This ticket adds that variety.
+
+**What changed.**
+
+1. `scripts/golden/wildLabelPrompt.ts` is new. It compiles 5 wild-label prompts — a fictional
+   brand and design brief each, varying beverage type, layout, typeface, color, and warning
+   placement. A shared guardrail clause on every prompt forbids a real brand or trademark.
+2. `scripts/golden/imagen.ts` adds a text-only Gemini generation path (`generateWildLabelOne`,
+   `generateAllWildLabels`, `mainWild`), reusing job 1's API client shape and sidecar-writer
+   pattern. Run it with `pnpm golden:imagen:wild`. `computeWildLabelCostUsd` computes exact
+   cost per call from that call's own real token usage, never an estimate. The pricing it uses
+   is confirmed live against `ai.google.dev/gemini-api/docs/pricing`, on 2026-08-13.
+3. `pnpm golden:imagen:wild` generated 5 real images, committed at
+   `golden-set/wild-labels/*.png`. A human transcribed what actually rendered into
+   `golden-set/wild-labels/candidates.json` — the real text, not the requested text. Two labels
+   show a real generation defect: one warning duplicates a word fragment, one renders as tiny,
+   rotated, partly-corrupted print.
+4. `scripts/golden/wildLabelEval.ts` is new (`pnpm golden:wild-eval`). It runs each candidate
+   through the real cascade (`runOneCase`, unmodified) and writes
+   `golden-set/wild-labels/results/wild-eval-report.json`. Real result: 24/25 extraction fields
+   correct (the one miss is the intentionally-uncertain garbled-warning case), and 5/5 ROUTER
+   label verdicts matching the corrected expected values (`expected` predicts the router's
+   decision, not the cascade's post-resolver end state — see the README's own scope note).
+5. `verified` stays `false` on all 5 candidate cases. That flag is Troy's decision alone
+   (this repo's standing rule) — this ticket never sets it. The 5 cases stay OUT of
+   `golden-set/manifest.json` on purpose: `src/lib/golden-set/loader.ts` refuses to load ANY
+   manifest containing an unverified `ai-generated` case, for every one of this repo's ~30
+   other callers, not just this ticket's own tests. Landing an unverified case there would have
+   broken the whole suite. `golden-set/wild-labels/README.md` documents why and lists the exact
+   fold-in steps for whoever lands them later.
+
+**A real finding, not assumed away.** A first-pass ground truth judged 3 of the 5 cases by "can
+a human read this correctly" alone. A live `pnpm golden:wild-eval` run showed the real router
+disagreeing — CP-2 §4.5's dual-channel rule routes an OCR/vision disagreement to REVIEW even
+when the vision reading is exactly right, and real decorative typefaces trip that disagreement
+in ways the renderer's plain corpus never does. `candidates.json`'s `expected` blocks now match
+that corrected, evidence-backed ground truth, not the first guess.
+
+**Real spend, itemized, from real API responses (never estimated):**
+
+| What | Amount |
+|---|---|
+| 5 committed wild-label images (`golden-set/wild-labels/*.meta.json`) | $0.3414435 |
+| Final `pnpm golden:wild-eval` run (committed `wild-eval-report.json`) | $0.088572 |
+| One earlier `pnpm golden:wild-eval` run, superseded by the corrected re-run above | ~$0.0925 |
+| One discarded probe call during development (image not committed) | $0.068096 |
+| **Total** | **~$0.591** |
+
+The two `~` rows are rounded: read from this terminal's own printed per-case lines (4 decimal
+places each), not from a saved exact-precision report — the first `wild-eval-report.json` was
+overwritten by the corrected re-run before this entry was written. Every other figure is the
+exact value a real API response (or its sidecar) reported. Design doc §5 estimates the full set
+under $5. The measured total is about 12% of that budget.
+
+**Rollback.** Revert the PR. `golden-set/wild-labels/` and its two new scripts disappear;
+`golden-set/manifest.json` never changed, so nothing else is affected.
+
+**Review.** 7 CodeRabbit findings, all triaged and recorded (`factory/review-findings.jsonl`).
+4 minor prose-style (CHANGES.md and two READMEs, ASD-STE100 sentence-length) — fixed. 2 major
+boundary-validation — fixed: `extractWildLabelUsage` now throws on missing or inconsistent
+usage data instead of defaulting to 0 (a degraded response must not silently read as \$0
+spend); `loadWildLabelCandidates` now resolves symlinks and confirms every `imagePath` stays
+inside `golden-set/wild-labels/`, matching `imagen.ts`/`build.ts`'s existing containment
+discipline for every other golden-set image path. 1 major dismissed: the finding asked to
+change `cascade-runner.ts`'s resolver-merge logic (shared, tested, already-documented, out of
+scope) so a router-level warning mismatch survives unchanged into the cascade end state —
+`types.ts`/`check.ts` already establish golden-set `expected` as router-level by design, and
+`cascade-runner.ts`'s own "SECOND HONEST LIMIT" comment already documents why it cannot. Added
+an explicit scope note to `golden-set/wild-labels/README.md` instead.
+
+**Review, round 2.** The gate's review step re-reviews the whole branch every run, including
+round 1's own triage prose (`.claude/skills/labelhunter-factory/references/lessons.md` rule
+31). 15 findings this round: 11 minor prose-style re-flags on CHANGES.md and the two READMEs —
+dismissed per rule 31's stop rule, no shipped behavior or factual claim changed. 3 fixed:
+`loadWildLabelCandidates` now runs the full case set through the real `validateManifest`
+(patched the same way its own test does) before any candidate reaches a paid `runOneCase`
+call; `extractWildLabelUsage` now rejects a fractional or negative token count, not only a
+missing one; the wild-label Gemini request now sets `imageConfig.imageSize` explicitly instead
+of relying on the SDK's documented (and, across 6 real calls, consistently observed) "1K"
+default. 1 trivial fixed alongside it (the same `imageConfig` change covers both). 6 new test
+cases (46 → 52).
+
+**Review, round 3.** 14 findings: 8 minor prose-style re-flags — dismissed per rule 31 again.
+1 dismissed after verification, not just judgment: a finding claimed `review-ledger.mjs`'s
+`report` command uses a finding's `file` field to resolve a "replay corpus," and asked for
+round 2's grouped-dismissal entries to use real paths for that reason. Reading
+`review-ledger.mjs` itself shows `report` only ever prints `file` as free text — no path
+resolution, no replay mechanism exists in this file. 5 fixed, all real: `extractWildLabelUsage`
+now folds in `thoughtsTokenCount` when present — the SDK's own type documents it as separate
+from `candidatesTokenCount`, so a reasoning-model call that used it would otherwise
+under-report real spend; a misplaced doc comment now sits directly above the function it
+describes; `loadWildLabelCandidates` now validates each `cases[]` entry is a well-shaped object
+with a string `caseId`/`imagePath` before reading either, instead of crashing with a raw,
+confusing error; one test's own name and comment claimed to prove containment survives a
+"maliciously-constructed caseId" that (given `assertSafeSlug` runs first, unlike job 1's
+`generateOne`) can never actually reach that code path — renamed to describe what it actually
+verifies; `CHANGES.md` now marks the eval harness's 5/5 result as router-level explicitly, and
+its cost table shows the 5-image total's real, exact precision, with a footnote naming the two
+figures that are honestly rounded (read from terminal output, not a saved report). 7 new test
+cases (52 → 59).
+
+**Review, round 4 — last round; stop rule invoked.** 13 findings. 7 more prose-style re-flags
+and 1 test-readability preference (moving a repeated try/finally into an `afterEach`, equal
+correctness either way) — dismissed per rule 31. 5 fixed, all real: the repeated statutory
+warning literal in `wildLabelPrompt.ts` is now one shared constant, not five copies;
+`WILD_LABELS_DIRECTORY` is now `realpathSync`-resolved so both sides of the containment check's
+`path.relative` share the same physical-path basis as the already-resolved candidate path (a
+symlinked checkout path could otherwise disagree about what "inside" means); `wildLabelEval.ts`'s
+`main()` now catches a per-case harness error instead of letting it discard every
+already-collected outcome and skip writing the report; `printCaseLine`'s field count now reads
+`r.extraction.fields.length` instead of a hardcoded `5`; `mainWild`'s spend summary now prints
+from a `finally` block, so a real, already-spent total is never silently dropped if a later
+request in the same run fails. No new automated test covers the exact "a case throws mid-run"
+path in `wildLabelEval.ts`'s `main()` — `runOneCase` isn't dependency-injected there, matching
+`scripts/eval/check.ts`'s own `runLive`, which carries the identical gap; the fix is a real,
+reviewed code change, verified by inspection and by the unchanged, still-passing existing
+suite, not by a new mocked test. Round 4 (like round 3) mixed genuine, non-prose findings in
+with the recurring prose noise — the stop rule (lessons.md rule 31) applies to that prose
+subset, never to a round wholesale; every round's real findings got fixed. Stopping here: the
+CHANGES.md/README prose has now been rewritten to the same standard three times running, and
+further re-review is expected to keep re-flagging the identical paragraphs.
+
+**Confirmed.** `scripts/golden/wildLabelPrompt.test.ts`, `wildLabelImagen.test.ts`, and
+`wildLabelCandidates.test.ts` are new — 59 test cases across four triage rounds, red first
+every round with new coverage, green after each implementation. The candidates' schema shape
+is checked against the real, current `GoldenSetCase` validator (`verified`/`imagePath` patched
+to their post-fold-in values for that one check only, never written to disk) — both in the
+test suite and in `loadWildLabelCandidates` itself. `pnpm typecheck` is clean. The full
+2414-test unit suite and the existing `imagen.test.ts`/`imagenPrompt.test.ts` job-1 suites
+still pass unchanged.
 ## TRO-578 — design tokens and one visual hierarchy (2026-08-13)
 
 **The point.** Troy: "spacing and hierarchy are incredibly important and scream even louder
